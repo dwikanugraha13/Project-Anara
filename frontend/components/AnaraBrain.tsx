@@ -960,7 +960,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full whitespace-nowrap text-xs transition-all duration-200 cursor-pointer border ${
                 activeTab === tab.id
                   ? "bg-gradient-to-r from-cyan-500/25 to-indigo-500/25 text-white border-cyan-400/40 font-semibold shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),0_0_16px_rgba(34,211,238,0.15)]"
-                  : "liquid-glass-subtle text-slate-400 hover:text-slate-200 hover:bg-white/[0.07] border-transparent"
+                  : "liquid-glass-subtle text-slate-400 hover:text-slate-200"
               }`}
             >
               <span className={activeTab === tab.id ? "text-cyan-300" : "text-slate-500"}>{tab.icon}</span>
@@ -1141,7 +1141,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                         <button
                           type="button"
                           onClick={() => setIsAddMemoryOpen(false)}
-                          className="px-4 py-2 rounded-xl liquid-glass-subtle hover:bg-white/[0.12] border border-white/10 text-slate-300 text-xs cursor-pointer"
+                          className="px-4 py-2 rounded-xl liquid-glass-subtle border border-white/10 text-slate-300 text-xs cursor-pointer"
                         >
                           Batal
                         </button>
@@ -1299,7 +1299,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                         <button
                           type="button"
                           onClick={() => setIsAddNoteOpen(false)}
-                          className="px-4 py-2 rounded-xl liquid-glass-subtle hover:bg-white/[0.12] border border-white/10 text-slate-300 text-xs cursor-pointer"
+                          className="px-4 py-2 rounded-xl liquid-glass-subtle border border-white/10 text-slate-300 text-xs cursor-pointer"
                         >
                           Batal
                         </button>
@@ -1322,7 +1322,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                           key={n.id}
                           className={`p-4 px-5 rounded-2xl border transition-all duration-300 flex items-start justify-between gap-4 ${
                             n.is_completed
-                              ? "bg-white/[0.02] border-white/[0.06] opacity-50"
+                              ? "liquid-glass-subtle border-white/[0.06] opacity-50"
                               : "liquid-glass-subtle hover:border-purple-400/40"
                           }`}
                         >
@@ -1448,7 +1448,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                         <button
                           type="button"
                           onClick={() => setIsAddProjectOpen(false)}
-                          className="px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-slate-300 text-xs cursor-pointer"
+                          className="px-4 py-2 rounded-xl liquid-glass-subtle border border-white/10 text-slate-300 text-xs cursor-pointer"
                         >
                           Batal
                         </button>
@@ -1596,7 +1596,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                       <button
                         type="button"
                         onClick={() => setIsAddSpeakerOpen(false)}
-                        className="px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-slate-300 text-xs cursor-pointer"
+                        className="px-4 py-2 rounded-xl liquid-glass-subtle border border-white/10 text-slate-300 text-xs cursor-pointer"
                       >
                         Batal
                       </button>
@@ -1612,7 +1612,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
               )}
 
               {speakers.length === 0 ? (
-                <div className="py-12 px-6 rounded-2xl border border-dashed border-white/15 bg-white/[0.02] text-center space-y-3">
+                <div className="py-12 px-6 rounded-2xl border border-dashed border-white/15 liquid-glass-subtle text-center space-y-3">
                   <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-400/25 flex items-center justify-center mx-auto text-cyan-300">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -1676,7 +1676,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-semibold ${
                             isActive 
                               ? "bg-emerald-500/15 text-emerald-300 border border-emerald-400/35" 
-                              : "bg-white/[0.06] text-slate-400 border border-white/10"
+                              : "liquid-glass-subtle text-slate-400 border border-white/10"
                           }`}>
                             {isActive ? "Aktif" : "Tersimpan"}
                           </span>
@@ -1708,7 +1708,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                         {!isActive && (
                           <button
                             onClick={() => handleSelectActiveSpeaker(sp.name)}
-                            className="px-3 py-1.5 rounded-xl bg-white/[0.05] hover:bg-emerald-500/15 hover:border-emerald-400/35 border border-white/10 text-slate-300 hover:text-emerald-200 text-xs transition-all cursor-pointer"
+                            className="px-3 py-1.5 rounded-xl liquid-glass-subtle hover:bg-emerald-500/15 hover:border-emerald-400/35 border border-white/10 text-slate-300 hover:text-emerald-200 text-xs transition-all cursor-pointer"
                           >
                             Pilih Aktif
                           </button>
@@ -1783,7 +1783,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                     <span className="text-[11px] uppercase tracking-wider text-cyan-300 font-bold">
                       Riwayat Percakapan Episodik
                     </span>
-                    <span className="text-[10px] text-slate-400 bg-white/[0.06] px-2 py-0.5 rounded-full border border-white/10">
+                    <span className="text-[10px] text-slate-400 liquid-glass-subtle px-2 py-0.5 rounded-full border border-white/10">
                       {filteredConversations.length} / {conversations.length} entri
                     </span>
                   </div>
@@ -1952,7 +1952,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                   </div>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] text-slate-300 text-[11px] space-y-2">
+                <div className="p-4 rounded-2xl liquid-glass-subtle border border-white/[0.07] text-slate-300 text-[11px] space-y-2">
                   <div className="flex justify-between gap-4">
                     <span className="text-slate-500">Audio Stream Sample Rate:</span>
                     <span className="text-cyan-300 text-right">16kHz Input PCM16 / 24kHz Output PCM16</span>
