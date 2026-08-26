@@ -203,7 +203,7 @@ function LiquidGlassSelect({ value, onChange, options, className = "" }: LiquidG
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between gap-2.5 px-4 py-2 rounded-2xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/20 hover:border-cyan-400/50 backdrop-blur-xl text-xs font-medium text-white shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all duration-300 cursor-pointer"
+        className="w-full flex items-center justify-between gap-2.5 px-4 py-2 rounded-2xl liquid-glass-subtle hover:border-cyan-400/40 hover:shadow-[0_4px_20px_rgba(34,211,238,0.15)] transition-all duration-300 cursor-pointer"
       >
         <span className="truncate">{selectedOption?.label}</span>
         <svg
@@ -825,7 +825,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
         <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/[0.04] via-transparent to-indigo-600/[0.06] pointer-events-none" />
 
         {/* ── Liquid Glass Header ── */}
-        <div className="relative flex items-center justify-between gap-4 px-6 sm:px-7 py-4 border-b border-white/10 bg-white/[0.04] backdrop-blur-2xl shrink-0">
+        <div className="relative flex items-center justify-between gap-4 px-6 sm:px-7 py-4 border-b border-white/10 liquid-glass-subtle backdrop-blur-2xl shrink-0">
           <div className="flex items-center gap-3.5 min-w-0">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-cyan-500/25 to-indigo-500/25 border border-white/20 flex items-center justify-center shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_4px_16px_rgba(34,211,238,0.15)] shrink-0 text-cyan-300">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -960,7 +960,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full whitespace-nowrap text-xs transition-all duration-200 cursor-pointer border ${
                 activeTab === tab.id
                   ? "bg-gradient-to-r from-cyan-500/25 to-indigo-500/25 text-white border-cyan-400/40 font-semibold shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),0_0_16px_rgba(34,211,238,0.15)]"
-                  : "bg-white/[0.03] text-slate-400 hover:text-slate-200 hover:bg-white/[0.07] border-transparent"
+                  : "liquid-glass-subtle text-slate-400 hover:text-slate-200 hover:bg-white/[0.07] border-transparent"
               }`}
             >
               <span className={activeTab === tab.id ? "text-cyan-300" : "text-slate-500"}>{tab.icon}</span>
@@ -1141,7 +1141,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                         <button
                           type="button"
                           onClick={() => setIsAddMemoryOpen(false)}
-                          className="px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-slate-300 text-xs cursor-pointer"
+                          className="px-4 py-2 rounded-xl liquid-glass-subtle hover:bg-white/[0.12] border border-white/10 text-slate-300 text-xs cursor-pointer"
                         >
                           Batal
                         </button>
@@ -1299,7 +1299,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                         <button
                           type="button"
                           onClick={() => setIsAddNoteOpen(false)}
-                          className="px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-slate-300 text-xs cursor-pointer"
+                          className="px-4 py-2 rounded-xl liquid-glass-subtle hover:bg-white/[0.12] border border-white/10 text-slate-300 text-xs cursor-pointer"
                         >
                           Batal
                         </button>
