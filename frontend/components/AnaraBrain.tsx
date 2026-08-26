@@ -806,68 +806,71 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-2xl animate-fade-in select-none"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-xl animate-fade-in select-none"
       onClick={onClose}
     >
-      {/* ── Ambient Radial Refraction ── */}
-      <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-cyan-500/10 rounded-full blur-[140px] pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-indigo-500/10 rounded-full blur-[140px] pointer-events-none" />
+      {/* ── Ambient Liquid Light Blobs ── */}
+      <div className="absolute top-0 left-1/4 w-[560px] h-[560px] bg-cyan-500/[0.07] rounded-full blur-[160px] pointer-events-none animate-liquid-1" />
+      <div className="absolute bottom-0 right-1/5 w-[520px] h-[520px] bg-indigo-600/[0.08] rounded-full blur-[160px] pointer-events-none animate-liquid-2" />
+      <div className="absolute top-1/3 right-1/3 w-[380px] h-[380px] bg-purple-600/[0.06] rounded-full blur-[140px] pointer-events-none animate-liquid-3" />
 
-      {/* ── Real Liquid Glass Main Modal Container ── */}
+      {/* ── Liquid Glass Main Modal Container ── */}
       <div
-        className="relative w-[96vw] max-w-5xl h-[88vh] max-h-[900px] rounded-3xl overflow-hidden flex flex-col pointer-events-auto transition-all animate-scale-up border border-white/20 shadow-[0_20px_70px_rgba(0,0,0,0.85),inset_0_1px_1px_rgba(255,255,255,0.3)] bg-gradient-to-br from-slate-900/80 via-slate-950/85 to-black/90 backdrop-blur-3xl"
+        className="relative w-[96vw] max-w-5xl h-[88vh] max-h-[900px] rounded-[28px] overflow-hidden flex flex-col pointer-events-auto animate-scale-up liquid-glass-drawer"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* ── Specular Top Light Reflection Line ── */}
-        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-cyan-300/80 to-transparent pointer-events-none" />
+        {/* ── Specular Top Light Reflection ── */}
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/60 to-transparent pointer-events-none" />
+        {/* ── Inner Liquid Tint ── */}
+        <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/[0.04] via-transparent to-indigo-600/[0.06] pointer-events-none" />
 
-        {/* ── Liquid Glass Header Bar ── */}
-        <div className="flex items-center justify-between px-6 sm:px-8 py-4 sm:py-5 bg-white/[0.03] backdrop-blur-2xl border-b border-white/10 shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-cyan-500/30 via-indigo-500/20 to-purple-500/30 border border-cyan-400/40 flex items-center justify-center shadow-lg shadow-cyan-500/20 shrink-0 text-cyan-300">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        {/* ── Liquid Glass Header ── */}
+        <div className="relative flex items-center justify-between gap-4 px-6 sm:px-7 py-4 border-b border-white/10 bg-white/[0.04] backdrop-blur-2xl shrink-0">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-cyan-500/25 to-indigo-500/25 border border-white/20 flex items-center justify-center shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_4px_16px_rgba(34,211,238,0.15)] shrink-0 text-cyan-300">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
               </svg>
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2.5 flex-wrap">
-                <h2 className="text-base sm:text-lg font-semibold text-white tracking-wide font-sans">
+                <h2 className="text-[15px] sm:text-base font-semibold text-white tracking-wide">
                   Anara Brain Console
                 </h2>
                 {activeSpeaker ? (
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 shadow-[0_0_12px_rgba(52,211,153,0.3)]">
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-400/30">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1.5 shadow-[0_0_6px_#34d399]" />
-                    Profil Aktif: {activeSpeaker}
+                    {activeSpeaker}
                   </span>
                 ) : (
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono font-medium bg-amber-500/20 text-amber-300 border border-amber-400/40 shadow-[0_0_12px_rgba(245,158,11,0.2)]">
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-medium bg-amber-500/15 text-amber-300 border border-amber-400/30">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse mr-1.5 shadow-[0_0_6px_#f59e0b]" />
-                    Sesi Baru (Belum Teridentifikasi)
+                    Sesi Baru
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-300 font-mono mt-0.5">
+              <p className="text-[11px] text-slate-400 mt-0.5 truncate">
                 {activeSpeaker
-                  ? `${currentSpeakerMemories.length} Node Fakta • ${currentSpeakerNotes.length} Tugas • Profil Terkalibrasi (${activeSpeaker})`
-                  : `0 Node Fakta Aktif • ${speakers.length} Profil Terdaftar di Database SQLite`}
+                  ? `${currentSpeakerMemories.length} fakta • ${currentSpeakerNotes.length} tugas • profil terkalibrasi`
+                  : `${speakers.length} profil terdaftar di SQLite`}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={fetchBrainData}
-              className="px-3.5 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/15 text-slate-200 hover:text-white transition-all text-xs font-mono flex items-center gap-1.5 cursor-pointer shadow-sm hover:scale-105 active:scale-95"
+              className="crystal-glass-btn px-3.5 py-2 rounded-xl text-slate-200 hover:text-white text-xs font-medium flex items-center gap-1.5 cursor-pointer"
               title="Sinkronkan database"
             >
-              <svg className={`w-3.5 h-3.5 text-cyan-400 ${loading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={`w-3.5 h-3.5 text-cyan-300 ${loading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
               <span className="hidden sm:inline">Sinkronkan</span>
             </button>
             <button
               onClick={onClose}
-              className="p-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/15 text-slate-300 hover:text-white transition-all cursor-pointer hover:scale-105 active:scale-95"
+              className="crystal-glass-btn p-2.5 rounded-xl text-slate-300 hover:text-white cursor-pointer"
               title="Tutup (Esc)"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -877,14 +880,14 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
           </div>
         </div>
 
-        {/* ── All 6 Navigation Tabs (Clean Vector Icons, No Emojis) ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 p-2.5 bg-black/40 backdrop-blur-2xl border-b border-white/10 shrink-0 text-xs font-sans">
+        {/* ── Liquid Glass Tab Strip (single row, scrollable) ── */}
+        <div className="flex items-center gap-1.5 px-4 py-2.5 overflow-x-auto no-scrollbar border-b border-white/10 bg-black/20 backdrop-blur-xl shrink-0">
           {[
             {
               id: "memories",
               label: "Ingatan & Fakta",
               icon: (
-                <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                 </svg>
               ),
@@ -894,7 +897,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
               id: "todos",
               label: "Catatan & Tugas",
               icon: (
-                <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                 </svg>
               ),
@@ -902,9 +905,9 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
             },
             {
               id: "projects",
-              label: "Proyek & Konteks",
+              label: "Proyek",
               icon: (
-                <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                 </svg>
               ),
@@ -914,7 +917,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
               id: "speakers",
               label: "Profil Pengguna",
               icon: (
-                <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
               ),
@@ -922,9 +925,9 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
             },
             {
               id: "animations",
-              label: "Katalog Animasi",
+              label: "Animasi 3D",
               icon: (
-                <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
@@ -935,7 +938,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
               id: "conversations",
               label: "Log Percakapan",
               icon: (
-                <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                 </svg>
               ),
@@ -943,9 +946,9 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
             },
             {
               id: "telemetry",
-              label: "Telemetri Sistem",
+              label: "Telemetri",
               icon: (
-                <svg className="w-4 h-4 text-cyan-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
               ),
@@ -954,18 +957,18 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center justify-center sm:justify-between gap-2 px-3 py-2.5 rounded-2xl transition-all cursor-pointer w-full text-center ${
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full whitespace-nowrap text-xs transition-all duration-200 cursor-pointer border ${
                 activeTab === tab.id
-                  ? "bg-gradient-to-r from-cyan-500/25 via-indigo-500/20 to-purple-500/25 text-white border border-cyan-400/50 shadow-[0_0_20px_rgba(34,211,238,0.2)] font-semibold"
-                  : "bg-white/[0.03] text-slate-400 hover:text-slate-200 hover:bg-white/[0.07] border border-white/5"
+                  ? "bg-gradient-to-r from-cyan-500/25 to-indigo-500/25 text-white border-cyan-400/40 font-semibold shadow-[inset_0_1px_1px_rgba(255,255,255,0.3),0_0_16px_rgba(34,211,238,0.15)]"
+                  : "bg-white/[0.03] text-slate-400 hover:text-slate-200 hover:bg-white/[0.07] border-transparent"
               }`}
             >
-              <div className="flex items-center gap-2 truncate">
-                {tab.icon}
-                <span className="font-medium font-sans truncate">{tab.label}</span>
-              </div>
-              {tab.count !== undefined && (
-                <span className="hidden sm:inline-block px-2 py-0.2 rounded-full bg-white/10 text-[10px] font-mono text-cyan-300">
+              <span className={activeTab === tab.id ? "text-cyan-300" : "text-slate-500"}>{tab.icon}</span>
+              <span>{tab.label}</span>
+              {tab.count !== undefined && tab.count > 0 && (
+                <span className={`px-1.5 py-px rounded-full text-[10px] font-mono ${
+                  activeTab === tab.id ? "bg-cyan-400/20 text-cyan-200" : "bg-white/10 text-slate-400"
+                }`}>
                   {tab.count}
                 </span>
               )}
@@ -974,58 +977,60 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
         </div>
 
         {/* ── Tab Content Viewport ── */}
-        <div className="flex-1 overflow-y-auto p-5 sm:p-7 select-text">
+        <div className="flex-1 overflow-y-auto p-5 sm:p-6 select-text custom-scrollbar">
           {/* TAB 1: MEMORIES & FACTS */}
           {activeTab === "memories" && (
             <div className="space-y-5">
               {/* Information Metric Ribbon */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10">
-                  <span className="text-[10px] uppercase font-mono text-slate-400">Node Memori Aktif</span>
-                  <p className="text-base font-bold text-white font-sans mt-0.5">{currentSpeakerMemories.length} Fakta</p>
+                <div className="p-4 rounded-2xl liquid-glass-subtle">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-400">Node Memori</span>
+                  <p className="text-base font-bold text-white mt-0.5">{currentSpeakerMemories.length} Fakta</p>
                 </div>
-                <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10">
-                  <span className="text-[10px] uppercase font-mono text-slate-400">Profil Sesi</span>
-                  <p className="text-base font-bold text-cyan-300 font-sans mt-0.5 truncate">{effectiveViewingSpeaker || "Belum Terdaftar"}</p>
+                <div className="p-4 rounded-2xl liquid-glass-subtle">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-400">Profil Sesi</span>
+                  <p className="text-base font-bold text-cyan-300 mt-0.5 truncate">{effectiveViewingSpeaker || "Belum Terdaftar"}</p>
                 </div>
-                <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10">
-                  <span className="text-[10px] uppercase font-mono text-slate-400">Status Sesi</span>
-                  <p className={`text-base font-bold font-sans mt-0.5 ${activeSpeaker ? "text-emerald-300" : "text-cyan-300"}`}>
-                    {activeSpeaker ? "Terautentikasi" : "Pratinjau Database"}
+                <div className="p-4 rounded-2xl liquid-glass-subtle">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-400">Status Sesi</span>
+                  <p className={`text-base font-bold mt-0.5 ${activeSpeaker ? "text-emerald-300" : "text-amber-300"}`}>
+                    {activeSpeaker ? "Terautentikasi" : "Pratinjau"}
                   </p>
                 </div>
-                <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10">
-                  <span className="text-[10px] uppercase font-mono text-slate-400">Penyimpanan</span>
-                  <p className="text-base font-bold text-indigo-300 font-sans mt-0.5">SQLite Persisten</p>
+                <div className="p-4 rounded-2xl liquid-glass-subtle">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-400">Penyimpanan</span>
+                  <p className="text-base font-bold text-indigo-300 mt-0.5">SQLite</p>
                 </div>
               </div>
 
               {speakers.length === 0 ? (
                 /* Unauthenticated / Fresh Session Standby Card */
-                <div className="p-8 sm:p-12 rounded-3xl bg-gradient-to-br from-white/[0.04] via-cyan-950/20 to-indigo-950/20 border border-cyan-400/30 text-center flex flex-col items-center justify-center gap-3.5 shadow-2xl backdrop-blur-2xl animate-fade-in">
-                  <div className="w-14 h-14 rounded-2xl bg-cyan-500/20 border border-cyan-400/50 flex items-center justify-center text-cyan-300 text-2xl shadow-[0_0_20px_rgba(34,211,238,0.3)]">
-                    🔒
+                <div className="p-10 sm:p-14 rounded-3xl liquid-glass-subtle text-center flex flex-col items-center justify-center gap-3 animate-fade-in">
+                  <div className="w-14 h-14 rounded-2xl bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center text-cyan-300 shadow-[0_0_24px_rgba(34,211,238,0.2)]">
+                    <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
                   </div>
-                  <h4 className="text-sm sm:text-base font-bold text-white font-sans uppercase tracking-wider">
+                  <h4 className="text-sm sm:text-base font-bold text-white uppercase tracking-wider">
                     Belum Ada Profil Terdaftar
                   </h4>
-                  <p className="text-xs sm:text-sm text-slate-300 max-w-lg leading-relaxed font-sans">
-                    Belum ada profil pengguna yang terdaftar di database. Silakan aktifkan mikrofon dan perkenalkan namamu (contoh: <span className="text-cyan-300 font-semibold font-mono">&quot;Halo Anara, namaku Agnan&quot;</span>) atau tambahkan profil secara manual di tab Daftar Pengguna.
+                  <p className="text-xs sm:text-sm text-slate-300 max-w-lg leading-relaxed">
+                    Aktifkan mikrofon dan perkenalkan namamu (contoh: <span className="text-cyan-300 font-semibold">&quot;Halo Anara, namaku Agnan&quot;</span>) atau tambahkan profil secara manual di tab Profil Pengguna.
                   </p>
-                  <span className="text-[11px] font-mono text-cyan-400/80 px-3.5 py-1 rounded-full bg-cyan-400/10 border border-cyan-400/30 mt-2">
+                  <span className="text-[11px] text-cyan-300/90 px-3.5 py-1.5 rounded-full bg-cyan-400/10 border border-cyan-400/25 mt-1">
                     Engine Biometrik Suara 128-D & Multi-Profil Aktif
                   </span>
                 </div>
               ) : (
                 <>
-                  {/* JARVIS 2.0 Semantic RAG Cognitive Inspector */}
-                  <form onSubmit={handleSemanticSearch} className="p-4 rounded-3xl bg-gradient-to-r from-cyan-950/40 via-indigo-950/30 to-purple-950/30 border border-cyan-400/30 backdrop-blur-xl shadow-lg space-y-3">
+                  {/* Semantic RAG Cognitive Inspector */}
+                  <form onSubmit={handleSemanticSearch} className="p-4 rounded-2xl liquid-glass-subtle space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-mono text-cyan-300 uppercase tracking-wider font-semibold flex items-center gap-1.5">
+                      <span className="text-[10px] uppercase tracking-wider text-cyan-300 font-semibold flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-                        Uji Pencarian Semantik Kognitif (RAG Engine)
+                        Pencarian Semantik Kognitif
                       </span>
-                      <span className="text-[10px] font-mono text-slate-400">Pencarian Konsep & Lintas Tabel</span>
+                      <span className="text-[10px] text-slate-500 hidden sm:inline">Konsep & lintas tabel</span>
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -1033,29 +1038,29 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                         type="text"
                         value={ragQuery}
                         onChange={(e) => setRagQuery(e.target.value)}
-                        placeholder="Ketik topik bebas (cth: 'arsitektur proyek', 'makanan kesukaan', 'rencana kerja')..."
-                        className="flex-1 bg-black/50 border border-cyan-400/30 rounded-xl py-2 px-3 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-cyan-400/70 font-sans"
+                        placeholder="Ketik topik bebas (cth: 'arsitektur proyek', 'makanan kesukaan')..."
+                        className="flex-1 liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
                       />
                       <button
                         type="submit"
                         disabled={isRagSearching}
-                        className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs font-mono transition-all hover:scale-105 cursor-pointer shrink-0 disabled:opacity-50"
+                        className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-500 text-white font-semibold text-xs transition-all hover:opacity-90 cursor-pointer shrink-0 disabled:opacity-50"
                       >
-                        {isRagSearching ? "Mencari..." : "Uji RAG"}
+                        {isRagSearching ? "Mencari..." : "Cari"}
                       </button>
                     </div>
 
                     {ragResults.length > 0 && (
-                      <div className="space-y-2 pt-2 border-t border-white/10 animate-fade-in">
-                        <span className="text-[10px] font-mono text-cyan-400">Hasil Temuan Semantik Tertinggi:</span>
+                      <div className="space-y-2 pt-3 border-t border-white/10 animate-fade-in">
+                        <span className="text-[10px] uppercase tracking-wider text-slate-400">Hasil temuan tertinggi:</span>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {ragResults.map((item, idx) => (
-                            <div key={idx} className="p-2.5 rounded-xl bg-black/40 border border-cyan-400/20 text-xs space-y-1">
-                              <div className="flex items-center justify-between text-[10px] font-mono">
-                                <span className="text-cyan-300 uppercase font-semibold">[{item.type}] {item.title}</span>
-                                <span className="text-emerald-400 font-bold">Skor: {item.score.toFixed(1)}</span>
+                            <div key={idx} className="p-3 rounded-xl bg-black/30 border border-white/10 text-xs space-y-1">
+                              <div className="flex items-center justify-between text-[10px]">
+                                <span className="text-cyan-300 uppercase font-semibold truncate">{item.title}</span>
+                                <span className="text-emerald-400 font-bold shrink-0 ml-2">{item.score.toFixed(1)}</span>
                               </div>
-                              <p className="text-slate-300 font-sans text-[11px] line-clamp-2">{item.content}</p>
+                              <p className="text-slate-300 text-[11px] line-clamp-2">{item.content}</p>
                             </div>
                           ))}
                         </div>
@@ -1067,44 +1072,47 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5 flex-1">
                       <div className="relative flex-1">
+                        <svg className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
                         <input
                           type="text"
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
-                          placeholder={`Cari ingatan milik ${activeSpeaker}...`}
-                          className="w-full bg-black/40 border border-white/15 rounded-2xl py-2.5 pl-4 pr-9 text-xs sm:text-sm text-white placeholder-slate-400 focus:outline-none focus:border-cyan-400/70 transition-all font-sans shadow-inner"
+                          placeholder={`Cari ingatan${effectiveViewingSpeaker ? ` milik ${effectiveViewingSpeaker}` : ""}...`}
+                          className="w-full liquid-glass-input rounded-2xl py-2.5 pl-10 pr-4 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none"
                         />
                       </div>
                       <LiquidGlassSelect
                         value={selectedCategory}
                         onChange={setSelectedCategory}
                         options={categoryOptions}
-                        className="w-48 shrink-0"
+                        className="w-44 shrink-0"
                       />
                     </div>
 
                     <button
                       onClick={() => setIsAddMemoryOpen(true)}
-                      className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-cyan-500 via-indigo-500 to-purple-600 hover:opacity-95 text-white text-xs sm:text-sm font-semibold font-sans flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-cyan-500/25 transition-all hover:scale-105 active:scale-95 shrink-0"
+                      className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-indigo-500 text-white text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer shadow-[0_4px_20px_rgba(34,211,238,0.3)] transition-all hover:opacity-90 active:scale-[0.98] shrink-0"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                       </svg>
-                      <span>Tambah Fakta Baru</span>
+                      <span>Tambah Fakta</span>
                     </button>
                   </div>
 
                   {/* Add Memory Inline Modal */}
                   {isAddMemoryOpen && (
-                    <form onSubmit={handleSaveMemory} className="relative z-30 overflow-visible p-5 rounded-3xl bg-cyan-950/40 border border-cyan-400/40 space-y-3.5 animate-fade-in shadow-2xl backdrop-blur-2xl">
-                      <h4 className="text-xs font-bold text-cyan-300 uppercase font-mono tracking-wider">Entri Fakta Kognitif Baru</h4>
+                    <form onSubmit={handleSaveMemory} className="relative z-30 p-5 rounded-2xl liquid-glass space-y-3.5 animate-fade-in">
+                      <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wider">Fakta Kognitif Baru</h4>
                       <div className="relative z-40 grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <input
                           type="text"
                           value={newSpeaker}
                           onChange={(e) => setNewSpeaker(e.target.value)}
                           placeholder="Nama Pengguna"
-                          className="bg-black/50 border border-white/15 rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400/60 font-sans"
+                          className="liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
                           required
                         />
                         <input
@@ -1112,7 +1120,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                           value={newKey}
                           onChange={(e) => setNewKey(e.target.value)}
                           placeholder="Kunci (cth: band_favorit)"
-                          className="bg-black/50 border border-white/15 rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400/60 font-sans"
+                          className="liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
                           required
                         />
                         <LiquidGlassSelect
@@ -1125,23 +1133,23 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                         type="text"
                         value={newValue}
                         onChange={(e) => setNewValue(e.target.value)}
-                        placeholder="Nilai Harfiah (cth: Avenged Sevenfold)"
-                        className="w-full bg-black/50 border border-white/15 rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400/60 font-sans"
+                        placeholder="Nilai (cth: Avenged Sevenfold)"
+                        className="w-full liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
                         required
                       />
                       <div className="flex justify-end gap-2.5 pt-1">
                         <button
                           type="button"
                           onClick={() => setIsAddMemoryOpen(false)}
-                          className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-mono cursor-pointer transition-colors"
+                          className="px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-slate-300 text-xs cursor-pointer"
                         >
                           Batal
                         </button>
                         <button
                           type="submit"
-                          className="px-5 py-2 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-black font-semibold text-xs font-mono cursor-pointer shadow-lg shadow-cyan-400/30 transition-all hover:scale-105 active:scale-95"
+                          className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-500 text-white font-semibold text-xs cursor-pointer shadow-[0_4px_16px_rgba(34,211,238,0.3)] transition-all hover:opacity-90"
                         >
-                          Simpan ke Database
+                          Simpan
                         </button>
                       </div>
                     </form>
@@ -1149,24 +1157,24 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
 
                   {/* Memory Cards Grid */}
                   {filteredMemories.length === 0 ? (
-                    <div className="text-center py-16 text-slate-400 font-sans text-xs">
-                      Belum ada catatan memori tersimpan untuk {activeSpeaker}.
+                    <div className="text-center py-16 rounded-2xl liquid-glass-subtle text-slate-400 text-xs">
+                      Belum ada catatan memori tersimpan{effectiveViewingSpeaker ? ` untuk ${effectiveViewingSpeaker}` : ""}.
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                       {filteredMemories.map((m) => (
                         <div
                           key={m.id}
-                          className="p-5 rounded-3xl bg-gradient-to-br from-white/[0.08] to-white/[0.02] backdrop-blur-2xl border border-white/15 hover:border-cyan-400/50 hover:shadow-[0_8px_30px_rgba(34,211,238,0.18)] transition-all duration-300 flex flex-col justify-between group"
+                          className="p-5 rounded-2xl liquid-glass-subtle hover:border-cyan-400/40 hover:shadow-[0_8px_30px_rgba(34,211,238,0.12)] transition-all duration-300 flex flex-col justify-between group"
                         >
                           <div>
                             <div className="flex items-center justify-between gap-1.5 mb-2.5">
-                              <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-xl bg-indigo-500/25 text-indigo-200 border border-indigo-400/30 font-mono">
-                                {m.speaker_name} • {m.category}
+                              <span className="text-[10px] font-medium uppercase tracking-wider px-2.5 py-1 rounded-full bg-indigo-500/15 text-indigo-200 border border-indigo-400/25">
+                                {m.category}
                               </span>
                               <button
                                 onClick={() => handleDeleteMemory(m.id)}
-                                className="text-slate-400 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 cursor-pointer"
+                                className="text-slate-500 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 cursor-pointer"
                                 title="Hapus memori"
                               >
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1174,12 +1182,12 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                                 </svg>
                               </button>
                             </div>
-                            <h4 className="text-xs font-mono font-bold text-slate-400 uppercase tracking-wider">
+                            <h4 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                               {m.key.replace(/_/g, " ")}
                             </h4>
-                            <p className="text-sm sm:text-base font-semibold text-cyan-100 mt-1 leading-relaxed font-sans">{m.value}</p>
+                            <p className="text-sm sm:text-[15px] font-semibold text-cyan-100 mt-1 leading-relaxed">{m.value}</p>
                           </div>
-                          <span className="text-[10px] text-slate-400 font-mono mt-4 pt-2.5 border-t border-white/10">
+                          <span className="text-[10px] text-slate-500 mt-4 pt-2.5 border-t border-white/[0.07]">
                             Diperbarui: {new Date(m.updated_at || m.created_at).toLocaleString("id-ID")}
                           </span>
                         </div>
@@ -1196,32 +1204,34 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
             <div className="space-y-5">
               {!activeSpeaker ? (
                 /* Unauthenticated Standby Card for Todos */
-                <div className="p-8 sm:p-12 rounded-3xl bg-gradient-to-br from-white/[0.04] via-purple-950/20 to-indigo-950/20 border border-purple-400/30 text-center flex flex-col items-center justify-center gap-3.5 shadow-2xl backdrop-blur-2xl animate-fade-in">
-                  <div className="w-14 h-14 rounded-2xl bg-purple-500/20 border border-purple-400/50 flex items-center justify-center text-purple-300 text-2xl shadow-[0_0_20px_rgba(168,85,247,0.3)]">
-                    📋
+                <div className="p-10 sm:p-14 rounded-3xl liquid-glass-subtle text-center flex flex-col items-center justify-center gap-3 animate-fade-in">
+                  <div className="w-14 h-14 rounded-2xl bg-purple-500/15 border border-purple-400/30 flex items-center justify-center text-purple-300 shadow-[0_0_24px_rgba(168,85,247,0.2)]">
+                    <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                    </svg>
                   </div>
-                  <h4 className="text-sm sm:text-base font-bold text-white font-sans uppercase tracking-wider">
+                  <h4 className="text-sm sm:text-base font-bold text-white uppercase tracking-wider">
                     Menunggu Identifikasi Pengguna
                   </h4>
-                  <p className="text-xs sm:text-sm text-slate-300 max-w-lg leading-relaxed font-sans">
+                  <p className="text-xs sm:text-sm text-slate-300 max-w-lg leading-relaxed">
                     Daftar to-do dan catatan personal disimpan berdasarkan profil pengguna. Silakan bicara atau perkenalkan diri agar Anara memuat tugas Anda.
                   </p>
                 </div>
               ) : (
                 <>
                   {/* Progress Ribbon */}
-                  <div className="p-5 rounded-3xl bg-gradient-to-r from-purple-900/30 via-indigo-900/20 to-cyan-900/30 border border-purple-400/30 backdrop-blur-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="p-5 rounded-2xl liquid-glass-subtle flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div>
-                      <span className="text-[10px] font-mono text-purple-300 uppercase tracking-wider font-semibold">
+                      <span className="text-[10px] uppercase tracking-wider text-purple-300 font-semibold">
                         Penyelesaian Tugas • {activeSpeaker}
                       </span>
-                      <h3 className="text-lg font-bold text-white font-sans mt-0.5">
+                      <h3 className="text-base font-bold text-white mt-0.5">
                         {completedNotesCount} dari {currentSpeakerNotes.length} Tugas Selesai ({progressPercent}%)
                       </h3>
                     </div>
-                    <div className="w-full sm:w-48 h-2.5 rounded-full bg-black/50 overflow-hidden border border-white/10 p-0.5">
+                    <div className="w-full sm:w-48 h-2 rounded-full bg-black/40 overflow-hidden border border-white/10">
                       <div
-                        className="h-full rounded-full bg-gradient-to-r from-purple-500 via-indigo-400 to-cyan-400 transition-all duration-500 shadow-[0_0_10px_rgba(168,85,247,0.5)]"
+                        className="h-full rounded-full bg-gradient-to-r from-purple-500 via-indigo-400 to-cyan-400 transition-all duration-500 shadow-[0_0_10px_rgba(168,85,247,0.4)]"
                         style={{ width: `${progressPercent}%` }}
                       />
                     </div>
@@ -1229,7 +1239,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
 
                   {/* Filter & Add Actions */}
                   <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-white/[0.04] border border-white/10">
+                    <div className="flex items-center gap-1 p-1 rounded-full liquid-glass-subtle">
                       {[
                         { id: "all", label: "Semua" },
                         { id: "active", label: "Aktif" },
@@ -1238,10 +1248,10 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                         <button
                           key={f.id}
                           onClick={() => setTodoFilter(f.id as any)}
-                          className={`px-3.5 py-1.5 rounded-xl text-xs font-sans font-medium transition-all cursor-pointer ${
+                          className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
                             todoFilter === f.id
-                              ? "bg-purple-500/30 text-purple-200 border border-purple-400/40 shadow-sm"
-                              : "text-slate-400 hover:text-slate-200"
+                              ? "bg-purple-500/25 text-purple-100 border border-purple-400/40"
+                              : "text-slate-400 hover:text-slate-200 border border-transparent"
                           }`}
                         >
                           {f.label}
@@ -1251,22 +1261,25 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
 
                     <button
                       onClick={() => setIsAddNoteOpen(true)}
-                      className="px-4 py-2 rounded-2xl bg-purple-500 hover:bg-purple-400 text-white font-semibold text-xs font-sans flex items-center gap-1.5 cursor-pointer shadow-lg shadow-purple-500/25 transition-all hover:scale-105 active:scale-95"
+                      className="px-4 py-2 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 cursor-pointer shadow-[0_4px_20px_rgba(168,85,247,0.3)] transition-all hover:opacity-90 active:scale-[0.98]"
                     >
-                      + Tugas Baru
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      Tugas Baru
                     </button>
                   </div>
 
                   {isAddNoteOpen && (
-                    <form onSubmit={handleSaveNote} className="relative z-30 overflow-visible p-5 rounded-3xl bg-purple-950/40 border border-purple-400/40 space-y-3.5 animate-fade-in shadow-2xl backdrop-blur-2xl">
-                      <h4 className="text-xs font-bold text-purple-300 uppercase font-mono tracking-wider">Tambah Tugas / Catatan Baru</h4>
+                    <form onSubmit={handleSaveNote} className="relative z-30 p-5 rounded-2xl liquid-glass space-y-3.5 animate-fade-in">
+                      <h4 className="text-xs font-bold text-purple-300 uppercase tracking-wider">Tambah Tugas / Catatan</h4>
                       <div className="relative z-40 grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <input
                           type="text"
                           value={newNoteTitle}
                           onChange={(e) => setNewNoteTitle(e.target.value)}
-                          placeholder="Judul Tugas (cth: Evaluasi Laporan Proyek)"
-                          className="bg-black/50 border border-white/15 rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400/60 font-sans sm:col-span-2"
+                          placeholder="Judul Tugas (cth: Evaluasi Laporan)"
+                          className="liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none sm:col-span-2"
                           required
                         />
                         <LiquidGlassSelect
@@ -1280,67 +1293,67 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                         value={newNoteContent}
                         onChange={(e) => setNewNoteContent(e.target.value)}
                         placeholder="Deskripsi detail tugas (opsional)"
-                        className="w-full bg-black/50 border border-white/15 rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400/60 font-sans"
+                        className="w-full liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
                       />
                       <div className="flex justify-end gap-2.5 pt-1">
                         <button
                           type="button"
                           onClick={() => setIsAddNoteOpen(false)}
-                          className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-mono cursor-pointer transition-colors"
+                          className="px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-slate-300 text-xs cursor-pointer"
                         >
                           Batal
                         </button>
                         <button
                           type="submit"
-                          className="px-5 py-2 rounded-xl bg-purple-500 hover:bg-purple-400 text-white font-semibold text-xs font-mono cursor-pointer shadow-lg shadow-purple-500/30 transition-all hover:scale-105 active:scale-95"
+                          className="px-5 py-2 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-semibold text-xs cursor-pointer shadow-[0_4px_16px_rgba(168,85,247,0.3)] transition-all hover:opacity-90"
                         >
-                          Simpan Tugas
+                          Simpan
                         </button>
                       </div>
                     </form>
                   )}
 
-                  <div className="space-y-3">
+                  <div className="space-y-2.5">
                     {filteredNotes.length === 0 ? (
-                      <p className="text-xs text-slate-400 text-center py-16 font-sans">Belum ada tugas atau catatan untuk {activeSpeaker}.</p>
+                      <p className="text-xs text-slate-400 text-center py-16 rounded-2xl liquid-glass-subtle">Belum ada tugas atau catatan untuk {activeSpeaker}.</p>
                     ) : (
                       filteredNotes.map((n) => (
                         <div
                           key={n.id}
-                          className={`p-4 px-5 rounded-3xl border transition-all duration-300 flex items-start justify-between gap-4 ${
+                          className={`p-4 px-5 rounded-2xl border transition-all duration-300 flex items-start justify-between gap-4 ${
                             n.is_completed
-                              ? "bg-black/30 border-white/5 opacity-50"
-                              : "bg-gradient-to-r from-white/[0.07] to-white/[0.02] backdrop-blur-xl border-purple-400/30 hover:border-purple-400/60 shadow-lg"
+                              ? "bg-white/[0.02] border-white/[0.06] opacity-50"
+                              : "liquid-glass-subtle hover:border-purple-400/40"
                           }`}
                         >
-                          <div className="flex items-start gap-4 min-w-0 flex-1">
+                          <div className="flex items-start gap-3.5 min-w-0 flex-1">
                             <button
                               onClick={() => handleToggleTodo(n.id)}
-                              className={`w-6 h-6 rounded-xl border flex items-center justify-center shrink-0 mt-0.5 cursor-pointer transition-all duration-200 ${
+                              className={`w-[22px] h-[22px] rounded-lg border flex items-center justify-center shrink-0 mt-0.5 cursor-pointer transition-all duration-200 ${
                                 n.is_completed
-                                  ? "bg-gradient-to-tr from-emerald-500 to-teal-400 border-emerald-300 text-black font-bold shadow-[0_0_12px_rgba(52,211,153,0.4)]"
-                                  : "border-purple-400/50 hover:border-purple-300 hover:bg-purple-500/20 text-transparent"
+                                  ? "bg-gradient-to-tr from-emerald-500 to-teal-400 border-emerald-300/60 text-black shadow-[0_0_12px_rgba(52,211,153,0.35)]"
+                                  : "border-white/25 hover:border-purple-300 hover:bg-purple-500/20 text-transparent"
                               }`}
                             >
-                              <svg className="w-3.5 h-3.5 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-3 h-3 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                               </svg>
                             </button>
                             <div className="truncate min-w-0 flex-1">
-                              <p className={`text-xs sm:text-sm ${n.is_completed ? "line-through text-slate-400 font-normal" : "text-white font-semibold"} font-sans`}>
+                              <p className={`text-xs sm:text-sm ${n.is_completed ? "line-through text-slate-500 font-normal" : "text-white font-semibold"}`}>
                                 {n.title}
                               </p>
-                              {n.content && <p className="text-xs text-slate-300 mt-1 font-sans leading-relaxed">{n.content}</p>}
+                              {n.content && <p className="text-xs text-slate-400 mt-1 leading-relaxed">{n.content}</p>}
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2.5 shrink-0">
-                            <span className="text-[10px] font-mono uppercase px-2.5 py-0.5 rounded-lg bg-white/10 text-purple-300 border border-purple-400/25">
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-[10px] uppercase tracking-wide px-2.5 py-1 rounded-full bg-purple-500/15 text-purple-300 border border-purple-400/25">
                               {n.category}
                             </span>
                             <button
                               onClick={() => handleDeleteNote(n.id)}
-                              className="text-slate-400 hover:text-rose-400 p-1.5 text-xs cursor-pointer transition-colors"
+                              className="text-slate-500 hover:text-rose-400 p-1.5 text-xs cursor-pointer transition-colors"
                               title="Hapus tugas"
                             >
                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1361,14 +1374,16 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
           {activeTab === "projects" && (
             <div className="space-y-5">
               {!activeSpeaker ? (
-                <div className="p-8 sm:p-12 rounded-3xl bg-gradient-to-br from-white/[0.04] via-amber-950/20 to-indigo-950/20 border border-amber-400/30 text-center flex flex-col items-center justify-center gap-3.5 shadow-2xl backdrop-blur-2xl animate-fade-in">
-                  <div className="w-14 h-14 rounded-2xl bg-amber-500/20 border border-amber-400/50 flex items-center justify-center text-amber-300 text-2xl shadow-[0_0_20px_rgba(245,158,11,0.3)]">
-                    🚀
+                <div className="p-10 sm:p-14 rounded-3xl liquid-glass-subtle text-center flex flex-col items-center justify-center gap-3 animate-fade-in">
+                  <div className="w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-amber-300 shadow-[0_0_24px_rgba(245,158,11,0.2)]">
+                    <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                    </svg>
                   </div>
-                  <h4 className="text-sm sm:text-base font-bold text-white font-sans uppercase tracking-wider">
+                  <h4 className="text-sm sm:text-base font-bold text-white uppercase tracking-wider">
                     Menunggu Identifikasi Pengguna
                   </h4>
-                  <p className="text-xs sm:text-sm text-slate-300 max-w-lg leading-relaxed font-sans">
+                  <p className="text-xs sm:text-sm text-slate-300 max-w-lg leading-relaxed">
                     Proyek kerja dan riwayat target disimpan khusus per profil. Silakan bicara atau pilih profil Anda agar Anara memuat konteks proyek Anda.
                   </p>
                 </div>
@@ -1376,40 +1391,43 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                 <>
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <div>
-                      <span className="text-[10px] font-mono text-amber-300 uppercase tracking-wider font-semibold">
+                      <span className="text-[10px] uppercase tracking-wider text-amber-300 font-semibold">
                         Konteks Proyek • {activeSpeaker}
                       </span>
-                      <h3 className="text-base sm:text-lg font-bold text-white font-sans mt-0.5">
-                        {currentSpeakerProjects.length} Proyek Aktif Terdaftar
+                      <h3 className="text-base sm:text-lg font-bold text-white mt-0.5">
+                        {currentSpeakerProjects.length} Proyek Terdaftar
                       </h3>
                     </div>
 
                     <button
                       onClick={() => setIsAddProjectOpen(true)}
-                      className="px-4 py-2 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs font-sans flex items-center gap-1.5 cursor-pointer shadow-lg shadow-amber-500/25 transition-all hover:scale-105 active:scale-95"
+                      className="px-4 py-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-[0_4px_20px_rgba(245,158,11,0.3)] transition-all hover:opacity-90 active:scale-[0.98]"
                     >
-                      + Proyek Baru
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      Proyek Baru
                     </button>
                   </div>
 
                   {isAddProjectOpen && (
-                    <form onSubmit={handleSaveProject} className="p-5 rounded-3xl bg-amber-950/40 border border-amber-400/40 space-y-3.5 animate-fade-in shadow-2xl backdrop-blur-2xl">
-                      <h4 className="text-xs font-bold text-amber-300 uppercase font-mono tracking-wider">Daftarkan Proyek / Konteks Kerja Baru</h4>
+                    <form onSubmit={handleSaveProject} className="p-5 rounded-2xl liquid-glass space-y-3.5 animate-fade-in">
+                      <h4 className="text-xs font-bold text-amber-300 uppercase tracking-wider">Proyek / Konteks Kerja Baru</h4>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <input
                           type="text"
                           value={newProjectName}
                           onChange={(e) => setNewProjectName(e.target.value)}
                           placeholder="Nama Proyek (cth: Sistem Asisten Anara)"
-                          className="bg-black/50 border border-white/15 rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400/60 font-sans"
+                          className="liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
                           required
                         />
                         <input
                           type="text"
                           value={newProjectStack}
                           onChange={(e) => setNewProjectStack(e.target.value)}
-                          placeholder="Tech Stack / Alat (cth: Next.js, FastAPI, SQLite)"
-                          className="bg-black/50 border border-white/15 rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400/60 font-sans"
+                          placeholder="Tech Stack (cth: Next.js, FastAPI, SQLite)"
+                          className="liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
                         />
                       </div>
                       <input
@@ -1417,28 +1435,28 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                         value={newProjectGoal}
                         onChange={(e) => setNewProjectGoal(e.target.value)}
                         placeholder="Target / Sasaran Utama Proyek Ini"
-                        className="w-full bg-black/50 border border-white/15 rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400/60 font-sans"
+                        className="w-full liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
                       />
                       <input
                         type="text"
                         value={newProjectNotes}
                         onChange={(e) => setNewProjectNotes(e.target.value)}
                         placeholder="Catatan tambahan untuk Anara (opsional)"
-                        className="w-full bg-black/50 border border-white/15 rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400/60 font-sans"
+                        className="w-full liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
                       />
                       <div className="flex justify-end gap-2.5 pt-1">
                         <button
                           type="button"
                           onClick={() => setIsAddProjectOpen(false)}
-                          className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-mono cursor-pointer transition-colors"
+                          className="px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-slate-300 text-xs cursor-pointer"
                         >
                           Batal
                         </button>
                         <button
                           type="submit"
-                          className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs font-mono cursor-pointer shadow-lg shadow-amber-500/30 transition-all hover:scale-105 active:scale-95"
+                          className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-bold text-xs cursor-pointer shadow-[0_4px_16px_rgba(245,158,11,0.3)] transition-all hover:opacity-90"
                         >
-                          Simpan Proyek
+                          Simpan
                         </button>
                       </div>
                     </form>
@@ -1446,36 +1464,36 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                     {currentSpeakerProjects.length === 0 ? (
-                      <p className="col-span-2 text-xs text-slate-400 text-center py-16 font-sans">Belum ada catatan proyek kerja untuk {activeSpeaker}. Klik '+ Proyek Baru' atau ceritakan proyek Anda saat mengobrol.</p>
+                      <p className="col-span-2 text-xs text-slate-400 text-center py-16 rounded-2xl liquid-glass-subtle">Belum ada catatan proyek kerja untuk {activeSpeaker}. Klik 'Proyek Baru' atau ceritakan proyek Anda saat mengobrol.</p>
                     ) : (
                       currentSpeakerProjects.map((p) => (
                         <div
                           key={p.id}
-                          className="p-5 rounded-3xl bg-gradient-to-br from-white/[0.08] to-white/[0.02] border border-amber-400/30 hover:border-amber-400/60 backdrop-blur-xl shadow-lg flex flex-col justify-between gap-3 transition-all duration-300"
+                          className="p-5 rounded-2xl liquid-glass-subtle hover:border-amber-400/40 flex flex-col justify-between gap-3 transition-all duration-300"
                         >
                           <div>
                             <div className="flex items-center justify-between gap-2">
-                              <span className="text-xs font-bold text-white font-sans truncate">{p.name}</span>
-                              <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                              <span className="text-xs font-bold text-white truncate">{p.name}</span>
+                              <span className="text-[10px] uppercase tracking-wide px-2.5 py-1 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/25 shrink-0">
                                 {p.status}
                               </span>
                             </div>
                             {p.tech_stack && (
-                              <p className="text-[11px] font-mono text-cyan-300 mt-1">Tech: {p.tech_stack}</p>
+                              <p className="text-[11px] text-cyan-300 mt-1.5">Tech: {p.tech_stack}</p>
                             )}
                             {p.goal && (
-                              <p className="text-xs text-slate-200 mt-2 font-sans leading-relaxed">Target: {p.goal}</p>
+                              <p className="text-xs text-slate-200 mt-2 leading-relaxed">Target: {p.goal}</p>
                             )}
                             {p.notes && (
-                              <p className="text-xs text-slate-400 mt-1 font-sans italic">{p.notes}</p>
+                              <p className="text-xs text-slate-400 mt-1 italic">{p.notes}</p>
                             )}
                           </div>
 
-                          <div className="flex items-center justify-between pt-2 border-t border-white/10 text-[10px] text-slate-400 font-mono">
+                          <div className="flex items-center justify-between pt-2.5 border-t border-white/[0.07] text-[10px] text-slate-500">
                             <span>Diperbarui: {new Date(p.updated_at).toLocaleDateString("id-ID")}</span>
                             <button
                               onClick={() => handleDeleteProject(p.id)}
-                              className="text-slate-400 hover:text-rose-400 transition-colors p-1 cursor-pointer"
+                              className="text-slate-500 hover:text-rose-400 transition-colors p-1 cursor-pointer"
                               title="Hapus proyek"
                             >
                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1495,19 +1513,19 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
           {/* TAB 4: SPEAKERS & BIOMETRICS */}
           {activeTab === "speakers" && (
             <div className="space-y-5">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl bg-white/[0.04] border border-white/10 text-xs text-slate-300">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-5 rounded-2xl liquid-glass-subtle text-xs text-slate-300">
                 <div>
-                  <span className="font-mono text-cyan-300 font-semibold uppercase flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-                    Engine Biometrik Sidik Suara 128-D & Multi-Pengguna
+                  <span className="text-cyan-300 font-semibold uppercase tracking-wider text-[11px] flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                    Engine Biometrik Sidik Suara 128-D
                   </span>
-                  <p className="mt-1 leading-relaxed text-slate-300">
+                  <p className="mt-1.5 leading-relaxed text-slate-400">
                     Sistem mengekstrak vektor MFCC, pitch F0, dan formants dari audio mikrofon secara real-time untuk mengenali pembicara dari database tanpa jeda.
                   </p>
                 </div>
                 <button
                   onClick={() => setIsAddSpeakerOpen(true)}
-                  className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-sans text-xs font-semibold shadow-[0_0_20px_rgba(34,211,238,0.35)] transition-all flex items-center gap-2 cursor-pointer shrink-0"
+                  className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-indigo-500 text-white text-xs font-semibold shadow-[0_4px_20px_rgba(34,211,238,0.3)] transition-all flex items-center gap-2 cursor-pointer shrink-0 hover:opacity-90"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -1518,7 +1536,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
 
               {/* Live Calibration Banner Modal */}
               {isCalibrating && (
-                <div className="p-4 rounded-2xl bg-gradient-to-r from-cyan-950/80 via-indigo-950/80 to-purple-950/80 border border-cyan-400/60 shadow-[0_0_30px_rgba(34,211,238,0.3)] animate-pulse flex items-center justify-between gap-4">
+                <div className="p-4 rounded-2xl liquid-glass border border-cyan-400/40 shadow-[0_0_30px_rgba(34,211,238,0.2)] animate-fade-in flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300">
                       {calibrationCountdown !== null ? (
@@ -1531,29 +1549,29 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                       )}
                     </div>
                     <div>
-                      <h4 className="text-xs font-bold text-white font-mono uppercase tracking-wide">
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wide">
                         Kalibrasi Sidik Suara: {calibratingSpeaker}
                       </h4>
-                      <p className="text-xs text-cyan-300 font-sans mt-0.5">{calibrationStatusText}</p>
+                      <p className="text-xs text-cyan-300 mt-0.5">{calibrationStatusText}</p>
                     </div>
                   </div>
-                  <span className="text-[11px] font-mono text-cyan-400/80 bg-cyan-500/10 px-3 py-1 rounded-lg border border-cyan-400/30">
-                    Merekam 16kHz PCM
+                  <span className="text-[11px] text-cyan-300/90 bg-cyan-500/10 px-3 py-1.5 rounded-lg border border-cyan-400/25 hidden sm:inline">
+                    16kHz PCM
                   </span>
                 </div>
               )}
 
               {/* Add Speaker Modal */}
               {isAddSpeakerOpen && (
-                <div className="p-5 rounded-2xl bg-slate-900/90 border border-cyan-400/40 backdrop-blur-xl shadow-2xl space-y-4 animate-fade-in">
+                <div className="p-5 rounded-2xl liquid-glass space-y-4 animate-fade-in">
                   <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                    <h4 className="text-sm font-bold text-white font-sans flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
                       Daftarkan Profil Pembicara Baru
                     </h4>
                     <button
                       onClick={() => setIsAddSpeakerOpen(false)}
-                      className="text-slate-400 hover:text-white p-1"
+                      className="text-slate-400 hover:text-white p-1 cursor-pointer"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1562,7 +1580,7 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                   </div>
                   <form onSubmit={handleSaveSpeaker} className="space-y-4">
                     <div>
-                      <label className="block text-xs font-mono text-slate-300 mb-1.5 uppercase">
+                      <label className="block text-xs text-slate-400 mb-1.5 uppercase tracking-wider">
                         Nama Pembicara (Contoh: Agnan, Sarah, Budi)
                       </label>
                       <input
@@ -1571,20 +1589,20 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                         value={newSpeakerInput}
                         onChange={(e) => setNewSpeakerInput(e.target.value)}
                         placeholder="Ketik nama pembicara..."
-                        className="w-full px-4 py-2.5 rounded-xl bg-white/[0.06] border border-white/20 text-white text-xs placeholder-slate-400 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 font-sans"
+                        className="w-full liquid-glass-input rounded-xl px-4 py-2.5 text-white text-xs placeholder-slate-500 focus:outline-none"
                       />
                     </div>
-                    <div className="flex justify-end gap-2.5 pt-2">
+                    <div className="flex justify-end gap-2.5 pt-1">
                       <button
                         type="button"
                         onClick={() => setIsAddSpeakerOpen(false)}
-                        className="px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-slate-300 text-xs font-medium cursor-pointer"
+                        className="px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-slate-300 text-xs cursor-pointer"
                       >
                         Batal
                       </button>
                       <button
                         type="submit"
-                        className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-white text-xs font-semibold shadow-[0_0_15px_rgba(34,211,238,0.3)] cursor-pointer"
+                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-500 text-white text-xs font-semibold shadow-[0_4px_16px_rgba(34,211,238,0.3)] cursor-pointer hover:opacity-90"
                       >
                         Simpan Profil
                       </button>
@@ -1594,74 +1612,77 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
               )}
 
               {speakers.length === 0 ? (
-                <div className="py-12 px-6 rounded-3xl bg-white/[0.03] border border-dashed border-white/20 text-center space-y-3">
-                  <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-400/30 flex items-center justify-center mx-auto text-cyan-300">
+                <div className="py-12 px-6 rounded-2xl border border-dashed border-white/15 bg-white/[0.02] text-center space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-400/25 flex items-center justify-center mx-auto text-cyan-300">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
                   </div>
-                  <h4 className="text-sm font-semibold text-white font-sans">Belum Ada Profil Terdaftar</h4>
+                  <h4 className="text-sm font-semibold text-white">Belum Ada Profil Terdaftar</h4>
                   <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                    Semua profil telah dihapus (0 profil). Klik tombol <strong className="text-cyan-300">+ Tambah Profil</strong> di atas atau perkenalkan nama Anda secara langsung melalui mikrofon untuk membuat profil baru.
+                    Klik tombol <strong className="text-cyan-300">Tambah Profil</strong> di atas atau perkenalkan nama Anda secara langsung melalui mikrofon untuk membuat profil baru.
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   {speakers.map((sp) => {
                   const isActive = Boolean(activeSpeaker && sp.name.toLowerCase() === activeSpeaker.toLowerCase());
                   const hasEmbedding = Boolean(sp.has_voice_embedding || (sp.sample_count && sp.sample_count > 0));
                   return (
                     <div
                       key={sp.id}
-                      className={`p-5 rounded-3xl backdrop-blur-2xl border transition-all duration-300 flex flex-col justify-between shadow-xl relative group ${
+                      className={`p-5 rounded-2xl border transition-all duration-300 flex flex-col justify-between relative group ${
                         isActive
-                          ? "bg-gradient-to-br from-emerald-950/30 via-slate-900/80 to-cyan-950/30 border-emerald-400/60 shadow-[0_0_30px_rgba(52,211,153,0.25)]"
-                          : "bg-gradient-to-br from-white/[0.08] to-white/[0.02] border-white/15 hover:border-cyan-400/35"
+                          ? "liquid-glass border-emerald-400/50 shadow-[0_0_30px_rgba(52,211,153,0.15)]"
+                          : "liquid-glass-subtle hover:border-cyan-400/35"
                       }`}
                     >
                       <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3.5">
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-mono font-bold text-white text-base shadow-md border ${
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-semibold text-white text-sm shrink-0 border ${
                             isActive
                               ? "bg-gradient-to-tr from-emerald-500/40 to-teal-400/40 border-emerald-300/50 shadow-[0_0_15px_rgba(52,211,153,0.3)]"
                               : "bg-gradient-to-tr from-indigo-500/40 via-purple-500/30 to-cyan-400/40 border-white/20"
                           }`}>
                             {sp.name.slice(0, 2).toUpperCase()}
                           </div>
-                          <div>
-                            <h4 className="text-sm font-bold text-white font-sans uppercase tracking-wide flex items-center gap-2">
+                          <div className="min-w-0">
+                            <h4 className="text-sm font-bold text-white uppercase tracking-wide flex items-center gap-2 truncate">
                               {sp.name}
                               {isActive && (
-                                <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
+                                <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse shrink-0" />
                               )}
                             </h4>
                             <div className="flex items-center gap-2 mt-1">
                               {hasEmbedding ? (
-                                <span className="text-[11px] text-emerald-300 font-mono flex items-center gap-1">
+                                <span className="text-[11px] text-emerald-300 flex items-center gap-1">
                                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                   </svg>
                                   {sp.sample_count || 1} Sampel Terkalibrasi
                                 </span>
                               ) : (
-                                <span className="text-[11px] text-amber-300/90 font-mono flex items-center gap-1">
-                                  ⚠️ Belum Ada Sidik Suara
+                                <span className="text-[11px] text-amber-300/90 flex items-center gap-1">
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                  </svg>
+                                  Belum Ada Sidik Suara
                                 </span>
                               )}
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`px-3 py-0.5 rounded-xl text-[11px] font-mono font-semibold ${
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-semibold ${
                             isActive 
-                              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 shadow-[0_0_10px_rgba(52,211,153,0.3)]" 
-                              : "bg-slate-500/20 text-slate-300 border border-slate-400/40"
+                              ? "bg-emerald-500/15 text-emerald-300 border border-emerald-400/35" 
+                              : "bg-white/[0.06] text-slate-400 border border-white/10"
                           }`}>
-                            {isActive ? "Aktif (Sesi Ini)" : "Tersimpan di DB"}
+                            {isActive ? "Aktif" : "Tersimpan"}
                           </span>
                           <button
                             onClick={() => handleDeleteSpeaker(sp.name)}
-                            className="text-slate-400 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition-all cursor-pointer opacity-0 group-hover:opacity-100"
+                            className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition-all cursor-pointer opacity-0 group-hover:opacity-100"
                             title={`Hapus profil ${sp.name}`}
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1672,29 +1693,29 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                       </div>
 
                       {/* Action Bar for Voice Calibration & Activation */}
-                      <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between gap-2">
+                      <div className="mt-4 pt-3 border-t border-white/[0.07] flex items-center justify-between gap-2 flex-wrap">
                         <button
                           onClick={() => handleStartVoiceCalibration(sp.name)}
                           disabled={isCalibrating}
-                          className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500/20 to-indigo-500/20 hover:from-cyan-500/30 hover:to-indigo-500/30 border border-cyan-400/40 text-cyan-200 text-xs font-mono font-medium flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                          className="px-3 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/30 text-cyan-200 text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
                         >
                           <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                           </svg>
-                          {hasEmbedding ? "Rekalibrasi Suara (3s)" : "Kalibrasi Suara (3s)"}
+                          {hasEmbedding ? "Rekalibrasi (3s)" : "Kalibrasi (3s)"}
                         </button>
 
                         {!isActive && (
                           <button
                             onClick={() => handleSelectActiveSpeaker(sp.name)}
-                            className="px-3 py-1.5 rounded-xl bg-white/[0.06] hover:bg-emerald-500/20 hover:border-emerald-400/40 border border-white/15 text-slate-300 hover:text-emerald-200 text-xs font-mono transition-all cursor-pointer"
+                            className="px-3 py-1.5 rounded-xl bg-white/[0.05] hover:bg-emerald-500/15 hover:border-emerald-400/35 border border-white/10 text-slate-300 hover:text-emerald-200 text-xs transition-all cursor-pointer"
                           >
-                            Pilih Sebagai Aktif
+                            Pilih Aktif
                           </button>
                         )}
                       </div>
 
-                      <div className="mt-3 pt-2.5 border-t border-white/5 flex items-center justify-between text-[11px] font-mono text-slate-400">
+                      <div className="mt-3 pt-2.5 border-t border-white/[0.05] flex items-center justify-between text-[11px] text-slate-500">
                         <span>{sp.memory_count || (isActive ? currentSpeakerMemories.length : 0)} Node Fakta</span>
                         <span>Terakhir: {new Date(sp.last_seen).toLocaleDateString("id-ID")}</span>
                       </div>
@@ -1709,38 +1730,38 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
           {/* TAB 4: 3D ANIMATIONS & BEHAVIORS (Database-driven) */}
           {activeTab === "animations" && (
             <div className="space-y-5">
-              <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 text-xs text-slate-300">
-                <span className="font-mono text-emerald-300 font-semibold uppercase">Pustaka Gestur 3D & Ekspresi Anara</span>
-                <p className="mt-1 leading-relaxed">
+              <div className="p-5 rounded-2xl liquid-glass-subtle text-xs text-slate-300">
+                <span className="text-emerald-300 font-semibold uppercase tracking-wider text-[11px]">Pustaka Gestur 3D & Ekspresi</span>
+                <p className="mt-1.5 leading-relaxed text-slate-400">
                   Daftar gerakan skeletal dan morph target ekspresi wajah yang terdaftar di database untuk mendukung respons visual interaktif.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 {animations.map((a) => (
-                  <div key={a.id} className="p-4 px-5 rounded-3xl bg-gradient-to-br from-white/[0.08] to-white/[0.02] backdrop-blur-2xl border border-white/15 hover:border-cyan-400/50 transition-all flex items-center justify-between shadow-lg">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-sm font-bold text-white font-sans">{animationLabel(a.name)}</h4>
-                        <span className="text-[10px] font-mono text-cyan-300 bg-cyan-400/10 border border-cyan-400/20 px-2 py-0.2 rounded-md">
+                  <div key={a.id} className="p-4 px-5 rounded-2xl liquid-glass-subtle hover:border-cyan-400/40 transition-all flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-sm font-bold text-white truncate">{animationLabel(a.name)}</h4>
+                        <span className="text-[10px] text-cyan-300 bg-cyan-400/10 border border-cyan-400/20 px-2 py-0.5 rounded-md">
                           {a.gesture}
                         </span>
-                        <span className="text-[10px] font-mono text-purple-300 bg-purple-400/10 border border-purple-400/20 px-2 py-0.2 rounded-md">
+                        <span className="text-[10px] text-purple-300 bg-purple-400/10 border border-purple-400/20 px-2 py-0.5 rounded-md">
                           {a.emotion}
                         </span>
                       </div>
-                      <p className="text-xs text-slate-300 mt-1 font-sans leading-relaxed">
+                      <p className="text-xs text-slate-400 mt-1.5 leading-relaxed line-clamp-2">
                         {a.description || `Animasi ${a.category} dengan intensitas ${(a.intensity * 100).toFixed(0)}% selama ${a.duration_sec.toFixed(1)} detik`}
                       </p>
                       {a.keywords.length > 0 && (
-                        <p className="text-[10px] text-slate-500 mt-1.5 font-mono truncate">
+                        <p className="text-[10px] text-slate-500 mt-1.5 truncate">
                           Trigger: {a.keywords.slice(0, 6).join(", ")}
                         </p>
                       )}
                     </div>
                     <button
                       onClick={() => onTriggerAnimation?.(a.gesture || a.name, a.emotion)}
-                      className="px-4 py-2 rounded-2xl bg-cyan-500/20 hover:bg-cyan-500/40 border border-cyan-400/50 text-cyan-200 text-xs font-mono font-semibold transition-all hover:scale-105 active:scale-95 cursor-pointer shrink-0 ml-3 shadow-md flex items-center gap-1.5"
+                      className="px-3.5 py-2 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-400/35 text-cyan-200 text-xs font-semibold transition-all cursor-pointer shrink-0 flex items-center gap-1.5"
                     >
                       <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M8 5v14l11-7z" />
@@ -1756,40 +1777,40 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
           {/* TAB 5: CONVERSATION LOGS */}
           {activeTab === "conversations" && (
             <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-white/[0.03] border border-white/10">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 rounded-2xl liquid-glass-subtle">
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs uppercase font-mono text-cyan-300 font-bold tracking-wider">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] uppercase tracking-wider text-cyan-300 font-bold">
                       Riwayat Percakapan Episodik
                     </span>
-                    <span className="text-xs font-mono text-slate-300 bg-white/10 px-2 py-0.5 rounded-lg border border-white/10">
-                      {filteredConversations.length} / {conversations.length} Entri (Terbaru di Atas)
+                    <span className="text-[10px] text-slate-400 bg-white/[0.06] px-2 py-0.5 rounded-full border border-white/10">
+                      {filteredConversations.length} / {conversations.length} entri
                     </span>
                   </div>
-                  <p className="text-xs text-slate-400 font-sans">
+                  <p className="text-xs text-slate-400">
                     Rekaman log dialog multi-sesi yang tersimpan di basis data SQLite.
                   </p>
                 </div>
 
                 <div className="flex items-center gap-2 self-end sm:self-center">
                   {activeSpeaker && (
-                    <div className="flex items-center gap-1 p-1 rounded-xl bg-black/40 border border-white/10">
+                    <div className="flex items-center gap-1 p-1 rounded-full bg-black/30 border border-white/10">
                       <button
                         onClick={() => setConversationFilter("all")}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-sans transition-all cursor-pointer ${
+                        className={`px-2.5 py-1 rounded-full text-xs transition-all cursor-pointer ${
                           conversationFilter === "all"
-                            ? "bg-cyan-500/30 text-cyan-200 font-semibold border border-cyan-400/40"
-                            : "text-slate-400 hover:text-white"
+                            ? "bg-cyan-500/25 text-cyan-100 font-semibold border border-cyan-400/35"
+                            : "text-slate-400 hover:text-white border border-transparent"
                         }`}
                       >
                         Semua
                       </button>
                       <button
                         onClick={() => setConversationFilter("active")}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-sans transition-all cursor-pointer ${
+                        className={`px-2.5 py-1 rounded-full text-xs transition-all cursor-pointer ${
                           conversationFilter === "active"
-                            ? "bg-emerald-500/30 text-emerald-200 font-semibold border border-emerald-400/40"
-                            : "text-slate-400 hover:text-white"
+                            ? "bg-emerald-500/25 text-emerald-100 font-semibold border border-emerald-400/35"
+                            : "text-slate-400 hover:text-white border border-transparent"
                         }`}
                       >
                         {activeSpeaker}
@@ -1800,21 +1821,21 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                   {conversations.length > 0 && (
                     <button
                       onClick={handleClearConversations}
-                      className="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/30 border border-rose-400/40 text-rose-300 hover:text-rose-200 text-xs font-mono flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105 active:scale-95 shadow-sm"
+                      className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/25 border border-rose-400/30 text-rose-300 hover:text-rose-200 text-xs flex items-center gap-1.5 cursor-pointer transition-all"
                       title="Hapus seluruh log riwayat percakapan"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                       </svg>
-                      <span>Kosongkan Log</span>
+                      <span>Kosongkan</span>
                     </button>
                   )}
                 </div>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 {filteredConversations.length === 0 ? (
-                  <div className="text-center py-16 text-slate-400 font-sans text-xs bg-white/[0.02] border border-white/5 rounded-3xl p-8">
+                  <div className="text-center py-16 text-slate-400 text-xs liquid-glass-subtle rounded-2xl p-8">
                     Belum ada riwayat percakapan yang cocok dengan filter.
                   </div>
                 ) : (
@@ -1827,31 +1848,31 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                     return (
                       <div
                         key={c.id}
-                        className={`p-4 sm:p-5 rounded-3xl backdrop-blur-xl border text-xs sm:text-sm space-y-2.5 shadow-md transition-all ${
+                        className={`p-4 sm:p-5 rounded-2xl border text-xs sm:text-sm space-y-2.5 transition-all ${
                           isCurrentActive
-                            ? "bg-gradient-to-br from-white/[0.07] to-cyan-950/20 border-cyan-400/30 hover:border-cyan-400/50"
-                            : "bg-white/[0.04] border-white/15 hover:border-white/25"
+                            ? "liquid-glass-subtle border-cyan-400/30 hover:border-cyan-400/50"
+                            : "liquid-glass-subtle hover:border-white/25"
                         }`}
                       >
-                        <div className="flex items-center justify-between text-xs font-mono border-b border-white/10 pb-2">
-                          <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-between text-xs border-b border-white/[0.07] pb-2.5">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span
-                              className={`px-2.5 py-0.5 rounded-lg text-[11px] font-semibold border ${
+                              className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
                                 isCurrentActive
-                                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-400/40 shadow-[0_0_10px_rgba(52,211,153,0.2)]"
-                                  : "bg-indigo-500/20 text-indigo-300 border-indigo-400/30"
+                                  ? "bg-emerald-500/15 text-emerald-300 border-emerald-400/35"
+                                  : "bg-indigo-500/15 text-indigo-300 border-indigo-400/25"
                               }`}
                             >
-                              {c.speaker_name || "Tamu / Belum Terdaftar"}
+                              {c.speaker_name || "Tamu"}
                             </span>
                             {c.media_type && (
-                              <span className="px-2 py-0.5 rounded-md bg-cyan-400/15 text-cyan-300 font-mono text-[10px] border border-cyan-400/30 uppercase">
-                                Proyeksi: {c.media_type}
+                              <span className="px-2 py-0.5 rounded-md bg-cyan-400/10 text-cyan-300 text-[10px] border border-cyan-400/25 uppercase">
+                                {c.media_type}
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-slate-400 text-[11px]">
+                          <div className="flex items-center gap-2.5 shrink-0">
+                            <span className="text-slate-500 text-[11px]">
                               {new Date(c.created_at).toLocaleString("id-ID")}
                             </span>
                             <button
@@ -1867,11 +1888,11 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                         </div>
 
                         <div className="space-y-1.5">
-                          <p className="text-slate-300 font-sans leading-relaxed">
-                            <span className="text-slate-400 font-mono font-semibold">User:</span> {c.user_text}
+                          <p className="text-slate-300 leading-relaxed">
+                            <span className="text-slate-500 font-semibold">User:</span> {c.user_text}
                           </p>
-                          <p className="text-cyan-100 font-sans leading-relaxed">
-                            <span className="text-cyan-400 font-mono font-semibold">Anara:</span> {c.ai_text}
+                          <p className="text-cyan-100 leading-relaxed">
+                            <span className="text-cyan-400 font-semibold">Anara:</span> {c.ai_text}
                           </p>
                         </div>
 
@@ -1880,12 +1901,12 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
                             <img
                               src={visualImg}
                               alt="Visual Projection Thumbnail"
-                              className="w-12 h-12 object-cover rounded-xl border border-cyan-400/40 shadow-sm"
+                              className="w-12 h-12 object-cover rounded-xl border border-cyan-400/30"
                               onError={(e) => {
                                 (e.target as HTMLElement).style.display = "none";
                               }}
                             />
-                            <span className="text-[11px] font-mono text-cyan-300">
+                            <span className="text-[11px] text-cyan-300">
                               {c.visual_data?.image_title || "Gambar Proyeksi Visual"}
                             </span>
                           </div>
@@ -1900,49 +1921,49 @@ export default function AnaraBrain({ isOpen, onClose, onTriggerAnimation, active
 
           {/* TAB 6: ANARA TELEMETRY */}
           {activeTab === "telemetry" && telemetry && (
-            <div className="space-y-5 font-mono text-xs">
-              <div className="p-6 rounded-3xl bg-cyan-950/25 border border-cyan-400/40 space-y-5 shadow-2xl backdrop-blur-2xl">
-                <div className="flex items-center justify-between pb-4 border-b border-cyan-400/20">
+            <div className="space-y-5 text-xs">
+              <div className="p-6 rounded-2xl liquid-glass-subtle space-y-5">
+                <div className="flex items-center justify-between pb-4 border-b border-white/10 flex-wrap gap-2">
                   <div className="flex items-center gap-2.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#22d3ee]" />
-                    <span className="font-bold text-cyan-300 uppercase tracking-wider text-sm sm:text-base">STATUS CORE ARSITEKTUR ANARA</span>
+                    <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#22d3ee]" />
+                    <span className="font-bold text-cyan-300 uppercase tracking-wider text-sm">Status Core Anara</span>
                   </div>
-                  <span className="px-3 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 text-xs font-bold shadow-md">
+                  <span className="px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-400/30 text-xs font-bold">
                     {telemetry.core_status}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-slate-200">
-                  <div className="p-4 rounded-2xl bg-black/40 border border-white/15 shadow-inner">
-                    <span className="text-slate-400 text-xs uppercase font-mono">AI ENGINE MODEL</span>
-                    <p className="font-bold text-white mt-1 text-sm sm:text-base">{telemetry.ai_model}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-slate-200">
+                  <div className="p-4 rounded-2xl liquid-glass-subtle">
+                    <span className="text-slate-400 text-[10px] uppercase tracking-wider">AI Engine Model</span>
+                    <p className="font-bold text-white mt-1 text-sm">{telemetry.ai_model}</p>
                   </div>
-                  <div className="p-4 rounded-2xl bg-black/40 border border-white/15 shadow-inner">
-                    <span className="text-slate-400 text-xs uppercase font-mono">API KEY POOL</span>
-                    <p className="font-bold text-cyan-300 mt-1 text-sm sm:text-base">{telemetry.key_pool_total} Akun Aktif (Auto Failover 429)</p>
+                  <div className="p-4 rounded-2xl liquid-glass-subtle">
+                    <span className="text-slate-400 text-[10px] uppercase tracking-wider">API Key Pool</span>
+                    <p className="font-bold text-cyan-300 mt-1 text-sm">{telemetry.key_pool_total} Akun Aktif (Auto Failover)</p>
                   </div>
-                  <div className="p-4 rounded-2xl bg-black/40 border border-white/15 shadow-inner">
-                    <span className="text-slate-400 text-xs uppercase font-mono">DATABASE SQLITE</span>
-                    <p className="font-bold text-purple-300 mt-1 text-sm sm:text-base">{telemetry.db_size_kb} KB (anara_brain.db)</p>
+                  <div className="p-4 rounded-2xl liquid-glass-subtle">
+                    <span className="text-slate-400 text-[10px] uppercase tracking-wider">Database SQLite</span>
+                    <p className="font-bold text-purple-300 mt-1 text-sm">{telemetry.db_size_kb} KB (anara_brain.db)</p>
                   </div>
-                  <div className="p-4 rounded-2xl bg-black/40 border border-white/15 shadow-inner">
-                    <span className="text-slate-400 text-xs uppercase font-mono">TOTAL MEMORI NODES</span>
-                    <p className="font-bold text-emerald-300 mt-1 text-sm sm:text-base">{telemetry.memory_nodes} Node Aktif</p>
+                  <div className="p-4 rounded-2xl liquid-glass-subtle">
+                    <span className="text-slate-400 text-[10px] uppercase tracking-wider">Total Memori Nodes</span>
+                    <p className="font-bold text-emerald-300 mt-1 text-sm">{telemetry.memory_nodes} Node Aktif</p>
                   </div>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 text-slate-300 text-[11px] space-y-1.5">
-                  <div className="flex justify-between">
+                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] text-slate-300 text-[11px] space-y-2">
+                  <div className="flex justify-between gap-4">
                     <span className="text-slate-500">Audio Stream Sample Rate:</span>
-                    <span className="text-cyan-300">16kHz Input PCM16 / 24kHz Output PCM16</span>
+                    <span className="text-cyan-300 text-right">16kHz Input PCM16 / 24kHz Output PCM16</span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between gap-4">
                     <span className="text-slate-500">Multimodal HUD Engine:</span>
-                    <span className="text-emerald-300">Active (Web Image / Weather / Code / System)</span>
+                    <span className="text-emerald-300 text-right">Active (Web Image / Weather / Code / System)</span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between gap-4">
                     <span className="text-slate-500">Interactive Confirmation:</span>
-                    <span className="text-purple-300">Active (Verbatim Staging Before Commit)</span>
+                    <span className="text-purple-300 text-right">Active (Verbatim Staging Before Commit)</span>
                   </div>
                 </div>
               </div>
