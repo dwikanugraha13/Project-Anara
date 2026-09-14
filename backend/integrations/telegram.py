@@ -252,6 +252,70 @@ async def answer_telegram_callback_query(callback_query_id: str, text: Optional[
         pass
 
 
+async def edit_telegram_message(
+    chat_id: str,
+    message_id: int,
+    text: str,
+    reply_markup: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Edits an existing Telegram message in place (e.g. after clicking inline buttons)."""
+    token = get_stored_telegram_token()
+    if not token:
+        return {"status": "error", "message": "Token Telegram Bot belum diatur."}
+
+    url = f"{TELEGRAM_API_BASE}/bot{token}/editMessageText"
+    payload = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text,
+        "parse_mode": "HTML",
+    }
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            res = await client.post(url, json=payload)
+            if res.status_code == 200:
+                return res.json()
+            return {"status": "error", "message": res.text}
+    except Exception as e:
+        logger.warning(f"[TelegramService] Edit message error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+async def send_telegram_model_selector(chat_id: str):
+    """Sends an interactive inline keyboard for choosing the active AI model."""
+    from providers.discovery import get_all_dynamic_models
+    from providers import get_active_model_id
+
+    active_id = get_active_model_id()
+    all_models = await get_all_dynamic_models()
+    configured = [m for m in all_models if m.get("is_configured")]
+    if not configured:
+        configured = all_models[:6]
+
+    buttons = []
+    for m in configured[:10]:
+        m_id = m["id"]
+        is_cur = (m_id == active_id)
+        icon = "🔘 " if is_cur else "🔹 "
+        name = m.get("name", m_id)
+        btn_text = f"{icon}{name}"
+        # Telegram callback_data limit is 64 bytes
+        cb_val = f"setmodel:{m_id}"
+        if len(cb_val.encode("utf-8")) <= 64:
+            buttons.append([{"text": btn_text, "callback_data": cb_val}])
+
+    keyboard = {"inline_keyboard": buttons}
+    msg_text = (
+        f"🤖 <b>PILIH MODEL AI (ANARA BRAIN)</b>\n\n"
+        f"Model aktif saat ini:\n<code>{active_id}</code>\n\n"
+        f"<i>Ketuk tombol di bawah untuk langsung mengganti model:</i>"
+    )
+    return await send_telegram_message(text=msg_text, chat_id=chat_id, reply_markup=keyboard)
+
+
 _telegram_daemon_task: Optional[asyncio.Task] = None
 _telegram_daemon_running: bool = False
 
@@ -265,7 +329,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
         _execute_build_mode,
     )
 
-    # ── 1. Handle Inline Keyboard Callbacks (Approval Gate) ──
+    # ── 1. Handle Inline Keyboard Callbacks (Approval Gate & Model Switcher) ──
     cb = u.get("callback_query")
     if cb:
         cb_id = cb.get("id")
@@ -273,8 +337,25 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
         sender = cb.get("from", {})
         sender_name = (sender.get("first_name", "") + " " + sender.get("last_name", "")).strip() or "Pengguna"
         chat_id = str(cb.get("message", {}).get("chat", {}).get("id", ""))
+        message_id = cb.get("message", {}).get("message_id")
         user_id = str(sender.get("id", "telegram_user"))
 
+        # Case A: Model Selector callback
+        if cb_data.startswith("setmodel:"):
+            target_model = cb_data.split(":", 1)[1]
+            from providers.accounts import set_active_model_id
+            set_active_model_id(target_model)
+            await answer_telegram_callback_query(cb_id, text=f"Model diubah ke {target_model}")
+            if message_id:
+                confirm_text = (
+                    f"✅ <b>Model AI Aktif Berhasil Diubah!</b>\n\n"
+                    f"Model yang sekarang digunakan:\n<code>{target_model}</code>\n\n"
+                    f"<i>Kirim pesan untuk langsung berinteraksi dengan model ini.</i>"
+                )
+                await edit_telegram_message(chat_id=chat_id, message_id=message_id, text=confirm_text)
+            return
+
+        # Case B: Plan Approval callback
         if ":" in cb_data:
             action, plan_id = cb_data.split(":", 1)
             await answer_telegram_callback_query(cb_id, text=f"Memproses {action}...")
@@ -307,15 +388,107 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                 await send_telegram_message(text="❌ Rencana dibatalkan. Tidak ada perubahan yang dilakukan.", chat_id=chat_id)
         return
 
-    # ── 2. Handle Text Messages ──
+    # ── 2. Handle Text Messages & Slash Commands ──
     msg = u.get("message") or u.get("edited_message")
     if msg and msg.get("text"):
         chat_id = str(msg.get("chat", {}).get("id"))
         sender = msg.get("from", {})
         sender_name = (sender.get("first_name", "") + " " + sender.get("last_name", "")).strip() or sender.get("username") or "Pengguna"
         user_id = str(sender.get("id", "telegram_user"))
-        text = msg.get("text")
+        text = msg.get("text").strip()
 
+        # ── Handle Slash Commands ──
+        cmd_lower = text.lower()
+
+        if cmd_lower in ["/start", "/help"]:
+            help_text = (
+                f"👋 <b>Halo {sender_name}! Saya Anara — General AI Agent Anda.</b>\n\n"
+                "Saya terhubung dengan PC dan ruang kerja lokal Anda, siap membantu coding, riset, maupun percakapan dengan perlindungan Plan/Build Gate.\n\n"
+                "📌 <b>Daftar Perintah Bot:</b>\n"
+                "• <b>/model</b> — Pilih & ganti model AI aktif dengan tombol interaktif\n"
+                "• <b>/status</b> — Periksa status bot, model aktif, dan memori sistem\n"
+                "• <b>/memory</b> — Lihat ringkasan USER.md & MEMORY.md\n"
+                "• <b>/skills</b> — Lihat daftar keahlian agen aktif (agentskills.io)\n"
+                "• <b>/clear</b> — Bersihkan konteks dan mulai sesi percakapan baru\n"
+                "• <b>/help</b> — Tampilkan bantuan ini\n\n"
+                "💡 <i>Kirim pesan apa saja atau instruksi kerja untuk mulai!</i>"
+            )
+            await send_telegram_message(text=help_text, chat_id=chat_id)
+            return
+
+        if cmd_lower.startswith("/model") or cmd_lower.startswith("/models"):
+            parts = text.split(maxsplit=1)
+            if len(parts) > 1:
+                # Direct switch via text: /model gemini-3.5-flash-lite
+                target_m = parts[1].strip()
+                from providers.accounts import set_active_model_id
+                set_active_model_id(target_m)
+                await send_telegram_message(
+                    text=f"✅ Model AI aktif berhasil diubah ke:\n<code>{target_m}</code>",
+                    chat_id=chat_id
+                )
+            else:
+                # Interactive inline keyboard picker
+                await send_telegram_model_selector(chat_id)
+            return
+
+        if cmd_lower == "/status":
+            from providers import get_active_model_id
+            from memory import memory_engine
+            active_id = get_active_model_id()
+            stats = memory_engine.get_brain_stats()
+            status_text = (
+                f"⚡ <b>STATUS ANARA GENERAL AGENT</b>\n\n"
+                f"• <b>Channel</b>: Telegram Bot\n"
+                f"• <b>Chat ID</b>: <code>{chat_id}</code>\n"
+                f"• <b>Pengguna</b>: {sender_name}\n"
+                f"• <b>Model AI Aktif</b>: <code>{active_id}</code>\n"
+                f"• <b>Memori Fakta</b>: {stats.get('memories_count', 0)} node\n"
+                f"• <b>Tugas & Catatan</b>: {stats.get('notes_count', 0)} item\n"
+                f"• <b>Keahlian Otonom</b>: {stats.get('skills_count', 0)} skills\n"
+                f"• <b>Kondisi Core</b>: OPTIMAL & Siap beroperasi."
+            )
+            await send_telegram_message(text=status_text, chat_id=chat_id)
+            return
+
+        if cmd_lower == "/memory":
+            from memory import file_memory
+            user_prof = file_memory.get_user_profile()
+            mem_facts = file_memory.get_memory_facts()
+            mem_text = (
+                f"🧠 <b>MEMORI SISTEM 4-FILE ANARA</b>\n\n"
+                f"<b>[PROFIL PENGGUNA - USER.md]</b>\n{user_prof[:500]}\n\n"
+                f"<b>[FAKTA TERPELAJARI - MEMORY.md]</b>\n{mem_facts[:700]}"
+            )
+            await send_telegram_message(text=mem_text, chat_id=chat_id)
+            return
+
+        if cmd_lower == "/skills":
+            from core.skill_library import skill_library
+            skills = skill_library.list_skills()
+            active_skills = [s for s in skills if s.get("status") == "active"]
+            lines = [f"📦 <b>SKILL LIBRARY V2 ({len(active_skills)} Aktif)</b>:\n"]
+            for s in active_skills[:8]:
+                lines.append(f"• <b>{s['name']}</b> ({s.get('category', 'general')})\n  <i>{s.get('description', '')[:90]}</i>")
+            await send_telegram_message(text="\n".join(lines), chat_id=chat_id)
+            return
+
+        if cmd_lower in ["/clear", "/new"]:
+            from memory import memory_engine
+            new_sess = memory_engine.create_session(
+                speaker_name=sender_name,
+                title=f"Telegram Chat ({sender_name})",
+                session_type="chat",
+                channel="telegram",
+                session_mode="conversational"
+            )
+            await send_telegram_message(
+                text=f"🧹 <b>Sesi percakapan baru telah dimulai (#{new_sess['id']}).</b>\nKonteks sebelumnya telah diarsipkan.",
+                chat_id=chat_id
+            )
+            return
+
+        # ── 3. Handle Standard Conversational / Agentic Requests ──
         req = ChannelRequest(
             text=text,
             channel="telegram",

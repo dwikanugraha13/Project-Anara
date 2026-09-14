@@ -58,7 +58,7 @@ def print_banner(session_mode: str, model_id: str):
 {DIM}• Channel      :{RESET} cli (Terminal Interactive)
 {DIM}• Mode Sesi    :{RESET} {BOLD}{session_mode}{RESET}
 {DIM}• Model AI     :{RESET} {CYAN}{model_id}{RESET}
-{DIM}• Perintah     :{RESET} /mode, /plan, /memory, /skills, /exit
+{DIM}• Perintah     :{RESET} /model, /mode, /status, /memory, /skills, /exit
 """)
 
 
@@ -88,6 +88,46 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
         if cmd.lower() in ["/exit", "exit", "quit", ":q"]:
             print(f"\n{CYAN}Sampai jumpa lagi, Agnan! Anara siap kapan pun dibutuhkan.{RESET}")
             return False
+
+        if cmd.lower().startswith("/model") or cmd.lower().startswith("/models"):
+            from providers.discovery import get_all_dynamic_models
+            from providers.accounts import set_active_model_id
+            parts = cmd.split(maxsplit=1)
+            all_m = await get_all_dynamic_models()
+            configured = [m for m in all_m if m.get("is_configured")] or all_m[:8]
+
+            if len(parts) > 1:
+                arg = parts[1].strip()
+                target_m = None
+                if arg.isdigit() and 1 <= int(arg) <= len(configured):
+                    target_m = configured[int(arg) - 1]["id"]
+                else:
+                    matched = [m["id"] for m in configured if arg.lower() in m["id"].lower() or arg.lower() in m.get("name", "").lower()]
+                    target_m = matched[0] if matched else arg
+                set_active_model_id(target_m)
+                print(f"\n{GREEN}✓ Model AI aktif diubah ke: {BOLD}{target_m}{RESET}\n")
+            else:
+                cur_m = get_active_model_id()
+                print(f"\n{CYAN}{BOLD}=== PILIH MODEL AI (Model Saat Ini: {cur_m}) ==={RESET}")
+                for idx, m in enumerate(configured[:12], 1):
+                    indicator = f"{GREEN}● (Aktif){RESET}" if m["id"] == cur_m else f"{DIM}○{RESET}"
+                    print(f" {idx:2d}. {indicator} {BOLD}{m.get('name', m['id'])}{RESET} [{m.get('provider', '').upper()}]")
+                    print(f"     {DIM}ID: {m['id']}{RESET}")
+                print(f"\n{YELLOW}Gunakan: /model <nomor_atau_id> untuk mengganti model.{RESET}\n")
+            return True
+
+        if cmd.lower() == "/status":
+            cur_m = get_active_model_id()
+            stats = memory_engine.get_brain_stats()
+            print(f"\n{CYAN}{BOLD}=== STATUS SISTEM ANARA ==={RESET}")
+            print(f"• Channel        : cli (Terminal)")
+            print(f"• Mode Sesi      : {session_mode}")
+            print(f"• Model AI Aktif : {cur_m}")
+            print(f"• Memori Fakta   : {stats.get('memories_count', 0)} node")
+            print(f"• Catatan/Tugas  : {stats.get('notes_count', 0)} item")
+            print(f"• Keahlian Agen  : {stats.get('skills_count', 0)} skills")
+            print(f"• Kondisi Core   : OPTIMAL & Siap beroperasi.\n")
+            return True
 
         if cmd.lower() == "/mode":
             session_mode = "explicit_plan_build" if session_mode == "conversational" else "conversational"

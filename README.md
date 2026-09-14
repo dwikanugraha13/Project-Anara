@@ -139,13 +139,30 @@ python cli.py
 # Eksekusi satu perintah langsung:
 python cli.py "Tolong buatkan skrip backup database"
 ```
-Perintah praktis di CLI: `/mode` (ganti mode), `/memory` (lihat memori 4-file), `/skills` (daftar keahlian), `/exit`.
+Perintah praktis di CLI:
+- `/model` — Menampilkan daftar model AI terkonfigurasi & ganti model aktif (`/model <nomor_atau_id>`)
+- `/status` — Memeriksa status sistem, model AI aktif, dan metrik memori
+- `/mode` — Beralih mode sesi (`conversational` ↔ `explicit_plan_build`)
+- `/memory` — Memeriksa snapshot `USER.md` dan `MEMORY.md`
+- `/skills` — Melihat daftar keahlian agen aktif di `agentskills.io`
+- `/exit` — Keluar dari terminal REPL
 
 ### 2. Inbound Telegram Bot
-- Bot mendengarkan pesan masuk secara real-time via long-polling daemon.
-- Perintah berisiko tinggi memicu Plan Gate dan mengirim kartu interaktif dengan **Inline Keyboard Buttons**:
-  `[✅ Setujui Rencana]` dan `[❌ Batalkan]`.
-- Klik tombol approval langsung mengeksekusi Build Mode di backend dan mengirimkan laporan progres.
+- **Ganti Model Instan (`/model` / `/models`)**:
+  - Mengetik `/model` memunculkan **Inline Keyboard Buttons (tombol klik)** berisi model AI yang aktif dan terdaftar.
+  - Cukup ketuk salah satu tombol di layar ponsel untuk langsung beralih model AI seketika!
+  - Bisa juga langsung via teks: `/model gemini-3.5-flash-lite`.
+- **Daftar Perintah Slash Telegram**:
+  - `/start` & `/help` — Menampilkan panduan dan daftar perintah bot
+  - `/model` — Pemilih model AI interaktif dengan tombol inline
+  - `/status` — Memeriksa status bot, model aktif, dan statistik memori Anara
+  - `/memory` — Membaca ringkasan profil pengguna (`USER.md`) & catatan fakta (`MEMORY.md`)
+  - `/skills` — Menampilkan keahlian agen aktif berbasis folder
+  - `/clear` / `/new` — Membersihkan konteks dan memulai sesi percakapan baru
+- **Persetujuan Rencana Interaktif (Plan Gate)**:
+  - Perintah berisiko tinggi (*terminal shell, edit file, modifikasi sistem*) otomatis memicu Plan Gate dan mengirimkan kartu rencana kerja lengkap dengan **Inline Keyboard Buttons**:
+    `[✅ Setujui Rencana]` dan `[❌ Batalkan]`.
+  - Mengetuk tombol approval langsung mengeksekusi Build Mode di komputer lokal Anda dan mengirimkan laporan progres secara langsung.
 
 ### 3. Inbound WhatsApp Web (Baileys Bridge)
 - Jembatan Node.js Baileys meneruskan pesan masuk ke endpoint webhook FastAPI.
