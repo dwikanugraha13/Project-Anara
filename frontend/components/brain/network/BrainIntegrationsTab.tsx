@@ -25,6 +25,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
   const [tgChatIdInput, setTgChatIdInput] = useState("");
   const [isTgModalOpen, setIsTgModalOpen] = useState(false);
   const [isTgLoading, setIsTgLoading] = useState(false);
+  const [tgErrorMsg, setTgErrorMsg] = useState<string | null>(null);
 
   const [googleStatus, setGoogleStatus] = useState<"connected" | "disconnected">("disconnected");
   const [googleEmail, setGoogleEmail] = useState<string | null>(null);
@@ -141,11 +142,19 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
     e.preventDefault();
     if (!tgTokenInput.trim()) return;
     setIsTgLoading(true);
+    setTgErrorMsg(null);
     try {
+      const cleanToken = tgTokenInput.trim();
+      const cleanChatId = tgChatIdInput.trim();
       const res = await fetch(`${BACKEND_URL}/api/integrations/telegram/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: tgTokenInput, default_chat_id: tgChatIdInput }),
+        body: JSON.stringify({
+          token: cleanToken,
+          bot_token: cleanToken,
+          chat_id: cleanChatId || undefined,
+          default_chat_id: cleanChatId || undefined,
+        }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -153,10 +162,17 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
         setTgBot(data.bot || null);
         if (data.status === "connected") {
           setIsTgModalOpen(false);
+          setTgErrorMsg(null);
+        } else {
+          setTgErrorMsg(data.message || "Token tidak valid menurut Telegram Bot API.");
         }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setTgErrorMsg(errData.detail || "Gagal menghubungi server backend.");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Save telegram error:", err);
+      setTgErrorMsg(err.message || String(err));
     } finally {
       setIsTgLoading(false);
     }
@@ -638,6 +654,12 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
               className="w-full px-3 py-2 rounded-xl bg-black/50 border border-white/20 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-400 font-mono"
             />
           </div>
+
+          {tgErrorMsg && (
+            <div className="p-2.5 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-xs font-mono leading-relaxed">
+              ⚠️ {tgErrorMsg}
+            </div>
+          )}
     
           <div className="pt-2 flex justify-end gap-2">
             <button

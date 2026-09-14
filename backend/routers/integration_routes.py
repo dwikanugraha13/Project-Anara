@@ -40,8 +40,10 @@ class WhatsAppSendRequest(BaseModel):
     message: str
 
 class TelegramConfigRequest(BaseModel):
-    bot_token: str
-    chat_id: str
+    token: Optional[str] = None
+    bot_token: Optional[str] = None
+    chat_id: Optional[str] = None
+    default_chat_id: Optional[str] = None
 
 class TelegramSendRequest(BaseModel):
     message: str
@@ -172,8 +174,22 @@ async def telegram_status_endpoint():
 
 @router.post("/api/integrations/telegram/config")
 async def telegram_config_endpoint(req: TelegramConfigRequest):
-    """Saves Telegram bot token & default chat ID."""
-    return await save_telegram_config(req.bot_token, req.chat_id)
+    """
+    Saves Telegram bot token & default chat ID and validates live connection via getMe API.
+    Auto-starts the background polling daemon if the token is valid.
+    """
+    token = (req.token or req.bot_token or "").strip()
+    chat_id = (req.default_chat_id or req.chat_id or "").strip() or None
+
+    if token:
+        save_telegram_config(token, chat_id)
+        from integrations.telegram import start_telegram_polling_daemon
+        start_telegram_polling_daemon()
+    elif chat_id:
+        save_telegram_config("", chat_id)
+
+    # Immediately query Telegram getMe API and return actual connection status
+    return await get_telegram_status()
 
 @router.get("/api/integrations/telegram/messages")
 async def telegram_messages_endpoint(limit: int = 15):
