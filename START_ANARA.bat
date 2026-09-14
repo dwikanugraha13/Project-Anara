@@ -110,11 +110,12 @@ echo.
 echo ======================================================================
 echo   KEDUA SERVER DILUNCURKAN DI JENDELA CMD TERPISAH!
 echo.
-echo   - Backend : http://localhost:8000   (docs: /docs)
-echo   - Frontend: http://localhost:3000
+echo   - Backend     : http://localhost:8000   (docs: /docs)
+echo   - 3D Companion: http://localhost:3000   (Voice, Avatar, HUD)
+echo   - Code Studio : http://localhost:3000/code (Autonomous AI IDE)
 echo.
 echo   Tunggu sampai kedua jendela selesai loading, lalu buka browser
-echo   ke http://localhost:3000
+echo   ke http://localhost:3000 atau http://localhost:3000/code
 echo.
 echo   Jika salah satu jendela menampilkan error, jendela itu TIDAK akan
 echo   tertutup otomatis agar pesan errornya bisa dibaca.

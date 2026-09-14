@@ -89,6 +89,9 @@ export function useAudioPlayer() {
 
         source.onended = () => {
           activeSourcesRef.current.delete(source);
+          try {
+            source.disconnect();
+          } catch {}
 
           // Only mark playback finished if no upcoming chunks are scheduled
           if (ctx.currentTime >= nextPlayTimeRef.current - 0.02) {
@@ -163,8 +166,9 @@ export function useAudioPlayer() {
       }
 
       if (!hasInteractionRef.current) {
-        pendingQueueRef.current.push({ buffer: pcm16Buffer, sampleRate });
-        console.log(`[AudioPlayer] Queued ${pcm16Buffer.byteLength}B (awaiting gesture)`);
+        if (pendingQueueRef.current.length < 50) {
+          pendingQueueRef.current.push({ buffer: pcm16Buffer, sampleRate });
+        }
         return;
       }
       await scheduleChunk(pcm16Buffer, sampleRate);

@@ -9,7 +9,7 @@
  * - Smooth lerping for elegant, beautiful human talking expression.
  */
 
-import { useRef, useCallback, useState } from "react";
+import { useRef, useCallback } from "react";
 import { VISEME_MAP, textToVisemeSequence, type VisemeName } from "@/lib/visemeMap";
 import * as THREE from "three";
 
@@ -55,7 +55,6 @@ const GENTLE_PHONEMES: VisemeName[] = [
 ];
 
 export function useLipSync({ meshesRef }: UseLipSyncOptions) {
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const intensityRef = useRef(0);
   const targetMorphsRef = useRef<Record<string, number>>({});
   const currentMorphsRef = useRef<Record<string, number>>({});
@@ -162,13 +161,8 @@ export function useLipSync({ meshesRef }: UseLipSyncOptions) {
   /** Set lip sync intensity from audio analysis (0-1 range) */
   const setAudioIntensity = useCallback((intensity: number) => {
     intensityRef.current = Math.min(intensity, 1.0);
-
     const speaking = intensity > 0.03;
-    if (speaking !== isSpeakingRef.current) {
-      isSpeakingRef.current = speaking;
-      setIsSpeaking(speaking);
-    }
-
+    isSpeakingRef.current = speaking;
     if (!speaking) {
       targetMorphsRef.current = {};
     }
@@ -187,7 +181,6 @@ export function useLipSync({ meshesRef }: UseLipSyncOptions) {
     currentMorphsRef.current = {};
     intensityRef.current = 0;
     isSpeakingRef.current = false;
-    setIsSpeaking(false);
 
     // Immediately zero out all speech morph targets across all meshes
     const meshes = meshesRef.current;
@@ -205,7 +198,7 @@ export function useLipSync({ meshesRef }: UseLipSyncOptions) {
   }, [meshesRef]);
 
   return {
-    isSpeaking,
+    isSpeaking: isSpeakingRef.current,
     updateMorphTargets,
     setAudioIntensity,
     queueTranscriptVisemes,

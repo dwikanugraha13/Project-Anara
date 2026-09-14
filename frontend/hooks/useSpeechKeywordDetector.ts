@@ -14,58 +14,7 @@
  */
 
 import { useRef, useCallback, useEffect } from "react";
-
-// ── Keyword groups ────────────────────────────────────────────────────────────
-
-const DANCE_ACTION_WORDS = [
-  "nari", "menari", "joget", "dance", "dansa", "rumba",
-];
-
-const COMMAND_MARKERS = [
-  "dong", "ayo", "coba", "tolong", "bisa", "yuk", "silakan", "coba kamu", "mohon"
-];
-
-const INFO_QUERY_MARKERS = [
-  "apa itu", "apa tarian", "sejarah", "adat", "tradisional", "nama tarian", "jenis tarian", "asal usul", "artinya", "definisi"
-];
-
-const NAME_VARIATIONS = [
-  "anara", "hanara", "annara", "anarah", "nara"
-];
-
-function normalizeText(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function isDanceKeyword(text: string): boolean {
-  const norm = normalizeText(text);
-  if (!norm) return false;
-
-  // Block informational questions
-  if (INFO_QUERY_MARKERS.some((q) => norm.includes(q))) {
-    return false;
-  }
-
-  const words = norm.split(" ");
-
-  // Direct short commands
-  if (["nari", "menari", "joget", "dance", "dansa", "anara nari", "anara menari", "anara joget", "anara dance"].includes(norm)) {
-    return true;
-  }
-
-  // Check if contains explicit dance action verb as a distinct word
-  const hasDanceAction = DANCE_ACTION_WORDS.some((action) => words.includes(action));
-  if (!hasDanceAction) return false;
-
-  const hasName = NAME_VARIATIONS.some((name) => words.includes(name));
-  const hasCommand = COMMAND_MARKERS.some((marker) => words.includes(marker) || norm.includes(marker));
-
-  return hasDanceAction && (hasName || hasCommand);
-}
+import { isDanceKeyword } from "@/lib/danceDetector";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

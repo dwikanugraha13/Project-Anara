@@ -95,10 +95,10 @@ export function useMicrophone({
   const onIntensityChangeRef = useRef(onIntensityChange);
   useEffect(() => {
     onIntensityChangeRef.current = onIntensityChange;
-  });
+  }, [onIntensityChange]);
 
   const startListening = useCallback(async () => {
-    if (status === "active") return;
+    if (status === "active" || status === "requesting") return;
     setStatus("requesting");
 
     try {
@@ -276,6 +276,13 @@ export function useMicrophone({
     onIntensityChange?.(0);
     console.log("[Microphone] Stopped");
   }, [onIntensityChange]);
+
+  // Clean up all audio hardware resources on component unmount
+  useEffect(() => {
+    return () => {
+      stopListening();
+    };
+  }, [stopListening]);
 
   const toggleMute = useCallback(() => {
     setIsMuted((prev) => {

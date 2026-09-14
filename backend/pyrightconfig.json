@@ -2,5 +2,11 @@
   "pythonVersion": "3.12",
   "venvPath": ".",
   "venv": "venv",
-  "include": ["."]
+  "include": ["."],
+  "exclude": [
+    "venv",
+    "**/__pycache__",
+    "whatsapp_bridge/node_modules",
+    "whatsapp_bridge/auth_info_baileys"
+  ]
 }

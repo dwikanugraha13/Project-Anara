@@ -60,10 +60,11 @@ export interface SentimentAnalysisResult {
 // Keyword Dictionaries (Indonesian & English)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const DANCE_KEYWORDS = [
-  "nari", "menari", "tarian", "joget", "dance", "dancing", "hibur", "goyang",
-  "hiphop", "hip hop", "dansa", "hiburan", "pesta", "musik", "anara siap", "rumba",
-];
+// NOTE: a DANCE_KEYWORDS list used to live here containing generic words like
+// "musik" and "pesta". It was never consumed by analyzeSpeechSentiment(), but it
+// was a trap waiting to be wired up — dancing must only ever be triggered by an
+// explicit user command plus confirmation (handled in the backend), never by
+// keyword sentiment. Removed deliberately.
 
 const SALUTE_KEYWORDS = [
   "hormat", "sikap hormat", "memberi hormat", "salute", "siap grak", "laksanakan",

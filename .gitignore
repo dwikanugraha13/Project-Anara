@@ -10,12 +10,18 @@ backend/venv/
 
 # Database lokal
 *.db
+*.db-shm
+*.db-wal
 
 # Node
 node_modules/
 .next/
 out/
 build/
+*.tsbuildinfo
+
+# WhatsApp Bridge Session Credentials
+backend/whatsapp_bridge/auth_info_baileys/
 
 # Misc
 .DS_Store
