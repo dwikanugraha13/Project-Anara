@@ -284,36 +284,136 @@ async def edit_telegram_message(
         return {"status": "error", "message": str(e)}
 
 
-async def send_telegram_model_selector(chat_id: str):
-    """Sends an interactive inline keyboard for choosing the active AI model."""
+async def setup_telegram_bot_commands() -> bool:
+    """Registers standard bot commands with Telegram via setMyCommands API."""
+    token = get_stored_telegram_token()
+    if not token:
+        return False
+    url = f"{TELEGRAM_API_BASE}/bot{token}/setMyCommands"
+    commands = [
+        {"command": "model", "description": "Pilih & ganti model AI aktif"},
+        {"command": "status", "description": "Periksa status agen, model & memori"},
+        {"command": "mode", "description": "Ganti mode Conversational / Plan"},
+        {"command": "memory", "description": "Lihat USER.md & MEMORY.md"},
+        {"command": "skills", "description": "Daftar keahlian otonom terdaftar"},
+        {"command": "clear", "description": "Mulai sesi percakapan baru"},
+        {"command": "help", "description": "Panduan & bantuan perintah"},
+    ]
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            res = await client.post(url, json={"commands": commands})
+            if res.status_code == 200 and res.json().get("ok"):
+                logger.info("[TelegramService] Registered bot commands via setMyCommands successfully.")
+                return True
+    except Exception as e:
+        logger.warning(f"[TelegramService] setMyCommands error: {e}")
+    return False
+
+
+async def send_telegram_provider_selector(chat_id: str, message_id: Optional[int] = None):
+    """Step 1: Displays the multi-provider menu (Google Gemini, 9Router, etc.) via inline keyboard."""
+    from providers import get_active_model_id
+    from memory import memory_engine
+
+    active_id = get_active_model_id()
+    custom_nodes = memory_engine.get_custom_providers()
+    accounts = memory_engine.get_ai_accounts()
+
+    has_gemini = any(a.get("provider") == "gemini" for a in accounts) or os.getenv("GEMINI_API_KEY")
+    has_openai = any(a.get("provider") in ["openai", "codex"] for a in accounts) or os.getenv("OPENAI_API_KEY")
+    has_anthropic = any(a.get("provider") == "anthropic" for a in accounts) or os.getenv("ANTHROPIC_API_KEY")
+
+    buttons = []
+    # Row for Google Gemini
+    if has_gemini:
+        buttons.append([{"text": "💎 Google Gemini (Native SDK)", "callback_data": "prov:gemini"}])
+
+    # Rows for custom providers (e.g. 9Router Proxy)
+    for node in custom_nodes:
+        if node.get("is_active", 1):
+            prefix = node.get("prefix", "custom")
+            name = node.get("name", prefix)
+            icon = "🌐 " if "9router" in prefix.lower() or "proxy" in name.lower() else "⚡ "
+            buttons.append([{"text": f"{icon}{name}", "callback_data": f"prov:{prefix}"}])
+
+    if has_anthropic:
+        buttons.append([{"text": "🟣 Anthropic Claude", "callback_data": "prov:anthropic"}])
+    if has_openai:
+        buttons.append([{"text": "🟢 OpenAI / Codex", "callback_data": "prov:openai"}])
+
+    if not buttons:
+        buttons = [
+            [{"text": "💎 Google Gemini", "callback_data": "prov:gemini"}],
+            [{"text": "🌐 9Router Proxy", "callback_data": "prov:9router"}],
+        ]
+
+    keyboard = {"inline_keyboard": buttons}
+    msg_text = (
+        f"🤖 <b>PILIH PROVIDER MODEL AI (MULTI-PROVIDER)</b>\n\n"
+        f"Model aktif saat ini:\n<code>{active_id}</code>\n\n"
+        f"<i>Pilih provider di bawah untuk melihat daftar model yang tersedia:</i>"
+    )
+    if message_id:
+        return await edit_telegram_message(chat_id=chat_id, message_id=message_id, text=msg_text, reply_markup=keyboard)
+    return await send_telegram_message(text=msg_text, chat_id=chat_id, reply_markup=keyboard)
+
+
+async def send_telegram_models_for_provider(chat_id: str, provider_prefix: str, message_id: Optional[int] = None):
+    """Step 2: Displays curated top models under the selected provider."""
     from providers.discovery import get_all_dynamic_models
     from providers import get_active_model_id
 
     active_id = get_active_model_id()
     all_models = await get_all_dynamic_models()
-    configured = [m for m in all_models if m.get("is_configured")]
-    if not configured:
-        configured = all_models[:6]
+
+    prefix_lower = provider_prefix.lower()
+    matching_models = []
+
+    if prefix_lower == "gemini":
+        matching_models = [m for m in all_models if m.get("provider") == "gemini"]
+    else:
+        matching_models = [
+            m for m in all_models
+            if m.get("provider") == prefix_lower or m["id"].startswith(f"{prefix_lower}/")
+        ]
+
+    if not matching_models:
+        matching_models = [
+            m for m in all_models
+            if prefix_lower in m["id"].lower() or prefix_lower in m.get("name", "").lower()
+        ]
 
     buttons = []
-    for m in configured[:10]:
+    for m in matching_models[:8]:
         m_id = m["id"]
         is_cur = (m_id == active_id)
         icon = "🔘 " if is_cur else "🔹 "
         name = m.get("name", m_id)
-        btn_text = f"{icon}{name}"
-        # Telegram callback_data limit is 64 bytes
-        cb_val = f"setmodel:{m_id}"
+        clean_name = name.replace(f"({provider_prefix})", "").replace(f"({prefix_lower})", "").strip()
+        btn_text = f"{icon}{clean_name}"
+
+        cb_val = f"setm:{m_id}"
         if len(cb_val.encode("utf-8")) <= 64:
             buttons.append([{"text": btn_text, "callback_data": cb_val}])
 
+    # Back navigation button
+    buttons.append([{"text": "⬅️ Kembali ke Pilihan Provider", "callback_data": "prov:menu"}])
+
+    prov_title = provider_prefix.upper()
     keyboard = {"inline_keyboard": buttons}
     msg_text = (
-        f"🤖 <b>PILIH MODEL AI (ANARA BRAIN)</b>\n\n"
+        f"💎 <b>DAFTAR MODEL [{prov_title}]</b>\n\n"
         f"Model aktif saat ini:\n<code>{active_id}</code>\n\n"
-        f"<i>Ketuk tombol di bawah untuk langsung mengganti model:</i>"
+        f"<i>Ketuk model yang diinginkan untuk langsung mengaktifkannya:</i>"
     )
+    if message_id:
+        return await edit_telegram_message(chat_id=chat_id, message_id=message_id, text=msg_text, reply_markup=keyboard)
     return await send_telegram_message(text=msg_text, chat_id=chat_id, reply_markup=keyboard)
+
+
+async def send_telegram_model_selector(chat_id: str):
+    """Entry point for /model command: starts at Step 1 (Provider Selector)."""
+    return await send_telegram_provider_selector(chat_id=chat_id)
 
 
 _telegram_daemon_task: Optional[asyncio.Task] = None
@@ -329,7 +429,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
         _execute_build_mode,
     )
 
-    # ── 1. Handle Inline Keyboard Callbacks (Approval Gate & Model Switcher) ──
+    # ── 1. Handle Inline Keyboard Callbacks (Approval Gate & Multi-Provider Model Switcher) ──
     cb = u.get("callback_query")
     if cb:
         cb_id = cb.get("id")
@@ -340,8 +440,21 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
         message_id = cb.get("message", {}).get("message_id")
         user_id = str(sender.get("id", "telegram_user"))
 
-        # Case A: Model Selector callback
-        if cb_data.startswith("setmodel:"):
+        # Case A: Return to Provider Menu
+        if cb_data == "prov:menu":
+            await answer_telegram_callback_query(cb_id)
+            await send_telegram_provider_selector(chat_id=chat_id, message_id=message_id)
+            return
+
+        # Case B: Selected a Provider -> Show models for that provider
+        if cb_data.startswith("prov:"):
+            target_prov = cb_data.split(":", 1)[1]
+            await answer_telegram_callback_query(cb_id, text=f"Membuka {target_prov.upper()}...")
+            await send_telegram_models_for_provider(chat_id=chat_id, provider_prefix=target_prov, message_id=message_id)
+            return
+
+        # Case C: Selected a Model -> Activate model immediately!
+        if cb_data.startswith("setm:") or cb_data.startswith("setmodel:"):
             target_model = cb_data.split(":", 1)[1]
             from providers.accounts import set_active_model_id
             set_active_model_id(target_model)
@@ -355,7 +468,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                 await edit_telegram_message(chat_id=chat_id, message_id=message_id, text=confirm_text)
             return
 
-        # Case B: Plan Approval callback
+        # Case D: Plan Approval callback
         if ":" in cb_data:
             action, plan_id = cb_data.split(":", 1)
             await answer_telegram_callback_query(cb_id, text=f"Memproses {action}...")
@@ -398,15 +511,16 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
         text = msg.get("text").strip()
 
         # ── Handle Slash Commands ──
-        cmd_lower = text.lower()
+        cmd_clean = text.split("@")[0].strip().lower()
 
-        if cmd_lower in ["/start", "/help"]:
+        if cmd_clean in ["/start", "/help"]:
             help_text = (
                 f"👋 <b>Halo {sender_name}! Saya Anara — General AI Agent Anda.</b>\n\n"
                 "Saya terhubung dengan PC dan ruang kerja lokal Anda, siap membantu coding, riset, maupun percakapan dengan perlindungan Plan/Build Gate.\n\n"
                 "📌 <b>Daftar Perintah Bot:</b>\n"
-                "• <b>/model</b> — Pilih & ganti model AI aktif dengan tombol interaktif\n"
+                "• <b>/model</b> — Pilih provider & ganti model AI aktif dengan tombol interaktif\n"
                 "• <b>/status</b> — Periksa status bot, model aktif, dan memori sistem\n"
+                "• <b>/mode</b> — Ubah mode (Conversational ↔ Plan/Build)\n"
                 "• <b>/memory</b> — Lihat ringkasan USER.md & MEMORY.md\n"
                 "• <b>/skills</b> — Lihat daftar keahlian agen aktif (agentskills.io)\n"
                 "• <b>/clear</b> — Bersihkan konteks dan mulai sesi percakapan baru\n"
@@ -416,23 +530,11 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
             await send_telegram_message(text=help_text, chat_id=chat_id)
             return
 
-        if cmd_lower.startswith("/model") or cmd_lower.startswith("/models"):
-            parts = text.split(maxsplit=1)
-            if len(parts) > 1:
-                # Direct switch via text: /model gemini-3.5-flash-lite
-                target_m = parts[1].strip()
-                from providers.accounts import set_active_model_id
-                set_active_model_id(target_m)
-                await send_telegram_message(
-                    text=f"✅ Model AI aktif berhasil diubah ke:\n<code>{target_m}</code>",
-                    chat_id=chat_id
-                )
-            else:
-                # Interactive inline keyboard picker
-                await send_telegram_model_selector(chat_id)
+        if cmd_clean in ["/model", "/models"]:
+            await send_telegram_model_selector(chat_id)
             return
 
-        if cmd_lower == "/status":
+        if cmd_clean == "/status":
             from providers import get_active_model_id
             from memory import memory_engine
             active_id = get_active_model_id()
@@ -451,7 +553,24 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
             await send_telegram_message(text=status_text, chat_id=chat_id)
             return
 
-        if cmd_lower == "/memory":
+        if cmd_clean == "/mode":
+            from memory import memory_engine
+            # Toggle mode for this session
+            sessions = memory_engine.get_sessions(speaker_name=sender_name, session_type="chat", limit=5)
+            target_sess = sessions[0] if sessions else None
+            cur_mode = target_sess.get("session_mode", "conversational") if target_sess else "conversational"
+            new_mode = "explicit_plan_build" if cur_mode == "conversational" else "conversational"
+            if target_sess:
+                with memory_engine._get_connection() as conn:
+                    conn.execute("UPDATE chat_sessions SET session_mode = ? WHERE id = ?", (new_mode, target_sess["id"]))
+                    conn.commit()
+            await send_telegram_message(
+                text=f"🔄 <b>Mode Operasional Diubah!</b>\nMode aktif sekarang: <code>{new_mode}</code>",
+                chat_id=chat_id
+            )
+            return
+
+        if cmd_clean == "/memory":
             from memory import file_memory
             user_prof = file_memory.get_user_profile()
             mem_facts = file_memory.get_memory_facts()
@@ -463,7 +582,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
             await send_telegram_message(text=mem_text, chat_id=chat_id)
             return
 
-        if cmd_lower == "/skills":
+        if cmd_clean == "/skills":
             from core.skill_library import skill_library
             skills = skill_library.list_skills()
             active_skills = [s for s in skills if s.get("status") == "active"]
@@ -473,7 +592,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
             await send_telegram_message(text="\n".join(lines), chat_id=chat_id)
             return
 
-        if cmd_lower in ["/clear", "/new"]:
+        if cmd_clean in ["/clear", "/new"]:
             from memory import memory_engine
             new_sess = memory_engine.create_session(
                 speaker_name=sender_name,
@@ -487,6 +606,16 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                 chat_id=chat_id
             )
             return
+
+        # ── 3. Handle Standard Conversational / Agentic Requests ──
+        req = ChannelRequest(
+            text=text,
+            channel="telegram",
+            channel_id=chat_id,
+            user_id=user_id,
+            sender_name=sender_name,
+            trigger_type="interactive"
+        )
 
         # ── 3. Handle Standard Conversational / Agentic Requests ──
         req = ChannelRequest(
@@ -520,6 +649,12 @@ async def _telegram_polling_worker():
     if not token:
         logger.info("[TelegramDaemon] No token configured. Worker sleeping.")
         return
+
+    # Automatically register native Telegram slash commands menu
+    try:
+        await setup_telegram_bot_commands()
+    except Exception as e:
+        logger.warning(f"[TelegramDaemon] setup_telegram_bot_commands warning: {e}")
 
     while _telegram_daemon_running:
         token = get_stored_telegram_token()
