@@ -43,9 +43,10 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
       const res = await fetch(`${BACKEND_URL}/api/integrations/whatsapp/status`);
       if (res.ok) {
         const data = await res.json();
-        setWaStatus(data.status || "disconnected");
+        const effectiveStatus = data.user ? (data.status || "connected") : "disconnected";
+        setWaStatus(effectiveStatus);
         setWaUser(data.user || null);
-        if (data.status === "connected") {
+        if (data.status === "connected" && data.user) {
           setIsWaModalOpen(false);
         }
       }
@@ -58,6 +59,27 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
       }
     } catch {}
   };
+
+  // Live polling while WhatsApp QR pairing modal is open
+  useEffect(() => {
+    if (!isWaModalOpen) return;
+    const interval = setInterval(() => {
+      fetch(`${BACKEND_URL}/api/integrations/whatsapp/qr`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (d && d.qr_data_url) {
+            setWaQrUrl(d.qr_data_url);
+          }
+          if (d && d.status === "connected" && d.user) {
+            setWaStatus("connected");
+            setWaUser(d.user);
+            setIsWaModalOpen(false);
+          }
+        })
+        .catch(() => {});
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [isWaModalOpen]);
 
   const handleSaveWhatsAppConfig = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -319,14 +341,14 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                   <div className="flex items-center gap-2">
                     <h4 className="text-sm font-bold text-white">WhatsApp Web</h4>
                     <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium uppercase border flex items-center gap-1.5 ${
-                      waStatus === "connected"
+                      waStatus === "connected" && waUser
                         ? "bg-emerald-500/10 text-emerald-300 border-emerald-400/30"
-                        : waStatus === "connecting"
+                        : waStatus === "connecting" && waUser
                         ? "bg-amber-500/10 text-amber-300 border-amber-400/30 animate-pulse"
                         : "bg-white/[0.04] text-slate-400 border-white/10"
                     }`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${waStatus === "connected" ? "bg-emerald-400" : waStatus === "connecting" ? "bg-amber-400" : "bg-slate-500"}`} />
-                      {waStatus === "connected" ? "Terhubung" : waStatus === "connecting" ? "Menghubungkan..." : "Belum Aktif"}
+                      <span className={`w-1.5 h-1.5 rounded-full ${waStatus === "connected" && waUser ? "bg-emerald-400" : waStatus === "connecting" && waUser ? "bg-amber-400" : "bg-slate-500"}`} />
+                      {waStatus === "connected" && waUser ? "Terhubung" : waStatus === "connecting" && waUser ? "Menghubungkan..." : "Belum Aktif"}
                     </span>
                   </div>
                   <p className="text-xs text-slate-400 mt-0.5">

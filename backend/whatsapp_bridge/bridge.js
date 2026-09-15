@@ -193,8 +193,10 @@ function forwardToAnara(msgObj) {
 
 // Status endpoint
 app.get("/status", (req, res) => {
+  const reportedStatus = userAccountInfo ? connectionStatus : "disconnected";
   res.json({
-    status: connectionStatus,
+    status: reportedStatus,
+    raw_status: connectionStatus,
     has_qr: Boolean(currentQrDataUrl),
     user: userAccountInfo,
     recent_messages_count: recentMessages.length,
@@ -204,11 +206,12 @@ app.get("/status", (req, res) => {
 
 // QR Code endpoint
 app.get("/qr", (req, res) => {
-  if (connectionStatus === "connected") {
-    return res.json({ status: "connected", qr_data_url: null, message: "WhatsApp sudah terhubung." });
+  if (connectionStatus === "connected" && userAccountInfo) {
+    return res.json({ status: "connected", qr_data_url: null, user: userAccountInfo, message: "WhatsApp sudah terhubung." });
   }
   res.json({
-    status: connectionStatus,
+    status: userAccountInfo ? connectionStatus : "disconnected",
+    has_qr: Boolean(currentQrDataUrl),
     qr_data_url: currentQrDataUrl,
     raw_qr: currentQrRaw,
   });

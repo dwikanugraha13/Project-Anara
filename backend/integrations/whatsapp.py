@@ -85,7 +85,10 @@ async def get_whatsapp_status() -> Dict[str, Any]:
         async with httpx.AsyncClient(timeout=3.0) as client:
             res = await client.get(f"{WA_BRIDGE_URL}/status")
             if res.status_code == 200:
-                return res.json()
+                data = res.json()
+                if not data.get("user"):
+                    data["status"] = "disconnected"
+                return data
     except Exception:
         pass
     return {"status": "disconnected", "has_qr": False, "user": None, "unread_count": 0}
