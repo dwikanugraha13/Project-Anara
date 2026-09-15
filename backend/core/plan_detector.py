@@ -32,7 +32,12 @@ EXPLICIT_APPROVAL_PATTERNS = [
 
 # Heuristic keyword-to-tool mapper for early pre-flight request inspection
 KEYWORD_TOOL_HEURISTICS = [
-    (r"\b(?:terminal|cmd|powershell|shell|bash|npm\s+|pip\s+|git\s+|cargo\s+)\b", "execute_cli_command"),
+    (
+        r"\b(?:terminal|cmd|powershell|shell|bash|npm\s+|pip\s+|git\s+|cargo\s+|"
+        r"baterai|battery|spek\b|spesifikasi|ram\b|cpu\b|hardware|disk\s+space|storage\b|"
+        r"status\s+laptop|status\s+pc|status\s+komputer|cek\s+baterai|cek\s+proses)\b",
+        "execute_cli_command"
+    ),
     (r"\b(?:edit|ubah|ganti|modifikasi|refactor)\b", "edit_file"),
     (r"\b(?:tulis|buat\s+file|simpan\s+file|create\s+file)\b", "write_local_file"),
     (r"\b(?:hapus|delete|drop|format|shutdown|matikan)\b", "system_control"),

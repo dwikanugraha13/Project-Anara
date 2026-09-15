@@ -412,7 +412,6 @@ async def setup_telegram_bot_commands() -> bool:
     commands = [
         {"command": "model", "description": "Pilih & ganti model AI aktif"},
         {"command": "status", "description": "Periksa status agen, model & memori"},
-        {"command": "mode", "description": "Ganti mode Conversational / Plan"},
         {"command": "memory", "description": "Lihat USER.md & MEMORY.md"},
         {"command": "skills", "description": "Daftar keahlian otonom terdaftar"},
         {"command": "clear", "description": "Mulai sesi percakapan baru"},
@@ -643,16 +642,15 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
         if cmd_clean in ["/start", "/help"]:
             help_text = (
                 f"👋 <b>Halo {sender_name}! Saya Anara — General AI Agent Anda.</b>\n\n"
-                "Saya terhubung dengan PC dan ruang kerja lokal Anda, siap membantu coding, riset, maupun percakapan dengan perlindungan Plan/Build Gate.\n\n"
+                "Saya terhubung dengan PC dan ruang kerja lokal Anda, siap membantu percakapan, riset, maupun otomasi terminal dengan perlindungan Plan/Build Gate otomatis.\n\n"
                 "📌 <b>Daftar Perintah Bot:</b>\n"
                 "• <b>/model</b> — Pilih provider & ganti model AI aktif dengan tombol interaktif\n"
                 "• <b>/status</b> — Periksa status bot, model aktif, dan memori sistem\n"
-                "• <b>/mode</b> — Ubah mode (Conversational ↔ Plan/Build)\n"
                 "• <b>/memory</b> — Lihat ringkasan USER.md & MEMORY.md\n"
                 "• <b>/skills</b> — Lihat daftar keahlian agen aktif (agentskills.io)\n"
                 "• <b>/clear</b> — Bersihkan konteks dan mulai sesi percakapan baru\n"
                 "• <b>/help</b> — Tampilkan bantuan ini\n\n"
-                "💡 <i>Kirim pesan apa saja atau instruksi kerja untuk mulai!</i>"
+                "🛡️ <b>Smart Plan Gate:</b> Perintah yang mengakses terminal atau hardware PC akan otomatis menyusun rencana kerja terstruktur dengan tombol <b>[Setujui Rencana]</b> sebelum dieksekusi."
             )
             await send_telegram_message(text=help_text, chat_id=chat_id)
             return
@@ -678,23 +676,6 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                 f"• <b>Kondisi Core</b>: OPTIMAL & Siap beroperasi."
             )
             await send_telegram_message(text=status_text, chat_id=chat_id)
-            return
-
-        if cmd_clean == "/mode":
-            from memory import memory_engine
-            # Toggle mode for this session
-            sessions = memory_engine.get_sessions(speaker_name=sender_name, session_type="chat", limit=5)
-            target_sess = sessions[0] if sessions else None
-            cur_mode = target_sess.get("session_mode", "conversational") if target_sess else "conversational"
-            new_mode = "explicit_plan_build" if cur_mode == "conversational" else "conversational"
-            if target_sess:
-                with memory_engine._get_connection() as conn:
-                    conn.execute("UPDATE chat_sessions SET session_mode = ? WHERE id = ?", (new_mode, target_sess["id"]))
-                    conn.commit()
-            await send_telegram_message(
-                text=f"🔄 <b>Mode Operasional Diubah!</b>\nMode aktif sekarang: <code>{new_mode}</code>",
-                chat_id=chat_id
-            )
             return
 
         if cmd_clean == "/memory":

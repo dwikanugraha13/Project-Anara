@@ -60,6 +60,15 @@ async def _tool_execute_cli_command(command: str, workdir: Optional[str] = None)
     if not os.path.exists(cwd):
         cwd = tempfile.gettempdir()
 
+    # Windows 11 Compatibility: auto-translate deprecated WMIC syntax to modern PowerShell CIM cmdlets
+    if os.name == "nt":
+        if re.search(r"wmic\s+path\s+win32_battery", cmd, re.IGNORECASE):
+            cmd = "Get-CimInstance Win32_Battery | Select-Object EstimatedChargeRemaining, BatteryStatus"
+        elif re.search(r"wmic\s+(?:os|path\s+win32_operatingsystem)", cmd, re.IGNORECASE):
+            cmd = "Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, OSArchitecture"
+        elif re.search(r"wmic\s+(?:cpu|path\s+win32_processor)", cmd, re.IGNORECASE):
+            cmd = "Get-CimInstance Win32_Processor | Select-Object Name, NumberOfCores, MaxClockSpeed"
+
     _emit_agent_event("agent_action_start", {
         "tool_name": "execute_cli_command",
         "action_title": "Eksekusi Terminal",
