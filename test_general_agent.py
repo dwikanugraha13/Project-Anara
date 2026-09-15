@@ -15,6 +15,9 @@ Run:
   python test_general_agent.py
 """
 import os
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
 import sys
 import uuid
 import asyncio
@@ -98,6 +101,8 @@ async def run_all_tests():
     record_test("Glob find is read_only", get_tool_risk("glob_find_files") == "read_only")
     record_test("WhatsApp messaging is action", get_tool_risk("whatsapp_send_message") == "action")
     record_test("System control is ask", get_tool_risk("system_control") == "ask")
+    record_test("Rezip archive is mutating", get_tool_risk("rezip_archive") == "mutating")
+    record_test("Read zip contents is read_only", get_tool_risk("read_zip_contents") == "read_only")
 
     # Permission gate tests
     ro_check = check_tool_permission("read_local_file", mode="plan")
@@ -112,11 +117,15 @@ async def run_all_tests():
     casual_check = needs_plan("Halo Anara, jelaskan perbedaan synchronous vs asynchronous", session_mode="conversational")
     record_test("Conversational Mode: Casual chat does NOT require Plan Mode", casual_check is False)
 
-    terminal_check = needs_plan("Tolong buka terminal dan jalankan npm run build di server", session_mode="conversational")
+    terminal_check = needs_plan("Tolong buka terminal dan jalankan npm run build di server", detected_tools=["execute_cli_command"], session_mode="conversational")
     record_test("Conversational Mode: Terminal shell command triggers Plan Mode", terminal_check is True)
 
-    edit_check = needs_plan("Tolong edit file index.js dan ganti port", session_mode="conversational")
+    edit_check = needs_plan("Tolong edit file index.js dan ganti port", detected_tools=["edit_file"], session_mode="conversational")
     record_test("Conversational Mode: File edit triggers Plan Mode", edit_check is True)
+
+    # Zero-hardcoding test: Text with 'install' or file keywords never triggers plan gate before LLM tool selection
+    zero_hardcode_check = needs_plan("cek hermes desktop gw di laptop install nya di folder mana", session_mode="conversational")
+    record_test("Zero-Hardcode: 'install' in read query does not prematurely trigger Plan Gate", zero_hardcode_check is False)
 
     code_ro_check = needs_plan("Tolong baca isi README.md", detected_tools=["read_local_file"], session_mode="explicit_plan_build")
     record_test("Code Studio: read_only tool does not force Plan Mode", code_ro_check is False)
@@ -188,11 +197,15 @@ async def run_all_tests():
     # DOMAIN 5: MULTI-CHANNEL GATEWAY (TELEGRAM, WHATSAPP, CLI)
     # ─────────────────────────────────────────────────────────────────────────
     print("\n--- 5. Testing Multi-Channel Gateway (Telegram, WhatsApp, CLI) ---")
+    # Clean session per run for multi-channel tests
+    tele_chan_id = f"tele_test_{uuid.uuid4().hex[:6]}"
+    wa_chan_id = f"wa_test_{uuid.uuid4().hex[:6]}"
+
     # Telegram Safe Turn
     tele_req = ChannelRequest(
         text="Halo dari Telegram Bot",
         channel="telegram",
-        channel_id="998877",
+        channel_id=tele_chan_id,
         user_id="tele_user_1",
         sender_name="Agnan",
     )
@@ -203,7 +216,7 @@ async def run_all_tests():
     tele_mut_req = ChannelRequest(
         text="Tolong buka terminal powershell dan jalankan npm test",
         channel="telegram",
-        channel_id="998877",
+        channel_id=tele_chan_id,
         user_id="tele_user_1",
         sender_name="Agnan",
     )
@@ -214,7 +227,7 @@ async def run_all_tests():
     wa_req = ChannelRequest(
         text="Halo dari WhatsApp Webhook",
         channel="whatsapp",
-        channel_id="628123456789",
+        channel_id=wa_chan_id,
         user_id="628123456789",
         sender_name="Agnan",
     )

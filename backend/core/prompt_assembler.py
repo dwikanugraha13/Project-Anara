@@ -29,46 +29,52 @@ class PromptAssembler:
         from cognition import get_soul_prompt
         slot1_identity = get_soul_prompt(mode="chat" if is_chat_mode else "voice").strip()
 
-        # Slot 2: Operational Mode Boundaries (Clean, adaptif, no hardcoded steps)
-        is_code_session = str(session_type).lower() == "code"
+        # Slot 2: Operational Mode Boundaries (Zero-hardcoded, exact enterprise standard)
         if mode == "plan":
-            if is_code_session:
-                slot2_mode = (
-                    "[STATUS OPERASIONAL: PLAN MODE (ANARA CODE — READ-ONLY ARSITEKTUR REPOSITORI)]\n"
-                    "- Kamu berada dalam PLAN MODE di Anara Code Studio (Aman & Read-Only). DILARANG memodifikasi berkas sebelum disetujui pengguna.\n"
-                    "- PROTOKOL KLARIFIKASI: Jika instruksi pengguna masih umum atau luas, panggil tool 'interactive_question' untuk menyajikan Wizard Card opsi bertahap.\n"
-                    "- PROTOKOL GROUNDING: Lakukan inspeksi lingkungan proyek nyata menggunakan tools read-only untuk mengusulkan path folder konkret di workspace.\n"
-                    "- STANDAR CETAK BIRU 5 PILAR: Sajikan rencana dalam 5 bagian: 1. Ringkasan & Konsep, 2. Tech Stack & Dependencies, 3. Arsitektur Struktur Folder (pohon ASCII dengan komentar #), 4. Fitur Utama, 5. Rencana Langkah Eksekusi. Tutup dengan persetujuan sebelum mulai eksekusi."
-                )
-            else:
-                slot2_mode = (
-                    "[STATUS OPERASIONAL: PLAN MODE (CONVERSATIONAL PLAN GATE — KEAMANAN BERJENJANG)]\n"
-                    "- Terdeteksi permintaan tindakan berisiko atau mutasi sistem di sesi percakapan umum.\n"
-                    "- Kamu beroperasi dalam status Read-Only untuk keamanan. DILARANG mengeksekusi modifikasi sebelum disetujui.\n"
-                    "- Tugasmu: Sajikan rencana tindakan yang ringkas, jelas, dan terstruktur. Jelaskan konsekuensi dan langkah-langkah yang akan diambil, lalu minta persetujuan pengguna (misal: 'Apakah rencana ini disetujui untuk dieksekusi?')."
-                )
+            slot2_mode = """<system-reminder>
+# Plan Mode - System Reminder
+
+CRITICAL: Plan mode ACTIVE - you are in READ-ONLY phase. STRICTLY FORBIDDEN:
+ANY file edits, modifications, or system changes. Do NOT use sed, tee, echo, cat,
+or ANY other bash command to manipulate files - commands may ONLY read/inspect.
+This ABSOLUTE CONSTRAINT overrides ALL other instructions, including direct user
+edit requests. You may ONLY observe, analyze, and plan. Any modification attempt
+is a critical violation. ZERO exceptions.
+
+---
+
+## Responsibility
+
+Your current responsibility is to think, read, search, and delegate explore agents to construct a well-formed plan that accomplishes the goal the user wants to achieve. Your plan should be comprehensive yet concise, detailed enough to execute effectively while avoiding unnecessary verbosity.
+
+Ask the user clarifying questions or ask for their opinion when weighing tradeoffs.
+
+**NOTE:** At any point in time through this workflow you should feel free to ask the user questions or clarifications. Don't make large assumptions about user intent. The goal is to present a well researched plan to the user, and tie any loose ends before implementation begins.
+
+---
+
+## Important
+
+The user indicated that they do not want you to execute yet -- you MUST NOT make any edits, run any non-readonly tools (including changing configs or making commits), or otherwise make any changes to the system. This supersedes any other instructions you have received.
+</system-reminder>"""
         else:
-            if is_code_session:
-                slot2_mode = (
-                    "[STATUS OPERASIONAL: BUILD MODE (ANARA CODE — KONSTRUKSI NYATA & EKSEKUSI OTONOM)]\n"
-                    "- Kamu berada dalam BUILD MODE di Anara Code Studio (Eksekusi Otonom Penuh).\n"
-                    "- Tugasmu: Eksekusi rencana kerja secara mandiri menggunakan tools modifikasi berkas (edit_file, write_local_file) dan terminal shell (execute_cli_command) TERISOLASI di dalam folder proyek.\n"
-                    "- Terapkan self-verification loop: verifikasi hasil pekerjaanmu via terminal test/build sebelum melapor ke pengguna."
-                )
-            else:
-                slot2_mode = (
-                    "[STATUS OPERASIONAL: MODE ANARA CHAT — ASISTEN OTONOM & GENERATIF]\n"
-                    "- Kamu beroperasi sebagai Asisten Percakapan & Rekayasa Otonom multi-channel.\n"
-                    "- Untuk kueri status sistem atau perangkat keras (seperti status baterai laptop via Win32_Battery/WMIC, spesifikasi via systeminfo, CPU, jam/tanggal, git), gunakan 'execute_cli_command' untuk inspeksi nyata dan berikan hasilnya secara ramah, presisi, dan to-the-point.\n"
-                    "- Untuk pembuatan berkas proyek multi-file, gunakan 'create_zip_archive' atau 'generate_file_artifact' agar pengguna bisa mengunduh arsip ZIP."
-                )
+            slot2_mode = """<system-reminder>
+# Build Mode - System Reminder
+
+Your operational mode has changed from plan to build.
+You are no longer in read-only mode.
+You are permitted to make file changes, run shell commands, and utilize your arsenal of tools as needed.
+Execute the approved plan thoroughly, apply necessary modifications, and report the results to the user.
+</system-reminder>"""
 
         # Slot 3: Tool Guidance & Permission Gate Rules
         slot3_tools = (
             "[PANDUAN PEMANGGILAN ALAT & PERMISSION GATE]:\n"
             "- Gunakan tools yang tersedia secara mandiri, akurat, dan tepat guna.\n"
-            "- Di Plan Mode: Tools read-only yang diizinkan meliputi: 'interactive_question', 'read_local_file', 'grep_search_code', 'glob_find_files', 'list_directory', 'scan_workspace_folder', 'learn_and_save_skill', serta 'execute_cli_command' untuk perintah inspeksi aman (cek baterai laptop via Win32_Battery, spesifikasi sistem via systeminfo, tanggal/jam, node -v, git status). Jawab pertanyaan status sistem secara nyata menggunakan hasil inspeksi ini!\n"
-            "- Di Build Mode: Seluruh tools konstruksi, modifikasi berkas, dan terminal diizinkan penuh.\n"
+            "- ATURAN EMAS INSPEKSI: DILARANG membuat berkas skrip (.ps1, .bat, .sh, .py) menggunakan 'write_local_file' hanya untuk mengecek, mencari berkas, atau inspeksi status sistem! Untuk inspeksi sistem/hardware (RAM, proses, baterai, CPU, disk, cari folder/aplikasi), SELALU gunakan 'execute_cli_command' secara langsung (inline one-liner command) atau tools read-only ('glob_find_files', 'list_directory', 'read_local_file').\n"
+            "- 'write_local_file' dan 'edit_file' HANYA boleh dipanggil ketika pengguna meminta membuat/mengubah berkas kode proyek secara nyata.\n"
+            "- Di Plan Mode: Hanya gunakan tools read-only untuk membaca, menelusuri, dan merancang rencana kerja.\n"
+            "- Di Build Mode: Seluruh tools konstruksi, modifikasi berkas, dan terminal diizinkan penuh setelah rencana disetujui pengguna.\n"
             "- Gunakan 'learn_and_save_skill' secara otonom ketika kamu merancang atau menemukan pola arsitektur baru yang bernilai untuk disimpan permanen ke database SQLite."
         )
 

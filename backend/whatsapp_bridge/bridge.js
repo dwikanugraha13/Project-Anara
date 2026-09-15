@@ -303,6 +303,67 @@ app.post("/send", async (req, res) => {
   }
 });
 
+// Send document file (PDF, DOCX, ZIP, etc.)
+app.post("/send-document", async (req, res) => {
+  if (connectionStatus !== "connected" || !sock) {
+    return res.status(400).json({ status: "error", message: "WhatsApp belum terhubung. Silakan scan QR code terlebih dahulu." });
+  }
+
+  const { to, file_path, caption, filename } = req.body;
+  if (!to || !file_path) {
+    return res.status(400).json({ status: "error", message: "Parameter 'to' dan 'file_path' wajib diisi." });
+  }
+
+  const resolvedPath = path.resolve(file_path);
+  if (!fs.existsSync(resolvedPath)) {
+    return res.status(404).json({ status: "error", message: `Berkas tidak ditemukan: ${resolvedPath}` });
+  }
+
+  let cleanTo = String(to).replace(/[^0-9]/g, "");
+  if (cleanTo.startsWith("08")) {
+    cleanTo = "628" + cleanTo.substring(2);
+  } else if (cleanTo.startsWith("8")) {
+    cleanTo = "628" + cleanTo.substring(1);
+  }
+  const jid = cleanTo.includes("@") ? cleanTo : `${cleanTo}@s.whatsapp.net`;
+
+  try {
+    const fileBuffer = fs.readFileSync(resolvedPath);
+    const baseName = filename || path.basename(resolvedPath);
+    const ext = path.extname(resolvedPath).toLowerCase();
+
+    let mimeType = "application/octet-stream";
+    if (ext === ".pdf") mimeType = "application/pdf";
+    else if (ext === ".docx") mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    else if (ext === ".doc") mimeType = "application/msword";
+    else if (ext === ".zip") mimeType = "application/zip";
+    else if (ext === ".csv") mimeType = "text/csv";
+    else if (ext === ".txt") mimeType = "text/plain";
+    else if (ext === ".json") mimeType = "application/json";
+    else if (ext === ".png") mimeType = "image/png";
+    else if (ext === ".jpg" || ext === ".jpeg") mimeType = "image/jpeg";
+
+    const sent = await sock.sendMessage(jid, {
+      document: fileBuffer,
+      mimetype: mimeType,
+      fileName: baseName,
+      caption: caption || baseName,
+    });
+
+    console.log(`[WABridge Outgoing Document] Sent '${baseName}' to ${cleanTo}`);
+    res.json({
+      status: "ok",
+      id: sent.key.id,
+      recipient: cleanTo,
+      filename: baseName,
+      file_path: resolvedPath,
+    });
+  } catch (err) {
+    console.error(`[WABridge Send Document Error]:`, err);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
 // Start Baileys socket and Express server
 app.listen(PORT, () => {
   console.log(`[WABridge] WhatsApp local bridge running on http://localhost:${PORT}`);

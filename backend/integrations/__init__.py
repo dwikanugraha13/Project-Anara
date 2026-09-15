@@ -7,6 +7,7 @@ from .whatsapp import (
     get_whatsapp_messages,
     get_unread_whatsapp_messages,
     send_whatsapp_message,
+    send_whatsapp_document,
     is_whatsapp_connected,
 )
 from .telegram import (
@@ -17,6 +18,7 @@ from .telegram import (
     get_telegram_messages,
     get_recent_telegram_updates,
     send_telegram_message,
+    send_telegram_document,
     execute_remote_telegram_command,
 )
 from .google import (

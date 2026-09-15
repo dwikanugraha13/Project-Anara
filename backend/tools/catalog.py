@@ -16,7 +16,14 @@ from .fs_tools import (
     _tool_glob_find_files,
     _tool_grep_search_code,
 )
-from .artifact_tools import _tool_generate_file_artifact, _tool_create_zip_archive
+from .artifact_tools import (
+    _tool_generate_file_artifact,
+    _tool_create_zip_archive,
+    _tool_extract_zip_archive,
+    _tool_read_zip_contents,
+    _tool_rezip_archive,
+    _tool_send_document_file,
+)
 from .system_tools import (
     _tool_execute_cli_command,
     _tool_manage_memory_and_todos,
@@ -59,6 +66,64 @@ ANARA_FUNCTION_DECLARATIONS = [
                 "folder_path": {"type": "STRING", "description": "Folder proyek yang ingin dikompresi (opsional, default workspace proyek aktif)."},
                 "files": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Daftar berkas tertentu yang ingin dimasukkan ke dalam zip (opsional)."}
             }
+        }
+    ),
+    types.FunctionDeclaration(
+        name="extract_zip_archive",
+        description="Mengekstrak (unzip) seluruh berkas dari file arsip ZIP ke folder tujuan secara instan dalam hitungan milidetik.",
+        parameters={
+            "type": "OBJECT",
+            "properties": {
+                "zip_path": {"type": "STRING", "description": "Nama atau path berkas ZIP yang ingin diekstrak, misal 'project.zip'."},
+                "destination_folder": {"type": "STRING", "description": "Folder tujuan ekstraksi (opsional, default ke folder aktif)."}
+            },
+            "required": ["zip_path"]
+        }
+    ),
+    types.FunctionDeclaration(
+        name="rezip_archive",
+        description="Menambah, menimpa, atau memperbarui berkas di dalam arsip ZIP yang sudah ada secara cepat tanpa mengekstrak seluruh isi arsip (Fast in-memory Re-zip).",
+        parameters={
+            "type": "OBJECT",
+            "properties": {
+                "zip_path": {"type": "STRING", "description": "Nama atau path berkas ZIP yang ingin diperbarui."},
+                "files_to_add": {
+                    "type": "ARRAY",
+                    "items": {"type": "STRING"},
+                    "description": "Daftar path berkas lokal yang ingin ditambahkan atau ditimpa ke dalam ZIP."
+                },
+                "files_to_remove": {
+                    "type": "ARRAY",
+                    "items": {"type": "STRING"},
+                    "description": "Daftar nama berkas di dalam ZIP yang ingin dihapus (opsional)."
+                },
+                "output_path": {"type": "STRING", "description": "Path keluaran berkas ZIP baru (opsional, jika kosong menimpa ZIP asal)."}
+            },
+            "required": ["zip_path", "files_to_add"]
+        }
+    ),
+    types.FunctionDeclaration(
+        name="read_zip_contents",
+        description="Membaca dan memeriksa daftar berkas di dalam file ZIP beserta ukuran asli dan ukuran kompresinya secara cepat tanpa mengekstrak ke disk (100% read-only).",
+        parameters={
+            "type": "OBJECT",
+            "properties": {
+                "zip_path": {"type": "STRING", "description": "Nama atau path berkas ZIP yang ingin diperiksa, misal 'project.zip'."}
+            },
+            "required": ["zip_path"]
+        }
+    ),
+    types.FunctionDeclaration(
+        name="send_document_file",
+        description="Mengirimkan berkas dokumen lokal fisik (.pdf, .docx, .zip, .csv, dll.) langsung ke chat Telegram atau WhatsApp pengguna agar bisa diunduh langsung di ponsel.",
+        parameters={
+            "type": "OBJECT",
+            "properties": {
+                "file_path": {"type": "STRING", "description": "Path atau nama file lokal yang ingin dikirimkan."},
+                "channel": {"type": "STRING", "description": "Channel tujuan ('telegram' atau 'whatsapp', default 'telegram')."},
+                "caption": {"type": "STRING", "description": "Teks pengantar atau judul dokumen yang dikirimkan."}
+            },
+            "required": ["file_path"]
         }
     ),
     types.FunctionDeclaration(
@@ -376,10 +441,12 @@ TOOL_RISK_CLASSIFICATION: Dict[str, str] = {
     "calendar_get_schedule": "read_only",
     "trigger_avatar_animation": "read_only",
     "project_hud": "read_only",
+    "read_zip_contents": "read_only",
 
     # Tier 2: ACTION (External side-effects, isolated & reversible)
     "whatsapp_send_message": "action",
     "telegram_send_message": "action",
+    "send_document_file": "action",
     "custom_webhook": "action",
     "manage_memory_and_todos": "action",
 
@@ -389,6 +456,7 @@ TOOL_RISK_CLASSIFICATION: Dict[str, str] = {
     "execute_cli_command": "mutating",
     "generate_file_artifact": "mutating",
     "create_zip_archive": "mutating",
+    "extract_zip_archive": "mutating",
     "delegate_subagent": "mutating",
 
     # Tier 4: ASK (Destructive, irreversible, or host environment takeover — granular approval required)
@@ -419,19 +487,25 @@ import re
 def is_safe_read_only_cli_command(command: str) -> bool:
     """
     Validates if a CLI command in Plan Mode is purely for safe host/environment inspection
-    (e.g., battery query, node -v, Test-Path, Get-ChildItem, systeminfo, $env:USERPROFILE)
+    (e.g. battery query, RAM, storage, processes, node -v, Test-Path, Get-ChildItem, systeminfo)
     and does not mutate disk/state.
     """
     cmd = (command or "").strip()
-    if not cmd or ">" in cmd:
+    if not cmd:
+        return False
+
+    # Check for actual shell file redirection (> or >>), ignoring arrows (->, =>) and quotes
+    cmd_no_quotes = re.sub(r'"[^"]*"|\'[^\']*\'', "", cmd)
+    if re.search(r"(?<![-=])>[>]?", cmd_no_quotes):
         return False
 
     cmd_lower = cmd.lower()
     mutating_tokens = [
-        "npm i", "npm install", "npm run build", "npm run dev", "npm create", "npx create-", "vite create",
-        "pip install", "pip uninstall", "yarn add", "pnpm add", "cargo add", "cargo build",
+        "npm i ", "npm install", "npm run", "npm test", "npm start", "npm exec", "npm build", "npm create", "npx ", "vite create",
+        "pip install", "pip uninstall", "yarn add", "yarn test", "yarn run", "yarn start",
+        "pnpm add", "pnpm test", "pnpm run", "pnpm start", "cargo add", "cargo build", "cargo test", "cargo run",
         "git commit", "git push", "git merge", "git rebase", "git checkout -b", "git branch -d",
-        "rm ", "rmdir", "del ", "erase ", "mkdir ", "md ", "new-item", "ni ",
+        "rmdir", "del ", "erase ", "mkdir ", "new-item",
         "set-content", "add-content", "out-file", "remove-item", "move-item", "copy-item",
         "stop-process", "taskkill", "kill "
     ]
@@ -439,11 +513,21 @@ def is_safe_read_only_cli_command(command: str) -> bool:
         if tok in cmd_lower:
             return False
 
-    # Direct fast-match for battery, disk/storage, memory, and hardware status inspection
-    if any(k in cmd_lower for k in [
-        "win32_battery", "powerstatus", "battery_bat", "batteryreport", "estimatedchargeremaining", "batterystatus",
-        "get-psdrive", "get-volume", "get-disk", "win32_logicaldisk", "psdrive", "diskfree", "df ", "free "
-    ]):
+    # Short 2-char mutating command aliases MUST use word boundary to avoid false-matching 'cmd /c', 'term', etc.
+    for p in [r"\bmd\s+", r"\bni\s+", r"\brm\s+"]:
+        if re.search(p, cmd_lower):
+            return False
+
+    # Direct fast-match for safe read-only inspection commands
+    safe_roots = [
+        "win32_battery", "powerstatus", "batteryreport", "estimatedchargeremaining", "batterystatus",
+        "get-psdrive", "get-volume", "get-disk", "win32_logicaldisk", "psdrive", "diskfree", "df ", "free ",
+        "win32_operatingsystem", "win32_processor", "win32_computersystem", "freeprivatebytes",
+        "get-process", "get-service", "get-ciminstance", "get-wmiobject", "wmic",
+        "systeminfo", "hostname", "get-uptime", "reg query", "tasklist", "driverquery", "node -v", "npm -v", "python -v", "git status", "git log", "git diff",
+        "test-path", "get-childitem", "get-item", "get-command", "get-location", "get-date"
+    ]
+    if any(k in cmd_lower for k in safe_roots):
         return True
 
     safe_patterns = [
@@ -452,7 +536,6 @@ def is_safe_read_only_cli_command(command: str) -> bool:
         r"^git\s+--version", r"^git\s+status", r"^git\s+branch", r"^git\s+log", r"^git\s+diff",
         r"^\$env:\w+", r"^test-path\b", r"^get-childitem\b", r"^get-item\b", r"^get-command\b", r"^get-location\b",
         r"^pwd\b", r"^dir\b", r"^ls\b", r"^where(?:\.exe)?\b", r"^which\b", r"^whoami\b",
-        # Safe Host System, Storage, Battery & OS Inspection Patterns
         r"^wmic\b", r"^get-ciminstance\b", r"^get-wmiobject\b", r"^powercfg\b",
         r"^get-psdrive\b", r"^get-volume\b", r"^get-disk\b", r"^df\b", r"^free\b",
         r"^systeminfo\b", r"^hostname\b", r"^date\b", r"^time\b", r"^get-date\b",
@@ -463,21 +546,9 @@ def is_safe_read_only_cli_command(command: str) -> bool:
         r"^measure-object\b", r"^sort-object\b", r"^where-object\b",
     ]
 
-    subcmds = [s.strip() for s in re.split(r"[;&]+", cmd) if s.strip()]
-    if not subcmds:
-        return False
-    for sub in subcmds:
-        first_seg = sub.split("|")[0].strip()
-        # Unpack powershell / cmd wrapper prefixes (e.g. powershell -c "...", cmd /c "...")
-        first_seg = re.sub(r"^(?:powershell(?:\.exe)?|cmd(?:\.exe)?)\s+(?:-(?:c|command|k)\s+)?", "", first_seg, flags=re.IGNORECASE).strip()
-        # Strip leading parentheses, brackets, quotes, and dollar signs (e.g. (Get-CimInstance ...).Prop)
-        first_seg = first_seg.lstrip("([\"\' $").strip()
-
-        matched = any(re.search(pat, first_seg, re.IGNORECASE) for pat in safe_patterns)
-        if not matched:
-            return False
-    return True
-
+    first_clean = re.sub(r"^(?:powershell(?:\.exe)?|cmd(?:\.exe)?)\s+(?:-(?:c|command|k)\s+)?", "", cmd, flags=re.IGNORECASE).strip()
+    first_clean = first_clean.lstrip("([\"' $").strip()
+    return any(re.search(pat, first_clean, re.IGNORECASE) for pat in safe_patterns)
 
 def check_tool_permission(tool_name: str, mode: str = "plan", args: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
@@ -551,7 +622,7 @@ def get_tools_catalog() -> List[Dict[str, Any]]:
         risk = TOOL_RISK_CLASSIFICATION.get(name, "mutating")
         is_ro = risk == "read_only"
 
-        if name in ["edit_file", "write_local_file", "generate_file_artifact", "create_zip_archive"]:
+        if name in ["edit_file", "write_local_file", "generate_file_artifact", "create_zip_archive", "rezip_archive"]:
             cat = "coding"
             icon = "code"
         elif name in ["read_local_file", "glob_find_files", "grep_search_code", "scan_workspace_folder", "list_directory"]:
@@ -623,6 +694,29 @@ async def dispatch_tool_call(
                 archive_name=args.get("archive_name"),
                 folder_path=args.get("folder_path"),
                 files=args.get("files")
+            )
+        elif name == "extract_zip_archive":
+            return await _tool_extract_zip_archive(
+                zip_path=args.get("zip_path", ""),
+                destination_folder=args.get("destination_folder")
+            )
+        elif name == "rezip_archive":
+            return await _tool_rezip_archive(
+                zip_path=args.get("zip_path", ""),
+                files_to_add=args.get("files_to_add", []),
+                files_to_remove=args.get("files_to_remove"),
+                output_path=args.get("output_path")
+            )
+        elif name == "read_zip_contents":
+            return await _tool_read_zip_contents(
+                zip_path=args.get("zip_path", "")
+            )
+        elif name == "send_document_file":
+            return await _tool_send_document_file(
+                file_path=args.get("file_path", ""),
+                channel=args.get("channel"),
+                recipient=args.get("recipient"),
+                caption=args.get("caption")
             )
         elif name == "web_search":
             return await _tool_web_search(args.get("query", ""))
@@ -829,25 +923,26 @@ async def generate_text_response_with_tools(
         fn_parts = []
         for fc in function_calls:
             fn_name = getattr(fc, "name", "")
+            clean_fn_name = fn_name.split(":")[-1]
             fn_args = getattr(fc, "args", {}) or {}
             fn_id = getattr(fc, "id", None)
-            logger.info(f"[AnaraAgent Step {step+1}] Invoked: {fn_name!r} (id={fn_id}) with args {fn_args}")
+            logger.info(f"[AnaraAgent Step {step+1}] Invoked: {fn_name!r} (clean={clean_fn_name!r}, id={fn_id}) with args {fn_args}")
 
-            risk = get_tool_risk(fn_name)
-            is_safe_cli = (fn_name == "execute_cli_command" and is_safe_read_only_cli_command(fn_args.get("command", "")))
+            risk = get_tool_risk(clean_fn_name)
+            is_safe_cli = (clean_fn_name == "execute_cli_command" and is_safe_read_only_cli_command(fn_args.get("command", "")))
             if is_safe_cli:
                 risk = "read_only"
 
             if intercept_mutating_tools and risk in ("mutating", "ask"):
-                logger.info(f"[ToolInterceptor Native] Intercepted mutating tool '{fn_name}' for Plan approval.")
+                logger.info(f"[ToolInterceptor Native] Intercepted mutating tool '{clean_fn_name}' for Plan approval.")
                 cmd_preview = fn_args.get("command") or fn_args.get("file_path") or fn_args.get("title") or ""
                 return {
                     "intercepted": True,
-                    "tool_name": fn_name,
+                    "tool_name": clean_fn_name,
                     "tool_args": fn_args,
                     "tool_risk": risk,
                     "cmd_preview": cmd_preview,
-                    "raw_call": {"tool": fn_name, "arguments": fn_args},
+                    "raw_call": {"tool": clean_fn_name, "arguments": fn_args},
                 }
 
             if progress_cb:

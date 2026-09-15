@@ -324,6 +324,52 @@ async def send_telegram_message(
         return {"status": "error", "message": str(e)}
 
 
+async def send_telegram_document(
+    file_path: str,
+    chat_id: Optional[str] = None,
+    caption: Optional[str] = None
+) -> Dict[str, Any]:
+    """Sends a native document file (.pdf, .docx, .zip, etc.) to Telegram chat."""
+    token = get_stored_telegram_token()
+    if not token:
+        return {"status": "error", "message": "Token Telegram Bot belum diatur."}
+
+    target_chat = chat_id or get_stored_telegram_chat_id()
+    if not target_chat:
+        if _recent_telegram_messages:
+            target_chat = str(_recent_telegram_messages[0].get("chat_id"))
+        else:
+            return {"status": "error", "message": "Chat ID tujuan belum ditentukan."}
+
+    clean_path = os.path.abspath(os.path.expanduser(file_path.strip().strip('"\'')))
+    if not os.path.isfile(clean_path):
+        return {"status": "error", "message": f"Berkas tidak ditemukan: {clean_path}"}
+
+    url = f"{TELEGRAM_API_BASE}/bot{token}/sendDocument"
+    filename = os.path.basename(clean_path)
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            with open(clean_path, "rb") as f:
+                file_bytes = f.read()
+            files = {"document": (filename, file_bytes)}
+            data = {"chat_id": target_chat}
+            if caption:
+                data["caption"] = caption[:1000]
+
+            res = await client.post(url, data=data, files=files)
+            if res.status_code == 200:
+                d = res.json()
+                if d.get("ok"):
+                    logger.info(f"[TelegramService] Document '{filename}' sent to {target_chat}")
+                    return {"status": "ok", "message_id": d["result"]["message_id"], "filename": filename}
+                return {"status": "error", "message": d.get("description", "Gagal mengirim dokumen.")}
+            return {"status": "error", "message": f"HTTP {res.status_code}: {res.text}"}
+    except Exception as e:
+        logger.error(f"[TelegramService] sendDocument error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
 async def send_telegram_plan_proposal(chat_id: str, plan_text: str, plan_id: str) -> Dict[str, Any]:
     """
     Sends a structured Plan proposal with interactive Inline Keyboard Buttons (Bab 12.1 rancangan-general-agent.md):
@@ -510,9 +556,8 @@ async def send_telegram_models_for_provider(chat_id: str, provider_prefix: str, 
         clean_name = name.replace(f"({provider_prefix})", "").replace(f"({prefix_lower})", "").strip()
         btn_text = f"{icon}{clean_name}"
 
-        cb_val = f"setm:{m_id}"
-        if len(cb_val.encode("utf-8")) <= 64:
-            buttons.append([{"text": btn_text, "callback_data": cb_val}])
+        cb_val = _make_model_callback_data(m_id)
+        buttons.append([{"text": btn_text, "callback_data": cb_val}])
 
     # Back navigation button
     buttons.append([{"text": "⬅️ Kembali ke Pilihan Provider", "callback_data": "prov:menu"}])
@@ -523,6 +568,114 @@ async def send_telegram_models_for_provider(chat_id: str, provider_prefix: str, 
         f"💎 <b>DAFTAR MODEL [{prov_title}]</b>\n\n"
         f"Model aktif saat ini:\n<code>{active_id}</code>\n\n"
         f"<i>Ketuk model yang diinginkan untuk langsung mengaktifkannya:</i>"
+    )
+    if message_id:
+        return await edit_telegram_message(chat_id=chat_id, message_id=message_id, text=msg_text, reply_markup=keyboard)
+    return await send_telegram_message(text=msg_text, chat_id=chat_id, reply_markup=keyboard)
+
+
+_MODEL_ID_SHORTMAP: Dict[str, str] = {}
+
+
+def _make_model_callback_data(model_id: str) -> str:
+    """Generates a safe callback string compliant with Telegram 64-byte payload limit."""
+    cb = f"setm:{model_id}"
+    if len(cb.encode("utf-8")) <= 64:
+        return cb
+    import hashlib
+    h = hashlib.md5(model_id.encode("utf-8")).hexdigest()[:12]
+    _MODEL_ID_SHORTMAP[h] = model_id
+    return f"setms:{h}"
+
+
+async def send_telegram_model_search(chat_id: str, query: str, message_id: Optional[int] = None):
+    """
+    Universal search for /model <query>: matches codenames, prefixes, and model names,
+    presenting interactive buttons for one-tap activation.
+    """
+    from providers.discovery import get_all_dynamic_models
+    from providers import get_active_model_id
+
+    active_id = get_active_model_id()
+    all_models = await get_all_dynamic_models()
+
+    q = query.strip().lower()
+    exact_matches = []
+    prefix_matches = []
+    sub_matches = []
+
+    for m in all_models:
+        m_id = m["id"]
+        m_id_low = m_id.lower()
+        m_name_low = m.get("name", "").lower()
+
+        # 1. Exact ID match
+        if m_id_low == q:
+            exact_matches.append(m)
+            continue
+
+        # 2. Codename match (stripped provider prefix like 9router/)
+        if "/" in m_id_low:
+            sub = m_id_low.split("/", 1)[1]
+            if sub == q or sub.endswith(f"/{q}") or sub == q.lstrip("/"):
+                prefix_matches.append(m)
+                continue
+
+        # 3. Substring match
+        if q in m_id_low or q in m_name_low:
+            sub_matches.append(m)
+
+    ordered = exact_matches + prefix_matches + sub_matches
+    seen = set()
+    unique_matches = []
+    for m in ordered:
+        if m["id"] not in seen:
+            seen.add(m["id"])
+            unique_matches.append(m)
+
+    if not unique_matches:
+        keyboard = {"inline_keyboard": [[{"text": "?? Telusuri Semua Provider", "callback_data": "prov:menu"}]]}
+        msg_text = (
+            f"?? <b>Model '{query}' Tidak Ditemukan.</b>\n\n"
+            f"Model aktif saat ini: <code>{active_id}</code>\n\n"
+            f"<i>Gunakan tombol di bawah untuk melihat seluruh model yang tersedia:</i>"
+        )
+        if message_id:
+            return await edit_telegram_message(chat_id=chat_id, message_id=message_id, text=msg_text, reply_markup=keyboard)
+        return await send_telegram_message(text=msg_text, chat_id=chat_id, reply_markup=keyboard)
+
+    buttons = []
+    for m in unique_matches[:10]:
+        m_id = m["id"]
+        is_cur = (m_id == active_id)
+        icon = "?? " if is_cur else "?? "
+        prov = m.get("provider", "custom").lower()
+        if prov == "gemini":
+            badge = "[?? Google]"
+        elif "9router" in m_id.lower() or prov == "9router":
+            badge = "[?? 9Router]"
+        elif prov == "anthropic":
+            badge = "[?? Claude]"
+        elif prov == "openai":
+            badge = "[?? OpenAI]"
+        else:
+            badge = f"[{prov.upper()}]"
+
+        display_name = m.get("name", m_id)
+        if display_name.startswith("9router/"):
+            display_name = display_name.replace("9router/", "", 1)
+        display_name = re.sub(r"\s*\([^)]*\)", "", display_name).strip()
+        btn_text = f"{icon}{badge} {display_name}"[:45]
+        cb_val = _make_model_callback_data(m_id)
+        buttons.append([{"text": btn_text, "callback_data": cb_val}])
+
+    buttons.append([{"text": "?? Buka Semua Provider", "callback_data": "prov:menu"}])
+    keyboard = {"inline_keyboard": buttons}
+
+    msg_text = (
+        f"?? <b>HASIL PENCARIAN MODEL:</b> <code>{query}</code>\n\n"
+        f"Model aktif saat ini:\n<code>{active_id}</code>\n\n"
+        f"<i>Ketuk salah satu model di bawah untuk langsung mengaktifkannya:</i>"
     )
     if message_id:
         return await edit_telegram_message(chat_id=chat_id, message_id=message_id, text=msg_text, reply_markup=keyboard)
@@ -572,8 +725,16 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
             return
 
         # Case C: Selected a Model -> Activate model immediately!
-        if cb_data.startswith("setm:") or cb_data.startswith("setmodel:"):
-            target_model = cb_data.split(":", 1)[1]
+        if cb_data.startswith("setm:") or cb_data.startswith("setmodel:") or cb_data.startswith("setms:"):
+            if cb_data.startswith("setms:"):
+                h_key = cb_data.split(":", 1)[1]
+                target_model = _MODEL_ID_SHORTMAP.get(h_key, "")
+            else:
+                target_model = cb_data.split(":", 1)[1]
+
+            if not target_model:
+                await answer_telegram_callback_query(cb_id, text="?? Model tidak ditemukan atau expired.")
+                return
             from providers.accounts import set_active_model_id
             set_active_model_id(target_model)
             await answer_telegram_callback_query(cb_id, text=f"Model diubah ke {target_model}")
@@ -597,12 +758,21 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                     from core.security import is_authorized_approver
                     if not is_authorized_approver(user_id=user_id, plan_owner_id=pending.get("user_id", user_id), channel="telegram"):
                         await send_telegram_message(
-                            text="⚠️ <b>Akses Ditolak:</b> Anda tidak memiliki otorisasi untuk menyetujui rencana kerja ini.",
+                            text="?? <b>Akses Ditolak:</b> Anda tidak memiliki otorisasi untuk menyetujui rencana kerja ini.",
                             chat_id=chat_id
                         )
                         return
 
-                    await send_telegram_message(text="🔨 Rencana disetujui! Memulai eksekusi di latar belakang...", chat_id=chat_id)
+                    # Immediately update message to remove buttons and show executing state
+                    if message_id:
+                        plan_display = pending.get("plan_text", "").split("\n<i>Apakah")[0].strip()
+                        await edit_telegram_message(
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            text=f"{plan_display}\n\n<i>[? Rencana disetujui ? sedang dieksekusi di PC...]</i>",
+                            reply_markup=None
+                        )
+
                     req = ChannelRequest(
                         text=f"Eksekusi rencana: {pending['original_prompt']}",
                         channel="telegram",
@@ -614,21 +784,33 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                     async def _send_prog(msg: str):
                         await send_telegram_message(text=msg, chat_id=chat_id)
 
-                    res = await _execute_build_mode(
-                        session_id=pending["session_id"],
-                        user_prompt=req.text,
-                        req=req,
-                        progress_callback=_send_prog,
-                        pending_tool_call=pending.get("pending_tool_call"),
-                    )
-                    await send_telegram_message(text=f"✅ <b>Hasil Eksekusi:</b>\n{res.text}", chat_id=chat_id)
+                    try:
+                        res = await _execute_build_mode(
+                            session_id=pending["session_id"],
+                            user_prompt=req.text,
+                            req=req,
+                            progress_callback=_send_prog,
+                            pending_tool_call=pending.get("pending_tool_call"),
+                        )
+                        await send_telegram_message(text=f"? <b>Hasil Eksekusi:</b>\n{res.text}", chat_id=chat_id)
+                    except Exception as exec_err:
+                        logger.error(f"[TelegramService] Build mode execution error: {exec_err}", exc_info=True)
+                        await send_telegram_message(text=f"?? <b>Gagal mengeksekusi rencana:</b> {str(exec_err)}", chat_id=chat_id)
                 else:
-                    await send_telegram_message(text="⚠️ Rencana telah kedaluwarsa atau sudah diproses.", chat_id=chat_id)
+                    await send_telegram_message(text="?? Rencana telah kedaluwarsa atau sedang/sudah diproses.", chat_id=chat_id)
             else:
-                await send_telegram_message(text="❌ Rencana dibatalkan. Tidak ada perubahan yang dilakukan.", chat_id=chat_id)
+                if message_id:
+                    await edit_telegram_message(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        text="? <b>Rencana dibatalkan.</b> Tidak ada perubahan yang dilakukan.",
+                        reply_markup=None
+                    )
+                else:
+                    await send_telegram_message(text="? Rencana dibatalkan. Tidak ada perubahan yang dilakukan.", chat_id=chat_id)
         return
 
-    # ── 2. Handle Text Messages & Slash Commands ──
+    # ?? 2. Handle Text Messages & Slash Commands ??
     msg = u.get("message") or u.get("edited_message")
     if msg and msg.get("text"):
         chat_id = str(msg.get("chat", {}).get("id"))
@@ -638,9 +820,11 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
         text = msg.get("text").strip()
 
         # ── Handle Slash Commands ──
-        cmd_clean = text.split("@")[0].strip().lower()
+        tokens = text.strip().split(maxsplit=1)
+        cmd_name = tokens[0].split("@")[0].strip().lower()
+        cmd_arg = tokens[1].strip() if len(tokens) > 1 else ""
 
-        if cmd_clean in ["/start", "/help"]:
+        if cmd_name in ["/start", "/help"]:
             help_text = (
                 f"👋 <b>Halo {sender_name}! Saya Anara — General AI Agent Anda.</b>\n\n"
                 "Saya terhubung dengan PC dan ruang kerja lokal Anda, siap membantu percakapan, riset, maupun otomasi terminal dengan perlindungan Plan/Build Gate otomatis.\n\n"
@@ -656,11 +840,14 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
             await send_telegram_message(text=help_text, chat_id=chat_id)
             return
 
-        if cmd_clean in ["/model", "/models"]:
-            await send_telegram_model_selector(chat_id)
+        if cmd_name in ["/model", "/models"]:
+            if cmd_arg:
+                await send_telegram_model_search(chat_id=chat_id, query=cmd_arg)
+            else:
+                await send_telegram_model_selector(chat_id)
             return
 
-        if cmd_clean == "/status":
+        if cmd_name == "/status":
             from providers import get_active_model_id
             from memory import memory_engine
             active_id = get_active_model_id()
@@ -679,7 +866,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
             await send_telegram_message(text=status_text, chat_id=chat_id)
             return
 
-        if cmd_clean == "/memory":
+        if cmd_name == "/memory":
             from memory import file_memory
             user_prof = file_memory.get_user_profile()
             mem_facts = file_memory.get_memory_facts()
@@ -691,7 +878,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
             await send_telegram_message(text=mem_text, chat_id=chat_id)
             return
 
-        if cmd_clean == "/skills":
+        if cmd_name == "/skills":
             from core.skill_library import skill_library
             skills = skill_library.list_skills()
             active_skills = [s for s in skills if s.get("status") == "active"]
@@ -701,7 +888,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
             await send_telegram_message(text="\n".join(lines), chat_id=chat_id)
             return
 
-        if cmd_clean in ["/clear", "/new"]:
+        if cmd_name in ["/clear", "/new"]:
             from memory import memory_engine
             new_sess = memory_engine.create_session(
                 speaker_name=sender_name,

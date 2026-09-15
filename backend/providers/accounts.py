@@ -125,8 +125,11 @@ def get_active_model_id() -> str:
 def set_active_model_id(model_id: str) -> bool:
     """Sets and persists the active model ID."""
     from memory import memory_engine
-    memory_engine.set_app_setting("active_ai_model", model_id.strip())
-    logger.info(f"[ModelRouter] Switched active model to: {model_id}")
+    clean_id = model_id.strip()
+    if clean_id.startswith("ag/"):
+        clean_id = f"9router/{clean_id}"
+    memory_engine.set_app_setting("active_ai_model", clean_id)
+    logger.info(f"[ModelRouter] Switched active model to: {clean_id}")
     return True
 
 

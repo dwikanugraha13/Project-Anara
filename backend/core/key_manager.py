@@ -173,7 +173,7 @@ class GeminiKeyManager:
             client = genai.Client(api_key=active_key)
             try:
                 # Per-attempt timeout: if Google hangs or queues for >15s, advance key immediately!
-                return await asyncio.wait_for(coro_func(client), timeout=15.0)
+                return await asyncio.wait_for(coro_func(client), timeout=45.0)
             except (asyncio.TimeoutError, Exception) as e:
                 err_msg = str(e).lower()
                 is_timeout = isinstance(e, asyncio.TimeoutError) or "timeout" in err_msg

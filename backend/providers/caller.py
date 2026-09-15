@@ -445,7 +445,17 @@ async def call_universal_chat_model(
                 intercept_mutating_tools=intercept_mutating_tools,
             )
 
-        return await key_manager.execute_with_failover(_call)
+        for retry in range(3):
+            try:
+                return await key_manager.execute_with_failover(_call)
+            except Exception as e:
+                err_str = str(e).lower()
+                is_transient = any(t in err_str for t in ["503", "unavailable", "high demand", "429", "resource_exhausted", "quota"])
+                if is_transient and retry < 2:
+                    logger.warning(f"[GeminiRetry] Transient rate limit / 503 on {active_target_model}. Retrying in 2s (attempt {retry+1}/3)...")
+                    await asyncio.sleep(2.0)
+                    continue
+                raise e
 
     if model_id.startswith("codex/") or model_id.startswith("openai/"):
         from memory import memory_engine

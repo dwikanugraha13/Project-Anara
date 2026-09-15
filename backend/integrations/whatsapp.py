@@ -157,3 +157,30 @@ async def send_whatsapp_message(to: str, message: str) -> Dict[str, Any]:
                     return {"status": "error", "message": f"HTTP {res.status_code}: {res.text}"}
     except Exception as e:
         return {"status": "error", "message": f"Koneksi error: {str(e)}"}
+
+
+async def send_whatsapp_document(to: str, file_path: str, caption: Optional[str] = None) -> Dict[str, Any]:
+    """Sends a native document file (.pdf, .docx, .zip, etc.) to a WhatsApp number via the bridge."""
+    clean_path = os.path.abspath(os.path.expanduser(file_path.strip().strip('"\'')))
+    if not os.path.isfile(clean_path):
+        return {"status": "error", "message": f"Berkas tidak ditemukan: {clean_path}"}
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            payload = {
+                "to": to,
+                "file_path": clean_path,
+                "caption": caption or os.path.basename(clean_path),
+                "filename": os.path.basename(clean_path)
+            }
+            res = await client.post(f"{WA_BRIDGE_URL}/send-document", json=payload)
+            if res.status_code == 200:
+                return res.json()
+            else:
+                try:
+                    err_json = res.json()
+                    return {"status": "error", "message": err_json.get("message", res.text)}
+                except Exception:
+                    return {"status": "error", "message": f"HTTP {res.status_code}: {res.text}"}
+    except Exception as e:
+        return {"status": "error", "message": f"Koneksi WhatsApp bridge error: {str(e)}"}

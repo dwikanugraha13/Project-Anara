@@ -46,6 +46,7 @@ class ChannelResponse(BaseModel):
     plan_id: Optional[str] = None
     plan_steps: List[str] = Field(default_factory=list)
     tools_used: List[str] = Field(default_factory=list)
+    attachments: List[Dict[str, Any]] = Field(default_factory=list)
     status: str = "success"
     error: Optional[str] = None
 
@@ -72,6 +73,29 @@ def get_or_create_channel_session(req: ChannelRequest) -> int:
     return new_sess["id"]
 
 
+
+
+async def _auto_dispatch_artifacts_to_channel(channel: str, channel_id: str, artifacts: List[Dict[str, Any]]):
+    """Auto-dispatches generated documents (.pdf, .docx, .zip) directly to Telegram or WhatsApp."""
+    if not artifacts or not channel_id or channel_id.startswith("default"):
+        return
+    for art in artifacts:
+        f_path = art.get("path")
+        f_name = art.get("filename") or (os.path.basename(f_path) if f_path else "")
+        if not f_path or not os.path.isfile(f_path):
+            continue
+        try:
+            if channel == "telegram":
+                from integrations.telegram import send_telegram_document
+                logger.info(f"[AutoDispatch] Sending document '{f_name}' to Telegram chat {channel_id}")
+                await send_telegram_document(file_path=f_path, chat_id=channel_id, caption=f"?? Berkas: {f_name}")
+            elif channel == "whatsapp":
+                from integrations.whatsapp import send_whatsapp_document
+                logger.info(f"[AutoDispatch] Sending document '{f_name}' to WhatsApp {channel_id}")
+                await send_whatsapp_document(to=channel_id, file_path=f_path, caption=f"?? Berkas: {f_name}")
+        except Exception as e:
+            logger.error(f"[AutoDispatch] Failed to dispatch '{f_name}' to {channel}: {e}")
+
 async def process_channel_request(
     req: ChannelRequest,
     progress_callback: Optional[Callable[[str], Any]] = None
@@ -81,11 +105,15 @@ async def process_channel_request(
     Enforces Plan/Build safety gate and routes back to channel.
     """
     logger.info(f"[ChannelGateway] Incoming request from {req.channel} (user={req.user_id}): {req.text[:50]!r}")
+    from tools.artifact_tools import clear_turn_artifacts, get_turn_artifacts
+    clear_turn_artifacts()
 
     # 1. Resolve Session
     session_id = get_or_create_channel_session(req)
     from core.agent import anara_agent
     anara_agent.set_active_session_id(session_id)
+    from tools.artifact_tools import clear_turn_artifacts, get_turn_artifacts
+    clear_turn_artifacts()
 
     # 2. Content Moderation & Prompt Injection Defense (FR-20)
     clean_text = req.text.strip()
@@ -285,12 +313,17 @@ async def process_channel_request(
         session_id=session_id
     )
 
+    turn_artifacts = get_turn_artifacts()
+    if turn_artifacts and req.channel in ("telegram", "whatsapp"):
+        await _auto_dispatch_artifacts_to_channel(req.channel, req.channel_id, turn_artifacts)
+
     return ChannelResponse(
         text=final_reply,
         session_id=session_id,
         mode="conversational",
         plan_pending=False,
         tools_used=tools_used,
+        attachments=turn_artifacts,
         status="success"
     )
 
@@ -305,6 +338,8 @@ async def _execute_build_mode(
     """Executes the approved plan in Build Mode with system-reminder mode injection."""
     from core.agent import anara_agent
     anara_agent.set_active_session_id(session_id)
+    from tools.artifact_tools import clear_turn_artifacts, get_turn_artifacts
+    clear_turn_artifacts()
 
     if progress_callback:
         try:
@@ -390,20 +425,41 @@ async def _execute_build_mode(
         session_id=session_id
     )
 
+    turn_artifacts = get_turn_artifacts()
+    if turn_artifacts and req.channel in ("telegram", "whatsapp"):
+        await _auto_dispatch_artifacts_to_channel(req.channel, req.channel_id, turn_artifacts)
+
     return ChannelResponse(
         text=final_reply,
         session_id=session_id,
         mode="build",
         plan_pending=False,
         tools_used=tools_used,
+        attachments=turn_artifacts,
         status="success"
     )
 
 
 def resolve_pending_plan_callback(plan_id: str, action: str, user_id: str) -> Optional[Dict[str, Any]]:
     """Resolves an inline callback (e.g. Telegram button click) for a plan."""
+    target_key = None
+    target_plan = None
     for key, data in list(_PENDING_PLANS.items()):
-        if data["plan_id"] == plan_id:
-            del _PENDING_PLANS[key]
-            return data
-    return None
+        if data.get("plan_id") == plan_id or key == plan_id:
+            target_key = key
+            target_plan = data
+            break
+
+    if not target_plan:
+        logger.warning(f"[ChannelGateway] Pending plan {plan_id} not found or already consumed.")
+        return None
+
+    if action == "approve":
+        target_plan["status"] = "executing"
+        if target_key:
+            _PENDING_PLANS.pop(target_key, None)
+        return target_plan
+    else:
+        if target_key:
+            _PENDING_PLANS.pop(target_key, None)
+        return None
