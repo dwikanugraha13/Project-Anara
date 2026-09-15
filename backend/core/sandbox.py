@@ -142,7 +142,7 @@ class CommandSandbox:
 
         # 4. Command assembly
         if os.name == "nt":
-            ps_cmd = [
+            exec_args = [
                 "powershell.exe",
                 "-NoProfile",
                 "-NonInteractive",
@@ -150,40 +150,40 @@ class CommandSandbox:
                 "-Command",
                 f"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; {command}"
             ]
+            use_shell = False
         else:
-            ps_cmd = ["bash", "-c", command]
+            exec_args = ["bash", "-c", command]
+            use_shell = False
 
-        proc = None
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *ps_cmd,
+        def _run_subprocess_sync() -> subprocess.CompletedProcess:
+            return subprocess.run(
+                exec_args,
                 cwd=safe_cwd,
                 env=clean_env,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout_seconds,
+                shell=use_shell
             )
 
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=timeout_seconds
-            )
-
-            out_text = (stdout_bytes or b"").decode("utf-8", errors="replace").strip()
-            err_text = (stderr_bytes or b"").decode("utf-8", errors="replace").strip()
+        try:
+            completed_proc: subprocess.CompletedProcess = await asyncio.to_thread(_run_subprocess_sync)
+            out_text = (completed_proc.stdout or "").strip()
+            err_text = (completed_proc.stderr or "").strip()
             full_output = f"{out_text}\n{err_text}".strip() if err_text else out_text
 
             return {
-                "status": "success" if proc.returncode == 0 else "error",
+                "status": "success" if completed_proc.returncode == 0 else "error",
                 "output": full_output,
-                "exit_code": proc.returncode,
+                "exit_code": completed_proc.returncode,
                 "sandboxed": True,
                 "timed_out": False,
             }
 
-        except asyncio.TimeoutError:
+        except subprocess.TimeoutExpired:
             logger.warning(f"[Sandbox] Command timed out after {timeout_seconds}s: '{command}'")
-            if proc:
-                cls._kill_process_tree(proc.pid)
             return {
                 "status": "timeout",
                 "output": f"Perintah terputus karena melebihi batas waktu aman ({timeout_seconds} detik).",
@@ -196,7 +196,7 @@ class CommandSandbox:
             logger.error(f"[Sandbox] Execution exception: {e}")
             return {
                 "status": "error",
-                "output": f"Kesalahan internal sandbox: {str(e)}",
+                "output": f"Kesalahan internal sandbox: {str(e) or type(e).__name__}",
                 "exit_code": -1,
                 "sandboxed": True,
                 "timed_out": False,

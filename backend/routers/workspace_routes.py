@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import tempfile
 import time as _time
 from typing import Optional, List, Dict, Any
@@ -268,34 +269,38 @@ async def execute_terminal_command_endpoint(req: TerminalExecRequest):
                 "-Command",
                 f"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; {cmd}"
             ]
-            proc = await asyncio.create_subprocess_exec(
-                *ps_cmd,
-                cwd=cwd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
+            use_shell = False
         else:
-            proc = await asyncio.create_subprocess_shell(
-                cmd,
+            ps_cmd = cmd
+            use_shell = True
+
+        def _run_terminal_sync():
+            return subprocess.run(
+                ps_cmd,
                 cwd=cwd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=60.0,
+                shell=use_shell
             )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
-        out_text = stdout.decode("utf-8", errors="replace").strip()
-        err_text = stderr.decode("utf-8", errors="replace").strip()
+
+        completed_proc = await asyncio.to_thread(_run_terminal_sync)
+        out_text = (completed_proc.stdout or "").strip()
+        err_text = (completed_proc.stderr or "").strip()
 
         return {
-            "status": "success" if proc.returncode == 0 else "error",
-            "returncode": proc.returncode,
+            "status": "success" if completed_proc.returncode == 0 else "error",
+            "returncode": completed_proc.returncode,
             "stdout": out_text,
             "stderr": err_text,
             "cwd": cwd
         }
-    except asyncio.TimeoutError:
+    except subprocess.TimeoutExpired:
         return {"status": "error", "returncode": -1, "stdout": "", "stderr": "Perintah melampaui batas waktu (60s)."}
     except Exception as e:
-        return {"status": "error", "returncode": -1, "stdout": "", "stderr": str(e)}
+        return {"status": "error", "returncode": -1, "stdout": "", "stderr": str(e) or type(e).__name__}
 
 @router.post("/api/agent/terminal/stream")
 async def stream_terminal_command_endpoint(req: TerminalExecRequest):
