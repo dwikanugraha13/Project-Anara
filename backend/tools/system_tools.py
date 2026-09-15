@@ -68,54 +68,33 @@ async def _tool_execute_cli_command(command: str, workdir: Optional[str] = None)
     })
 
     try:
-        if os.name == "nt":
-            # Native Windows PowerShell execution with UTF-8 encoding
-            ps_cmd = [
-                "powershell.exe",
-                "-NoProfile",
-                "-NonInteractive",
-                "-ExecutionPolicy", "Bypass",
-                "-Command",
-                f"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; {cmd}"
-            ]
-            proc = await asyncio.create_subprocess_exec(
-                *ps_cmd,
-                cwd=cwd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-        else:
-            proc = await asyncio.create_subprocess_shell(
-                cmd,
-                cwd=cwd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120.0)
-        out_text = stdout.decode("utf-8", errors="replace").strip()
-        err_text = stderr.decode("utf-8", errors="replace").strip()
+        from core.sandbox import command_sandbox
+        sandbox_res = await command_sandbox.execute(
+            command=cmd,
+            cwd=cwd,
+            timeout_seconds=120.0
+        )
 
-        combined = out_text if out_text else err_text
-        if out_text and err_text:
-            combined = f"{out_text}\n\n[STDERR]:\n{err_text}"
+        combined = sandbox_res.get("output", "").strip()
+        return_code = sandbox_res.get("exit_code", 0)
+        is_ok = sandbox_res.get("status") == "success"
 
-        status_label = "Berhasil" if proc.returncode == 0 else f"Gagal (Code {proc.returncode})"
+        status_label = "Berhasil" if is_ok else f"Gagal (Code {return_code})"
         _emit_agent_event("agent_action_complete", {
             "tool_name": "execute_cli_command",
             "action_title": f"Terminal: {status_label}",
-            "summary": f"Selesai (exit code {proc.returncode}).",
+            "summary": f"Selesai (exit code {return_code}).",
             "raw_result": combined[:800],
             "icon": "terminal"
         })
 
         return {
-            "status": "success" if proc.returncode == 0 else "error",
-            "return_code": proc.returncode,
+            "status": "success" if is_ok else "error",
+            "return_code": return_code,
             "working_directory": cwd,
+            "sandboxed": True,
             "output": combined[:4000]
         }
-    except asyncio.TimeoutError:
-        return {"status": "error", "message": f"Perintah terminal '{cmd}' melampaui batas waktu (120 detik)."}
     except Exception as e:
         logger.warning(f"[AgentTools] CLI exec error: {e}")
         return {"status": "error", "message": str(e)}

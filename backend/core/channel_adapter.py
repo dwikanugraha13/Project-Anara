@@ -16,6 +16,7 @@ from memory import memory_engine, file_memory
 from core.plan_detector import needs_plan, is_explicit_plan_approval
 from core.prompt_assembler import PromptAssembler
 from core.skill_library import skill_library
+from core.security import check_prompt_injection
 from providers import call_universal_chat_model, get_active_model_id
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,20 @@ async def process_channel_request(
     # 1. Resolve Session
     session_id = get_or_create_channel_session(req)
 
-    # 2. Log User Turn & Trigger Memory Detection
+    # 2. Content Moderation & Prompt Injection Defense (FR-20)
+    clean_text = req.text.strip()
+    is_safe, denial_reason = check_prompt_injection(clean_text)
+    if not is_safe:
+        denial_msg = denial_reason or "Permintaan ditolak oleh filter keamanan Anara."
+        return ChannelResponse(
+            text=denial_msg,
+            session_id=session_id,
+            mode="conversational",
+            status="blocked",
+            error=denial_msg
+        )
+
+    # 3. Log User Turn & Trigger Memory Detection
     memory_engine.log_conversation(
         user_text=req.text,
         ai_text="",
@@ -93,11 +107,10 @@ async def process_channel_request(
     )
     file_memory.detect_and_record_memory(req.text, speaker_name=req.sender_name)
 
-    # 3. Check for Plan Approval keywords
-    clean_text = req.text.strip()
+    # 4. Check for Plan Approval keywords
     is_approval = is_explicit_plan_approval(clean_text)
 
-    # 4. Check if this request needs a plan
+    # 5. Check if this request needs a plan
     requires_plan = needs_plan(clean_text, session_mode="conversational")
 
     # Check if there is an existing pending plan waiting in this session

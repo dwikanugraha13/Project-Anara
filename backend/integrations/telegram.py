@@ -577,6 +577,14 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
             pending = resolve_pending_plan_callback(plan_id, action, user_id)
             if action == "approve":
                 if pending:
+                    from core.security import is_authorized_approver
+                    if not is_authorized_approver(user_id=user_id, plan_owner_id=pending.get("user_id", user_id), channel="telegram"):
+                        await send_telegram_message(
+                            text="⚠️ <b>Akses Ditolak:</b> Anda tidak memiliki otorisasi untuk menyetujui rencana kerja ini.",
+                            chat_id=chat_id
+                        )
+                        return
+
                     await send_telegram_message(text="🔨 Rencana disetujui! Memulai eksekusi di latar belakang...", chat_id=chat_id)
                     req = ChannelRequest(
                         text=f"Eksekusi rencana: {pending['original_prompt']}",

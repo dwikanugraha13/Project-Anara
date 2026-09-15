@@ -7,6 +7,8 @@ from .prompt_assembler import PromptAssembler
 from .context_compactor import ContextCompactor
 from .skill_extractor import SkillExtractor
 from .skill_library import SkillLibraryManager, skill_library
+from .sandbox import CommandSandbox, command_sandbox, get_sanitized_environment, check_command_safety
+from .security import check_prompt_injection, is_authorized_approver
 from .autonomous_engine import (
     AutonomousEngine,
     autonomous_engine,
@@ -41,6 +43,12 @@ __all__ = [
     "SkillExtractor",
     "SkillLibraryManager",
     "skill_library",
+    "CommandSandbox",
+    "command_sandbox",
+    "get_sanitized_environment",
+    "check_command_safety",
+    "check_prompt_injection",
+    "is_authorized_approver",
     "AutonomousEngine",
     "autonomous_engine",
     "evaluate_trust_approval",
