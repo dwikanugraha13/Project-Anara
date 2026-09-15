@@ -419,7 +419,8 @@ import re
 def is_safe_read_only_cli_command(command: str) -> bool:
     """
     Validates if a CLI command in Plan Mode is purely for safe host/environment inspection
-    (e.g., node -v, Test-Path, Get-ChildItem, $env:USERPROFILE) and does not mutate disk/state.
+    (e.g., battery query, node -v, Test-Path, Get-ChildItem, systeminfo, $env:USERPROFILE)
+    and does not mutate disk/state.
     """
     cmd = (command or "").strip()
     if not cmd or ">" in cmd:
@@ -438,6 +439,10 @@ def is_safe_read_only_cli_command(command: str) -> bool:
         if tok in cmd_lower:
             return False
 
+    # Direct fast-match for battery and hardware status inspection
+    if any(k in cmd_lower for k in ["win32_battery", "powerstatus", "battery_bat", "batteryreport", "estimatedchargeremaining", "batterystatus"]):
+        return True
+
     safe_patterns = [
         r"^node\s+-[vV]", r"^npm\s+-[vV]", r"^pnpm\s+-[vV]", r"^yarn\s+-[vV]", r"^bun\s+-[vV]",
         r"^python\s+--?version", r"^python\s+-V", r"^pip\s+--?version", r"^pip\s+list",
@@ -450,6 +455,7 @@ def is_safe_read_only_cli_command(command: str) -> bool:
         r"^get-process\b", r"^get-service\b", r"^get-uptime\b",
         r"^ipconfig\b", r"^ping\b", r"^nslookup\b", r"^netstat\b", r"^curl\b",
         r"^cat\b", r"^type\b", r"^head\b", r"^tail\b", r"^echo\b", r"^write-output\b",
+        r"^select\b", r"^select-object\b", r"^format-table\b", r"^format-list\b",
     ]
 
     subcmds = [s.strip() for s in re.split(r"[;&]+", cmd) if s.strip()]
@@ -457,6 +463,11 @@ def is_safe_read_only_cli_command(command: str) -> bool:
         return False
     for sub in subcmds:
         first_seg = sub.split("|")[0].strip()
+        # Unpack powershell / cmd wrapper prefixes (e.g. powershell -c "...", cmd /c "...")
+        first_seg = re.sub(r"^(?:powershell(?:\.exe)?|cmd(?:\.exe)?)\s+(?:-(?:c|command|k)\s+)?", "", first_seg, flags=re.IGNORECASE).strip()
+        # Strip leading parentheses, brackets, quotes, and dollar signs (e.g. (Get-CimInstance ...).Prop)
+        first_seg = first_seg.lstrip("([\"\' $").strip()
+
         matched = any(re.search(pat, first_seg, re.IGNORECASE) for pat in safe_patterns)
         if not matched:
             return False

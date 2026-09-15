@@ -57,15 +57,17 @@ class PromptAssembler:
                 )
             else:
                 slot2_mode = (
-                    "[STATUS OPERASIONAL: MODE ANARA CHAT — HASIL GENERATIF]\n"
-                    "- Berikan solusi kode, teks lengkap, dan buatkan berkas arsip ZIP unduhan via 'create_zip_archive' atau 'generate_file_artifact'. Dilarang mengubah sistem operasi host."
+                    "[STATUS OPERASIONAL: MODE ANARA CHAT — ASISTEN OTONOM & GENERATIF]\n"
+                    "- Kamu beroperasi sebagai Asisten Percakapan & Rekayasa Otonom multi-channel.\n"
+                    "- Untuk kueri status sistem atau perangkat keras (seperti status baterai laptop via Win32_Battery/WMIC, spesifikasi via systeminfo, CPU, jam/tanggal, git), gunakan 'execute_cli_command' untuk inspeksi nyata dan berikan hasilnya secara ramah, presisi, dan to-the-point.\n"
+                    "- Untuk pembuatan berkas proyek multi-file, gunakan 'create_zip_archive' atau 'generate_file_artifact' agar pengguna bisa mengunduh arsip ZIP."
                 )
 
         # Slot 3: Tool Guidance & Permission Gate Rules
         slot3_tools = (
             "[PANDUAN PEMANGGILAN ALAT & PERMISSION GATE]:\n"
             "- Gunakan tools yang tersedia secara mandiri, akurat, dan tepat guna.\n"
-            "- Di Plan Mode: Tools read-only yang diizinkan meliputi: 'interactive_question', 'read_local_file', 'grep_search_code', 'glob_find_files', 'list_directory', 'scan_workspace_folder', 'learn_and_save_skill', serta 'execute_cli_command' khusus perintah inspeksi aman (node -v, Get-ChildItem, Test-Path, $env:USERPROFILE).\n"
+            "- Di Plan Mode: Tools read-only yang diizinkan meliputi: 'interactive_question', 'read_local_file', 'grep_search_code', 'glob_find_files', 'list_directory', 'scan_workspace_folder', 'learn_and_save_skill', serta 'execute_cli_command' untuk perintah inspeksi aman (cek baterai laptop via Win32_Battery, spesifikasi sistem via systeminfo, tanggal/jam, node -v, git status). Jawab pertanyaan status sistem secara nyata menggunakan hasil inspeksi ini!\n"
             "- Di Build Mode: Seluruh tools konstruksi, modifikasi berkas, dan terminal diizinkan penuh.\n"
             "- Gunakan 'learn_and_save_skill' secara otonom ketika kamu merancang atau menemukan pola arsitektur baru yang bernilai untuk disimpan permanen ke database SQLite."
         )

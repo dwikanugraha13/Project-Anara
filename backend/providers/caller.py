@@ -216,6 +216,7 @@ async def _execute_json_agent_loop(
 ) -> str:
     """Universal multi-turn JSON tool loop for OpenAI Codex, Claude, and Custom Providers."""
     from tools import dispatch_tool_call, READ_ONLY_TOOL_NAMES
+    from tools.catalog import is_safe_read_only_cli_command
     
     tool_spec_doc = (
         "\n\n[UNIVERSAL AUTONOMOUS AGENT PROTOCOL — CLAUDE CODE / OPENCODE / HERMES STANDARD]\n"
@@ -340,7 +341,8 @@ async def _execute_json_agent_loop(
             except Exception:
                 pass
         
-        if read_only and tool_name not in READ_ONLY_TOOL_NAMES:
+        is_safe_cli = (tool_name == "execute_cli_command" and is_safe_read_only_cli_command(tool_args.get("command", "")))
+        if read_only and tool_name not in READ_ONLY_TOOL_NAMES and not is_safe_cli:
             tool_res = {"status": "error", "message": f"Tool '{tool_name}' dinonaktifkan di Plan Mode (Read-Only)."}
         else:
             tool_res = await dispatch_tool_call(tool_name, tool_args, read_only=read_only)
