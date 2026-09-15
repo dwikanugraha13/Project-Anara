@@ -443,7 +443,13 @@ def is_safe_read_only_cli_command(command: str) -> bool:
         r"^python\s+--?version", r"^python\s+-V", r"^pip\s+--?version", r"^pip\s+list",
         r"^git\s+--version", r"^git\s+status", r"^git\s+branch", r"^git\s+log", r"^git\s+diff",
         r"^\$env:\w+", r"^test-path\b", r"^get-childitem\b", r"^get-item\b", r"^get-command\b", r"^get-location\b",
-        r"^pwd\b", r"^dir\b", r"^ls\b", r"^where(?:\.exe)?\b", r"^which\b", r"^whoami\b"
+        r"^pwd\b", r"^dir\b", r"^ls\b", r"^where(?:\.exe)?\b", r"^which\b", r"^whoami\b",
+        # Safe Host System, Battery & OS Inspection Patterns
+        r"^wmic\b", r"^get-ciminstance\b", r"^get-wmiobject\b", r"^powercfg\b",
+        r"^systeminfo\b", r"^hostname\b", r"^date\b", r"^time\b", r"^get-date\b",
+        r"^get-process\b", r"^get-service\b", r"^get-uptime\b",
+        r"^ipconfig\b", r"^ping\b", r"^nslookup\b", r"^netstat\b", r"^curl\b",
+        r"^cat\b", r"^type\b", r"^head\b", r"^tail\b", r"^echo\b", r"^write-output\b",
     ]
 
     subcmds = [s.strip() for s in re.split(r"[;&]+", cmd) if s.strip()]

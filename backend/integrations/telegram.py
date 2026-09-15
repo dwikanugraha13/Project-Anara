@@ -1,6 +1,8 @@
 import asyncio
+import html
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional
 import httpx
 
@@ -177,12 +179,79 @@ async def execute_remote_telegram_command(command_text: str, chat_id: str) -> st
         return err_msg
 
 
+def format_telegram_html(text: str) -> str:
+    """
+    Converts markdown and mixed HTML into Telegram Bot API valid HTML entities:
+    - Supported tags: <b>, <i>, <code>, <s>, <u>, <pre>, <a href="...">
+    - Converts Markdown **bold** -> <b>bold</b>
+    - Converts Markdown *italic* -> <i>italic</i>
+    - Converts Markdown ```code``` -> <pre><code>code</code></pre>
+    - Converts Markdown `code` -> <code>code</code>
+    - Converts Markdown [text](url) -> <a href="url">text</a>
+    - Safely escapes stray &, <, > that are not part of valid Telegram HTML tags.
+    """
+    if not text:
+        return ""
+
+    # 1. Placeholders for code blocks
+    code_blocks = []
+    def _cb_block(m):
+        code_blocks.append(m.group(1))
+        return f"___CODE_BLOCK_{len(code_blocks)-1}___"
+
+    s = re.sub(r"```(?:[a-zA-Z0-9_\-\+\.]+)?\n?([\s\S]*?)```", _cb_block, text)
+
+    # 2. Placeholders for inline code
+    inline_codes = []
+    def _cb_inline(m):
+        inline_codes.append(m.group(1))
+        return f"___INLINE_CODE_{len(inline_codes)-1}___"
+
+    s = re.sub(r"`([^`\n]+)`", _cb_inline, s)
+
+    # 3. Protect existing valid Telegram HTML tags
+    valid_tags = []
+    def _cb_tag(m):
+        valid_tags.append(m.group(0))
+        return f"___VALID_TAG_{len(valid_tags)-1}___"
+
+    tag_pat = r"</?(?:b|i|u|s|code|pre|blockquote|a)(?:\s+href=[\"\'][^\"\']*[\"\'])?\s*/?>"
+    s = re.sub(tag_pat, _cb_tag, s, flags=re.IGNORECASE)
+
+    # 4. Escape remaining HTML entities (&, <, >)
+    s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    # 5. Restore valid tags
+    for i, t in enumerate(valid_tags):
+        s = s.replace(f"___VALID_TAG_{i}___", t)
+
+    # 6. Convert Markdown bold **text** -> <b>text</b>
+    s = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s, flags=re.DOTALL)
+
+    # 7. Convert Markdown headers (### Header) -> <b>Header</b>
+    s = re.sub(r"(?m)^#{1,6}\s*(.+)$", r"<b>\1</b>", s)
+
+    # 8. Convert Markdown links [text](url) -> <a href=\"url\">text</a>
+    s = re.sub(r"\[([^\]]+)\]\((https?://[^\s\)]+)\)", r'<a href="\2">\1</a>', s)
+
+    # 9. Restore code blocks & inline codes (escaped)
+    for i, code in enumerate(code_blocks):
+        clean = html.escape(code.strip())
+        s = s.replace(f"___CODE_BLOCK_{i}___", f"<pre><code>{clean}</code></pre>")
+
+    for i, code in enumerate(inline_codes):
+        clean = html.escape(code.strip())
+        s = s.replace(f"___INLINE_CODE_{i}___", f"<code>{clean}</code>")
+
+    return s
+
+
 async def send_telegram_message(
     text: str,
     chat_id: Optional[str] = None,
     reply_markup: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
-    """Sends a text message to a specific or default Telegram chat ID."""
+    """Sends a text message to a specific or default Telegram chat ID with HTML formatting and auto-fallback."""
     token = get_stored_telegram_token()
     if not token:
         return {"status": "error", "message": "Token Telegram Bot belum diatur."}
@@ -195,9 +264,12 @@ async def send_telegram_message(
             return {"status": "error", "message": "Chat ID tujuan belum ditentukan. Kirim pesan ke bot terlebih dahulu."}
 
     url = f"{TELEGRAM_API_BASE}/bot{token}/sendMessage"
+    formatted_text = format_telegram_html(text)
+
     payload = {
         "chat_id": target_chat,
-        "text": text,
+        "text": formatted_text,
+        "parse_mode": "HTML",
     }
     if reply_markup:
         payload["reply_markup"] = reply_markup
@@ -210,10 +282,25 @@ async def send_telegram_message(
                 if data.get("ok"):
                     logger.info(f"[TelegramService] Message sent to {target_chat}: {text[:50]!r}")
                     return {"status": "ok", "message_id": data["result"]["message_id"], "recipient": target_chat}
-                else:
-                    return {"status": "error", "message": data.get("description", "Gagal mengirim pesan.")}
-            else:
-                return {"status": "error", "message": f"HTTP {res.status_code}: {res.text}"}
+
+            # If HTML parsing error or failed, fallback to plain text stripped of HTML tags
+            err_desc = res.json().get("description", "") if res.status_code != 200 else ""
+            logger.warning(f"[TelegramService] HTML send failed ({res.status_code}: {err_desc}). Retrying with plain text fallback...")
+            plain_text = re.sub(r"<[^>]+>", "", text)
+            fallback_payload = {
+                "chat_id": target_chat,
+                "text": plain_text,
+            }
+            if reply_markup:
+                fallback_payload["reply_markup"] = reply_markup
+
+            fallback_res = await client.post(url, json=fallback_payload)
+            if fallback_res.status_code == 200:
+                fb_data = fallback_res.json()
+                if fb_data.get("ok"):
+                    return {"status": "ok", "message_id": fb_data["result"]["message_id"], "recipient": target_chat}
+
+            return {"status": "error", "message": f"HTTP {res.status_code}: {res.text}"}
     except Exception as e:
         logger.error(f"[TelegramService] Send message error: {e}")
         return {"status": "error", "message": str(e)}
@@ -264,10 +351,11 @@ async def edit_telegram_message(
         return {"status": "error", "message": "Token Telegram Bot belum diatur."}
 
     url = f"{TELEGRAM_API_BASE}/bot{token}/editMessageText"
+    formatted_text = format_telegram_html(text)
     payload = {
         "chat_id": chat_id,
         "message_id": message_id,
-        "text": text,
+        "text": formatted_text,
         "parse_mode": "HTML",
     }
     if reply_markup is not None:
@@ -278,6 +366,19 @@ async def edit_telegram_message(
             res = await client.post(url, json=payload)
             if res.status_code == 200:
                 return res.json()
+
+            # Fallback to plain text if HTML parsing failed
+            plain_text = re.sub(r"<[^>]+>", "", text)
+            fallback_payload = {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": plain_text,
+            }
+            if reply_markup is not None:
+                fallback_payload["reply_markup"] = reply_markup
+            fb_res = await client.post(url, json=fallback_payload)
+            if fb_res.status_code == 200:
+                return fb_res.json()
             return {"status": "error", "message": res.text}
     except Exception as e:
         logger.warning(f"[TelegramService] Edit message error: {e}")

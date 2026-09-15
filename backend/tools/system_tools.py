@@ -40,23 +40,25 @@ async def _tool_execute_cli_command(command: str, workdir: Optional[str] = None)
                 "message": f"DITOLAK SISTEM KEAMANAN ANARA: Perintah '{cmd}' terdeteksi berisiko tinggi terhadap integritas sistem operasi."
             }
 
+    from tools.catalog import is_safe_read_only_cli_command
     from core import anara_agent
     has_custom = anara_agent.has_active_custom_workspace()
-    if not has_custom:
+    is_safe = is_safe_read_only_cli_command(cmd)
+
+    if not has_custom and not is_safe:
         return {
             "status": "error",
             "message": (
-                "DITOLAK: Belum ada folder proyek yang terhubung di Anara Code. "
-                "Di mode Chat biasa, eksekusi perintah terminal ke host dinonaktifkan demi keamanan. "
-                "Silakan hubungkan folder proyek di tab Anara Code, atau sajikan kode langsung di chat "
-                "dan buat arsip berkas unduhan via 'create_zip_archive' / 'generate_file_artifact'."
+                "DITOLAK: Perintah modifikasi ini memerlukan ruang kerja proyek aktif di Anara Code (/code). "
+                "Untuk perintah inspeksi sistem yang aman (seperti cek baterai, systeminfo, spesifikasi, git status), "
+                "kamu diizinkan mengeksekusi perintah read-only langsung."
             )
         }
 
     active_f = anara_agent.get_session_dir()
     cwd = os.path.abspath(os.path.expanduser(workdir)) if workdir else active_f
     if not os.path.exists(cwd):
-        cwd = active_f
+        cwd = tempfile.gettempdir()
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "execute_cli_command",

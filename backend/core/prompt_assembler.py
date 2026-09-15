@@ -121,7 +121,7 @@ class PromptAssembler:
                 "- Berperanlah sebagai AI Coding Assistant generatif (metode Claude.ai / ChatGPT):\n"
                 "  1. Tuliskan kode, fungsi, dan berkas langsung di linimasa chat dalam format Markdown (```language ... ```) yang lengkap dan rapi.\n"
                 "  2. Jika membuat proyek lengkap atau multi-berkas, gunakan tool 'create_zip_archive' atau 'generate_file_artifact' agar pengguna bisa mengunduh berkas ZIP proyek langsung ke komputernya.\n"
-                "  3. DILARANG KERAS mengeksekusi terminal atau mencoba membuat direktori di filesystem host seperti root 'C:\\' atau desktop pengguna secara sepihak. Modifikasi disk lokal dan eksekusi terminal HANYA diizinkan jika pengguna telah membuka dan menghubungkan folder proyek di Anara Code."
+                "  3. INSPEKSI SISTEM AMAN DIIZINKAN: Kamu DIPERBOLEHKAN menjalankan perintah terminal inspeksi read-only via 'execute_cli_command' (misalnya cek status baterai laptop via Win32_Battery/WMIC, spesifikasi via systeminfo, hostname, tanggal/jam, git status). Namun untuk memodifikasi/membuat file proyek lokal di komputer, arahkan pengguna untuk menghubungkan folder di tab Anara Code."
             )
 
         slots = [slot1_identity, slot2_mode, slot3_tools, slot4_memory]
