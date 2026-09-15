@@ -759,7 +759,8 @@ async def generate_text_response_with_tools(
     read_only: bool = False,
     progress_cb: Optional[Callable[[Dict[str, Any]], Any]] = None,
     token_cb: Optional[Callable[[str], Any]] = None,
-) -> str:
+    intercept_mutating_tools: bool = False,
+) -> Any:
     """Executes a multi-step ReAct turn using Gemini model with native tool chaining (uncapped tokens by default)."""
     tools = get_agent_tools(read_only=read_only)
     cfg_kwargs: Dict[str, Any] = {
@@ -826,6 +827,20 @@ async def generate_text_response_with_tools(
             fn_args = getattr(fc, "args", {}) or {}
             fn_id = getattr(fc, "id", None)
             logger.info(f"[AnaraAgent Step {step+1}] Invoked: {fn_name!r} (id={fn_id}) with args {fn_args}")
+
+            risk = get_tool_risk(fn_name)
+            if intercept_mutating_tools and risk in ("mutating", "ask"):
+                logger.info(f"[ToolInterceptor Native] Intercepted mutating tool '{fn_name}' for Plan approval.")
+                cmd_preview = fn_args.get("command") or fn_args.get("file_path") or fn_args.get("title") or ""
+                return {
+                    "intercepted": True,
+                    "tool_name": fn_name,
+                    "tool_args": fn_args,
+                    "tool_risk": risk,
+                    "cmd_preview": cmd_preview,
+                    "raw_call": {"tool": fn_name, "arguments": fn_args},
+                }
+
             if progress_cb:
                 try:
                     res_cb = progress_cb({"tool_name": fn_name, "status": "running"})

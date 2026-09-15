@@ -213,9 +213,10 @@ async def _execute_json_agent_loop(
     read_only: bool = False,
     progress_cb: Optional[Callable[[Dict[str, Any]], Any]] = None,
     token_cb: Optional[Callable[[str], Any]] = None,
-) -> str:
+    intercept_mutating_tools: bool = False,
+) -> Any:
     """Universal multi-turn JSON tool loop for OpenAI Codex, Claude, and Custom Providers."""
-    from tools import dispatch_tool_call, READ_ONLY_TOOL_NAMES
+    from tools import dispatch_tool_call, READ_ONLY_TOOL_NAMES, get_tool_risk
     from tools.catalog import is_safe_read_only_cli_command
     
     tool_spec_doc = (
@@ -332,6 +333,19 @@ async def _execute_json_agent_loop(
             
         tool_name = payload.get("tool", "")
         tool_args = payload.get("arguments", {}) or {}
+
+        tool_risk = get_tool_risk(tool_name)
+        if intercept_mutating_tools and tool_risk in ("mutating", "ask"):
+            logger.info(f"[ToolInterceptor JSON] Intercepted mutating tool '{tool_name}' for Plan approval.")
+            cmd_preview = tool_args.get("command") or tool_args.get("file_path") or tool_args.get("title") or ""
+            return {
+                "intercepted": True,
+                "tool_name": tool_name,
+                "tool_args": tool_args,
+                "tool_risk": tool_risk,
+                "cmd_preview": cmd_preview,
+                "raw_call": payload,
+            }
         
         if progress_cb:
             try:
@@ -397,7 +411,8 @@ async def call_universal_chat_model(
     read_only: bool = False,
     progress_cb: Optional[Callable[[Dict[str, Any]], Any]] = None,
     token_cb: Optional[Callable[[str], Any]] = None,
-) -> Optional[str]:
+    intercept_mutating_tools: bool = False,
+) -> Any:
     """
     Executes a chat generation turn with any dynamically selected model.
     Uncapped native generation by default to support complete multi-phase blueprints and large codebases.
@@ -423,6 +438,7 @@ async def call_universal_chat_model(
                 read_only=read_only,
                 progress_cb=progress_cb,
                 token_cb=token_cb,
+                intercept_mutating_tools=intercept_mutating_tools,
             )
 
         return await key_manager.execute_with_failover(_call)
@@ -532,7 +548,7 @@ async def call_universal_chat_model(
                                 return "".join(chunks)
             return ""
 
-        return await _execute_json_agent_loop(_codex_call, user_prompt, system_instruction, read_only=read_only, progress_cb=progress_cb, token_cb=token_cb)
+        return await _execute_json_agent_loop(_codex_call, user_prompt, system_instruction, read_only=read_only, progress_cb=progress_cb, token_cb=token_cb, intercept_mutating_tools=intercept_mutating_tools)
 
     if model_id.startswith("anthropic/"):
         from memory import memory_engine
@@ -585,7 +601,7 @@ async def call_universal_chat_model(
                         raise e
             return ""
 
-        return await _execute_json_agent_loop(_anthropic_call, user_prompt, system_instruction, read_only=read_only, progress_cb=progress_cb, token_cb=token_cb)
+        return await _execute_json_agent_loop(_anthropic_call, user_prompt, system_instruction, read_only=read_only, progress_cb=progress_cb, token_cb=token_cb, intercept_mutating_tools=intercept_mutating_tools)
 
     from memory import memory_engine
     custom_nodes = memory_engine.get_custom_providers()
@@ -649,7 +665,7 @@ async def call_universal_chat_model(
                         
                         return "".join(full_content)
 
-            return await _execute_json_agent_loop(_custom_call, user_prompt, system_instruction, read_only=read_only, progress_cb=progress_cb, token_cb=token_cb)
+            return await _execute_json_agent_loop(_custom_call, user_prompt, system_instruction, read_only=read_only, progress_cb=progress_cb, token_cb=token_cb, intercept_mutating_tools=intercept_mutating_tools)
 
     from core import key_manager
     from tools import generate_text_response_with_tools
@@ -661,6 +677,8 @@ async def call_universal_chat_model(
         system_instruction=system_instruction,
         max_tokens=max_tokens,
         temperature=temperature,
+        read_only=read_only,
         progress_cb=progress_cb,
         token_cb=token_cb,
+        intercept_mutating_tools=intercept_mutating_tools,
     )

@@ -127,7 +127,8 @@ async def process_channel_request(
             session_id=session_id,
             user_prompt=f"Eksekusi rencana: {active_pending['original_prompt']}",
             req=req,
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
+            pending_tool_call=active_pending.get("pending_tool_call"),
         )
 
     # ── CASE B: Request entails high-risk/mutating action -> Auto PLAN MODE ──
@@ -186,7 +187,7 @@ async def process_channel_request(
             status="pending_approval"
         )
 
-    # ── CASE C: Casual Chat / Read-Only / Safe Action -> Direct Answer ──
+    # ── CASE C: Direct Execution with Dynamic Runtime Tool Interception Gate ──
     sys_prompt = PromptAssembler.assemble(
         mode="build",
         speaker_name=req.sender_name,
@@ -217,10 +218,53 @@ async def process_channel_request(
         max_tokens=800,
         temperature=0.7,
         read_only=False,
-        progress_cb=_track_tool
+        progress_cb=_track_tool,
+        intercept_mutating_tools=True,
     )
 
-    final_reply = reply or "Pesan Anda telah diterima oleh Anara."
+    # ── TOOL INTERCEPTION GATE (Zero-Regex Security) ──
+    # If the model attempted to invoke a mutating or ask tool without prior user approval,
+    # intercept the execution in real-time, generate the Plan Card, and request user approval.
+    if isinstance(reply, dict) and reply.get("intercepted"):
+        plan_id = str(uuid.uuid4())[:8]
+        tool_name = reply.get("tool_name", "perintah sistem")
+        cmd_preview = reply.get("cmd_preview", "")
+        raw_call = reply.get("raw_call")
+
+        proposal_text = (
+            f"Saya telah menelaah permintaan Anda dan menyusun rencana tindakan:\n\n"
+            f"• <b>Alat</b>: <code>{tool_name}</code>\n"
+        )
+        if cmd_preview:
+            proposal_text += f"• <b>Tindakan/Perintah</b>:\n<pre><code>{cmd_preview}</code></pre>\n"
+        proposal_text += "\n<i>Apakah rencana tindakan di atas disetujui untuk dieksekusi di PC?</i>"
+
+        _PENDING_PLANS[session_plan_key] = {
+            "plan_id": plan_id,
+            "session_id": session_id,
+            "original_prompt": clean_text,
+            "pending_tool_call": raw_call,
+            "plan_text": proposal_text,
+            "user_id": req.user_id,
+        }
+
+        memory_engine.log_conversation(
+            user_text="",
+            ai_text=proposal_text,
+            speaker_name=req.sender_name,
+            session_id=session_id
+        )
+
+        return ChannelResponse(
+            text=proposal_text,
+            session_id=session_id,
+            mode="plan",
+            plan_pending=True,
+            plan_id=plan_id,
+            status="pending_approval"
+        )
+
+    final_reply = reply if isinstance(reply, str) else "Pesan Anda telah diterima oleh Anara."
 
     memory_engine.log_conversation(
         user_text="",
@@ -243,9 +287,10 @@ async def _execute_build_mode(
     session_id: int,
     user_prompt: str,
     req: ChannelRequest,
-    progress_callback: Optional[Callable[[str], Any]] = None
+    progress_callback: Optional[Callable[[str], Any]] = None,
+    pending_tool_call: Optional[Dict[str, Any]] = None,
 ) -> ChannelResponse:
-    """Executes the approved plan in Build Mode with tool tracking."""
+    """Executes the approved plan in Build Mode with system-reminder mode injection."""
     if progress_callback:
         try:
             msg = "🔨 Rencana disetujui! Memulai eksekusi Build Mode..."
@@ -256,12 +301,20 @@ async def _execute_build_mode(
         except Exception:
             pass
 
+    system_reminder = (
+        "\n\n<system-reminder>\n"
+        "Your operational mode has changed from plan to build.\n"
+        "You are no longer in read-only mode.\n"
+        "You are permitted to make file changes, run shell commands, and utilize your arsenal of tools as needed.\n"
+        "</system-reminder>\n"
+    )
+
     sys_prompt = PromptAssembler.assemble(
         mode="build",
         speaker_name=req.sender_name,
         is_chat_mode=True,
         session_type="chat"
-    )
+    ) + system_reminder
 
     tools_used: List[str] = []
 
@@ -279,17 +332,30 @@ async def _execute_build_mode(
             except Exception:
                 pass
 
+    effective_prompt = user_prompt
+    if pending_tool_call:
+        t_name = pending_tool_call.get("tool", "")
+        t_args = pending_tool_call.get("arguments", {})
+        effective_prompt = (
+            f"Pengguna telah menyetujui eksekusi tindakan berikut:\n"
+            f"• Alat: {t_name}\n"
+            f"• Parameter: {json.dumps(t_args, ensure_ascii=False)}\n"
+            f"Permintaan asli pengguna: \"{user_prompt}\"\n\n"
+            f"Jalankan tindakan di atas menggunakan alat yang tersedia, dan laporkan hasilnya secara tuntas."
+        )
+
     reply = await call_universal_chat_model(
         model_id=get_active_model_id(),
-        user_prompt=user_prompt,
+        user_prompt=effective_prompt,
         system_instruction=sys_prompt,
         max_tokens=1000,
         temperature=0.6,
         read_only=False,
-        progress_cb=_track_tool
+        progress_cb=_track_tool,
+        intercept_mutating_tools=False,
     )
 
-    final_reply = reply or "Eksekusi berhasil diselesaikan."
+    final_reply = reply if isinstance(reply, str) else "Eksekusi berhasil diselesaikan."
 
     memory_engine.log_conversation(
         user_text="",

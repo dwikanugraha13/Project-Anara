@@ -618,7 +618,8 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                         session_id=pending["session_id"],
                         user_prompt=req.text,
                         req=req,
-                        progress_callback=_send_prog
+                        progress_callback=_send_prog,
+                        pending_tool_call=pending.get("pending_tool_call"),
                     )
                     await send_telegram_message(text=f"✅ <b>Hasil Eksekusi:</b>\n{res.text}", chat_id=chat_id)
                 else:
