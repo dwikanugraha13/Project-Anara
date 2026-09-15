@@ -335,6 +335,10 @@ async def _execute_json_agent_loop(
         tool_args = payload.get("arguments", {}) or {}
 
         tool_risk = get_tool_risk(tool_name)
+        is_safe_cli = (tool_name == "execute_cli_command" and is_safe_read_only_cli_command(tool_args.get("command", "")))
+        if is_safe_cli:
+            tool_risk = "read_only"
+
         if intercept_mutating_tools and tool_risk in ("mutating", "ask"):
             logger.info(f"[ToolInterceptor JSON] Intercepted mutating tool '{tool_name}' for Plan approval.")
             cmd_preview = tool_args.get("command") or tool_args.get("file_path") or tool_args.get("title") or ""

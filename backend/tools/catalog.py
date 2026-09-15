@@ -439,8 +439,11 @@ def is_safe_read_only_cli_command(command: str) -> bool:
         if tok in cmd_lower:
             return False
 
-    # Direct fast-match for battery and hardware status inspection
-    if any(k in cmd_lower for k in ["win32_battery", "powerstatus", "battery_bat", "batteryreport", "estimatedchargeremaining", "batterystatus"]):
+    # Direct fast-match for battery, disk/storage, memory, and hardware status inspection
+    if any(k in cmd_lower for k in [
+        "win32_battery", "powerstatus", "battery_bat", "batteryreport", "estimatedchargeremaining", "batterystatus",
+        "get-psdrive", "get-volume", "get-disk", "win32_logicaldisk", "psdrive", "diskfree", "df ", "free "
+    ]):
         return True
 
     safe_patterns = [
@@ -449,13 +452,15 @@ def is_safe_read_only_cli_command(command: str) -> bool:
         r"^git\s+--version", r"^git\s+status", r"^git\s+branch", r"^git\s+log", r"^git\s+diff",
         r"^\$env:\w+", r"^test-path\b", r"^get-childitem\b", r"^get-item\b", r"^get-command\b", r"^get-location\b",
         r"^pwd\b", r"^dir\b", r"^ls\b", r"^where(?:\.exe)?\b", r"^which\b", r"^whoami\b",
-        # Safe Host System, Battery & OS Inspection Patterns
+        # Safe Host System, Storage, Battery & OS Inspection Patterns
         r"^wmic\b", r"^get-ciminstance\b", r"^get-wmiobject\b", r"^powercfg\b",
+        r"^get-psdrive\b", r"^get-volume\b", r"^get-disk\b", r"^df\b", r"^free\b",
         r"^systeminfo\b", r"^hostname\b", r"^date\b", r"^time\b", r"^get-date\b",
         r"^get-process\b", r"^get-service\b", r"^get-uptime\b",
         r"^ipconfig\b", r"^ping\b", r"^nslookup\b", r"^netstat\b", r"^curl\b",
         r"^cat\b", r"^type\b", r"^head\b", r"^tail\b", r"^echo\b", r"^write-output\b",
         r"^select\b", r"^select-object\b", r"^format-table\b", r"^format-list\b",
+        r"^measure-object\b", r"^sort-object\b", r"^where-object\b",
     ]
 
     subcmds = [s.strip() for s in re.split(r"[;&]+", cmd) if s.strip()]
@@ -829,6 +834,10 @@ async def generate_text_response_with_tools(
             logger.info(f"[AnaraAgent Step {step+1}] Invoked: {fn_name!r} (id={fn_id}) with args {fn_args}")
 
             risk = get_tool_risk(fn_name)
+            is_safe_cli = (fn_name == "execute_cli_command" and is_safe_read_only_cli_command(fn_args.get("command", "")))
+            if is_safe_cli:
+                risk = "read_only"
+
             if intercept_mutating_tools and risk in ("mutating", "ask"):
                 logger.info(f"[ToolInterceptor Native] Intercepted mutating tool '{fn_name}' for Plan approval.")
                 cmd_preview = fn_args.get("command") or fn_args.get("file_path") or fn_args.get("title") or ""

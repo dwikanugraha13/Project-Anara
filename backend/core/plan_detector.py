@@ -30,15 +30,15 @@ EXPLICIT_APPROVAL_PATTERNS = [
     r"\bya\s*,?\s*(?:jalankan|eksekusi|sikat|lakukan)\b",
 ]
 
-# Heuristic keyword-to-tool mapper for early pre-flight request inspection
+# Heuristic keyword-to-tool mapper for early pre-flight request inspection (Mutating & Action tools only)
 KEYWORD_TOOL_HEURISTICS = [
     (
-        r"\b(?:terminal|cmd|powershell|shell|bash|npm\s+|pip\s+|git\s+|cargo\s+|"
-        r"baterai|battery|spek\b|spesifikasi|ram\b|cpu\b|hardware|disk\s+space|storage\b|"
-        r"status\s+laptop|status\s+pc|status\s+komputer|cek\s+baterai|cek\s+proses)\b",
+        r"\b(?:terminal|cmd|powershell|shell|bash)\s+(?:jalankan|eksekusi|run|exec)\b|"
+        r"\b(?:npm\s+|pip\s+|cargo\s+|yarn\s+|pnpm\s+|docker\s+|git\s+(?:commit|push|merge|rebase|pull))\b|"
+        r"\b(?:install|deploy|build\s+project|compile)\b",
         "execute_cli_command"
     ),
-    (r"\b(?:edit|ubah|ganti|modifikasi|refactor)\b", "edit_file"),
+    (r"\b(?:edit|ubah|ganti|modifikasi|refactor)\s+(?:file|berkas|kode|script)\b", "edit_file"),
     (r"\b(?:tulis|buat\s+file|simpan\s+file|create\s+file)\b", "write_local_file"),
     (r"\b(?:hapus|delete|drop|format|shutdown|matikan)\b", "system_control"),
     (r"\b(?:kirim\s+wa|kirim\s+whatsapp|wa\s+ke)\b", "whatsapp_send_message"),

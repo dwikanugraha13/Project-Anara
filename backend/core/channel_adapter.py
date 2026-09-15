@@ -174,7 +174,7 @@ async def process_channel_request(
 
         # Log AI Plan Proposal
         memory_engine.log_conversation(
-            user_text="",
+            user_text=clean_text,
             ai_text=plan_text,
             speaker_name=req.sender_name,
             session_id=session_id
@@ -190,6 +190,16 @@ async def process_channel_request(
         )
 
     # ── CASE C: Direct Execution with Dynamic Runtime Tool Interception Gate ──
+    from core.context_compactor import ContextCompactor
+    all_history = memory_engine.get_recent_conversations(
+        limit=25,
+        speaker_name=req.sender_name,
+        session_id=session_id
+    )
+    prior_turns = [h for h in all_history if (h.get("ai_text") or "").strip()]
+    dialogue_context = ContextCompactor.compact_history(prior_turns, verbatim_turns=15)
+    full_user_prompt = f"{dialogue_context}Pesan User: {clean_text}" if dialogue_context else clean_text
+
     sys_prompt = PromptAssembler.assemble(
         mode="build",
         speaker_name=req.sender_name,
@@ -215,7 +225,7 @@ async def process_channel_request(
 
     reply = await call_universal_chat_model(
         model_id=get_active_model_id(),
-        user_prompt=clean_text,
+        user_prompt=full_user_prompt,
         system_instruction=sys_prompt,
         max_tokens=800,
         temperature=0.7,
@@ -251,7 +261,7 @@ async def process_channel_request(
         }
 
         memory_engine.log_conversation(
-            user_text="",
+            user_text=clean_text,
             ai_text=proposal_text,
             speaker_name=req.sender_name,
             session_id=session_id
@@ -269,7 +279,7 @@ async def process_channel_request(
     final_reply = reply if isinstance(reply, str) else "Pesan Anda telah diterima oleh Anara."
 
     memory_engine.log_conversation(
-        user_text="",
+        user_text=clean_text,
         ai_text=final_reply,
         speaker_name=req.sender_name,
         session_id=session_id
@@ -338,16 +348,27 @@ async def _execute_build_mode(
                 pass
 
     effective_prompt = user_prompt
+    all_history = memory_engine.get_recent_conversations(
+        limit=25,
+        speaker_name=req.sender_name,
+        session_id=session_id
+    )
+    prior_turns = [h for h in all_history if (h.get("ai_text") or "").strip()]
+    dialogue_context = ContextCompactor.compact_history(prior_turns, verbatim_turns=15)
+
     if pending_tool_call:
         t_name = pending_tool_call.get("tool", "")
         t_args = pending_tool_call.get("arguments", {})
         effective_prompt = (
+            f"{dialogue_context}"
             f"Pengguna telah menyetujui eksekusi tindakan berikut:\n"
             f"• Alat: {t_name}\n"
             f"• Parameter: {json.dumps(t_args, ensure_ascii=False)}\n"
             f"Permintaan asli pengguna: \"{user_prompt}\"\n\n"
             f"Jalankan tindakan di atas menggunakan alat yang tersedia, dan laporkan hasilnya secara tuntas."
         )
+    elif dialogue_context:
+        effective_prompt = f"{dialogue_context}Pesan User: {user_prompt}"
 
     reply = await call_universal_chat_model(
         model_id=get_active_model_id(),
