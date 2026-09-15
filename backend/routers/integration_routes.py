@@ -44,6 +44,11 @@ class TelegramConfigRequest(BaseModel):
     bot_token: Optional[str] = None
     chat_id: Optional[str] = None
     default_chat_id: Optional[str] = None
+    admin_ids: Optional[str] = None
+    telegram_admin_ids: Optional[str] = None
+
+class WhatsAppConfigRequest(BaseModel):
+    allowed_numbers: Optional[str] = None
 
 class TelegramSendRequest(BaseModel):
     message: str
@@ -84,6 +89,19 @@ async def wa_messages_endpoint(unread_only: bool = False, limit: int = 15):
 async def wa_send_endpoint(req: WhatsAppSendRequest):
     """Sends a WhatsApp text message."""
     return await send_whatsapp_message(req.phone_number, req.message)
+
+@router.get("/api/integrations/whatsapp/config")
+async def wa_get_config_endpoint():
+    """Returns WhatsApp configuration including allowed numbers whitelist."""
+    allowed = memory_engine.get_app_setting("whatsapp_allowed_numbers") or ""
+    return {"allowed_numbers": allowed}
+
+@router.post("/api/integrations/whatsapp/config")
+async def wa_save_config_endpoint(req: WhatsAppConfigRequest):
+    """Saves allowed numbers whitelist for WhatsApp."""
+    if req.allowed_numbers is not None:
+        memory_engine.set_app_setting("whatsapp_allowed_numbers", req.allowed_numbers.strip())
+    return {"status": "success", "allowed_numbers": req.allowed_numbers}
 
 class WhatsAppWebhookPayload(BaseModel):
     id: Optional[str] = None
@@ -175,18 +193,17 @@ async def telegram_status_endpoint():
 @router.post("/api/integrations/telegram/config")
 async def telegram_config_endpoint(req: TelegramConfigRequest):
     """
-    Saves Telegram bot token & default chat ID and validates live connection via getMe API.
-    Auto-starts the background polling daemon if the token is valid.
+    Saves Telegram bot token, default chat ID & admin user IDs.
+    Validates live connection via getMe API and auto-starts the background polling daemon.
     """
     token = (req.token or req.bot_token or "").strip()
     chat_id = (req.default_chat_id or req.chat_id or "").strip() or None
+    admin_ids = (req.admin_ids or req.telegram_admin_ids or "").strip() or None
 
+    save_telegram_config(token=token, default_chat_id=chat_id, admin_ids=admin_ids)
     if token:
-        save_telegram_config(token, chat_id)
         from integrations.telegram import start_telegram_polling_daemon
         start_telegram_polling_daemon()
-    elif chat_id:
-        save_telegram_config("", chat_id)
 
     # Immediately query Telegram getMe API and return actual connection status
     return await get_telegram_status()

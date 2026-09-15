@@ -32,13 +32,24 @@ def get_stored_telegram_chat_id() -> Optional[str]:
     return os.environ.get("TELEGRAM_CHAT_ID", "").strip() or None
 
 
-def save_telegram_config(token: str, default_chat_id: Optional[str] = None) -> bool:
+def get_stored_telegram_admin_ids() -> Optional[str]:
+    """Retrieves allowed Telegram admin user IDs for approval security."""
+    from memory import memory_engine
+    ids = memory_engine.get_app_setting("telegram_admin_ids")
+    if ids:
+        return ids.strip()
+    return os.environ.get("TELEGRAM_ADMIN_IDS", "").strip() or None
+
+
+def save_telegram_config(token: str, default_chat_id: Optional[str] = None, admin_ids: Optional[str] = None) -> bool:
     """Saves telegram configuration to database settings."""
     from memory import memory_engine
     if token:
         memory_engine.set_app_setting("telegram_bot_token", token.strip())
-    if default_chat_id:
+    if default_chat_id is not None:
         memory_engine.set_app_setting("telegram_chat_id", default_chat_id.strip())
+    if admin_ids is not None:
+        memory_engine.set_app_setting("telegram_admin_ids", admin_ids.strip())
     return True
 
 
@@ -70,6 +81,7 @@ async def get_telegram_status() -> Dict[str, Any]:
                             "first_name": bot_info.get("first_name"),
                         },
                         "default_chat_id": get_stored_telegram_chat_id(),
+                        "admin_ids": get_stored_telegram_admin_ids(),
                         "unread_count": len(_recent_telegram_messages),
                     }
                 else:
@@ -77,6 +89,8 @@ async def get_telegram_status() -> Dict[str, Any]:
                         "status": "error",
                         "is_configured": True,
                         "bot": None,
+                        "default_chat_id": get_stored_telegram_chat_id(),
+                        "admin_ids": get_stored_telegram_admin_ids(),
                         "message": data.get("description", "Token tidak valid."),
                     }
             else:
@@ -84,6 +98,8 @@ async def get_telegram_status() -> Dict[str, Any]:
                     "status": "error",
                     "is_configured": True,
                     "bot": None,
+                    "default_chat_id": get_stored_telegram_chat_id(),
+                    "admin_ids": get_stored_telegram_admin_ids(),
                     "message": f"HTTP {res.status_code}: Token salah.",
                 }
     except Exception as e:
@@ -92,6 +108,8 @@ async def get_telegram_status() -> Dict[str, Any]:
             "status": "disconnected",
             "is_configured": True,
             "bot": None,
+            "default_chat_id": get_stored_telegram_chat_id(),
+            "admin_ids": get_stored_telegram_admin_ids(),
             "message": f"Koneksi error: {str(e)}",
         }
 

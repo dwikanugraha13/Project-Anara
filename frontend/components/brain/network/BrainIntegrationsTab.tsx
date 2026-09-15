@@ -23,9 +23,12 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
   const [tgBot, setTgBot] = useState<{ username?: string; first_name?: string } | null>(null);
   const [tgTokenInput, setTgTokenInput] = useState("");
   const [tgChatIdInput, setTgChatIdInput] = useState("");
+  const [tgAdminIdsInput, setTgAdminIdsInput] = useState("");
   const [isTgModalOpen, setIsTgModalOpen] = useState(false);
   const [isTgLoading, setIsTgLoading] = useState(false);
   const [tgErrorMsg, setTgErrorMsg] = useState<string | null>(null);
+  const [waAllowedNumbersInput, setWaAllowedNumbersInput] = useState("");
+  const [isWaConfigSaved, setIsWaConfigSaved] = useState(false);
 
   const [googleStatus, setGoogleStatus] = useState<"connected" | "disconnected">("disconnected");
   const [googleEmail, setGoogleEmail] = useState<string | null>(null);
@@ -46,7 +49,31 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
           setIsWaModalOpen(false);
         }
       }
+      const cfgRes = await fetch(`${BACKEND_URL}/api/integrations/whatsapp/config`);
+      if (cfgRes.ok) {
+        const cfgData = await cfgRes.json();
+        if (cfgData.allowed_numbers !== undefined) {
+          setWaAllowedNumbersInput(cfgData.allowed_numbers || "");
+        }
+      }
     } catch {}
+  };
+
+  const handleSaveWhatsAppConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/integrations/whatsapp/config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowed_numbers: waAllowedNumbersInput.trim() }),
+      });
+      if (res.ok) {
+        setIsWaConfigSaved(true);
+        setTimeout(() => setIsWaConfigSaved(false), 3000);
+      }
+    } catch (e) {
+      console.error("[WhatsApp] save config error:", e);
+    }
   };
 
   const fetchContacts = async () => {
@@ -134,6 +161,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
         setTgStatus(data.status || "disconnected");
         setTgBot(data.bot || null);
         if (data.default_chat_id) setTgChatIdInput(data.default_chat_id);
+        if (data.admin_ids) setTgAdminIdsInput(data.admin_ids);
       }
     } catch {}
   };
@@ -146,6 +174,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
     try {
       const cleanToken = tgTokenInput.trim();
       const cleanChatId = tgChatIdInput.trim();
+      const cleanAdminIds = tgAdminIdsInput.trim();
       const res = await fetch(`${BACKEND_URL}/api/integrations/telegram/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -154,12 +183,15 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
           bot_token: cleanToken,
           chat_id: cleanChatId || undefined,
           default_chat_id: cleanChatId || undefined,
+          admin_ids: cleanAdminIds || undefined,
+          telegram_admin_ids: cleanAdminIds || undefined,
         }),
       });
       if (res.ok) {
         const data = await res.json();
         setTgStatus(data.status || "disconnected");
         setTgBot(data.bot || null);
+        if (data.admin_ids) setTgAdminIdsInput(data.admin_ids);
         if (data.status === "connected") {
           setIsTgModalOpen(false);
           setTgErrorMsg(null);
@@ -336,6 +368,38 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                 </button>
               )}
             </div>
+
+            {/* Whitelist Nomor WhatsApp */}
+            <form onSubmit={handleSaveWhatsAppConfig} className="mt-3 pt-3 border-t border-white/10 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-mono text-slate-300">
+                  Nomor Terotorisasi (Whitelist)
+                </label>
+                {isWaConfigSaved && (
+                  <span className="text-[10px] font-mono text-emerald-300 animate-fade-in">
+                    ✓ Tersimpan
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="misal: 6281234567890 (kosongkan jika terima semua)"
+                  value={waAllowedNumbersInput}
+                  onChange={(e) => setWaAllowedNumbersInput(e.target.value)}
+                  className="flex-1 px-3 py-1.5 rounded-xl bg-black/40 border border-white/15 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-400 font-mono"
+                />
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 text-xs font-mono font-semibold transition-all cursor-pointer shrink-0"
+                >
+                  Simpan
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-400 leading-relaxed">
+                Hanya nomor di atas yang direspons Anara (aman dari spam grup/orang asing).
+              </p>
+            </form>
           </div>
     
           {/* 2. KARTU TELEGRAM */}
@@ -653,6 +717,27 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
               onChange={(e) => setTgChatIdInput(e.target.value)}
               className="w-full px-3 py-2 rounded-xl bg-black/50 border border-white/20 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-400 font-mono"
             />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] font-mono text-slate-300">
+                Admin User IDs (Otorisasi Approval)
+              </label>
+              <span className="text-[9.5px] font-mono text-sky-300">
+                Ketik /status di bot untuk cek ID
+              </span>
+            </div>
+            <input
+              type="text"
+              placeholder="misal: 7024711852 (pisahkan koma jika banyak)"
+              value={tgAdminIdsInput}
+              onChange={(e) => setTgAdminIdsInput(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl bg-black/50 border border-white/20 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-400 font-mono"
+            />
+            <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+              Hanya ID pengguna yang terdaftar di sini yang berhak menekan tombol <b>[Setujui Rencana]</b> untuk eksekusi perintah terminal/file di PC.
+            </p>
           </div>
 
           {tgErrorMsg && (
