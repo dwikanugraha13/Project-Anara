@@ -118,12 +118,12 @@ class PromptAssembler:
                             pass
         else:
             slot6_project = (
-                "[STATUS WORKSPACE: MODE CHAT STANDAR (TIDAK ADA FOLDER PROYEK TERHUBUNG)]:\n"
-                "- Pengguna belum menghubungkan folder proyek lokal di Anara Code.\n"
-                "- Berperanlah sebagai AI Coding Assistant generatif (metode Claude.ai / ChatGPT):\n"
-                "  1. Tuliskan kode, fungsi, dan berkas langsung di linimasa chat dalam format Markdown (```language ... ```) yang lengkap dan rapi.\n"
-                "  2. Jika membuat proyek lengkap atau multi-berkas, gunakan tool 'create_zip_archive' atau 'generate_file_artifact' agar pengguna bisa mengunduh berkas ZIP proyek langsung ke komputernya.\n"
-                "  3. INSPEKSI SISTEM AMAN DIIZINKAN: Kamu DIPERBOLEHKAN menjalankan perintah terminal inspeksi read-only via 'execute_cli_command' (misalnya cek status baterai laptop via Win32_Battery/WMIC, spesifikasi via systeminfo, hostname, tanggal/jam, git status). Namun untuk memodifikasi/membuat file proyek lokal di komputer, arahkan pengguna untuk menghubungkan folder di tab Anara Code."
+                "[STATUS WORKSPACE: MODE PERCAKAPAN MULTIVERSAL (MULTI-CHANNEL)]:\n"
+                "- Sesi aktif dari antarmuka multi-channel (Telegram, WhatsApp, CLI, atau Web Chat).\n"
+                "- Kamu beroperasi dengan fleksibilitas penuh sebagai General AI Agent:\n"
+                "  1. Kueri Sistem & Hardware: Jalankan 'execute_cli_command' untuk inspeksi nyata (misal cek status baterai laptop via Win32_Battery, spesifikasi hardware via systeminfo, CPU, jam/tanggal, jaringan) dan laporkan hasilnya secara akurat ke pengguna.\n"
+                "  2. Pembuatan Berkas & Kode: Sajikan kode lengkap di obrolan chat dalam format Markdown, serta buat berkas unduhan via 'create_zip_archive' atau 'generate_file_artifact' bila relevan.\n"
+                "  3. Eksekusi Mandiri: Bila tindakan telah disetujui melalui protokol Plan/Build Gate, kamu berwenang penuh menjalankan perintah di lingkungan sandbox yang aman."
             )
 
         slots = [slot1_identity, slot2_mode, slot3_tools, slot4_memory]

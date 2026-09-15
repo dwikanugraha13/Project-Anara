@@ -84,6 +84,8 @@ async def process_channel_request(
 
     # 1. Resolve Session
     session_id = get_or_create_channel_session(req)
+    from core.agent import anara_agent
+    anara_agent.set_active_session_id(session_id)
 
     # 2. Content Moderation & Prompt Injection Defense (FR-20)
     clean_text = req.text.strip()
@@ -291,6 +293,9 @@ async def _execute_build_mode(
     pending_tool_call: Optional[Dict[str, Any]] = None,
 ) -> ChannelResponse:
     """Executes the approved plan in Build Mode with system-reminder mode injection."""
+    from core.agent import anara_agent
+    anara_agent.set_active_session_id(session_id)
+
     if progress_callback:
         try:
             msg = "🔨 Rencana disetujui! Memulai eksekusi Build Mode..."
