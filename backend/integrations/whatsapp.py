@@ -119,6 +119,16 @@ async def logout_whatsapp() -> Dict[str, Any]:
     return {"status": "error", "message": "Gagal menghubungi WhatsApp bridge."}
 
 
+def format_whatsapp_message_context(msg: Dict[str, Any]) -> str:
+    """Formats a WhatsApp message with reply/quoted context if present."""
+    text = (msg.get("text") or "").strip()
+    quoted = (msg.get("quotedText") or "").strip()
+    if quoted:
+        q_sender = (msg.get("quotedSender") or "Pengguna").upper()
+        return f"[KONTEKS: PENGGUNA MEMBALAS/MEREPLY PESAN DARI {q_sender}]:\n\"{quoted}\"\n\nPertanyaan/Pesan Pengguna: {text}"
+    return text
+
+
 async def get_whatsapp_messages(unread_only: bool = False, limit: int = 10, mark_read: bool = True) -> List[Dict[str, Any]]:
     """Retrieves recent incoming WhatsApp messages."""
     try:
@@ -130,7 +140,11 @@ async def get_whatsapp_messages(unread_only: bool = False, limit: int = 10, mark
             }
             res = await client.get(f"{WA_BRIDGE_URL}/messages", params=params)
             if res.status_code == 200:
-                return res.json().get("messages", [])
+                raw_msgs = res.json().get("messages", [])
+                for m in raw_msgs:
+                    if isinstance(m, dict):
+                        m["formatted_text"] = format_whatsapp_message_context(m)
+                return raw_msgs
     except Exception:
         pass
     return []

@@ -13,6 +13,7 @@ from integrations import (
     logout_whatsapp,
     get_whatsapp_messages,
     send_whatsapp_message,
+    format_whatsapp_message_context,
     get_telegram_status,
     save_telegram_config,
     get_telegram_messages,
@@ -122,14 +123,9 @@ async def wa_webhook_endpoint(payload: WhatsAppWebhookPayload):
     """
     from core.channel_adapter import ChannelRequest, process_channel_request
 
-    clean_text = (payload.text or "").strip()
+    clean_text = format_whatsapp_message_context(payload.dict()).strip()
     if not clean_text:
         return {"status": "ignored", "reason": "empty_text"}
-
-    # Extract quoted message context if user is replying to a message
-    if payload.quotedText and payload.quotedText.strip():
-        q_sender = (payload.quotedSender or "Pengguna").upper()
-        clean_text = f"[KONTEKS: PENGGUNA MEMBALAS/MEREPLY PESAN DARI {q_sender}]:\n\"{payload.quotedText.strip()}\"\n\nPertanyaan/Pesan Pengguna: {clean_text}"
 
     # Check allowed numbers filter (optional security whitelist from app_settings)
     allowed_raw = memory_engine.get_app_setting("whatsapp_allowed_numbers")

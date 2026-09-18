@@ -379,6 +379,29 @@ def test_anara_vision_and_video_tools():
 
     asyncio.run(run_checks())
 
+    # 4. Verify dynamic vision model resolution
+    from tools.vision_tools import _resolve_vision_model, _resolve_fallback_vision_model
+    v_model = _resolve_vision_model()
+    assert isinstance(v_model, str) and len(v_model) > 0
+    fb_model = _resolve_fallback_vision_model()
+    assert isinstance(fb_model, str) and len(fb_model) > 0
+
+    # 5. Verify WhatsApp quoted context extraction
+    from integrations import format_whatsapp_message_context
+    msg_with_quote = {
+        "text": "bisa jelaskan ini?",
+        "quotedText": "Server API sedang down di port 8000",
+        "quotedSender": "DevOps"
+    }
+    formatted = format_whatsapp_message_context(msg_with_quote)
+    assert "[KONTEKS: PENGGUNA MEMBALAS/MEREPLY PESAN DARI DEVOPS]" in formatted
+    assert "Server API sedang down" in formatted
+    assert "bisa jelaskan ini?" in formatted
+
+    # Normal message without quote should remain intact
+    normal_msg = {"text": "halo anara"}
+    assert format_whatsapp_message_context(normal_msg) == "halo anara"
+
 
 
 

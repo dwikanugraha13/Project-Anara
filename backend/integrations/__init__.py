@@ -9,6 +9,7 @@ from .whatsapp import (
     send_whatsapp_message,
     send_whatsapp_document,
     is_whatsapp_connected,
+    format_whatsapp_message_context,
 )
 from .telegram import (
     get_stored_telegram_token,
@@ -45,6 +46,7 @@ __all__ = [
     "get_unread_whatsapp_messages",
     "send_whatsapp_message",
     "is_whatsapp_connected",
+    "format_whatsapp_message_context",
     "get_stored_telegram_token",
     "get_stored_telegram_chat_id",
     "save_telegram_config",
