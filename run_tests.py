@@ -38,6 +38,7 @@ tests = [
     ("Anara Tool Execution Tracer", ts.test_anara_tool_tracer),
     ("Anara Dynamic Loop Breaker", ts.test_anara_loop_breaker),
     ("Anara Unified Command Hub", ts.test_unified_command_hub),
+    ("Anara Tool Decorator & Schema Extraction", ts.test_anara_tool_decorator_and_schema_extraction),
 ]
 
 passed = 0

@@ -302,3 +302,46 @@ def test_unified_command_hub():
     asyncio.run(run_commands())
 
 
+def test_anara_tool_decorator_and_schema_extraction():
+    from tools.base import anara_tool, extract_schema_from_callable
+    from tools.registry import registry
+    from typing import Optional, List
+
+    @anara_tool(
+        name="unit_test_probe_tool",
+        description="Probe tool for automated schema extraction verification.",
+        risk="read_only",
+        category="testing",
+        icon="check-circle"
+    )
+    def probe_action(file_name: str, max_results: int = 25, filter_tags: Optional[List[str]] = None) -> bool:
+        """Runs a probe test.
+        :param file_name: Target file name to inspect
+        :param max_results: Max items
+        :param filter_tags: Optional tag filters
+        """
+        return True
+
+    # 1. Verify schema extraction
+    schema = extract_schema_from_callable(probe_action)
+    assert schema["type"] == "OBJECT"
+    assert "file_name" in schema["properties"]
+    assert schema["properties"]["file_name"]["type"] == "STRING"
+    assert schema["properties"]["file_name"]["description"] == "Target file name to inspect"
+    assert schema["properties"]["max_results"]["type"] == "INTEGER"
+    assert schema["properties"]["filter_tags"]["type"] == "ARRAY"
+    assert schema["properties"]["filter_tags"]["items"]["type"] == "STRING"
+    assert "file_name" in schema.get("required", [])
+    assert "max_results" not in schema.get("required", [])
+
+    # 2. Verify registration in central ToolRegistry
+    tool = registry.get_tool("unit_test_probe_tool")
+    assert tool is not None
+    assert tool.risk == "read_only"
+    assert tool.category == "testing"
+    assert tool.icon == "check-circle"
+    assert tool.declaration is not None
+    assert tool.declaration.name == "unit_test_probe_tool"
+
+
+
