@@ -173,19 +173,22 @@ async def send_telegram_message(
     if not target_chat:
         return {"status": "error", "message": "Chat ID tujuan belum ditentukan."}
 
-    if len(text) > 3800:
+    # ── SEMANTIC CHUNKING (Threshold: 3000 chars for safe HTML expansion & unlimited parts) ──
+    if len(text) > 3000:
         try:
-            from core.channel_adapter import split_message_chunks
-            parts = split_message_chunks(text, max_chars=3800)
-            last_res: Dict[str, Any] = {"status": "ok", "chunks_sent": len(parts)}
-            for idx, part in enumerate(parts):
-                markup = reply_markup if (idx == len(parts) - 1) else None
-                last_res = await send_telegram_message(part, chat_id=target_chat, reply_markup=markup)
-                if idx < len(parts) - 1:
-                    await asyncio.sleep(0.35)
-            return last_res
-        except Exception:
-            pass
+            from .formatter import split_message_chunks
+            parts = split_message_chunks(text, max_chars=3000, add_part_headers=True)
+            if len(parts) > 1:
+                logger.info(f"[TelegramClient] Splitting message ({len(text)} chars) into {len(parts)} parts for chat {target_chat}")
+                last_res: Dict[str, Any] = {"status": "ok", "chunks_sent": len(parts)}
+                for idx, part in enumerate(parts):
+                    markup = reply_markup if (idx == len(parts) - 1) else None
+                    last_res = await send_telegram_message(part, chat_id=target_chat, parse_mode=parse_mode, reply_markup=markup)
+                    if idx < len(parts) - 1:
+                        await asyncio.sleep(0.35)
+                return last_res
+        except Exception as chunk_err:
+            logger.warning(f"[TelegramClient] Chunking error: {chunk_err}")
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         # 1. Native Bot API 10.1 sendRichMessage
@@ -223,6 +226,7 @@ async def send_telegram_message(
             msg_id = res_data.get("message_id") if isinstance(res_data, dict) else None
             return {"status": "ok", "method": "sendMessage_HTML", "result": res_data, "message_id": msg_id}
 
+        logger.warning(f"[TelegramClient] HTML sendMessage returned {res.status_code}: {res.text}. Trying plain text fallback...")
         # 3. Fallback: plain text
         clean_plain = text.replace("<details>", "").replace("</details>", "").replace("<summary>", "").replace("</summary>", "")
         res_plain = await client.post(url, json={"chat_id": target_chat, "text": clean_plain})
@@ -232,7 +236,8 @@ async def send_telegram_message(
             msg_id = res_data.get("message_id") if isinstance(res_data, dict) else None
             return {"status": "ok", "method": "sendMessage_Plain", "result": res_data, "message_id": msg_id}
 
-        return {"status": "error", "message": f"Gagal mengirim pesan Telegram: {res.text[:120]}"}
+        logger.error(f"[TelegramClient] Plain sendMessage failed {res_plain.status_code}: {res_plain.text}")
+        return {"status": "error", "message": f"Gagal mengirim pesan Telegram: {res_plain.text[:120]}"}
 
 
 async def send_telegram_document(

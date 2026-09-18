@@ -37,6 +37,65 @@ def get_active_channel_context() -> Optional[Dict[str, Any]]:
 _PENDING_PLANS: Dict[str, Dict[str, Any]] = {}
 
 
+def split_message_chunks(text: str, max_chars: int = 3000, add_part_headers: bool = True) -> List[str]:
+    """
+    Semantic code-block-aware message chunker for remote chat platforms (Anara Standard).
+    Splits long messages along paragraph and newline boundaries without breaking markdown code blocks.
+    Guarantees unlimited parts and adds header badges [Bagian X/N] when message exceeds threshold.
+    """
+    if not text or len(text) <= max_chars:
+        return [text] if text else []
+
+    raw_chunks: List[str] = []
+    current_text = text
+    effective_limit = max_chars - 40 if add_part_headers else max_chars
+
+    while len(current_text) > effective_limit:
+        candidate = current_text[:effective_limit]
+        code_fence_count = candidate.count("```")
+        ends_inside_code = (code_fence_count % 2 == 1)
+
+        split_idx = -1
+        p_idx = candidate.rfind("\n\n")
+        if p_idx > effective_limit // 3:
+            split_idx = p_idx + 2
+        else:
+            l_idx = candidate.rfind("\n")
+            if l_idx > effective_limit // 3:
+                split_idx = l_idx + 1
+            else:
+                s_idx = candidate.rfind(" ")
+                if s_idx > effective_limit // 3:
+                    split_idx = s_idx + 1
+                else:
+                    split_idx = effective_limit
+
+        chunk_part = current_text[:split_idx]
+        current_text = current_text[split_idx:]
+
+        if ends_inside_code:
+            m_lang = re.search(r"```([a-zA-Z0-9_-]*)\n", chunk_part)
+            last_lang = m_lang.group(1) if m_lang else ""
+            chunk_part = chunk_part + "\n```"
+            current_text = f"```{last_lang}\n" + current_text
+
+        raw_chunks.append(chunk_part)
+
+    if current_text:
+        raw_chunks.append(current_text)
+
+    total_parts = len(raw_chunks)
+    if total_parts <= 1 or not add_part_headers:
+        return raw_chunks
+
+    final_chunks: List[str] = []
+    for idx, chunk in enumerate(raw_chunks, start=1):
+        header = f"📄 <b>[Bagian {idx}/{total_parts}]</b>\n\n"
+        final_chunks.append(header + chunk)
+
+    return final_chunks
+
+
 class ChannelRequest(BaseModel):
     """Uniform internal request representation across all input channels (FR-9)."""
     text: str
