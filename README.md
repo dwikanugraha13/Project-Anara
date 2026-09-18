@@ -1,5 +1,5 @@
 # Project Anara — General-Purpose AI Agent
-### Setara Hermes — Multi-Channel, Autonomous, dengan Plan/Build Gate
+### Anara Standard — Multi-Channel, Autonomous, dengan Plan/Build Gate
 
 > **Anara** adalah AI Agent serbaguna (*general-purpose*) yang menggabungkan kemampuan **Asisten Percakapan Suara 3D** (*Voice Companion*), **Workstation Koding Mandiri** (*Anara Code Studio*), dan **Kendali Jarak Jauh Multi-Channel** (Telegram, WhatsApp, CLI Runner) — dengan penegakan gerbang keamanan **Plan/Build Gate 4-Tingkat** untuk melindungi sistem host dari aksi berisiko tinggi.
 
@@ -22,9 +22,9 @@
 
 ## 🏛️ Arsitektur & Filosofi Sistem
 
-Sesuai spesifikasi `prd-general-agent.md` dan `rancangan-general-agent.md`, Anara menutup celah keamanan agen general-purpose seperti Hermes:
-- **Hermes Agent**: Menggabungkan kemampuan luas (code execution, shell, messaging, autonomous run), namun memanggil tool berisiko tinggi dengan level keamanan yang sama longgarnya dengan obrolan biasa.
-- **Anara General Agent**: Memiliki cakupan kemampuan setara Hermes, tetapi menerapkan prinsip inti:  
+Sesuai spesifikasi `prd-general-agent.md` dan `rancangan-general-agent.md`, Anara menutup celah keamanan agen general-purpose generasi lama:
+- **Legacy General Agents**: Menggabungkan kemampuan luas (code execution, shell, messaging, autonomous run), namun memanggil tool berisiko tinggi dengan level keamanan yang sama longgarnya dengan obrolan biasa.
+- **Anara General Agent**: Menerapkan arsitektur Anara Standard:  
   **`Level keamanan mengikuti risiko alat (tool) yang dipanggil, bukan mengikuti jenis antarmuka atau channel-nya.`**
 
 Satu otak agen mengendalikan seluruh channel, menegakkan permission gate yang sama persis baik dipicu dari obrolan suara santai, chat WhatsApp di HP, terminal CLI, maupun scheduler otomatis.

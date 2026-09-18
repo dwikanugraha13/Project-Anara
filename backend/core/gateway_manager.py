@@ -1,6 +1,6 @@
 """
 gateway_manager.py — Cloudflare Remote Gateway & Tunnel Supervisor for Project Anara.
-Full parity with Hermes Agent gateway subcommands & remote tunnels:
+Anara Standard Gateway & Remote Tunnels:
 1. Portable self-contained cloudflared resolution & auto-bootstrap.
 2. Supervised Quick Tunnel execution forwarding to Next.js port 3000.
 3. Dynamic extraction and recording of live HTTPS public URL.

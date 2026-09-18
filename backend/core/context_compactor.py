@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def prune_tool_output(content: str, max_chars: int = 1500) -> str:
-    """Hermes Parity: Prunes massive code or tool outputs inside context history."""
+    """Anara Standard: Prunes massive code or tool outputs inside context history."""
     if len(content) <= max_chars:
         return content
     if "```" in content:

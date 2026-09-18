@@ -1,6 +1,6 @@
 """
 logger.py — Rotating File & Console Logger for Project Anara.
-Full parity with Hermes Agent hermes_logging.py.
+Anara Standard Logging Engine.
 """
 
 from __future__ import annotations

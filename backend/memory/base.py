@@ -295,7 +295,7 @@ class BaseMemoryEngine:
                 );
             """)
 
-            # 14. Autonomous Hermes-Class Agent Skills & Procedural Learning Engine
+            # 14. Autonomous Anara Agent Skills & Procedural Learning Engine
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS agent_skills (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -612,7 +612,7 @@ class BaseMemoryEngine:
         conn.commit()
 
     def _seed_default_skills(self, conn: sqlite3.Connection):
-        """Seeds built-in Hermes-Class Autonomous Skills if table is empty."""
+        """Seeds built-in Anara Autonomous Skills if table is empty."""
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM agent_skills")
         if cursor.fetchone()[0] > 0:
@@ -691,7 +691,7 @@ class BaseMemoryEngine:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, built_in_skills)
         conn.commit()
-        logger.info(f"[AnaraMemory] Seeded {len(built_in_skills)} built-in Hermes-Class agent skills.")
+        logger.info(f"[AnaraMemory] Seeded {len(built_in_skills)} built-in Anara agent skills.")
 
     def get_brain_stats(self) -> Dict[str, Any]:
         """Returns database node counts and physical size telemetry."""

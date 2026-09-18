@@ -1,6 +1,6 @@
 """
 reasoning_effort.py — Reasoning Effort Normalization & Ladder for Project Anara.
-Full parity with Hermes Agent reasoning_effort.py.
+Anara Standard Reasoning Effort Ladder.
 """
 
 from __future__ import annotations

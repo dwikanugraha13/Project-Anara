@@ -207,7 +207,7 @@ export default function ChatTimeline({
                       Eksplorasi Kapabilitas
                     </p>
                     <p className="text-[11px] text-slate-400 mt-0.5 font-sans leading-relaxed">
-                      Cek tools Hermes, terminal, dan memori
+                      Cek tools Anara, terminal, dan memori
                     </p>
                   </div>
                 </button>

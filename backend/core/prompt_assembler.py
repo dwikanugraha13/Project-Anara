@@ -1,11 +1,11 @@
 """
 prompt_assembler.py — 6-Slot Enterprise Prompt Assembler for Project Anara.
-Implements the Hermes & Claude Code architectural standard:
+Anara Standard 6-Slot Architecture:
 Slot 1: Identity & Persona (SOUL.md)
 Slot 2: Operational Mode Instructions (Plan Mode vs Build Mode)
 Slot 3: Tool Guidelines & Catalog
 Slot 4: Long-Term Memory Snapshot (Facts, Preferences, Persona)
-Slot 5: Active Skills Manifest (Hermes Skills Library)
+Slot 5: Active Skills Manifest (Anara Skills Library)
 Slot 6: Workspace & Project Context (File tree, Git status, AGENTS.md)
 """
 

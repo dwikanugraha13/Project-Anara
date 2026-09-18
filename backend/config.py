@@ -1,6 +1,6 @@
 """
 config.py — Unified Declarative Configuration Engine for Project Anara.
-Full parity with Hermes Agent hermes_cli/config.py & config.yaml:
+Anara Standard Enterprise Configuration:
 1. Loads unified configuration from ANARA_HOME/config.yaml or project config.yaml.
 2. Supports recursive deep merging of defaults and user overrides.
 3. Supports environment variable expansion: ${VAR_NAME} and ${VAR_NAME:-default}.
@@ -73,7 +73,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "journal_mode": os.getenv("DB_JOURNAL_MODE", "wal"),
         "busy_timeout_ms": int(os.getenv("DB_BUSY_TIMEOUT_MS", 15000)),
         "wal_autocheckpoint": 1000,
-        "journal_size_limit_bytes": 67108864,  # 64MB (Hermes Standard)
+        "journal_size_limit_bytes": 67108864,  # 64MB (Anara Standard)
     },
     "workspace": {
         "root": os.getenv("ANARA_WORKSPACE_DIR", ""),
@@ -157,7 +157,7 @@ def _get_config_path() -> Path:
 
 
 def _rotate_config_backups(cfg_file: Path, keep: int = 5) -> None:
-    """Creates a timestamped backup and keeps only the most recent N copies (Hermes standard)."""
+    """Creates a timestamped backup and keeps only the most recent N copies (Anara standard)."""
     try:
         if not cfg_file.is_file():
             return
@@ -257,16 +257,16 @@ def _apply_config_migrations(raw_cfg: Dict[str, Any], cfg_file: Path) -> Dict[st
 
 
 def _seed_default_config_file(cfg_file: Path) -> None:
-    """Auto-seeds a fully documented config.yaml if one does not exist yet (Hermes Parity)."""
+    """Auto-seeds a fully documented config.yaml if one does not exist yet (Anara Standard)."""
     template = """# ==============================================================================
 #  PROJECT ANARA — ENTERPRISE DECLARATIVE CONFIGURATION
-#  Full parity with Hermes Agent config.yaml
+#  Anara Standard config.yaml
 #  All fields support dot-notation lookups (e.g. cfg_get("terminal.timeout"))
 #  Supports environment variable expansion: ${VAR} or ${VAR:-default}
 # ==============================================================================
 _config_version: 1
 
-# Primary, Live Voice & Role-Based AI Models (Hermes Parity)
+# Primary, Live Voice & Role-Based AI Models (Anara Standard)
 model:
   default: "9router/ag/gemini-3.8-flash-high"
   fallback: "9router/ag/gemini-3.8-flash-high"
@@ -291,7 +291,7 @@ browser:
   viewport_width: 1280
   viewport_height: 800
 
-# Rolling Context Window Compaction (Hermes Protected Tail Standard)
+# Rolling Context Window Compaction (Anara Protected Tail Standard)
 compression:
   enabled: true
   protect_last_n: 15       # Protect the most recent N turns verbatim
@@ -312,7 +312,7 @@ agent:
     plan_temperature: 0.4
     auxiliary_temperature: 0.2
 
-# Database Engine Pragmas (Hermes Standard)
+# Database Engine Pragmas (Anara Standard)
 database:
   journal_mode: "wal"      # "wal" (recommended) or "delete"
   busy_timeout_ms: 15000   # Busy wait timeout in milliseconds
@@ -325,7 +325,7 @@ mcp_servers:
   #   command: "uvx"
   #   args: ["mcp-server-fetch"]
 
-# Persistent Agent Workspace Location (Hermes Standard)
+# Persistent Agent Workspace Location (Anara Standard)
 workspace:
   root: ""                 # Custom folder for agent workspace (defaults to %LOCALAPPDATA%/anara/workspace)
 
@@ -396,7 +396,7 @@ def load_config(force_reload: bool = False) -> Dict[str, Any]:
 
 def cfg_get(key_path: str, default: Any = None) -> Any:
     """
-    Retrieves a nested configuration value using dot notation (Hermes standard).
+    Retrieves a nested configuration value using dot notation (Anara standard).
     Example: cfg_get("agent.max_iterations", 30)
     """
     config = load_config()

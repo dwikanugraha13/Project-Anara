@@ -72,7 +72,7 @@ class GeminiLiveService:
                     )
                 )
             ),
-            # Universal Agent Tools (Native Function Calling for Hermes-style Actions & Real-time Web Search)
+            # Universal Agent Tools (Native Function Calling for Anara Actions & Real-time Web Search)
             tools=get_agent_tools(),
         )
 

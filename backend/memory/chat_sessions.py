@@ -38,7 +38,7 @@ class ChatSessionsMixin:
                        session_type: str = "chat",
                        channel: str = "web",
                        session_mode: Optional[str] = None) -> Dict[str, Any]:
-        """Starts a new conversation thread (defaults to 'New Chat' like Hermes/Claude/Antigravity)."""
+        """Starts a new conversation thread (defaults to 'New Chat')."""
         clean_name = speaker_name.strip().title() if speaker_name else None
         initial_title = (title or "").strip() or ("New Project" if session_type == "code" else "New Chat")
         clean_type = "code" if str(session_type).lower() == "code" else "chat"
@@ -293,7 +293,7 @@ class ChatSessionsMixin:
         return ok
 
     async def auto_title_session_async(self, client: Any, session_id: int) -> Optional[str]:
-        """Names a thread from its first turns (ChatGPT/Claude/Hermes-style)."""
+        """Names a thread dynamically from its first turns."""
         sess = self.get_session(session_id)
         if not sess:
             return None

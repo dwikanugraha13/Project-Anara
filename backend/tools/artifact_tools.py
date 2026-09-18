@@ -174,7 +174,7 @@ async def _tool_generate_file_artifact(
     title: Optional[str] = None,
     destination_folder: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Universal Hermes/OpenClaw-Grade File Artifact Generator."""
+    """Universal Anara File Artifact Generator."""
     raw_name = (filename or "document.txt").strip().strip('"\'')
     raw_title = (title or os.path.splitext(raw_name)[0]).strip()
     ext = os.path.splitext(raw_name)[1].lower() or ".txt"
@@ -295,7 +295,7 @@ async def _tool_create_zip_archive(
 
         existing_files = [f for f in os.listdir(active_f) if not f.endswith(".zip") and os.path.isfile(os.path.join(active_f, f))]
         if len(existing_files) == 0:
-            logger.info("[AgentTools] Workspace is empty — running Hermes Auto-Recovery from recent conversation code blocks...")
+            logger.info("[AgentTools] Workspace is empty — running Anara Auto-Recovery from recent conversation code blocks...")
             recent_turns = memory_engine.get_recent_conversations(limit=6)
             recovered_count = 0
             for turn in reversed(recent_turns):
@@ -337,7 +337,7 @@ async def _tool_create_zip_archive(
                     target_rec_path = os.path.join(active_f, fname)
                     with open(target_rec_path, "w", encoding="utf-8") as f_rec:
                         f_rec.write(code_content)
-                    logger.info(f"[AgentTools] Hermes Recovered '{fname}' ({len(code_content)} chars) into workspace")
+                    logger.info(f"[AgentTools] Anara Recovered '{fname}' ({len(code_content)} chars) into workspace")
 
         artifacts_dir = os.path.join(tempfile.gettempdir(), "anara_agent_artifacts")
         os.makedirs(artifacts_dir, exist_ok=True)

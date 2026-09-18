@@ -471,7 +471,7 @@ async def download_artifact_endpoint(filename: str):
 
 @router.get("/api/agent/skills")
 async def get_skills_endpoint():
-    """Returns all Hermes-Class autonomous agent skills."""
+    """Returns all Anara autonomous agent skills."""
     return memory_engine.get_all_agent_skills()
 
 @router.post("/api/agent/skills")

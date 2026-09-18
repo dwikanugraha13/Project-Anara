@@ -1,11 +1,11 @@
 """
 anara_agent.py
 
-Anara Autonomous Agent Engine (Hermes-Style ReAct Loop & Workspace Management).
+Anara Autonomous Agent Engine (Anara ReAct Loop & Workspace Management).
 Provides:
 1. ReAct Autonomous Execution Loop (Thought -> Plan -> Action -> Observation -> Final Answer)
 2. Workspace File & Folder Explorer (Parsing, PDF text extraction, Code preview)
-3. Multi-Step Tool Chaining across OpenRouter Hermes 3, Claude 3.7, Groq, and Gemini
+3. Multi-Step Tool Chaining across OpenRouter, Claude, Groq, and Gemini
 """
 
 import asyncio
@@ -496,7 +496,7 @@ class AnaraAgent:
 
     async def reflect_and_learn_skill(self, user_mission: str, executed_steps: List[str], final_result: str):
         """
-        Hermes-Style Post-Mission Reflection Loop.
+        Anara Post-Mission Reflection Loop.
         Automatically evaluates if the executed mission can be distilled into a reusable procedural skill.
         """
         from memory import memory_engine

@@ -254,7 +254,7 @@ class AgentRunner:
                             speaker_name=self.get_current_speaker(),
                             session_id=self.get_active_session_id(),
                         )
-                        # Smart Rolling Context Window Compaction (Claude Code / Hermes Standard)
+                        # Smart Rolling Context Window Compaction (Claude Code / Anara Standard)
                         dialogue_context = ContextCompactor.compact_history(all_history, verbatim_turns=5)
 
                         ws_tree = anara_agent.get_workspace_tree(session_id=self.get_active_session_id())
@@ -579,7 +579,7 @@ class AgentRunner:
                             )
                             logger.info(f"[Text Chat Turn Completed] Saved turn for session #{self.get_active_session_id()}: {text[:40]!r} -> {reply_text[:40]!r}")
 
-                            # Hermes Lifelong Learning: Auto-extract skill if constructive tools were used in Build Mode
+                            # Anara Lifelong Learning: Auto-extract skill if constructive tools were used in Build Mode
                             if agent_mode == "build" and tools_used:
                                 try:
                                     loop = asyncio.get_running_loop()
@@ -593,7 +593,7 @@ class AgentRunner:
                                         )
                                     )
                                 except Exception as sk_err:
-                                    logger.debug(f"[Hermes Skill Extractor] background task error: {sk_err}")
+                                    logger.debug(f"[Anara Skill Extractor] background task error: {sk_err}")
                         except Exception as log_err:
                             logger.error(f"[Text Chat Turn] Error logging turn: {log_err}")
                         shared_state.last_active_visual_payload = None

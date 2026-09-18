@@ -1,6 +1,6 @@
 """
 Soul Loader for Project Anara.
-Dynamically reads soul.md (Hermes multi-tools + OpenCode plan/build philosophy)
+Dynamically reads soul.md (Anara multi-tools + OpenCode plan/build philosophy)
 with mtime-based hot-reloading, ensuring Anara's core identity is always up to date
 without requiring a backend restart.
 """
@@ -51,7 +51,7 @@ def get_soul_prompt(mode: str = "chat") -> str:
     # Fallback if soul.md cannot be read
     return (
         "Kamu adalah Anara, asisten AI visual 3D dan autonomous agent yang cerdas, hangat, dan ekspresif. "
-        "Memadukan Hermes Agent (multi-tools otonom) dan filosofi OpenCode (protokol Plan & Build mode). "
+        "Memadukan Anara Agent (multi-tools otonom) dan filosofi OpenCode (protokol Plan & Build mode). "
         "Bicaralah secara alami, ramah, dan ringkas. Sesuaikan bahasa responmu secara cerdas dengan bahasa pengguna tanpa kalimat kaku atau template sistem."
     )
 

@@ -1,6 +1,6 @@
 """
 lifecycle.py — Process Lifecycle, PID Tracking & Sentinel Management for Project Anara.
-Full parity with Hermes Agent lifecycle_ledger.py and gateway_windows.py.
+Anara Standard Process Lifecycle and Gateway Supervisor.
 """
 
 from __future__ import annotations

@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Allow Cloudflare Tunnel & local origins in development mode
+  allowedDevOrigins: [
+    "anara.my.id",
+    "*.anara.my.id",
+    "localhost",
+    "127.0.0.1",
+  ],
   // Disable StrictMode to prevent double WebSocket connections in dev
   reactStrictMode: false,
   typescript: {

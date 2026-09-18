@@ -369,7 +369,7 @@ ANARA_FUNCTION_DECLARATIONS = [
     ),
     types.FunctionDeclaration(
         name="learn_and_save_skill",
-        description="Hermes Lifelong Learning Engine: Mengingat dan menyimpan prosedur teknis baru, alur kerja arsitektur, atau resep koding ke database SQLite Anara (tabel agent_skills) secara permanen untuk digunakan kembali di masa depan. Panggil tool ini secara otonom setiap kali kamu menemukan atau merancang pola implementasi yang bernilai.",
+        description="Anara Lifelong Learning Engine: Mengingat dan menyimpan prosedur teknis baru, alur kerja arsitektur, atau resep koding ke database SQLite Anara (tabel agent_skills) secara permanen untuk digunakan kembali di masa depan. Panggil tool ini secara otonom setiap kali kamu menemukan atau merancang pola implementasi yang bernilai.",
         parameters={
             "type": "OBJECT",
             "properties": {

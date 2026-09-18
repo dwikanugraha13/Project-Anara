@@ -1,5 +1,5 @@
 """
-skill_extractor.py — Hermes Post-Build Autonomous Skill Extractor.
+skill_extractor.py — Anara Post-Build Autonomous Skill Extractor.
 Analyzes successfully completed multi-step tasks in Build Mode, distills the reusable
 architectural and procedural workflow, and commits it into SQLite agent_skills for lifelong learning.
 """
@@ -25,7 +25,7 @@ class SkillExtractor:
     ) -> Optional[Dict[str, Any]]:
         """
         Extracts and registers a new skill if the turn accomplished a meaningful
-        and reusable technical workflow (Hermes Lifelong Learning loop).
+        and reusable technical workflow (Anara Lifelong Learning loop).
         """
         # Only trigger if constructive mutating tools were used
         constructive_tools = {"write_local_file", "edit_file", "generate_file_artifact", "create_zip_archive"}
@@ -37,7 +37,7 @@ class SkillExtractor:
         existing_skills = memory_engine.get_all_agent_skills()
         existing_names = [s["name"].lower() for s in existing_skills]
 
-        prompt = f"""Kamu adalah Hermes Autonomous Skill Extractor untuk Project Anara.
+        prompt = f"""Kamu adalah Anara Autonomous Skill Extractor untuk Project Anara.
 Agen baru saja berhasil menyelesaikan tugas konstruksi koding berikut:
 Permintaan User: "{user_prompt}"
 Alat yang Digunakan: {', '.join(tools_used)}
@@ -114,7 +114,7 @@ KEMBALIKAN HANYA JSON VALID:
                 learned=True,
             )
 
-            logger.info(f"[Hermes Skill Extractor] Extracted new skill (pending approval): '{skill_name}' at {saved.get('file_path')}")
+            logger.info(f"[Anara Skill Extractor] Extracted new skill (pending approval): '{skill_name}' at {saved.get('file_path')}")
             return saved
 
         except Exception as e:

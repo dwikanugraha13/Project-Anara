@@ -53,7 +53,7 @@ def print_banner(session_mode: str, model_id: str):
     print(f"""{CYAN}{BOLD}
    ╔═══════════════════════════════════════════════════════════════╗
    ║            ANARA GENERAL AI AGENT — CLI RUNNER                ║
-   ║    Unified Multi-Channel · Plan/Build Gate · Hermes Skills    ║
+   ║    Unified Multi-Channel · Plan/Build Gate · Anara Skills     ║
    ╚═══════════════════════════════════════════════════════════════╝{RESET}
 {DIM}• Channel      :{RESET} cli (Terminal Interactive)
 {DIM}• Mode Sesi    :{RESET} {BOLD}{session_mode}{RESET}

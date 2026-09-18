@@ -17,7 +17,7 @@ if %ERRORLEVEL% equ 0 (
     exit /b 0
 )
 
-:: 2. Check official PID files (Hermes Parity)
+:: 2. Check official PID files (Anara Lifecycle Ledger)
 set "RUN_DIR=%LOCALAPPDATA%\anara\run"
 if exist "%RUN_DIR%\backend.pid" (
     set /p B_PID=<"%RUN_DIR%\backend.pid"

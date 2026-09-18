@@ -1,6 +1,6 @@
 """
 output_manager.py — Smart Tool Output Truncation & Context Compaction for Project Anara.
-Full parity with Hermes Agent tool_output_limits.py and terminal_tool_result.py:
+Anara Standard Smart Output Limiter & Compactor:
 1. Prevents context window explosion and token exhaustion on massive CLI/file/test outputs.
 2. Persists untruncated raw output to %LOCALAPPDATA%/anara/logs/tool_logs/ for offline debugging.
 3. Preserves Head (context of what ran) + Tail (failure trace / exit summary / test result).

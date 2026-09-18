@@ -298,7 +298,7 @@ async def _tool_learn_and_save_skill(
     procedure_steps: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
-    Autonomous Hermes Skill Engine:
+    Autonomous Anara Skill Engine:
     Learns and permanently saves a new capability, architectural workflow, framework recipe,
     or operational procedure into Anara's SQLite database (agent_skills table) for perpetual future reuse.
     """

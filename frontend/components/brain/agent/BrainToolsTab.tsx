@@ -114,7 +114,7 @@ export default function BrainToolsTab() {
             </span>
           </div>
           <p className="text-xs text-slate-400">
-            Instrumen fisik, pekerja latar belakang, dan scheduler otonom (Hermes &amp; OpenCode).
+            Instrumen fisik, pekerja latar belakang, dan scheduler otonom (Anara Standard &amp; OpenCode).
           </p>
         </div>
 

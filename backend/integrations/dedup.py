@@ -1,6 +1,6 @@
 """
 dedup.py — In-Memory Sliding Window Message Deduplication for Anara Integrations.
-Full parity with Hermes Agent gateway/platforms/helpers.py.
+Anara Standard Multi-Channel Message Deduplication.
 """
 
 import time

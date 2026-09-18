@@ -1,5 +1,5 @@
 ' Project Anara - Silent Background Launcher
-' Full Parity with Hermes Agent gateway-service/Hermes_Gateway.vbs
+' Anara Standard Background Service Launcher
 Option Explicit
 Dim sh, fso, rootDir, backendDir, frontendDir, logDir, runDir
 Dim pythonExe, npmCmd, backendCmd, frontendCmd, localAppData, env, tunnelCmd

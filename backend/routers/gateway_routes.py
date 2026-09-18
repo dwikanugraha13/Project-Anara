@@ -1,6 +1,6 @@
 """
 gateway_routes.py — Remote Gateway Authentication, Status & Tunnel Endpoints for Project Anara.
-Full parity with Hermes Agent gateway endpoints:
+Anara Standard Remote Gateway Endpoints:
 1. Validates local vs remote origin requests.
 2. Manages Master Password authentication for remote tunnel access.
 3. Issues and verifies session tokens.

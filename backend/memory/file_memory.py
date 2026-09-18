@@ -98,7 +98,7 @@ class FileMemoryManager:
     @classmethod
     def get_memory_facts(cls) -> str:
         """Returns MEMORY.md content (Persistent Facts & Learned Knowledge)."""
-        default = "# Memori Jangka Panjang (MEMORY.md)\n- [2026-09-15] Anara General Agent diinisialisasi dengan arsitektur memori 4-file & Hermes skill library."
+        default = "# Memori Jangka Panjang (MEMORY.md)\n- [2026-09-15] Anara General Agent diinisialisasi dengan arsitektur memori 4-file & Anara skill library."
         return cls._read_file_safe(MEMORY_FILE_PATH, default=default)
 
     @classmethod

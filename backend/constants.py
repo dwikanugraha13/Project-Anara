@@ -1,6 +1,6 @@
 """
 constants.py — Shared Paths & Environment Constants for Project Anara.
-Full parity with Hermes Agent hermes_constants.py:
+Anara Standard Constants:
 1. Dynamically resolves ANARA_HOME (%LOCALAPPDATA%/anara on Windows, ~/.anara on Linux/macOS).
 2. Keeps user runtime data (SQLite, caches, staging, logs) cleanly isolated from source code.
 3. Import-safe, stdlib-only — importable from anywhere without circular-import risk.
@@ -37,7 +37,7 @@ def get_anara_home() -> Path:
 def get_anara_db_path() -> str:
     """
     Returns the persistent SQLite database path for Anara Brain.
-    Canonical single source of truth is ANARA_HOME / anara_brain.db (Hermes Parity).
+    Canonical single source of truth is ANARA_HOME / anara_brain.db (Anara Standard).
     Seamlessly migrates any legacy in-tree database if needed.
     """
     override = os.getenv("ANARA_DB_PATH", "").strip()
@@ -120,7 +120,7 @@ def get_anara_checkpoints_dir(subdir: str = "") -> Path:
 def prune_stale_staging_files(max_age_days: int = 7) -> int:
     """
     Cleans up temporary media, screenshots, and zip archives in staging directory
-    older than max_age_days (Hermes Parity: Garbage Collection).
+    older than max_age_days (Anara Garbage Collection).
     Returns count of pruned files.
     """
     staging_dir = get_anara_home() / "staging"

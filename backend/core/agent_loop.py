@@ -1,6 +1,6 @@
 """
 agent_loop.py — Transport-Agnostic Core ReAct Turn Loop for Project Anara.
-Full parity with Hermes Agent agent/conversation_loop.py & run_agent.py:
+Anara Standard Core Conversation Loop:
 Provides a single, decoupled agent turn execution engine reusable across
 WebSocket, CLI REPL, Telegram, WhatsApp, Discord, Slack, and Background Cron tasks.
 """

@@ -1,6 +1,6 @@
 """
 validate_env.py — Automated Pre-Flight Environment Validator for Project Anara.
-Full parity with Hermes Agent doctor/pre-flight verification:
+Anara Standard Pre-Flight Doctor Verification:
 Validates Python runtime, directories, database schema integrity, and configurations
 before starting background services.
 """
