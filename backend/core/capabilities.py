@@ -71,11 +71,11 @@ class ModelCapabilityRegistry:
         info = cls._cache.get(model_id)
         if info is not None:
             return bool(info.get("supports_voice", False))
-        # Fallback heuristic when not yet cached
         mid = (model_id or "").lower()
+        if mid in NATIVE_VOICE_MODEL_IDS or any(mid == m.lower() for m in NATIVE_VOICE_MODEL_IDS):
+            return True
         if any(kw in mid for kw in _VOICE_HEURISTIC_KEYWORDS):
-            # Only Gemini/Google models have native Live API right now.
-            return ("gemini" in mid) or ("google" in mid)
+            return True
         return False
 
     @classmethod
@@ -94,7 +94,30 @@ class ModelCapabilityRegistry:
         if info is not None:
             return bool(info.get("supports_vision", False))
         mid = (model_id or "").lower()
-        return any(kw in mid for kw in ["vision", "flash", "gpt-4o", "4o", "claude-3-7", "claude-3-5"])
+        vision_keywords = [
+            "vision", "flash", "gpt-4o", "4o", "claude-3", "claude-3-5", "claude-3-7",
+            "gemini", "qwen-vl", "pixtral", "llava", "omni", "multimodal"
+        ]
+        return any(kw in mid for kw in vision_keywords)
+
+    @classmethod
+    def find_models(cls, capability: str = "text", provider: Optional[str] = None) -> List[str]:
+        """
+        Discovers all models matching a capability filter ('voice', 'vision', 'text').
+        Optionally filters by provider ('google', 'openrouter', 'openai', etc.).
+        """
+        cap = (capability or "text").strip().lower()
+        results: List[str] = []
+        for mid, info in cls._cache.items():
+            if provider and str(info.get("provider", "")).lower() != provider.lower():
+                continue
+            if cap in ("voice", "audio") and cls.supports_voice(mid):
+                results.append(mid)
+            elif cap in ("vision", "image") and cls.supports_vision(mid):
+                results.append(mid)
+            elif cap == "text" and cls.supports_text(mid):
+                results.append(mid)
+        return results
 
     @classmethod
     def normalize_id(cls, model_id: str) -> str:

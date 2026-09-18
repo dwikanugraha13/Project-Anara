@@ -101,18 +101,22 @@ echo  [4/4] Menjalankan server...
 echo.
 
 echo   ^> Backend FastAPI  ^(http://localhost:8000^)
-start "Anara - Backend Server" cmd /k "cd /d ""%~dp0backend"" && if exist venv\Scripts\python.exe (venv\Scripts\python.exe main.py) else (if exist venv\Scripts\activate.bat (call venv\Scripts\activate.bat) && python main.py)"
+start "Anara - Backend Server" cmd /k "cd /d ""%~dp0backend"" && ""%PYTHON_CMD%"" main.py"
 
 echo   ^> Frontend Next.js ^(http://localhost:3000^)
 start "Anara - Frontend Web" cmd /k "cd /d ""%~dp0frontend"" && ""%NPM_CMD%"" run dev"
 
+echo   ^> Cloudflare Tunnel ^(https://anara.my.id^)
+start "Anara - Remote Tunnel" cmd /c "cd /d ""%~dp0"" && ""%PYTHON_CMD%"" cli.py gateway tunnel"
+
 echo.
 echo ======================================================================
-echo   KEDUA SERVER DILUNCURKAN DI JENDELA CMD TERPISAH!
+echo   SERVER & CLOUDFLARE TUNNEL DILUNCURKAN!
 echo.
 echo   - Backend     : http://localhost:8000   (docs: /docs)
 echo   - 3D Companion: http://localhost:3000   (Voice, Avatar, HUD)
 echo   - Code Studio : http://localhost:3000/code (Autonomous AI IDE)
+echo   - Remote Web  : https://anara.my.id     (Cloudflare Gateway)
 echo.
 echo   Tunggu sampai kedua jendela selesai loading, lalu buka browser
 echo   ke http://localhost:3000 atau http://localhost:3000/code

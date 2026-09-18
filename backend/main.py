@@ -37,6 +37,8 @@ from routers.provider_routes import router as provider_router
 from routers.workspace_routes import router as workspace_router
 from routers.integration_routes import router as integration_router
 from routers.session_routes import router as session_router
+from routers.gateway_routes import router as gateway_router
+from routers.telemetry_routes import router as telemetry_router
 from websocket.handler import router as websocket_router
 
 load_dotenv()
@@ -182,6 +184,8 @@ app.include_router(provider_router)
 app.include_router(workspace_router)
 app.include_router(integration_router)
 app.include_router(session_router)
+app.include_router(gateway_router)
+app.include_router(telemetry_router)
 app.include_router(websocket_router)
 
 def _assert_port_free(port: int):

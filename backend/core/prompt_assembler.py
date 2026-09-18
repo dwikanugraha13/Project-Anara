@@ -17,13 +17,18 @@ class PromptAssembler:
     """Orchestrates structured 6-slot system prompt assembly with zero hardcoded constraints."""
 
     @staticmethod
+    @classmethod
     def assemble(
+        cls,
         mode: str = "plan",
         speaker_name: Optional[str] = None,
         workspace_tree: Optional[Dict[str, Any]] = None,
         active_skills: Optional[List[Dict[str, Any]]] = None,
         is_chat_mode: bool = True,
         session_type: str = "chat",
+        user_task: Optional[str] = None,
+        channel: Optional[str] = None,
+        session_id: Optional[Any] = None,
     ) -> str:
         # Slot 1: Identity & Core Personality
         from cognition import get_soul_prompt
@@ -71,36 +76,50 @@ Execute the approved plan thoroughly, apply necessary modifications, and report 
         slot3_tools = (
             "[PANDUAN PEMANGGILAN ALAT & PERMISSION GATE]:\n"
             "- Gunakan tools yang tersedia secara mandiri, akurat, dan tepat guna.\n"
-            "- ATURAN EMAS INSPEKSI: DILARANG membuat berkas skrip (.ps1, .bat, .sh, .py) menggunakan 'write_local_file' hanya untuk mengecek, mencari berkas, atau inspeksi status sistem! Untuk inspeksi sistem/hardware (RAM, proses, baterai, CPU, disk, cari folder/aplikasi), SELALU gunakan 'execute_cli_command' secara langsung (inline one-liner command) atau tools read-only ('glob_find_files', 'list_directory', 'read_local_file').\n"
-            "- 'write_local_file' dan 'edit_file' HANYA boleh dipanggil ketika pengguna meminta membuat/mengubah berkas kode proyek secara nyata.\n"
+            "- KOMUNIKASI NATURAL & ZERO-CANNED (ANARA STANDARD): Berbicaralah dengan gaya Anara yang cerdas, hangat, luwes, dan lugas sesuai soul.md. DILARANG KERAS mengeluarkan kalimat kalengan pembuka robotik.\n"
+            "- PRINSIP KECUKUPAN EKSEKUSI (SUFFICIENT FULFILLMENT PRINCIPLE — ANARA STANDARD): Ketika suatu alat visual atau aksi telah berhasil memenuhi maksud esensial pengguna, segera selesaikan giliran tugas dengan respon akhir yang cerdas dan tuntas. Dilarang memicu eksekusi investigasi sekunder berlebihan kecuali diminta secara eksplisit.\n"
+            "- PENCARIAN & INSPEKSI KODE EFISIEN: Utamakan 'grep_search_code' dan 'glob_find_files' untuk mencari file atau teks kode. DILARANG KERAS menjalankan pencarian rekursif mentah ke folder 'venv', 'node_modules', '.git', '.next', atau 'cache' tanpa filter pengecualian.\n"
             "- Di Plan Mode: Hanya gunakan tools read-only untuk membaca, menelusuri, dan merancang rencana kerja.\n"
             "- Di Build Mode: Seluruh tools konstruksi, modifikasi berkas, dan terminal diizinkan penuh setelah rencana disetujui pengguna.\n"
             "- Gunakan 'learn_and_save_skill' secara otonom ketika kamu merancang atau menemukan pola arsitektur baru yang bernilai untuk disimpan permanen ke database SQLite."
         )
 
-        # Slot 4: Memory Snapshot (4-File Persistent Memory Standard: USER.md + MEMORY.md + SQLite Facts)
+        # Slot 4: Memory Snapshot (USER.md + MEMORY.md + SQLite Facts)
         from memory import memory_engine, file_memory
         db_memory = memory_engine.get_system_prompt_context(speaker_name, is_chat_mode=is_chat_mode).strip()
         file_snapshot = file_memory.get_prompt_context(speaker_name=speaker_name)
         slot4_memory = f"{file_snapshot}\n\n{db_memory}".strip()
 
-        # Slot 5: Skills Manifest (Skill Library v2 — Progressive Disclosure)
+        # Slot 5: Working Memory / Task Scratchpad State (Anara Standard)
+        slot5_scratchpad = ""
+        try:
+            effective_sid = str(session_id) if session_id is not None else "default"
+            from cognition.memory_nudge import memory_nudge_manager
+            pad = memory_nudge_manager.get_scratchpad(effective_sid)
+            rendered_pad = pad.render_to_prompt().strip()
+            if rendered_pad:
+                slot5_scratchpad = rendered_pad
+        except Exception:
+            pass
+
+        # Slot 6: Skills Manifest (Skill Library v2 — Progressive Disclosure)
+        slot6_skills = ""
         from core.skill_library import skill_library
-        skill_manifest = skill_library.get_prompt_manifest()
+        skill_manifest = skill_library.get_prompt_manifest(user_task=user_task)
         if skill_manifest:
-            slot5_skills = skill_manifest
+            slot6_skills = skill_manifest
         else:
             skills_list = active_skills if active_skills is not None else memory_engine.get_all_agent_skills(active_only=True)
             if skills_list:
                 skill_lines = [f"- **{sk['name']}** ({sk.get('category', 'general')}): {sk.get('description', '')}" for sk in skills_list[:8]]
-                slot5_skills = "[KEAHLIAN & SKILLS AGEN AKTIF (HERMES BRAIN)]:\n" + "\n".join(skill_lines)
+                slot6_skills = "[KEAHLIAN & SKILLS AGEN AKTIF (ANARA BRAIN)]:\n" + "\n".join(skill_lines)
 
-        # Slot 6: Project Context & AGENTS.md / Repo Rules
-        slot6_project = ""
+        # Slot 7: Project Context & AGENTS.md / Repo Rules
+        slot7_project = ""
         is_custom = bool(workspace_tree and (workspace_tree.get("is_custom_folder") or workspace_tree.get("is_external")))
         if workspace_tree and (workspace_tree.get("total_files", 0) > 0 or is_custom):
             files_preview = ', '.join([f['path'] for f in workspace_tree.get('files', [])[:25]]) or '(Folder kosong siap dibangun)'
-            slot6_project = (
+            slot7_project = (
                 "[INFO WORKSPACE: ANARA CODE AKTIF (PROYEK LOKAL TERHUBUNG)]:\n"
                 f"- Nama Project: {workspace_tree.get('workspace_name')}\n"
                 f"- Root Path Fisik: {workspace_tree.get('root_path')}\n"
@@ -118,12 +137,12 @@ Execute the approved plan thoroughly, apply necessary modifications, and report 
                             with open(doc_p, "r", encoding="utf-8", errors="ignore") as f:
                                 doc_content = f.read(2000).strip()
                                 if doc_content:
-                                    slot6_project += f"\n\n[ATURAN REPOSITORI PROYEK ({custom_doc})]:\n{doc_content}"
+                                    slot7_project += f"\n\n[ATURAN REPOSITORI PROYEK ({custom_doc})]:\n{doc_content}"
                                     break
                         except Exception:
                             pass
         else:
-            slot6_project = (
+            slot7_project = (
                 "[STATUS WORKSPACE: MODE PERCAKAPAN MULTIVERSAL (MULTI-CHANNEL)]:\n"
                 "- Sesi aktif dari antarmuka multi-channel (Telegram, WhatsApp, CLI, atau Web Chat).\n"
                 "- Kamu beroperasi dengan fleksibilitas penuh sebagai General AI Agent:\n"
@@ -133,9 +152,11 @@ Execute the approved plan thoroughly, apply necessary modifications, and report 
             )
 
         slots = [slot1_identity, slot2_mode, slot3_tools, slot4_memory]
-        if slot5_skills:
-            slots.append(slot5_skills)
-        if slot6_project:
-            slots.append(slot6_project)
+        if slot5_scratchpad:
+            slots.append(slot5_scratchpad)
+        if slot6_skills:
+            slots.append(slot6_skills)
+        if slot7_project:
+            slots.append(slot7_project)
 
         return "\n\n".join(slots)

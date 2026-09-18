@@ -1,0 +1,77 @@
+"""
+output_manager.py — Smart Tool Output Truncation & Context Compaction for Project Anara.
+Full parity with Hermes Agent tool_output_limits.py and terminal_tool_result.py:
+1. Prevents context window explosion and token exhaustion on massive CLI/file/test outputs.
+2. Persists untruncated raw output to %LOCALAPPDATA%/anara/logs/tool_logs/ for offline debugging.
+3. Preserves Head (context of what ran) + Tail (failure trace / exit summary / test result).
+"""
+
+from __future__ import annotations
+
+import os
+import uuid
+from pathlib import Path
+from typing import Optional
+from constants import get_anara_logs_dir
+
+TOOL_LOGS_DIR = get_anara_logs_dir("tool_logs")
+TOOL_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def compact_tool_output(
+    output: str,
+    max_lines: int = 60,
+    max_chars: int = 4000,
+    head_ratio: float = 0.4,
+    source_label: str = "output",
+) -> str:
+    """
+    Truncates massive outputs into a clean Head + Tail snippet with an informative notice,
+    writing the full raw output to disk for auditability.
+    """
+    if not output:
+        return ""
+
+    text = str(output)
+    line_count = text.count("\n") + 1
+
+    # If within safe limits, return verbatim
+    if len(text) <= max_chars and line_count <= max_lines:
+        return text
+
+    # 1. Save full untruncated dump to disk
+    dump_id = uuid.uuid4().hex[:8]
+    dump_file = TOOL_LOGS_DIR / f"{source_label}_{dump_id}.log"
+    try:
+        dump_file.write_text(text, encoding="utf-8", errors="replace")
+        log_notice = f"Log lengkap ({len(text):,} karakter) tersimpan di: {dump_file}"
+    except Exception:
+        log_notice = f"Total karakter: {len(text):,}"
+
+    # 2. Line-based truncation if multi-line
+    lines = text.splitlines()
+    if len(lines) > max_lines:
+        head_lines_count = max(1, int(max_lines * head_ratio))
+        tail_lines_count = max(1, max_lines - head_lines_count)
+        head = "\n".join(lines[:head_lines_count])
+        tail = "\n".join(lines[-tail_lines_count:])
+        omitted = len(lines) - (head_lines_count + tail_lines_count)
+
+        return (
+            f"{head}\n\n"
+            f"--- [OUTPUT TERPOTONG: {omitted} baris disembunyikan. {log_notice}] ---\n\n"
+            f"{tail}"
+        )
+
+    # 3. Char-based truncation (single or few very long lines, e.g. minified code/JSON)
+    head_len = max(1, int(max_chars * head_ratio))
+    tail_len = max(1, max_chars - head_len)
+    head_text = text[:head_len]
+    tail_text = text[-tail_len:]
+    omitted_chars = len(text) - (head_len + tail_len)
+
+    return (
+        f"{head_text}\n\n"
+        f"--- [OUTPUT TERPOTONG: {omitted_chars:,} karakter disembunyikan. {log_notice}] ---\n\n"
+        f"{tail_text}"
+    )

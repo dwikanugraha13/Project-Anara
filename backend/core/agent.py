@@ -467,6 +467,20 @@ class AnaraAgent:
             self._session_custom_names.clear()
             self._session_active_paths.clear()
 
+        # HARD SAFETY GUARD: NEVER clear project repository root or user directories!
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        clean_target = os.path.abspath(target_dir)
+
+        is_safe_sandbox = (
+            "anara_agent_workspace" in clean_target
+            or "anara\\workspace\\session_" in clean_target.lower()
+            or "anara/workspace/session_" in clean_target.lower()
+        )
+
+        if clean_target == repo_root or not is_safe_sandbox:
+            logger.warning(f"[SafetyGuard] Refusing to wipe non-sandbox directory: {target_dir}")
+            return
+
         # Only clear Anara's temporary workspace. An external user folder is detached safely.
         if not external_path and os.path.exists(target_dir):
             for item in os.listdir(target_dir):

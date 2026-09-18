@@ -26,3 +26,6 @@ backend/whatsapp_bridge/auth_info_baileys/
 # Misc
 .DS_Store
 scratch/
+.test_home/
+.pytest_cache/
+*.log

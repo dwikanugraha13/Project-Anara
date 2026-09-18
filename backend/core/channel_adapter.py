@@ -6,13 +6,17 @@ Normalizes requests from Telegram, CLI, WhatsApp, Web, and Scheduler into a unif
 internal request format, routing through Unified Plan Detector and Permission Gate.
 """
 import asyncio
+import contextvars
+from datetime import datetime
 import json
 import logging
+import re
 import uuid
 from typing import Dict, List, Any, Optional, Callable
 from pydantic import BaseModel, Field
 
 from memory import memory_engine, file_memory
+from core.context_compactor import ContextCompactor
 from core.plan_detector import needs_plan, is_explicit_plan_approval
 from core.prompt_assembler import PromptAssembler
 from core.skill_library import skill_library
@@ -20,6 +24,14 @@ from core.security import check_prompt_injection
 from providers import call_universal_chat_model, get_active_model_id
 
 logger = logging.getLogger(__name__)
+
+# Active channel execution context (channel, channel_id, user_id, sender_name)
+_ACTIVE_CHANNEL_CONTEXT: contextvars.ContextVar[Optional[Dict[str, Any]]] = contextvars.ContextVar(
+    "_ACTIVE_CHANNEL_CONTEXT", default=None
+)
+
+def get_active_channel_context() -> Optional[Dict[str, Any]]:
+    return _ACTIVE_CHANNEL_CONTEXT.get()
 
 # Active pending plans memory store: plan_id -> plan_metadata
 _PENDING_PLANS: Dict[str, Dict[str, Any]] = {}
@@ -219,6 +231,7 @@ async def process_channel_request(
 
     # ── CASE C: Direct Execution with Dynamic Runtime Tool Interception Gate ──
     from core.context_compactor import ContextCompactor
+    from core.agent import anara_agent
     all_history = memory_engine.get_recent_conversations(
         limit=25,
         speaker_name=req.sender_name,
@@ -228,12 +241,23 @@ async def process_channel_request(
     dialogue_context = ContextCompactor.compact_history(prior_turns, verbatim_turns=15)
     full_user_prompt = f"{dialogue_context}Pesan User: {clean_text}" if dialogue_context else clean_text
 
+    ws_tree = anara_agent.get_workspace_tree(session_id=session_id)
     sys_prompt = PromptAssembler.assemble(
         mode="build",
         speaker_name=req.sender_name,
+        workspace_tree=ws_tree,
         is_chat_mode=True,
-        session_type="chat"
+        session_type="chat",
+        user_task=clean_text,
+        channel=req.channel,
+        session_id=session_id,
     )
+
+    # Autonomous Turn Nudge (Anara Standard: turn % 10 -> memory, turn % 15 -> skill)
+    from cognition.memory_nudge import memory_nudge_manager
+    nudge_instruction = memory_nudge_manager.increment_and_get_nudge(session_id)
+    if nudge_instruction:
+        sys_prompt += f"\n\n{nudge_instruction}"
 
     tools_used: List[str] = []
 
@@ -250,17 +274,39 @@ async def process_channel_request(
                     progress_callback(msg)
             except Exception:
                 pass
+        try:
+            from telemetry.event_bus import telemetry_bus, EventType, ActivityProvenance
+            asyncio.create_task(
+                telemetry_bus.emit(
+                    event_type=EventType.TOOL_PROGRESS,
+                    provenance=ActivityProvenance.TOOL_RUNNER,
+                    session_id=str(session_id),
+                    trace_id=f"tr_{session_id}",
+                    payload={"tool_name": t_name, "status": evt.get("status") or "running"},
+                )
+            )
+        except Exception:
+            pass
 
-    reply = await call_universal_chat_model(
-        model_id=get_active_model_id(),
-        user_prompt=full_user_prompt,
-        system_instruction=sys_prompt,
-        max_tokens=800,
-        temperature=0.7,
-        read_only=False,
-        progress_cb=_track_tool,
-        intercept_mutating_tools=True,
-    )
+    reply = None
+    for attempt in range(2):
+        reply = await call_universal_chat_model(
+            model_id=get_active_model_id(),
+            user_prompt=full_user_prompt,
+            system_instruction=sys_prompt,
+            max_tokens=4096,
+            temperature=0.7,
+            read_only=False,
+            progress_cb=_track_tool,
+            intercept_mutating_tools=True,
+        )
+        if isinstance(reply, dict) and reply.get("intercepted"):
+            break
+        if isinstance(reply, str) and reply.strip():
+            break
+        if attempt == 0:
+            logger.warning("[ChannelAdapter] Model returned empty output on turn attempt 1 — retrying...")
+            await asyncio.sleep(0.4)
 
     # ── TOOL INTERCEPTION GATE (Zero-Regex Security) ──
     # If the model attempted to invoke a mutating or ask tool without prior user approval,
@@ -271,13 +317,18 @@ async def process_channel_request(
         cmd_preview = reply.get("cmd_preview", "")
         raw_call = reply.get("raw_call")
 
+        danger_reason = reply.get("danger_reason")
+        intro_line = "Aku perlu menjalankan tindakan berikut di komputermu:"
+        if danger_reason:
+            intro_line = f"Tindakan ini memerlukan konfirmasimu ({danger_reason}):"
+
         proposal_text = (
-            f"Saya telah menelaah permintaan Anda dan menyusun rencana tindakan:\n\n"
+            f"{intro_line}\n\n"
             f"• <b>Alat</b>: <code>{tool_name}</code>\n"
         )
         if cmd_preview:
-            proposal_text += f"• <b>Tindakan/Perintah</b>:\n<pre><code>{cmd_preview}</code></pre>\n"
-        proposal_text += "\n<i>Apakah rencana tindakan di atas disetujui untuk dieksekusi di PC?</i>"
+            proposal_text += f"• <b>Detail Tindakan</b>:\n<pre><code>{cmd_preview}</code></pre>\n"
+        proposal_text += "\n<i>Beri konfirmasi persetujuan jika kamu ingin aku mengeksekusi tindakan ini di sistem.</i>"
 
         _PENDING_PLANS[session_plan_key] = {
             "plan_id": plan_id,
@@ -304,7 +355,10 @@ async def process_channel_request(
             status="pending_approval"
         )
 
-    final_reply = reply if isinstance(reply, str) else "Pesan Anda telah diterima oleh Anara."
+    if isinstance(reply, str) and reply.strip():
+        final_reply = reply.strip()
+    else:
+        final_reply = "Maaf, respon dari model AI tidak menghasilkan teks atau terputus. Silakan coba tanyakan kembali."
 
     memory_engine.log_conversation(
         user_text=clean_text,
@@ -359,11 +413,16 @@ async def _execute_build_mode(
         "</system-reminder>\n"
     )
 
+    ws_tree = anara_agent.get_workspace_tree(session_id=session_id)
     sys_prompt = PromptAssembler.assemble(
         mode="build",
         speaker_name=req.sender_name,
+        workspace_tree=ws_tree,
         is_chat_mode=True,
-        session_type="chat"
+        session_type="chat",
+        user_task=user_prompt,
+        channel=req.channel,
+        session_id=session_id,
     ) + system_reminder
 
     tools_used: List[str] = []
@@ -409,7 +468,7 @@ async def _execute_build_mode(
         model_id=get_active_model_id(),
         user_prompt=effective_prompt,
         system_instruction=sys_prompt,
-        max_tokens=1000,
+        max_tokens=4096,
         temperature=0.6,
         read_only=False,
         progress_cb=_track_tool,

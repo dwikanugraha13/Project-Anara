@@ -677,7 +677,18 @@ async def call_universal_chat_model(
                             except Exception:
                                 pass
                         
-                        return "".join(full_content)
+                        collected = "".join(full_content)
+                        if not collected.strip():
+                            logger.info(f"[CustomProvider] Empty stream from {c_prefix} ({target_model}), falling back to non-streaming...")
+                            sync_payload = dict(payload)
+                            sync_payload["stream"] = False
+                            sync_resp = await client.post(endpoint, headers=headers, json=sync_payload, timeout=90.0)
+                            if sync_resp.status_code == 200:
+                                sync_json = sync_resp.json()
+                                sync_msg = sync_json.get("choices", [{}])[0].get("message", {})
+                                return sync_msg.get("content", "").strip()
+
+                        return collected
 
             return await _execute_json_agent_loop(_custom_call, user_prompt, system_instruction, read_only=read_only, progress_cb=progress_cb, token_cb=token_cb, intercept_mutating_tools=intercept_mutating_tools)
 
