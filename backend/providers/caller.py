@@ -342,12 +342,16 @@ async def _execute_json_agent_loop(
         if intercept_mutating_tools and tool_risk in ("mutating", "ask"):
             logger.info(f"[ToolInterceptor JSON] Intercepted mutating tool '{tool_name}' for Plan approval.")
             cmd_preview = tool_args.get("command") or tool_args.get("file_path") or tool_args.get("title") or ""
+            lead_text = ""
+            if json_match:
+                lead_text = raw_out[:json_match.start()].strip()
             return {
                 "intercepted": True,
                 "tool_name": tool_name,
                 "tool_args": tool_args,
                 "tool_risk": tool_risk,
                 "cmd_preview": cmd_preview,
+                "lead_text": lead_text,
                 "raw_call": payload,
             }
         

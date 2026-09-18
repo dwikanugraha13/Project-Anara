@@ -21,6 +21,7 @@ from core.plan_detector import needs_plan, is_explicit_plan_approval
 from core.prompt_assembler import PromptAssembler
 from core.skill_library import skill_library
 from core.security import check_prompt_injection
+from core.session_manager import session_state_manager, PendingAction
 from providers import call_universal_chat_model, get_active_model_id
 
 logger = logging.getLogger(__name__)
@@ -208,29 +209,36 @@ async def process_channel_request(
     )
     file_memory.detect_and_record_memory(req.text, speaker_name=req.sender_name)
 
-    # 4. Check for Plan Approval keywords
-    is_approval = is_explicit_plan_approval(clean_text)
-
-    # 5. Check if this request needs a plan
-    requires_plan = needs_plan(clean_text, session_mode="conversational")
-
-    # Check if there is an existing pending plan waiting in this session
+    # 4. Check for Plan Approval keywords and Session State Machine
     session_plan_key = f"{req.channel}_{req.channel_id}"
-    active_pending = _PENDING_PLANS.get(session_plan_key)
+    intent_state = session_state_manager.evaluate_intent(clean_text, req.channel, req.channel_id)
+    is_approval = intent_state["is_approval"] or is_explicit_plan_approval(clean_text)
+
+    # Check active pending action
+    active_pending = intent_state["pending"] or _PENDING_PLANS.get(session_plan_key)
 
     # ── CASE A: User is approving a previously pending plan ──
     if is_approval and active_pending:
-        plan_id = active_pending["plan_id"]
-        logger.info(f"[ChannelGateway] User approved pending plan #{plan_id} via text. Executing BUILD MODE...")
-        del _PENDING_PLANS[session_plan_key]
+        plan_id = active_pending.plan_id if isinstance(active_pending, PendingAction) else active_pending.get("plan_id")
+        orig_prompt = active_pending.original_prompt if isinstance(active_pending, PendingAction) else active_pending.get("original_prompt")
+        pending_tool = active_pending.pending_tool_call if isinstance(active_pending, PendingAction) else active_pending.get("pending_tool_call")
+        plan_dict = active_pending.to_dict() if isinstance(active_pending, PendingAction) else active_pending
+
+        logger.info(f"[ChannelGateway] User approved pending action #{plan_id} via text ('{clean_text}'). Executing BUILD MODE...")
+        session_state_manager.clear_pending(req.channel, req.channel_id)
+        _PENDING_PLANS.pop(session_plan_key, None)
 
         return await _execute_build_mode(
             session_id=session_id,
-            user_prompt=f"Eksekusi rencana: {active_pending['original_prompt']}",
+            user_prompt=f"Eksekusi rencana: {orig_prompt}",
             req=req,
             progress_callback=progress_callback,
-            pending_tool_call=active_pending.get("pending_tool_call"),
+            pending_tool_call=pending_tool,
+            plan=plan_dict,
         )
+
+    # 5. Check if this request needs a plan
+    requires_plan = needs_plan(clean_text, session_mode="conversational")
 
     # ── CASE B: Request entails high-risk/mutating action -> Auto PLAN MODE ──
     if requires_plan:
@@ -262,14 +270,19 @@ async def process_channel_request(
             read_only=True
         )
 
-        # Store pending plan
-        _PENDING_PLANS[session_plan_key] = {
-            "plan_id": plan_id,
-            "session_id": session_id,
-            "original_prompt": clean_text,
-            "plan_text": plan_text,
-            "user_id": req.user_id,
-        }
+        # Store pending action in State Machine
+        pending_act = PendingAction(
+            plan_id=plan_id,
+            session_id=session_id,
+            channel=req.channel,
+            channel_id=req.channel_id,
+            tool_name="plan_proposal",
+            original_prompt=clean_text,
+            plan_text=plan_text or "",
+            user_id=req.user_id,
+        )
+        session_state_manager.store_pending(pending_act)
+        _PENDING_PLANS[session_plan_key] = pending_act.to_dict()
 
         # Log AI Plan Proposal
         memory_engine.log_conversation(
@@ -374,29 +387,38 @@ async def process_channel_request(
         plan_id = str(uuid.uuid4())[:8]
         tool_name = reply.get("tool_name", "perintah sistem")
         cmd_preview = reply.get("cmd_preview", "")
+        lead_text = (reply.get("lead_text") or "").strip()
         raw_call = reply.get("raw_call")
-
         danger_reason = reply.get("danger_reason")
-        intro_line = "Aku perlu menjalankan tindakan berikut di komputermu:"
-        if danger_reason:
-            intro_line = f"Tindakan ini memerlukan konfirmasimu ({danger_reason}):"
 
-        proposal_text = (
-            f"{intro_line}\n\n"
-            f"• <b>Alat</b>: <code>{tool_name}</code>\n"
-        )
+        proposal_parts = []
+        if lead_text:
+            proposal_parts.append(lead_text)
+        elif danger_reason:
+            proposal_parts.append(f"Tindakan ini memerlukan konfirmasimu ({danger_reason}):")
+        else:
+            proposal_parts.append(f"Untuk menyelesaikan tugas ini, aku akan menjalankan tindakan <code>{tool_name}</code> di komputermu:")
+
         if cmd_preview:
-            proposal_text += f"• <b>Detail Tindakan</b>:\n<pre><code>{cmd_preview}</code></pre>\n"
-        proposal_text += "\n<i>Beri konfirmasi persetujuan jika kamu ingin aku mengeksekusi tindakan ini di sistem.</i>"
+            proposal_parts.append(f"<pre><code>{cmd_preview}</code></pre>")
 
-        _PENDING_PLANS[session_plan_key] = {
-            "plan_id": plan_id,
-            "session_id": session_id,
-            "original_prompt": clean_text,
-            "pending_tool_call": raw_call,
-            "plan_text": proposal_text,
-            "user_id": req.user_id,
-        }
+        proposal_text = "\n\n".join(proposal_parts)
+
+        # Store pending action in State Machine
+        pending_act = PendingAction(
+            plan_id=plan_id,
+            session_id=session_id,
+            channel=req.channel,
+            channel_id=req.channel_id,
+            tool_name=tool_name,
+            tool_args=raw_call.get("arguments", {}) if raw_call else {},
+            original_prompt=clean_text,
+            pending_tool_call=raw_call,
+            plan_text=proposal_text,
+            user_id=req.user_id,
+        )
+        session_state_manager.store_pending(pending_act)
+        _PENDING_PLANS[session_plan_key] = pending_act.to_dict()
 
         memory_engine.log_conversation(
             user_text=clean_text,

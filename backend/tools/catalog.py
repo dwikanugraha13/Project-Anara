@@ -542,6 +542,15 @@ def is_safe_read_only_cli_command(command: str) -> bool:
     if any(k in cmd_lower for k in safe_roots):
         return True
 
+    # Python one-liner inspection (python -c "import ... print(...)")
+    if re.search(r"^python(?:\.exe)?\s+-c\b", cmd_lower) or re.search(r"^python3(?:\.exe)?\s+-c\b", cmd_lower):
+        py_mutating = [
+            "open(", "write(", ".write", "os.remove", "os.unlink", "os.rmdir", "shutil.rmtree",
+            "os.rename", "os.replace", "shutil.move", "shutil.copy", "subprocess.", "os.system"
+        ]
+        if not any(pm in cmd_lower for pm in py_mutating):
+            return True
+
     safe_patterns = [
         r"^node\s+-[vV]", r"^npm\s+-[vV]", r"^pnpm\s+-[vV]", r"^yarn\s+-[vV]", r"^bun\s+-[vV]",
         r"^python\s+--?version", r"^python\s+-V", r"^pip\s+--?version", r"^pip\s+list",

@@ -24,12 +24,50 @@ RISK_ORDER: Dict[str, int] = {
 EXPLICIT_APPROVAL_PATTERNS = [
     r"\b(?:setujui|setuju|approve|approved)\s+(?:rencana|plan)?\b",
     r"\b(?:eksekusi|jalankan|laksanakan)\s+(?:rencana|plan|sekarang)?\b",
-    r"\b(?:sikat|gas|gaspol)\s+(?:rencana|eksekusi|aja|sekarang)?\b",
-    r"\b(?:lanjutkan|lanjut|proceed)\b",
+    r"\b(?:sikat|gas|gaspol|gasss|hajar|hajar\s*bleh)\b",
+    r"\b(?:lanjutkan|lanjut|proceed|lanjoott)\b",
+    r"\b(?:boleh|yoi|yup|yap|ok|oke|oke\s*gas)\b",
+    r"\b(?:siap\s*(?:laksanakan|jalankan|eksekusi)?)\b",
     r"\bbuild\s+mode\s*(?:sekarang)?\b",
     r"\bok(?:e)?\s*,?\s*(?:jalankan|eksekusi|sikat|lakukan)\b",
     r"\bya\s*,?\s*(?:jalankan|eksekusi|sikat|lakukan)\b",
 ]
+
+
+def evaluate_command_safety(command: str) -> str:
+    """
+    Parameter-Aware Risk Evaluator for terminal commands ('read_only', 'mutating', 'ask').
+    - 'ask': destructive host-takeover or filesystem wiping commands
+    - 'mutating': environment-altering, dependency installing, or mutating commands
+    - 'read_only': safe inspection, status queries, and read-only python one-liners
+    """
+    cmd = (command or "").strip()
+    if not cmd:
+        return "read_only"
+
+    # Fatal destructive patterns -> 'ask'
+    cmd_lower = cmd.lower()
+    fatal_patterns = [
+        r"\brm\s+-[rf]{1,2}\s+[/~]",
+        r"\bformat\s+[a-z]:",
+        r"\bdiskpart\b",
+        r"\bdrop\s+database\b",
+        r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;",
+        r"\bshutdown\b",
+        r"\breboot\b",
+        r"\breg\s+(?:add|delete|copy|restore|import)\b",
+        r"\bset-mppreference\b",
+        r"\bnet\s+(?:user|localgroup|group)\s+.*\/add\b",
+    ]
+    for fp in fatal_patterns:
+        if re.search(fp, cmd_lower):
+            return "ask"
+
+    from tools.catalog import is_safe_read_only_cli_command
+    if is_safe_read_only_cli_command(cmd):
+        return "read_only"
+
+    return "mutating"
 
 
 def detect_tools_from_text(request_text: str) -> List[str]:
