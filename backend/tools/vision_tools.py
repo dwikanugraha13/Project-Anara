@@ -25,6 +25,48 @@ SUPPORTED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
 SUPPORTED_VIDEO_EXTS = {".mp4", ".webm", ".mov", ".mkv", ".avi"}
 
 
+def _resolve_vision_model() -> str:
+    """
+    Dynamically determines the best vision model without static hardcoding:
+    1. Reads user-configured model from config.yaml (model.vision).
+    2. Checks if active model supports vision via ModelCapabilityRegistry.
+    3. Gracefully falls back to primary multimodal engine model.
+    """
+    try:
+        from config import cfg_get
+        from core.capabilities import ModelCapabilityRegistry
+        from providers.accounts import get_active_model_id
+
+        configured = cfg_get("model.vision")
+        if configured and str(configured).strip():
+            return str(configured).strip()
+
+        active = get_active_model_id()
+        if active and ModelCapabilityRegistry.supports_vision(active):
+            clean_mid = active.replace("models/", "")
+            if "live-preview" not in clean_mid:
+                return clean_mid
+
+        if "gemini" in (active or "").lower():
+            return "gemini-2.5-flash"
+    except Exception as e:
+        logger.debug(f"[VisionTools] Dynamic model resolution note: {e}")
+
+    return "gemini-2.5-flash"
+
+
+def _resolve_fallback_vision_model() -> str:
+    """Dynamically resolves fallback multimodal model for OpenAI/Claude/OpenRouter."""
+    try:
+        from config import cfg_get
+        configured = cfg_get("model.vision_fallback")
+        if configured and str(configured).strip():
+            return str(configured).strip()
+    except Exception:
+        pass
+    return "gpt-4o-mini"
+
+
 def _resolve_mime_type(file_path: str, is_video: bool = False) -> str:
     """Infers MIME type from file extension."""
     mime, _ = mimetypes.guess_type(file_path)
@@ -113,8 +155,9 @@ async def _tool_vision_analyze(
                 f"Tugas: {user_query}\n"
                 "Analisis gambar berikut secara cermat, akurat, dan jelas. Berikan jawaban komprehensif."
             )
+            v_model = _resolve_vision_model()
             response = await client.aio.models.generate_content(
-                model="gemini-2.5-flash",
+                model=v_model,
                 contents=[image_part, prompt],
                 config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=2048)
             )
@@ -147,8 +190,9 @@ async def _tool_vision_analyze(
             b64_str = base64.b64encode(img_bytes).decode("ascii")
             data_url = f"data:{mime_type};base64,{b64_str}"
             headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+            fallback_m = _resolve_fallback_vision_model()
             payload = {
-                "model": "gpt-4o-mini",
+                "model": fallback_m,
                 "messages": [
                     {
                         "role": "user",
@@ -227,8 +271,9 @@ async def _tool_video_analyze(
                 f"Tugas: {user_query}\n"
                 "Analisis rekaman video berikut secara objektif, detail, dan runtut."
             )
+            v_model = _resolve_vision_model()
             response = await client.aio.models.generate_content(
-                model="gemini-2.5-flash",
+                model=v_model,
                 contents=[video_part, prompt],
                 config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=2048)
             )

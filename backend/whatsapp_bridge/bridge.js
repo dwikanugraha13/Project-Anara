@@ -129,6 +129,27 @@ async function startSock() {
               text = `[Dokumen] ${msg.message.documentMessage.fileName || ""}`;
             }
 
+            // Extract Quoted / Reply-To Message Context from Baileys
+            let quotedText = "";
+            let quotedSender = "";
+            const contextInfo = msg.message.extendedTextMessage?.contextInfo;
+            if (contextInfo && contextInfo.quotedMessage) {
+              const qMsg = contextInfo.quotedMessage;
+              if (qMsg.conversation) {
+                quotedText = qMsg.conversation;
+              } else if (qMsg.extendedTextMessage?.text) {
+                quotedText = qMsg.extendedTextMessage.text;
+              } else if (qMsg.imageMessage?.caption) {
+                quotedText = `[Foto] ${qMsg.imageMessage.caption}`;
+              } else if (qMsg.videoMessage?.caption) {
+                quotedText = `[Video] ${qMsg.videoMessage.caption}`;
+              } else if (qMsg.documentMessage?.fileName) {
+                quotedText = `[Dokumen: ${qMsg.documentMessage.fileName}]`;
+              }
+              const qParticipant = contextInfo.participant || "";
+              quotedSender = qParticipant.split("@")[0] || "Pengguna";
+            }
+
             if (text) {
               const msgObj = {
                 id: msg.key.id,
@@ -137,6 +158,8 @@ async function startSock() {
                 jid: senderJid,
                 isGroup,
                 text,
+                quotedText: quotedText || undefined,
+                quotedSender: quotedSender || undefined,
                 timestamp: msg.messageTimestamp ? Number(msg.messageTimestamp) * 1000 : Date.now(),
                 unread: true,
               };
