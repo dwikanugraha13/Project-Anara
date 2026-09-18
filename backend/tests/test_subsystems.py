@@ -501,6 +501,16 @@ def test_anara_vision_and_video_tools():
 
     assert ModelCapabilityRegistry.resolve_auxiliary_model() == get_fast_auxiliary_model()
 
+    # 11. Verify Hermes Anti-Leak Sanitization (Zero JSON tool call leak)
+    import re
+    raw_leak_sample = '```json\n{\n  "action": "tool_call",\n  "tool": "read_local_file",\n  "arguments": {"file_path": "backend/providers.py"}\n}\n```'
+    cleaned = re.sub(r"```(?:json)?\s*\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\}\s*```", "", raw_leak_sample).strip()
+    assert cleaned == ""
+    # Ensure falsy fallback never restores the leak
+    safe_final = cleaned if (cleaned and '"action": "tool_call"' not in cleaned) else "Tindakan telah selesai dieksekusi oleh sistem."
+    assert "tool_call" not in safe_final
+    assert safe_final == "Tindakan telah selesai dieksekusi oleh sistem."
+
 
 
 

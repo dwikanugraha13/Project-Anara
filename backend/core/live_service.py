@@ -320,9 +320,14 @@ class GeminiLiveService:
 
                     elif kind == "end_of_turn":
                         logger.info("→ Signaling turn_complete to Gemini Live")
-                        turn_payload = {"client_content": {"turn_complete": True}}
                         if hasattr(session, "_ws") and session._ws:
+                            turn_payload = {"client_content": {"turn_complete": True}}
                             await session._ws.send(json.dumps(turn_payload))
+                        else:
+                            try:
+                                await session.send(end_of_turn=True)
+                            except Exception as e_eot:
+                                logger.debug(f"[GeminiLive] end_of_turn signal note: {e_eot}")
 
                     elif kind == "tool_response":
                         tool_data = item["data"]
