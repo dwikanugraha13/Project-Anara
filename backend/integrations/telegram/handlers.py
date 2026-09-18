@@ -294,6 +294,8 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
         photo_list = msg.get("photo")
         voice = msg.get("voice")
         audio = msg.get("audio")
+        video = msg.get("video")
+        video_note = msg.get("video_note")
 
         if doc and doc.get("file_id"):
             f_id = doc.get("file_id")
@@ -318,6 +320,32 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                     "file_name": f_name,
                     "local_path": dl_path,
                     "size": highest_photo.get("file_size", 0),
+                })
+        elif video and video.get("file_id"):
+            f_id = video.get("file_id")
+            f_name = video.get("file_name") or f"video_{video.get('file_unique_id', 'clip')}.mp4"
+            dl_path = await download_telegram_attachment(f_id, f_name)
+            if dl_path:
+                incoming_attachments.append({
+                    "type": "video",
+                    "file_name": f_name,
+                    "local_path": dl_path,
+                    "mime_type": video.get("mime_type", "video/mp4"),
+                    "duration": video.get("duration", 0),
+                    "size": video.get("file_size", 0),
+                })
+        elif video_note and video_note.get("file_id"):
+            f_id = video_note.get("file_id")
+            f_name = f"videonote_{video_note.get('file_unique_id', 'clip')}.mp4"
+            dl_path = await download_telegram_attachment(f_id, f_name)
+            if dl_path:
+                incoming_attachments.append({
+                    "type": "video",
+                    "file_name": f_name,
+                    "local_path": dl_path,
+                    "mime_type": "video/mp4",
+                    "duration": video_note.get("duration", 0),
+                    "size": video_note.get("file_size", 0),
                 })
         elif voice and voice.get("file_id"):
             f_id = voice.get("file_id")
@@ -344,6 +372,60 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                     "mime_type": audio.get("mime_type", "audio/mpeg"),
                     "size": audio.get("file_size", 0),
                 })
+
+        # ── Quoted / Reply-To Message Context Extraction ──
+        reply_msg = msg.get("reply_to_message")
+        reply_context = ""
+        if reply_msg and isinstance(reply_msg, dict):
+            r_sender = reply_msg.get("from", {})
+            r_sender_name = (r_sender.get("first_name", "") + " " + r_sender.get("last_name", "")).strip() or r_sender.get("username") or "Pengguna"
+            r_text = (reply_msg.get("text") or reply_msg.get("caption") or "").strip()
+
+            r_doc = reply_msg.get("document")
+            r_photo = reply_msg.get("photo")
+            r_video = reply_msg.get("video")
+            r_media_info = ""
+
+            if r_doc and r_doc.get("file_id"):
+                r_fname = r_doc.get("file_name", "berkas_lampiran")
+                r_dl = await download_telegram_attachment(r_doc.get("file_id"), r_fname)
+                if r_dl:
+                    incoming_attachments.append({
+                        "type": "document",
+                        "file_name": r_fname,
+                        "local_path": r_dl,
+                        "mime_type": r_doc.get("mime_type", ""),
+                        "size": r_doc.get("file_size", 0),
+                    })
+                    r_media_info = f"[Lampiran Berkas: {r_fname} di {r_dl}]"
+            elif r_photo and isinstance(r_photo, list) and len(r_photo) > 0:
+                highest_r_photo = r_photo[-1]
+                r_pname = f"replied_photo_{highest_r_photo.get('file_unique_id', 'snap')}.jpg"
+                r_pdl = await download_telegram_attachment(highest_r_photo.get("file_id"), r_pname)
+                if r_pdl:
+                    incoming_attachments.append({
+                        "type": "photo",
+                        "file_name": r_pname,
+                        "local_path": r_pdl,
+                        "size": highest_r_photo.get("file_size", 0),
+                    })
+                    r_media_info = f"[Lampiran Foto: {r_pname} di {r_pdl}]"
+            elif r_video and r_video.get("file_id"):
+                r_vname = r_video.get("file_name") or f"replied_video_{r_video.get('file_unique_id', 'clip')}.mp4"
+                r_vdl = await download_telegram_attachment(r_video.get("file_id"), r_vname)
+                if r_vdl:
+                    incoming_attachments.append({
+                        "type": "video",
+                        "file_name": r_vname,
+                        "local_path": r_vdl,
+                        "mime_type": r_video.get("mime_type", "video/mp4"),
+                        "size": r_video.get("file_size", 0),
+                    })
+                    r_media_info = f"[Lampiran Video: {r_vname} di {r_vdl}]"
+
+            quoted_body = f"{r_text}\n{r_media_info}".strip() if r_media_info else r_text
+            if quoted_body:
+                reply_context = f"[KONTEKS: PENGGUNA MEMBALAS/MEREPLY PESAN DARI {r_sender_name.upper()}]:\n\"{quoted_body}\"\n\n"
 
         if incoming_attachments:
             att_info = []
@@ -376,6 +458,9 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                 text = f"Tolong proses berkas yang saya kirimkan ini:\n\n{att_header}"
         else:
             text = raw_text
+
+        if reply_context:
+            text = f"{reply_context}{text}"
 
         if not text:
             return

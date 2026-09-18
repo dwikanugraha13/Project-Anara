@@ -344,4 +344,41 @@ def test_anara_tool_decorator_and_schema_extraction():
     assert tool.declaration.name == "unit_test_probe_tool"
 
 
+def test_anara_vision_and_video_tools():
+    import asyncio
+    from tools.registry import registry
+    import tools.tool_specs
+    from tools.vision_tools import _tool_vision_analyze, _tool_video_analyze
+
+    # 1. Verify tools are registered in central registry
+    v_tool = registry.get_tool("vision_analyze")
+    assert v_tool is not None
+    assert v_tool.risk == "read_only"
+    assert v_tool.category == "multimedia"
+
+    vid_tool = registry.get_tool("video_analyze")
+    assert vid_tool is not None
+    assert vid_tool.risk == "read_only"
+
+    # 2. Verify aliases resolve
+    assert registry.resolve_name("analyze_image") == "vision_analyze"
+    assert registry.resolve_name("analyze_video") == "video_analyze"
+
+    # 3. Test empty input handling
+    async def run_checks():
+        res1 = await _tool_vision_analyze(image_path="")
+        assert res1["status"] == "error"
+        assert "tidak boleh kosong" in res1["message"]
+
+        res2 = await _tool_video_analyze(video_path="")
+        assert res2["status"] == "error"
+
+        res3 = await _tool_vision_analyze(image_path="nonexistent_photo_12345.jpg")
+        assert res3["status"] == "error"
+        assert "tidak ditemukan" in res3["message"]
+
+    asyncio.run(run_checks())
+
+
+
 

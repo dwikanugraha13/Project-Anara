@@ -1,6 +1,7 @@
 from .events import register_agent_event_listener, _emit_agent_event
 from .base import anara_tool, extract_schema_from_callable
 from .loopbreaker import AnaraLoopBreaker
+from .vision_tools import _tool_vision_analyze, _tool_video_analyze
 from .catalog import (
     ANARA_FUNCTION_DECLARATIONS,
     READ_ONLY_TOOL_NAMES,
@@ -22,6 +23,8 @@ __all__ = [
     "anara_tool",
     "extract_schema_from_callable",
     "AnaraLoopBreaker",
+    "_tool_vision_analyze",
+    "_tool_video_analyze",
     "ANARA_FUNCTION_DECLARATIONS",
     "READ_ONLY_TOOL_NAMES",
     "ACTION_TOOL_NAMES",

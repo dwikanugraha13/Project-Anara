@@ -62,6 +62,7 @@ from .spotify_tools import (
 from .cron_tools import _tool_cronjob_manage
 from .image_tools import _tool_image_generate
 from .video_tools import _tool_video_generate
+from .vision_tools import _tool_vision_analyze, _tool_video_analyze
 from .ha_tools import (
     _tool_ha_list_entities,
     _tool_ha_get_state,
@@ -1060,6 +1061,40 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
         "category": "multimedia",
         "icon": "video",
     },
+    {
+        "name": "vision_analyze",
+        "description": "Menganalisis dan mendeskripsikan gambar/foto dari path lokal di PC atau URL internet secara mendalam. Mampu membaca teks di gambar (OCR), mendeteksi error screenshot, bagan arsitektur, dan objek.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "image_path": {"type": "STRING", "description": "Path lokal berkas gambar di PC atau URL http/https."},
+                "question": {"type": "STRING", "description": "Pertanyaan spesifik atau fokus analisis visual (opsional)."}
+            },
+            "required": ["image_path"]
+        },
+        "handler": _tool_vision_analyze,
+        "risk": "read_only",
+        "toolset": "vision",
+        "category": "multimedia",
+        "icon": "eye",
+    },
+    {
+        "name": "video_analyze",
+        "description": "Menganalisis berkas rekaman video lokal (.mp4, .webm, .mov) di komputer untuk mengekstrak informasi visual dan kronologi adegan.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "video_path": {"type": "STRING", "description": "Path lokal berkas video di komputer (contoh: 'C:/Users/.../video.mp4')."},
+                "question": {"type": "STRING", "description": "Pertanyaan spesifik atau instruksi analisis video (opsional)."}
+            },
+            "required": ["video_path"]
+        },
+        "handler": _tool_video_analyze,
+        "risk": "read_only",
+        "toolset": "video",
+        "category": "multimedia",
+        "icon": "video",
+    },
 
     # ── Home Assistant ──
     {
@@ -1308,6 +1343,9 @@ UNIVERSAL_TOOL_ALIASES = {
     "todo_list": "manage_memory_and_todos",
     "file_search": "glob_find_files",
     "dir_list": "list_directory",
+    "analyze_image": "vision_analyze",
+    "image_analyze": "vision_analyze",
+    "analyze_video": "video_analyze",
 }
 
 for alias, target in UNIVERSAL_TOOL_ALIASES.items():
