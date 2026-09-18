@@ -298,3 +298,43 @@ def is_stt_hallucination(text: str) -> bool:
     return any(phrase in clean for phrase in STT_HALLUCINATED_PHRASES)
 
 
+async def transcribe_audio_file(audio_path: str) -> Optional[str]:
+    """Transcribes an audio file (.ogg, .mp3, .wav) using Gemini / multimodal failover."""
+    import os
+    import logging
+    _log = logging.getLogger(__name__)
+
+    if not audio_path or not os.path.isfile(audio_path):
+        return None
+    try:
+        from core import key_manager
+        from google.genai import types
+
+        with open(audio_path, "rb") as f:
+            audio_bytes = f.read()
+
+        ext = os.path.splitext(audio_path)[1].lower()
+        mime_map = {".ogg": "audio/ogg", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4"}
+        mime = mime_map.get(ext, "audio/ogg")
+
+        async def _transcribe_call(client: Any) -> str:
+            audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime)
+            prompt = "Transkripsikan isi rekaman suara ini secara akurat kata per kata dalam teks. Jangan tambahkan komentar atau penjelasan, cukup kembalikan teks hasil transkripsi ucapan."
+            from tools.vision_tools import _resolve_vision_model
+            response = await client.aio.models.generate_content(
+                model=_resolve_vision_model(),
+                contents=[audio_part, prompt],
+                config=types.GenerateContentConfig(temperature=0.1, max_output_tokens=1024)
+            )
+            return response.text or ""
+
+        text = await key_manager.execute_with_failover(_transcribe_call)
+        clean = text.strip() if text else ""
+        if clean and not is_stt_hallucination(clean):
+            return clean
+        return clean or None
+    except Exception as e:
+        _log.warning(f"[AudioSTT] Audio transcription error: {e}")
+        return None
+
+

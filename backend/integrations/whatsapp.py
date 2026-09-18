@@ -120,13 +120,76 @@ async def logout_whatsapp() -> Dict[str, Any]:
 
 
 def format_whatsapp_message_context(msg: Dict[str, Any]) -> str:
-    """Formats a WhatsApp message with reply/quoted context if present."""
+    """Formats a WhatsApp message with reply/quoted context and local media attachments if present."""
     text = (msg.get("text") or "").strip()
     quoted = (msg.get("quotedText") or "").strip()
-    if quoted:
+    local_path = (msg.get("localPath") or "").strip()
+    file_name = (msg.get("fileName") or "").strip()
+    media_type = (msg.get("mediaType") or "").strip().lower()
+    
+    quoted_local_path = (msg.get("quotedLocalPath") or "").strip()
+    quoted_media_type = (msg.get("quotedMediaType") or "").strip().lower()
+
+    # 1. Quoted / Reply Context
+    quote_context = ""
+    if quoted or quoted_local_path:
         q_sender = (msg.get("quotedSender") or "Pengguna").upper()
-        return f"[KONTEKS: PENGGUNA MEMBALAS/MEREPLY PESAN DARI {q_sender}]:\n\"{quoted}\"\n\nPertanyaan/Pesan Pengguna: {text}"
-    return text
+        q_body = quoted
+        if quoted_local_path and os.path.isfile(quoted_local_path):
+            q_label = (quoted_media_type or "berkas").capitalize()
+            q_tag = f"[Lampiran {q_label}: {os.path.basename(quoted_local_path)} di {quoted_local_path}]"
+            q_body = f"{quoted}\n{q_tag}".strip() if quoted else q_tag
+        if q_body:
+            quote_context = f"[KONTEKS: PENGGUNA MEMBALAS/MEREPLY PESAN DARI {q_sender}]:\n\"{q_body}\"\n\n"
+
+    # 2. Local Attachment Details (Photo, Video, Audio, Document)
+    att_info = ""
+    if local_path and os.path.isfile(local_path):
+        m_label = (media_type or "berkas").capitalize()
+        f_display = file_name or os.path.basename(local_path)
+        att_parts = [
+            "[BERKAS DILAMPIRKAN DARI WHATSAPP]:",
+            f"- Tipe: {m_label}",
+            f"- Nama Berkas: {f_display}",
+            f"- Lokasi Tersimpan di PC: {local_path}"
+        ]
+        # Text/code preview if applicable
+        if any(f_display.lower().endswith(ext) for ext in [".md", ".txt", ".json", ".py", ".csv", ".yaml", ".yml", ".sql", ".sh"]):
+            try:
+                with open(local_path, "r", encoding="utf-8", errors="ignore") as tf:
+                    snippet = tf.read(2500)
+                    if snippet.strip():
+                        att_parts.append(f"- Pratinjau Isi:\n```\n{snippet.strip()}\n```")
+            except Exception:
+                pass
+        att_info = "\n".join(att_parts)
+
+    # 3. Clean user prompt text
+    user_prompt = text
+    placeholder_triggers = (
+        "[Foto]", "[Foto terlampir]", "[Video]", "[Video terlampir]",
+        "[Pesan Suara / Voice Note]", "[Dokumen]",
+    )
+    if not user_prompt or any(user_prompt == p for p in placeholder_triggers) or user_prompt.startswith("[Dokumen:"):
+        if media_type == "photo":
+            user_prompt = "Tolong periksa dan analisis gambar/foto yang saya kirimkan ini secara detail."
+        elif media_type == "video":
+            user_prompt = "Tolong tonton dan analisis rekaman video yang saya kirimkan ini secara detail."
+        elif media_type == "audio":
+            user_prompt = "Tolong dengarkan dan proses pesan suara yang saya kirimkan ini."
+        elif media_type == "document":
+            user_prompt = f"Tolong periksa dan proses berkas dokumen {file_name or os.path.basename(local_path) if local_path else ''} ini."
+        elif not user_prompt:
+            user_prompt = "Tolong periksa berkas lampiran ini."
+
+    if quote_context:
+        if att_info:
+            return f"{quote_context}Pertanyaan/Pesan Pengguna: {user_prompt}\n\n{att_info}"
+        return f"{quote_context}Pertanyaan/Pesan Pengguna: {user_prompt}"
+    else:
+        if att_info:
+            return f"{user_prompt}\n\n{att_info}"
+        return user_prompt
 
 
 async def get_whatsapp_messages(unread_only: bool = False, limit: int = 10, mark_read: bool = True) -> List[Dict[str, Any]]:

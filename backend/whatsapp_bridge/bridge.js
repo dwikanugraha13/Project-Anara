@@ -9,6 +9,7 @@ const {
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
+  downloadMediaMessage,
 } = require("@whiskeysockets/baileys");
 
 const app = express();
@@ -22,6 +23,17 @@ if (!fs.existsSync(AUTH_DIR)) {
   fs.mkdirSync(AUTH_DIR, { recursive: true });
 }
 
+// Staging directory for downloaded incoming WhatsApp media
+const localAppData =
+  process.env.LOCALAPPDATA ||
+  (process.platform === "win32"
+    ? path.join(process.env.USERPROFILE || "", "AppData", "Local")
+    : path.join(process.env.HOME || "", ".anara"));
+const WA_STAGING_DIR = path.join(localAppData, "anara", "staging", "whatsapp_uploads");
+if (!fs.existsSync(WA_STAGING_DIR)) {
+  fs.mkdirSync(WA_STAGING_DIR, { recursive: true });
+}
+
 let sock = null;
 let connectionStatus = "disconnected"; // "disconnected" | "connecting" | "connected"
 let currentQrDataUrl = null;
@@ -30,6 +42,26 @@ let userAccountInfo = null; // { id, name, phone }
 const recentMessages = []; // In-memory buffer of recent incoming messages
 
 const logger = pino({ level: "error" }); // Quiet logger for clean terminal
+
+async function downloadBaileysMedia(targetMessage) {
+  try {
+    const buffer = await downloadMediaMessage(
+      targetMessage,
+      "buffer",
+      {},
+      {
+        logger: pino({ level: "silent" }),
+        reuploadRequest: sock ? sock.updateMediaMessage : undefined,
+      }
+    );
+    if (buffer && buffer.length > 0) {
+      return buffer;
+    }
+  } catch (err) {
+    console.warn("[WABridge] Media download warning:", err.message);
+  }
+  return null;
+}
 
 async function startSock() {
   connectionStatus = "connecting";
@@ -113,53 +145,148 @@ async function startSock() {
             const senderPhone = senderJid.split("@")[0];
             const pushName = msg.pushName || (isGroup ? "Grup WhatsApp" : "Kontak");
             
-            // Extract text message content
+            // Extract text and media content
             let text = "";
+            let mediaType = null;
+            let mimeType = null;
+            let fileName = null;
+            let localPath = null;
+            let fileSize = null;
+
+            const msgIdSafe = (msg.key.id || String(Date.now())).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 12);
+            const ts = Date.now();
+
             if (msg.message.conversation) {
               text = msg.message.conversation;
             } else if (msg.message.extendedTextMessage?.text) {
               text = msg.message.extendedTextMessage.text;
-            } else if (msg.message.imageMessage?.caption) {
-              text = `[Foto] ${msg.message.imageMessage.caption}`;
-            } else if (msg.message.videoMessage?.caption) {
-              text = `[Video] ${msg.message.videoMessage.caption}`;
+            } else if (msg.message.imageMessage) {
+              mediaType = "photo";
+              mimeType = msg.message.imageMessage.mimetype || "image/jpeg";
+              fileName = `photo_${ts}_${msgIdSafe}.jpg`;
+              const cap = (msg.message.imageMessage.caption || "").trim();
+              text = cap ? `[Foto] ${cap}` : `[Foto terlampir]`;
+            } else if (msg.message.videoMessage) {
+              mediaType = "video";
+              mimeType = msg.message.videoMessage.mimetype || "video/mp4";
+              fileName = `video_${ts}_${msgIdSafe}.mp4`;
+              const cap = (msg.message.videoMessage.caption || "").trim();
+              text = cap ? `[Video] ${cap}` : `[Video terlampir]`;
             } else if (msg.message.audioMessage) {
+              mediaType = "audio";
+              mimeType = msg.message.audioMessage.mimetype || "audio/ogg";
+              fileName = `voice_${ts}_${msgIdSafe}.ogg`;
               text = "[Pesan Suara / Voice Note]";
             } else if (msg.message.documentMessage) {
-              text = `[Dokumen] ${msg.message.documentMessage.fileName || ""}`;
+              mediaType = "document";
+              mimeType = msg.message.documentMessage.mimetype || "application/octet-stream";
+              fileName = msg.message.documentMessage.fileName || `doc_${ts}_${msgIdSafe}.bin`;
+              const cap = (msg.message.documentMessage.caption || "").trim();
+              text = cap ? `[Dokumen: ${fileName}] ${cap}` : `[Dokumen: ${fileName}]`;
+            }
+
+            // If incoming message has media, download binary file to staging directory
+            if (mediaType) {
+              const mediaBuf = await downloadBaileysMedia(msg);
+              if (mediaBuf) {
+                const targetDiskPath = path.join(WA_STAGING_DIR, fileName);
+                try {
+                  fs.writeFileSync(targetDiskPath, mediaBuf);
+                  localPath = targetDiskPath;
+                  fileSize = mediaBuf.length;
+                  console.log(`[WABridge] Downloaded ${mediaType} attachment: ${targetDiskPath} (${(fileSize / 1024).toFixed(1)} KB)`);
+                } catch (writeErr) {
+                  console.warn(`[WABridge] Failed saving ${fileName}:`, writeErr.message);
+                }
+              }
             }
 
             // Extract Quoted / Reply-To Message Context from Baileys
             let quotedText = "";
             let quotedSender = "";
-            const contextInfo = msg.message.extendedTextMessage?.contextInfo;
+            let quotedLocalPath = null;
+            let quotedMediaType = null;
+            const contextInfo = msg.message.extendedTextMessage?.contextInfo ||
+                                msg.message.imageMessage?.contextInfo ||
+                                msg.message.videoMessage?.contextInfo ||
+                                msg.message.documentMessage?.contextInfo;
+
             if (contextInfo && contextInfo.quotedMessage) {
               const qMsg = contextInfo.quotedMessage;
+              let qMediaNode = null;
+              let qFileName = `quoted_${ts}_${(contextInfo.stanzaId || "msg").slice(0, 8)}`;
+
               if (qMsg.conversation) {
                 quotedText = qMsg.conversation;
               } else if (qMsg.extendedTextMessage?.text) {
                 quotedText = qMsg.extendedTextMessage.text;
-              } else if (qMsg.imageMessage?.caption) {
-                quotedText = `[Foto] ${qMsg.imageMessage.caption}`;
-              } else if (qMsg.videoMessage?.caption) {
-                quotedText = `[Video] ${qMsg.videoMessage.caption}`;
-              } else if (qMsg.documentMessage?.fileName) {
-                quotedText = `[Dokumen: ${qMsg.documentMessage.fileName}]`;
+              } else if (qMsg.imageMessage) {
+                quotedMediaType = "photo";
+                qFileName += ".jpg";
+                quotedText = qMsg.imageMessage.caption ? `[Foto] ${qMsg.imageMessage.caption}` : `[Foto terlampir]`;
+                qMediaNode = qMsg;
+              } else if (qMsg.videoMessage) {
+                quotedMediaType = "video";
+                qFileName += ".mp4";
+                quotedText = qMsg.videoMessage.caption ? `[Video] ${qMsg.videoMessage.caption}` : `[Video terlampir]`;
+                qMediaNode = qMsg;
+              } else if (qMsg.audioMessage) {
+                quotedMediaType = "audio";
+                qFileName += ".ogg";
+                quotedText = "[Pesan Suara / Voice Note]";
+                qMediaNode = qMsg;
+              } else if (qMsg.documentMessage) {
+                quotedMediaType = "document";
+                const qDocName = qMsg.documentMessage.fileName || `${qFileName}.bin`;
+                qFileName = qDocName;
+                quotedText = `[Dokumen: ${qDocName}]`;
+                qMediaNode = qMsg;
               }
+
               const qParticipant = contextInfo.participant || "";
               quotedSender = qParticipant.split("@")[0] || "Pengguna";
+
+              // Attempt downloading quoted media attachment if present
+              if (qMediaNode) {
+                const fakeQuotedMsg = {
+                  key: {
+                    remoteJid: senderJid,
+                    id: contextInfo.stanzaId,
+                    participant: contextInfo.participant,
+                  },
+                  message: qMsg,
+                };
+                const qBuf = await downloadBaileysMedia(fakeQuotedMsg);
+                if (qBuf) {
+                  const qDiskPath = path.join(WA_STAGING_DIR, qFileName);
+                  try {
+                    fs.writeFileSync(qDiskPath, qBuf);
+                    quotedLocalPath = qDiskPath;
+                    console.log(`[WABridge] Downloaded quoted ${quotedMediaType} attachment: ${qDiskPath}`);
+                  } catch (qWriteErr) {
+                    console.warn(`[WABridge] Failed saving quoted media ${qFileName}:`, qWriteErr.message);
+                  }
+                }
+              }
             }
 
-            if (text) {
+            if (text || localPath) {
               const msgObj = {
                 id: msg.key.id,
                 sender: pushName,
                 phone: senderPhone,
                 jid: senderJid,
                 isGroup,
-                text,
+                text: text || `[${(mediaType || "berkas").toUpperCase()} DILAMPIRKAN]`,
+                localPath: localPath || undefined,
+                fileName: fileName || undefined,
+                mediaType: mediaType || undefined,
+                mimeType: mimeType || undefined,
+                fileSize: fileSize || undefined,
                 quotedText: quotedText || undefined,
                 quotedSender: quotedSender || undefined,
+                quotedLocalPath: quotedLocalPath || undefined,
+                quotedMediaType: quotedMediaType || undefined,
                 timestamp: msg.messageTimestamp ? Number(msg.messageTimestamp) * 1000 : Date.now(),
                 unread: true,
               };
@@ -169,7 +296,7 @@ async function startSock() {
                 recentMessages.pop();
               }
 
-              console.log(`[WABridge Incoming] From ${pushName} (${senderPhone}): "${text.substring(0, 60)}"`);
+              console.log(`[WABridge Incoming] From ${pushName} (${senderPhone}): "${text.substring(0, 60)}" [media: ${mediaType || "none"}]`);
               forwardToAnara(msgObj);
             }
           }

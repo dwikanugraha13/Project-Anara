@@ -111,8 +111,15 @@ class WhatsAppWebhookPayload(BaseModel):
     jid: Optional[str] = None
     isGroup: Optional[bool] = False
     text: str
+    localPath: Optional[str] = None
+    fileName: Optional[str] = None
+    mediaType: Optional[str] = None
+    mimeType: Optional[str] = None
+    fileSize: Optional[int] = None
     quotedText: Optional[str] = None
     quotedSender: Optional[str] = None
+    quotedLocalPath: Optional[str] = None
+    quotedMediaType: Optional[str] = None
     timestamp: Optional[float] = None
 
 @router.post("/api/integrations/whatsapp/webhook")
@@ -123,7 +130,18 @@ async def wa_webhook_endpoint(payload: WhatsAppWebhookPayload):
     """
     from core.channel_adapter import ChannelRequest, process_channel_request
 
-    clean_text = format_whatsapp_message_context(payload.dict()).strip()
+    p_dict = payload.dict()
+    # If audio/voice note, attempt voice transcription
+    if payload.mediaType == "audio" and payload.localPath:
+        try:
+            from cognition.audio import transcribe_audio_file
+            transcript = await transcribe_audio_file(payload.localPath)
+            if transcript:
+                p_dict["text"] = f"{transcript}\n\n[Transkripsi Pesan Suara WhatsApp]"
+        except Exception as stt_err:
+            logger.debug(f"[WAWebhook] Audio STT skipped: {stt_err}")
+
+    clean_text = format_whatsapp_message_context(p_dict).strip()
     if not clean_text:
         return {"status": "ignored", "reason": "empty_text"}
 

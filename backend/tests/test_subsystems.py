@@ -402,6 +402,47 @@ def test_anara_vision_and_video_tools():
     normal_msg = {"text": "halo anara"}
     assert format_whatsapp_message_context(normal_msg) == "halo anara"
 
+    # 6. Verify WhatsApp media attachment formatting with local file & code preview
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False, encoding="utf-8") as tf:
+        tf.write("def calculate_metrics():\n    return {'score': 100}\n")
+        temp_py_path = tf.name
+
+    try:
+        wa_media_msg = {
+            "text": "[Dokumen]",
+            "localPath": temp_py_path,
+            "fileName": "analytics.py",
+            "mediaType": "document"
+        }
+        wa_formatted = format_whatsapp_message_context(wa_media_msg)
+        assert "[BERKAS DILAMPIRKAN DARI WHATSAPP]:" in wa_formatted
+        assert "- Tipe: Document" in wa_formatted
+        assert "- Nama Berkas: analytics.py" in wa_formatted
+        assert "- Lokasi Tersimpan di PC:" in wa_formatted
+        assert "calculate_metrics" in wa_formatted
+        assert "Tolong periksa dan proses berkas dokumen analytics.py" in wa_formatted
+    finally:
+        if os.path.exists(temp_py_path):
+            os.remove(temp_py_path)
+
+    # 7. Verify WhatsAppWebhookPayload validation
+    from routers.integration_routes import WhatsAppWebhookPayload
+    wp = WhatsAppWebhookPayload(
+        phone="628123456789",
+        text="tolong baca foto ini",
+        localPath="C:/anara/staging/photo_123.jpg",
+        fileName="photo_123.jpg",
+        mediaType="photo"
+    )
+    assert wp.mediaType == "photo"
+    assert wp.localPath == "C:/anara/staging/photo_123.jpg"
+
+    # 8. Verify transcribe_audio_file safety
+    from cognition.audio import transcribe_audio_file
+    empty_trans = asyncio.run(transcribe_audio_file(""))
+    assert empty_trans is None
+
 
 
 

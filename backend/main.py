@@ -68,10 +68,6 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
     try:
-        start_whatsapp_bridge()
-    except Exception as e:
-        logger.warning(f"[Startup] WhatsApp bridge start skipped: {e}")
-    try:
         seeded = ModelCapabilityRegistry.seed_live_voice_from_key_manager()
         if seeded:
             logger.info(f"[Startup] Seeded {seeded} Live Voice model(s) from key pool.")
