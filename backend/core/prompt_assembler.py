@@ -16,7 +16,6 @@ from typing import Optional, Dict, Any, List
 class PromptAssembler:
     """Orchestrates structured 6-slot system prompt assembly with zero hardcoded constraints."""
 
-    @staticmethod
     @classmethod
     def assemble(
         cls,

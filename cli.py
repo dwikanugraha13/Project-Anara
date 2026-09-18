@@ -252,28 +252,28 @@ async def manage_cli_daemon(action: str = "status"):
         stopped = 0
         b_pid = get_process_pid("backend")
         if b_pid:
-            subprocess.run(f"taskkill /F /PID {b_pid}", shell=True, capture_output=True)
+            subprocess.run(f"taskkill /F /T /PID {b_pid}", shell=True, capture_output=True)
             record_process_exit("backend")
             print(f"{GREEN}✓ Backend FastAPI (PID {b_pid}) dihentikan.{RESET}")
             stopped += 1
 
         port_b_pid = _find_pid_on_port(8000)
         if port_b_pid and port_b_pid != b_pid:
-            subprocess.run(f"taskkill /F /PID {port_b_pid}", shell=True, capture_output=True)
+            subprocess.run(f"taskkill /F /T /PID {port_b_pid}", shell=True, capture_output=True)
             record_process_exit("backend")
             print(f"{GREEN}✓ Backend proses pada port 8000 (PID {port_b_pid}) dihentikan.{RESET}")
             stopped += 1
 
         f_pid = get_process_pid("frontend")
         if f_pid:
-            subprocess.run(f"taskkill /F /PID {f_pid}", shell=True, capture_output=True)
+            subprocess.run(f"taskkill /F /T /PID {f_pid}", shell=True, capture_output=True)
             record_process_exit("frontend")
             print(f"{GREEN}✓ Frontend Next.js (PID {f_pid}) dihentikan.{RESET}")
             stopped += 1
 
         port_f_pid = _find_pid_on_port(3000)
         if port_f_pid and port_f_pid != f_pid:
-            subprocess.run(f"taskkill /F /PID {port_f_pid}", shell=True, capture_output=True)
+            subprocess.run(f"taskkill /F /T /PID {port_f_pid}", shell=True, capture_output=True)
             record_process_exit("frontend")
             print(f"{GREEN}✓ Frontend proses pada port 3000 (PID {port_f_pid}) dihentikan.{RESET}")
             stopped += 1
