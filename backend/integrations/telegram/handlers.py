@@ -35,13 +35,27 @@ _ACTIVE_CHAT_TASKS: Dict[str, asyncio.Task] = {}
 
 
 class TelegramStatusTracker:
-    """Atomic in-place progress updater and auto-cleaner for Telegram turns."""
+    """Atomic in-place progress updater, continuous typing heartbeat, and auto-cleaner for Telegram turns."""
     def __init__(self, chat_id: str):
         self.chat_id = chat_id
         self.status_msg_id: Optional[int] = None
         self.last_text: str = ""
         self._lock = asyncio.Lock()
         self._last_edit_time: float = 0.0
+        self._running: bool = True
+        self._heartbeat_task: Optional[asyncio.Task] = None
+        self._start_heartbeat()
+
+    def _start_heartbeat(self):
+        async def _keep_typing():
+            while self._running:
+                try:
+                    await send_telegram_chat_action(chat_id=self.chat_id, action="typing")
+                except Exception:
+                    pass
+                await asyncio.sleep(4.0)
+
+        self._heartbeat_task = asyncio.create_task(_keep_typing())
 
     async def update(self, text: str):
         clean = (text or "").strip()
@@ -50,7 +64,6 @@ class TelegramStatusTracker:
         self.last_text = clean
         async with self._lock:
             try:
-                await send_telegram_chat_action(chat_id=self.chat_id, action="typing")
                 now = time.time()
                 if self.status_msg_id is None:
                     res = await send_telegram_message(text=f"<i>{clean}</i>", chat_id=self.chat_id)
@@ -64,6 +77,11 @@ class TelegramStatusTracker:
                 pass
 
     async def cleanup(self):
+        self._running = False
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
+            self._heartbeat_task = None
+
         async with self._lock:
             if self.status_msg_id:
                 try:

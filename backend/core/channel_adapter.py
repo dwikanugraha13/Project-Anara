@@ -38,6 +38,47 @@ def get_active_channel_context() -> Optional[Dict[str, Any]]:
 _PENDING_PLANS: Dict[str, Dict[str, Any]] = {}
 
 
+def _format_tool_progress_message(evt: Dict[str, Any]) -> str:
+    """Formats an informative, user-friendly live status message for tool execution."""
+    t_name = evt.get("tool_name", "")
+    status = evt.get("status", "running")
+    detail = evt.get("detail", "")
+    summary = evt.get("summary", "")
+    step = evt.get("step")
+
+    step_str = f" [Langkah {step}]" if step else ""
+
+    action_map = {
+        "read_local_file": "📖 Membaca",
+        "edit_file": "✍️ Menyunting",
+        "write_local_file": "📝 Menulis",
+        "glob_find_files": "📁 Mencari berkas",
+        "grep_search_code": "🔍 Mencari kode",
+        "list_directory": "📂 Memindai direktori",
+        "scan_workspace_folder": "🌳 Memetakan folder",
+        "execute_cli_command": "⚡ Terminal",
+        "web_search": "🌐 Mencari web",
+        "fetch_webpage": "📄 Membaca web",
+        "delegate_subagent": "👥 Delegasi sub-agen",
+        "agent": "⚙️ AI",
+    }
+    label = action_map.get(t_name, f"⚙️ {t_name}")
+
+    if t_name == "agent" and status == "thinking":
+        return f"⚙️ Sedang bernalar & merumuskan langkah...{step_str}"
+
+    if detail:
+        clean_detail = str(detail).replace("\\", "/")
+        if "/" in clean_detail:
+            clean_detail = clean_detail.split("/")[-1]
+        return f"{label}: {clean_detail[:40]}...{step_str}"
+
+    if summary:
+        return f"{label}: {str(summary)[:45]}...{step_str}"
+
+    return f"{label}: {status}...{step_str}"
+
+
 def split_message_chunks(text: str, max_chars: int = 3000, add_part_headers: bool = True) -> List[str]:
     """
     Semantic code-block-aware message chunker for remote chat platforms (Anara Standard).
@@ -338,7 +379,7 @@ async def process_channel_request(
         if t_name and t_name not in tools_used:
             tools_used.append(t_name)
         if progress_callback:
-            msg = f"🔧 Menjalankan {t_name}..."
+            msg = _format_tool_progress_message(evt)
             try:
                 if asyncio.iscoroutinefunction(progress_callback):
                     asyncio.create_task(progress_callback(msg))
@@ -539,7 +580,7 @@ async def _execute_build_mode(
         if t_name and t_name not in tools_used:
             tools_used.append(t_name)
         if progress_callback:
-            msg = f"⚙️ {t_name}: {evt.get('status', 'running')}"
+            msg = _format_tool_progress_message(evt)
             try:
                 if asyncio.iscoroutinefunction(progress_callback):
                     asyncio.create_task(progress_callback(msg))

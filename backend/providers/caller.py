@@ -344,11 +344,12 @@ async def _execute_json_agent_loop(
     
     last_response = ""
     for step in range(25):
-        if len(messages) > 12:
-            for m_idx in range(2, len(messages) - 4):
-                if messages[m_idx].get("role") == "user" and len(messages[m_idx].get("content", "")) > 600:
+        # Soft-cap only very old turns if context history grows exceptionally large (> 24 messages)
+        if len(messages) > 24:
+            for m_idx in range(2, len(messages) - 6):
+                if messages[m_idx].get("role") == "user" and len(messages[m_idx].get("content", "")) > 4000:
                     c = messages[m_idx]["content"]
-                    messages[m_idx]["content"] = c[:300] + "\n[... output observasi lama dipangkas demi efisiensi konteks ...]\n" + c[-150:]
+                    messages[m_idx]["content"] = c[:1200] + "\n[... output observasi lama dipangkas demi efisiensi konteks ...]\n" + c[-600:]
 
         buffered_chunks = []
         is_tool_candidate = None  # None: undetermined, True: looks like JSON tool call, False: narrative streaming
@@ -446,7 +447,13 @@ async def _execute_json_agent_loop(
         
         if progress_cb:
             try:
-                res_cb = progress_cb({"tool_name": tool_name, "status": "running"})
+                detail = tool_args.get("file_path") or tool_args.get("command") or tool_args.get("pattern") or tool_args.get("query") or tool_args.get("title") or ""
+                res_cb = progress_cb({
+                    "tool_name": tool_name,
+                    "status": "running",
+                    "detail": str(detail),
+                    "step": step + 1,
+                })
                 if asyncio.iscoroutine(res_cb):
                     await res_cb
             except Exception:
@@ -489,7 +496,8 @@ async def _execute_json_agent_loop(
                 res_cb = progress_cb({
                     "tool_name": "agent",
                     "status": "thinking",
-                    "summary": "Merumuskan cetak biru arsitektur & analisis..." if read_only else "Menyusun perubahan kode & langkah implementasi..."
+                    "step": step + 2,
+                    "summary": "Merumuskan cetak biru & analisis..." if read_only else "Menganalisis hasil & menyusun langkah implementasi..."
                 })
                 if asyncio.iscoroutine(res_cb):
                     await res_cb
