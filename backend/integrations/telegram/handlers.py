@@ -402,224 +402,19 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                 await render_telegram_question(active_q_id)
                 return
 
-        # ── Handle Slash Commands ──
-        tokens = text.strip().split(maxsplit=1)
-        cmd_name = tokens[0].split("@")[0].strip().lower()
-        cmd_arg = tokens[1].strip() if len(tokens) > 1 else ""
-
-        if cmd_name in ["/start", "/help"]:
-            help_text = (
-                f"👋 <b>Halo {sender_name}! Saya Anara — General AI Agent Anda.</b>\n\n"
-                "Saya terhubung dengan PC dan ruang kerja lokal Anda, siap membantu percakapan, riset, maupun otomasi terminal dengan perlindungan Plan/Build Gate otomatis.\n\n"
-                "📌 <b>Daftar Perintah Bot:</b>\n"
-                "• <b>/plan [tugas]</b> — Tulis rencana implementasi arsitektur ke .anara/plans/ tanpa eksekusi langsung\n"
-                "• <b>/stop</b> — Hentikan tugas agen, peramban browser, atau rencana yang sedang berjalan\n"
-                "• <b>/model</b> — Pilih provider & ganti model AI aktif dengan tombol interaktif\n"
-                "• <b>/workspace</b> — Lihat atau kunci bot ke folder proyek PC (Anara Code mode)\n"
-                "• <b>/status</b> — Periksa status bot, model aktif, dan memori sistem\n"
-                "• <b>/memory</b> — Lihat ringkasan USER.md & MEMORY.md\n"
-                "• <b>/skills</b> — Lihat daftar keahlian agen aktif (agentskills.io)\n"
-                "• <b>/clear</b> — Bersihkan konteks dan mulai sesi percakapan baru\n"
-                "• <b>/help</b> — Tampilkan bantuan ini\n\n"
-                "🛡️ <b>Anara Dangerous Guard:</b> Percakapan dan perintah normal berjalan bebas friksi. Konfirmasi persetujuan hanya muncul jika perintah berisiko tinggi terhadap sistem (rm -rf, format disk, registry, atau /plan)."
-            )
-            await send_telegram_message(text=help_text, chat_id=chat_id)
-            return
-
-        if cmd_name in ["/stop", "/cancel", "/abort"]:
-            interrupted = False
-
+        # ── 3. Handle Commands & Standard Requests via Unified Dispatcher ──
+        if text.strip().lower().startswith(("/stop", "/cancel", "/abort", "/batal")):
             active_task = _ACTIVE_CHAT_TASKS.get(chat_id)
             if active_task and not active_task.done():
                 active_task.cancel()
                 _ACTIVE_CHAT_TASKS.pop(chat_id, None)
-                interrupted = True
 
             for q_id, q_data in list(_PENDING_TELEGRAM_QUESTIONS.items()):
                 if q_data.get("chat_id") == chat_id:
                     from tools.events import resolve_question_response
                     resolve_question_response(q_id, None, dismissed=True)
                     _PENDING_TELEGRAM_QUESTIONS.pop(q_id, None)
-                    interrupted = True
 
-            session_plan_key = f"telegram_{chat_id}"
-            from core.channel_adapter import _PENDING_PLANS
-            if session_plan_key in _PENDING_PLANS:
-                _PENDING_PLANS.pop(session_plan_key, None)
-                interrupted = True
-
-            try:
-                from tools.browser_tools import _tool_browser_close
-                await _tool_browser_close()
-            except Exception:
-                pass
-
-            if interrupted:
-                stop_msg = (
-                    "🛑 <b>TUGAS BERHASIL DIHENTIKAN!</b>\n\n"
-                    "Seluruh proses kerja agen, peramban browser otomatis, dan rencana yang tertahan telah dibatalkan dengan aman.\n\n"
-                    "<i>Anara siap menerima perintah baru Anda.</i>"
-                )
-            else:
-                stop_msg = (
-                    "ℹ️ <b>Tidak ada tugas yang sedang berjalan.</b>\n\n"
-                    "Anara dalam kondisi siaga (idle). Kirimkan perintah apa pun untuk mulai."
-                )
-            await send_telegram_message(text=stop_msg, chat_id=chat_id)
-            return
-
-        if cmd_name in ["/model", "/models"]:
-            if cmd_arg:
-                await send_telegram_model_search(chat_id=chat_id, query=cmd_arg)
-            else:
-                await send_telegram_model_selector(chat_id)
-            return
-
-        if cmd_name in ["/workspace", "/ws", "/project"]:
-            from core.channel_adapter import get_or_create_channel_session
-            from core.agent import anara_agent
-
-            temp_req = ChannelRequest(
-                text="/workspace",
-                channel="telegram",
-                channel_id=chat_id,
-                user_id=user_id,
-                sender_name=sender_name,
-            )
-            session_id = get_or_create_channel_session(temp_req)
-
-            if cmd_arg.lower() in ["reset", "clear", "default", "detach"]:
-                anara_agent.detach_local_folder(session_id=session_id)
-                reset_text = (
-                    "🧹 <b>Workspace Direset ke Sandbox Terisolasi</b>\n\n"
-                    "Bot tidak lagi terikat ke folder lokal eksternal. Semua operasi kembali aman di sandbox sementara."
-                )
-                await send_telegram_message(text=reset_text, chat_id=chat_id)
-                return
-
-            if cmd_arg:
-                from core.security import is_authorized_approver
-                if not is_authorized_approver(user_id=user_id, plan_owner_id=user_id, channel="telegram"):
-                    await send_telegram_message(
-                        text="🛡️ <b>Akses Ditolak:</b> Anda harus menjadi admin Telegram terdaftar untuk menautkan folder fisik host.",
-                        chat_id=chat_id
-                    )
-                    return
-
-                clean_path = os.path.abspath(os.path.expanduser(cmd_arg.strip().strip('"\'')))
-                if not os.path.isdir(clean_path):
-                    err_text = (
-                        f"❌ <b>Folder Tidak Ditemukan di PC:</b>\n<code>{clean_path}</code>\n\n"
-                        "<i>Pastikan path folder sudah benar dan drive dapat diakses.</i>"
-                    )
-                    await send_telegram_message(text=err_text, chat_id=chat_id)
-                    return
-
-                try:
-                    tree = anara_agent.attach_local_folder(clean_path, session_id=session_id)
-                    folder_name = tree.get("workspace_name", os.path.basename(clean_path))
-                    total_files = tree.get("total_files", 0)
-                    files_sample = [f.get("name", "") for f in tree.get("files", [])[:8]]
-                    preview_str = ", ".join(files_sample) if files_sample else "(Folder kosong)"
-
-                    success_text = (
-                        f"✅ <b>WORKSPACE BERHASIL DITAUTKAN! (ANARA CODE MODE AKTIF)</b>\n\n"
-                        f"• <b>Nama Proyek:</b> <code>{folder_name}</code>\n"
-                        f"• <b>Root Path Fisik:</b> <code>{clean_path}</code>\n"
-                        f"• <b>Total Berkas:</b> {total_files} berkas\n"
-                        f"• <b>Pratinjau Berkas:</b> <i>{preview_str}</i>\n\n"
-                        f"🔒 <i>Semua pembuatan berkas, pengeditan kode, dan terminal sekarang terkunci otomatis di dalam folder proyek ini!</i>"
-                    )
-                    await send_telegram_message(text=success_text, chat_id=chat_id)
-                    return
-                except Exception as ex:
-                    await send_telegram_message(text=f"❌ Gagal menautkan workspace: {ex}", chat_id=chat_id)
-                    return
-
-            tree = anara_agent.get_workspace_tree(session_id=session_id)
-            is_custom = anara_agent.has_active_custom_workspace(session_id=session_id)
-
-            if is_custom:
-                ws_text = (
-                    f"📁 <b>WORKSPACE PROYEK TERHUBUNG (ANARA CODE MODE)</b>\n\n"
-                    f"• <b>Nama Proyek:</b> <code>{tree.get('workspace_name')}</code>\n"
-                    f"• <b>Root Path Fisik:</b> <code>{tree.get('root_path')}</code>\n"
-                    f"• <b>Total Berkas:</b> {tree.get('total_files')} berkas\n"
-                    f"• <b>Status:</b> 🔒 Terkunci di folder ini.\n\n"
-                    f"💡 <i>Gunakan <code>/workspace &lt;path_baru&gt;</code> untuk ganti folder, atau <code>/workspace reset</code> untuk kembali ke sandbox aman.</i>"
-                )
-            else:
-                current_temp = anara_agent.get_session_dir(session_id)
-                ws_text = (
-                    f"📁 <b>STATUS WORKSPACE: SANDBOX TERISOLASI</b>\n\n"
-                    f"• <b>Mode:</b> Sandbox Aman Default\n"
-                    f"• <b>Lokasi:</b> <code>{current_temp}</code>\n"
-                    f"• <b>Status:</b> Beroperasi di sandbox sementara agar tidak mengotori file PC tanpa izin.\n\n"
-                    f"💡 <b>Cara Mengunci Bot ke Folder Proyek Nyata:</b>\n"
-                    f"Kirim perintah:\n"
-                    f"<code>/workspace {os.path.join(str(Path.home()), 'Documents', 'nama-proyek')}</code>\n\n"
-                    f"<i>Setelah ditautkan, bot akan bekerja langsung di dalam folder tersebut persis seperti di Anara Code!</i>"
-                )
-            await send_telegram_message(text=ws_text, chat_id=chat_id)
-            return
-
-        if cmd_name == "/status":
-            from providers import get_active_model_id
-            from memory import memory_engine
-            active_id = get_active_model_id()
-            stats = memory_engine.get_brain_stats()
-            status_text = (
-                f"⚡ <b>STATUS ANARA GENERAL AGENT</b>\n\n"
-                f"• <b>Channel</b>: Telegram Bot\n"
-                f"• <b>Chat ID</b>: <code>{chat_id}</code>\n"
-                f"• <b>Pengguna</b>: {sender_name}\n"
-                f"• <b>Model AI Aktif</b>: <code>{active_id}</code>\n"
-                f"• <b>Memori Fakta</b>: {stats.get('memories_count', 0)} node\n"
-                f"• <b>Tugas & Catatan</b>: {stats.get('notes_count', 0)} item\n"
-                f"• <b>Keahlian Otonom</b>: {stats.get('skills_count', 0)} skills\n"
-                f"• <b>Kondisi Core</b>: OPTIMAL & Siap beroperasi."
-            )
-            await send_telegram_message(text=status_text, chat_id=chat_id)
-            return
-
-        if cmd_name == "/memory":
-            from memory import file_memory
-            user_prof = file_memory.get_user_profile()
-            mem_facts = file_memory.get_memory_facts()
-            mem_text = (
-                f"🧠 <b>MEMORI SISTEM 4-FILE ANARA</b>\n\n"
-                f"<b>[PROFIL PENGGUNA - USER.md]</b>\n{user_prof[:500]}\n\n"
-                f"<b>[FAKTA TERPELAJARI - MEMORY.md]</b>\n{mem_facts[:700]}"
-            )
-            await send_telegram_message(text=mem_text, chat_id=chat_id)
-            return
-
-        if cmd_name == "/skills":
-            from core.skill_library import skill_library
-            skills = skill_library.list_skills()
-            active_skills = [s for s in skills if s.get("status") == "active"]
-            lines = [f"📦 <b>SKILL LIBRARY V2 ({len(active_skills)} Aktif)</b>:\n"]
-            for s in active_skills[:8]:
-                lines.append(f"• <b>{s['name']}</b> ({s.get('category', 'general')})\n  <i>{s.get('description', '')[:90]}</i>")
-            await send_telegram_message(text="\n".join(lines), chat_id=chat_id)
-            return
-
-        if cmd_name in ["/clear", "/new"]:
-            from memory import memory_engine
-            new_sess = memory_engine.create_session(
-                speaker_name=sender_name,
-                title=f"Telegram Chat ({sender_name})",
-                session_type="chat",
-                channel="telegram",
-                session_mode="conversational"
-            )
-            await send_telegram_message(
-                text=f"🧹 <b>Sesi percakapan baru telah dimulai (#{new_sess['id']}).</b>\nKonteks sebelumnya telah diarsipkan.",
-                chat_id=chat_id
-            )
-            return
-
-        # ── 3. Handle Standard Conversational / Agentic Requests ──
         req = ChannelRequest(
             text=text,
             channel="telegram",
@@ -641,8 +436,8 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
 
             if res.plan_pending and res.plan_id:
                 await send_telegram_plan_proposal(chat_id=chat_id, plan_text=res.text, plan_id=res.plan_id)
-            else:
-                await send_telegram_message(text=res.text, chat_id=chat_id)
+            elif res.text:
+                await send_telegram_message(text=res.text, chat_id=chat_id, reply_markup=res.reply_markup)
         except asyncio.CancelledError:
             await status_tracker.cleanup()
             logger.info(f"[TelegramDaemon] Chat {chat_id} task was cancelled via /stop.")

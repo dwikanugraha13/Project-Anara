@@ -162,6 +162,7 @@ class ChannelResponse(BaseModel):
     attachments: List[Dict[str, Any]] = Field(default_factory=list)
     status: str = "success"
     error: Optional[str] = None
+    reply_markup: Optional[Dict[str, Any]] = None
 
 
 def get_or_create_channel_session(req: ChannelRequest) -> int:
@@ -250,7 +251,21 @@ async def process_channel_request(
     )
     file_memory.detect_and_record_memory(req.text, speaker_name=req.sender_name)
 
-    # 4. Check for Plan Approval keywords and Session State Machine
+    # 4. Check for Unified System Commands (/help, /status, /model, /skills, /memory, /workspace, /clear, /stop, /plan)
+    from core.command_hub import handle_channel_command
+    cmd_response = await handle_channel_command(req)
+    if cmd_response:
+        cmd_response.session_id = session_id
+        if cmd_response.text:
+            memory_engine.log_conversation(
+                user_text=req.text,
+                ai_text=cmd_response.text,
+                speaker_name=req.sender_name,
+                session_id=session_id
+            )
+        return cmd_response
+
+    # 5. Check for Plan Approval keywords and Session State Machine
     session_plan_key = f"{req.channel}_{req.channel_id}"
     intent_state = session_state_manager.evaluate_intent(clean_text, req.channel, req.channel_id)
     is_approval = intent_state["is_approval"] or is_explicit_plan_approval(clean_text)

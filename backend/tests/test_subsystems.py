@@ -263,3 +263,42 @@ def test_anara_loop_breaker():
     assert stalled is True
     assert "ping-pong loop" in msg
 
+
+def test_unified_command_hub():
+    import asyncio
+    from core.channel_adapter import ChannelRequest
+    from core.command_hub import handle_channel_command
+
+    async def run_commands():
+        # 1. Test /help
+        req_help = ChannelRequest(text="/help", channel="telegram", channel_id="chat_1", user_id="u1")
+        res_help = await handle_channel_command(req_help)
+        assert res_help is not None
+        assert "Daftar Perintah Universal" in res_help.text
+
+        # 2. Test /status
+        req_status = ChannelRequest(text="/status", channel="cli", channel_id="cli_1", user_id="u1")
+        res_status = await handle_channel_command(req_status)
+        assert res_status is not None
+        assert "STATUS SISTEM ANARA" in res_status.text
+
+        # 3. Test /skills
+        req_skills = ChannelRequest(text="/skills", channel="whatsapp", channel_id="wa_1", user_id="u1")
+        res_skills = await handle_channel_command(req_skills)
+        assert res_skills is not None
+        assert "SKILL LIBRARY ANARA" in res_skills.text
+
+        # 4. Test /memory
+        req_mem = ChannelRequest(text="/memory", channel="web", channel_id="web_1", user_id="u1")
+        res_mem = await handle_channel_command(req_mem)
+        assert res_mem is not None
+        assert "MEMORI PERSISTEN ANARA" in res_mem.text
+
+        # 5. Non-command request should return None
+        req_normal = ChannelRequest(text="halo apa kabar", channel="telegram", channel_id="chat_1", user_id="u1")
+        res_normal = await handle_channel_command(req_normal)
+        assert res_normal is None
+
+    asyncio.run(run_commands())
+
+
