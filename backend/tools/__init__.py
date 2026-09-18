@@ -1,4 +1,5 @@
 from .events import register_agent_event_listener, _emit_agent_event
+from .loopbreaker import AnaraLoopBreaker
 from .catalog import (
     ANARA_FUNCTION_DECLARATIONS,
     READ_ONLY_TOOL_NAMES,
@@ -17,6 +18,7 @@ from .catalog import (
 __all__ = [
     "register_agent_event_listener",
     "_emit_agent_event",
+    "AnaraLoopBreaker",
     "ANARA_FUNCTION_DECLARATIONS",
     "READ_ONLY_TOOL_NAMES",
     "ACTION_TOOL_NAMES",

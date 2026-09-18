@@ -219,3 +219,47 @@ def test_anara_tool_tracer():
     assert ev2.payload["duration_ms"] >= 5.0
 
     telemetry_bus.unsubscribe("tracer_test_sess", q)
+
+
+def test_anara_loop_breaker():
+    from tools.loopbreaker import AnaraLoopBreaker
+
+    lb = AnaraLoopBreaker(max_identical=4)
+
+    # 1. Normal varied calls should not trigger stall
+    stalled, msg = lb.record_and_check("read_local_file", {"file_path": "a.py"})
+    assert stalled is False
+    assert msg is None
+
+    stalled, msg = lb.record_and_check("read_local_file", {"file_path": "b.py"})
+    assert stalled is False
+
+    # 2. Four identical calls in a row should trigger stall
+    lb.reset()
+    for i in range(3):
+        stalled, msg = lb.record_and_check("read_local_file", {"file_path": "c.py", "offset": 1})
+        assert stalled is False
+
+    stalled, msg = lb.record_and_check("read_local_file", {"file_path": "c.py", "offset": 1})
+    assert stalled is True
+    assert "[SYSTEM REFLECTION" in msg
+    assert "c.py" not in msg or "read_local_file" in msg
+
+    # 3. Ping-pong alternation (A -> B -> A -> B -> A -> B)
+    lb.reset()
+    calls = [
+        ("read_local_file", {"file_path": "x.py"}),
+        ("grep_search_code", {"pattern": "foo"}),
+        ("read_local_file", {"file_path": "x.py"}),
+        ("grep_search_code", {"pattern": "foo"}),
+        ("read_local_file", {"file_path": "x.py"}),
+    ]
+    for name, args in calls:
+        stalled, msg = lb.record_and_check(name, args)
+        assert stalled is False
+
+    # 6th call completing the ping-pong cycle
+    stalled, msg = lb.record_and_check("grep_search_code", {"pattern": "foo"})
+    assert stalled is True
+    assert "ping-pong loop" in msg
+

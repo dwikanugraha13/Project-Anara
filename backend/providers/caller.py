@@ -304,7 +304,7 @@ async def _execute_json_agent_loop(
     intercept_mutating_tools: bool = False,
 ) -> Any:
     """Universal multi-turn JSON tool loop for OpenAI Codex, Claude, and Custom Providers."""
-    from tools import dispatch_tool_call, READ_ONLY_TOOL_NAMES, get_tool_risk, get_tools_catalog
+    from tools import dispatch_tool_call, READ_ONLY_TOOL_NAMES, get_tool_risk, get_tools_catalog, AnaraLoopBreaker
     from tools.catalog import is_safe_read_only_cli_command
 
     catalog = get_tools_catalog()
@@ -342,6 +342,7 @@ async def _execute_json_agent_loop(
         {"role": "user", "content": user_prompt}
     ]
     
+    loop_breaker = AnaraLoopBreaker(max_identical=4)
     last_response = ""
     for step in range(25):
         # Soft-cap only very old turns if context history grows exceptionally large (> 24 messages)
@@ -427,6 +428,14 @@ async def _execute_json_agent_loop(
         tool_name = payload.get("tool", "")
         tool_args = payload.get("arguments", {}) or {}
 
+        # Anara Loop Breaker (Universal dynamic call fingerprinting & cycle prevention)
+        is_stalled, stall_msg = loop_breaker.record_and_check(tool_name, tool_args)
+        if is_stalled and stall_msg:
+            logger.warning(f"[AgentLoop] LoopBreaker triggered on tool '{tool_name}'")
+            messages.append({"role": "assistant", "content": raw_out})
+            messages.append({"role": "user", "content": stall_msg})
+            continue
+
         tool_risk = get_tool_risk(tool_name)
         is_safe_cli = (tool_name == "execute_cli_command" and is_safe_read_only_cli_command(tool_args.get("command", "")))
         if is_safe_cli:
@@ -490,6 +499,9 @@ async def _execute_json_agent_loop(
             "role": "user",
             "content": f"[TOOL RESULT for {tool_name}]:\n{json.dumps(tool_res, ensure_ascii=False)}\n\nLanjutkan tugas berikutnya atau berikan penjelasan akhir yang cerdas dan lengkap jika semua langkah telah selesai."
         })
+
+        is_err = isinstance(tool_res, dict) and tool_res.get("status") == "error"
+        loop_breaker.record_result(is_err)
 
         if progress_cb:
             try:

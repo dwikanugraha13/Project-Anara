@@ -36,6 +36,7 @@ tests = [
     ("Anara Task Scratchpad Working State", ts.test_anara_task_scratchpad),
     ("Anara Telemetry Event Bus", ts.test_anara_telemetry_event_bus),
     ("Anara Tool Execution Tracer", ts.test_anara_tool_tracer),
+    ("Anara Dynamic Loop Breaker", ts.test_anara_loop_breaker),
 ]
 
 passed = 0
