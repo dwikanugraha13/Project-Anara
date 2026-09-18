@@ -206,6 +206,94 @@ async def stream_universal_chat_model(
         yield full
 
 
+def _extract_and_parse_tool_call(raw_out: str) -> tuple[Optional[Dict[str, Any]], str, bool]:
+    """
+    Extracts and robustly parses a tool call payload from model output text.
+    Handles:
+    - Code blocks: ```json ... ``` or ``` ... ```
+    - Bare JSON object: { "action": "tool_call", ... }
+    - XML style: <tool_call>{ ... }</tool_call>
+    - Dynamic Windows path unescaping (preserves escaped quotes \", normalizes unescaped \\ to /)
+    - Trailing commas before closing braces/brackets
+    Returns: (payload, lead_text, is_malformed_candidate)
+    """
+    if not raw_out or not raw_out.strip():
+        return None, "", False
+
+    text = raw_out.strip()
+    candidate_str = None
+    lead_text = ""
+
+    # 1. Check for XML tag <tool_call>...</tool_call>
+    xml_m = re.search(r"<tool_call>\s*(\{[\s\S]*?\})\s*</tool_call>", text, re.IGNORECASE)
+    if xml_m:
+        candidate_str = xml_m.group(1).strip()
+        lead_text = text[:xml_m.start()].strip()
+    else:
+        # 2. Check for markdown code block ```json ... ```
+        block_m = re.search(r"```(?:json)?\s*(\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\})\s*```", text)
+        if block_m:
+            candidate_str = block_m.group(1).strip()
+            lead_text = text[:block_m.start()].strip()
+        else:
+            # 3. Check for bare JSON object starting with {
+            if text.startswith("{") and ('"action"' in text and '"tool"' in text):
+                candidate_str = text
+                lead_text = ""
+            else:
+                # 4. Search for any embedded JSON containing "action": "tool_call"
+                embedded_m = re.search(r"(\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\})", text)
+                if embedded_m:
+                    candidate_str = embedded_m.group(1).strip()
+                    lead_text = text[:embedded_m.start()].strip()
+
+    if not candidate_str:
+        if re.search(r'["\']action["\']\s*:\s*["\']tool_call["\']', text) or "<tool_call>" in text:
+            return None, text, True
+        return None, text, False
+
+    # Attempt 1: Direct standard parse
+    try:
+        data = json.loads(candidate_str)
+        if isinstance(data, dict) and data.get("action") == "tool_call":
+            return data, lead_text, False
+    except Exception:
+        pass
+
+    # Attempt 2: Dynamic Repair (Preserves escaped quotes \", normalizes Windows path single backslashes)
+    try:
+        def fix_quotes(m):
+            val = m.group(1)
+            def repl_backslash(bm):
+                next_ch = bm.group(1)
+                if next_ch in ['"', '\\', '/']:
+                    return '\\' + next_ch
+                return '/' + next_ch
+            fixed = re.sub(r'\\(.)', repl_backslash, val)
+            return f'"{fixed}"'
+
+        repaired = re.sub(r'"((?:[^"\\]|\\.)*)"', fix_quotes, candidate_str)
+        repaired = re.sub(r',\s*([\}\]])', r'\1', repaired)
+
+        data = json.loads(repaired)
+        if isinstance(data, dict) and data.get("action") == "tool_call":
+            return data, lead_text, False
+    except Exception:
+        pass
+
+    # Attempt 3: Single quotes to double quotes repair
+    try:
+        repaired_sq = re.sub(r"'([^']+)'", r'"\1"', candidate_str)
+        repaired_sq = re.sub(r',\s*([\}\]])', r'\1', repaired_sq)
+        data = json.loads(repaired_sq)
+        if isinstance(data, dict) and data.get("action") == "tool_call":
+            return data, lead_text, False
+    except Exception:
+        pass
+
+    return None, lead_text, True
+
+
 async def _execute_json_agent_loop(
     provider_caller: Callable[..., Awaitable[str]],
     user_prompt: str,
@@ -216,34 +304,37 @@ async def _execute_json_agent_loop(
     intercept_mutating_tools: bool = False,
 ) -> Any:
     """Universal multi-turn JSON tool loop for OpenAI Codex, Claude, and Custom Providers."""
-    from tools import dispatch_tool_call, READ_ONLY_TOOL_NAMES, get_tool_risk
+    from tools import dispatch_tool_call, READ_ONLY_TOOL_NAMES, get_tool_risk, get_tools_catalog
     from tools.catalog import is_safe_read_only_cli_command
-    
+
+    catalog = get_tools_catalog()
+    tool_lines = []
+    for t in catalog:
+        if read_only and not t.get("is_read_only"):
+            continue
+        tool_lines.append(f"- '{t['name']}': {t.get('description', '')}")
+
+    dynamic_catalog_str = "\n".join(tool_lines)
+
     tool_spec_doc = (
-        "\n\n[UNIVERSAL AUTONOMOUS AGENT PROTOCOL — CLAUDE CODE / OPENCODE / ANARA STANDARD]\n"
+        "\n\n[UNIVERSAL AUTONOMOUS AGENT PROTOCOL — ANARA STANDARD]\n"
         "Kamu adalah Autonomous AI Agent cerdas, berdaya cipta tinggi, dan solutif.\n"
-        "Untuk membaca kode, menjelajahi proyek, mengedit berkas, menjalankan perintah terminal, atau membuat artefak:\n"
-        "BALAS HANYA DENGAN SATU BLOK JSON VALID BERIKUT:\n"
+        "Gunakan instrumen alat universal yang tersedia untuk menyelesaikan tugas pengguna secara mandiri dan tuntas.\n"
+        "PENTING: Selalu gunakan forward slash '/' untuk semua path direktori dan berkas (contoh: 'backend/tools/catalog.py', 'C:/Users/...').\n"
+        "Ketika memanggil alat, BALAS HANYA DENGAN SATU BLOK JSON VALID BERIKUT:\n"
         "```json\n"
-        '{\n  "action": "tool_call",\n  "tool": "interactive_question" | "edit_file" | "read_local_file" | "write_local_file" | "glob_find_files" | "grep_search_code" | "execute_cli_command" | "create_zip_archive" | "web_search" | "fetch_webpage" | "delegate_subagent" | "generate_file_artifact" | "scan_workspace_folder" | "list_directory",\n  "arguments": { ... }\n}\n'
-        "```\n"
-        "Katalog Pemanggilan Alat Otonom:\n"
-        "- 'interactive_question': Menampilkan kartu kuesioner bertahap (Wizard Card) ke layar user untuk meminta preferensi / mengklarifikasi ide proyek yang luas di Plan Mode. Argumen: {\"questions\": [{\"header\": \"Kategori\", \"question\": \"Pertanyaan...\", \"options\": [{\"label\": \"Opsi A (Recommended)\", \"description\": \"Penjelasan\"}]}]}.\n"
-        "- 'edit_file': Menyunting berkas secara in-place (hemat token & anti-rusak). Argumen: {\"file_path\": \"...\", \"old_string\": \"teks_lama\", \"new_string\": \"teks_baru\"}.\n"
-        "- 'read_local_file': Membaca berkas dengan nomor baris. Argumen: {\"file_path\": \"...\", \"offset\": 1, \"limit\": 200}.\n"
-        "- 'write_local_file': Membuat berkas baru atau menulis ulang. Argumen: {\"file_path\": \"...\", \"content\": \"...\"}.\n"
-        "- 'glob_find_files': Mencari file berdasarkan pola. Argumen: {\"pattern\": \"**/*.tsx\"}.\n"
-        "- 'grep_search_code': Mencari kode/teks via regex di seluruh workspace. Argumen: {\"pattern\": \"regex_atau_kata\", \"include\": \"*.py\"}.\n"
-        "- 'execute_cli_command': Menjalankan perintah terminal lokal (npm run build, pytest, git diff). Argumen: {\"command\": \"...\"}.\n"
-        "- 'create_zip_archive': Mengompresi seluruh proyek ke ZIP untuk diunduh pengguna. Argumen: {\"archive_name\": \"project.zip\"}.\n"
-        "- 'web_search': Mencari informasi terkini di internet. Argumen: {\"query\": \"...\"}.\n"
-        "- 'fetch_webpage': Membaca isi web dari URL. Argumen: {\"url\": \"...\"}.\n"
-        "- 'delegate_subagent': Mendelegasikan tugas berat ke pekerja latar belakang. Argumen: {\"title\": \"...\", \"mission_prompt\": \"...\"}.\n\n"
-        "DISIPLIN KERJA (SELF-VERIFICATION LOOP):\n"
-        "1. Selalu baca berkas (read_local_file) atau cari (glob/grep) sebelum melakukan perubahan.\n"
+        "{\n"
+        '  "action": "tool_call",\n'
+        '  "tool": "nama_alat",\n'
+        '  "arguments": { ... }\n'
+        "}\n"
+        "```\n\n"
+        f"Katalog Alat Aktif ({len(tool_lines)} alat):\n"
+        f"{dynamic_catalog_str}\n\n"
+        "DISIPLIN KERJA:\n"
+        "1. Selalu periksa berkas/folder (read_local_file, glob_find_files, list_directory) sebelum menyimpulkan atau mengedit.\n"
         "2. Gunakan 'edit_file' untuk modifikasi spesifik agar tidak merusak baris lain.\n"
-        "3. Setelah menulis/mengedit kode penting, lakukan verifikasi mandiri dengan 'execute_cli_command' (misal build atau test) jika relevan.\n"
-        "4. Setelah seluruh alat selesai dieksekusi dan tujuan tercapai, berikan penjelasan akhir yang cerdas, tuntas, dan ramah MURNI dengan gayamu sendiri."
+        "3. Setelah seluruh alat selesai dieksekusi dan tujuan tercapai, berikan penjelasan akhir yang cerdas, tuntas, dan ramah MURNI dengan gayamu sendiri (tanpa blok JSON pemanggilan alat)."
     )
     
     messages = [
@@ -309,27 +400,28 @@ async def _execute_json_agent_loop(
             break
         last_response = raw_out.strip()
         
-        json_match = re.search(r"```(?:json)?\s*(\{\s*\"action\"\s*:\s*\"tool_call\".*?\})\s*```", raw_out, re.DOTALL)
-        if not json_match:
-            if raw_out.strip().startswith("{") and '"action"' in raw_out and '"tool"' in raw_out:
-                try:
-                    payload = json.loads(raw_out.strip())
-                except Exception:
-                    payload = None
-            else:
-                payload = None
-        else:
-            try:
-                payload = json.loads(json_match.group(1))
-            except Exception:
-                payload = None
-                
+        payload, lead_text, is_malformed = _extract_and_parse_tool_call(raw_out)
+
+        if is_malformed:
+            logger.warning(f"[AgentLoop] Malformed tool call syntax detected from model. Triggering autonomous self-correction loop...")
+            messages.append({"role": "assistant", "content": raw_out})
+            messages.append({
+                "role": "user",
+                "content": "[SYSTEM REFLECTION]: Format pemanggilan alat tidak dapat diparse sebagai JSON valid. Pastikan blok ```json berisi objek JSON valid dan gunakan forward slash '/' untuk semua path berkas (contoh: 'C:/path/file.py'). Mohon ulangi panggilan alat dengan benar."
+            })
+            continue
+
         if not payload or payload.get("action") != "tool_call":
-            if token_cb and not accumulated_narrative and last_response:
-                res = token_cb(last_response)
+            # Model responded with actual conversational narrative text!
+            # Strip any leaked or orphaned tool tags before presenting to user (Hermes parity)
+            cleaned_text = re.sub(r"```(?:json)?\s*\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\}\s*```", "", last_response).strip()
+            cleaned_text = re.sub(r"<tool_call>[\s\S]*?</tool_call>", "", cleaned_text).strip()
+            final_text = cleaned_text or last_response
+            if token_cb and not accumulated_narrative and final_text:
+                res = token_cb(final_text)
                 if asyncio.iscoroutine(res):
                     await res
-            return last_response
+            return final_text
             
         tool_name = payload.get("tool", "")
         tool_args = payload.get("arguments", {}) or {}
@@ -342,9 +434,6 @@ async def _execute_json_agent_loop(
         if intercept_mutating_tools and tool_risk in ("mutating", "ask"):
             logger.info(f"[ToolInterceptor JSON] Intercepted mutating tool '{tool_name}' for Plan approval.")
             cmd_preview = tool_args.get("command") or tool_args.get("file_path") or tool_args.get("title") or ""
-            lead_text = ""
-            if json_match:
-                lead_text = raw_out[:json_match.start()].strip()
             return {
                 "intercepted": True,
                 "tool_name": tool_name,

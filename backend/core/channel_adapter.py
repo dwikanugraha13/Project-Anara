@@ -437,7 +437,26 @@ async def process_channel_request(
         )
 
     if isinstance(reply, str) and reply.strip():
-        final_reply = reply.strip()
+        # ── ANTI-LEAK GATE (Hermes Parity) ──
+        # Ensure raw tool-call JSON blocks are NEVER presented as chat text to user
+        if '"action": "tool_call"' in reply or '<tool_call>' in reply:
+            from providers.caller import _extract_and_parse_tool_call
+            leaked_payload, lead, _ = _extract_and_parse_tool_call(reply)
+            if leaked_payload:
+                logger.info(f"[ChannelAdapter] Anti-leak caught unexecuted tool call '{leaked_payload.get('tool')}'. Auto-dispatching...")
+                return await _execute_build_mode(
+                    session_id=session_id,
+                    user_prompt=clean_text,
+                    req=req,
+                    progress_callback=progress_callback,
+                    pending_tool_call=leaked_payload,
+                )
+            else:
+                cleaned = re.sub(r"```(?:json)?\s*\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\}\s*```", "", reply).strip()
+                cleaned = re.sub(r"<tool_call>[\s\S]*?</tool_call>", "", cleaned).strip()
+                final_reply = cleaned or "Tugas sedang diproses dan dianalisis."
+        else:
+            final_reply = reply.strip()
     else:
         final_reply = "Maaf, respon dari model AI tidak menghasilkan teks atau terputus. Silakan coba tanyakan kembali."
 
@@ -564,7 +583,12 @@ async def _execute_build_mode(
         intercept_mutating_tools=False,
     )
 
-    final_reply = reply if isinstance(reply, str) else "Eksekusi berhasil diselesaikan."
+    if isinstance(reply, str):
+        cleaned = re.sub(r"```(?:json)?\s*\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\}\s*```", "", reply).strip()
+        cleaned = re.sub(r"<tool_call>[\s\S]*?</tool_call>", "", cleaned).strip()
+        final_reply = cleaned or reply.strip()
+    else:
+        final_reply = "Eksekusi berhasil diselesaikan."
 
     memory_engine.log_conversation(
         user_text="",
