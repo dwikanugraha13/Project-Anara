@@ -63,6 +63,11 @@ async def lifespan(app: FastAPI):
     """Starts background services, initializes provider keys, and manages graceful shutdown."""
     logger.info(f"[Anara] Backend code loaded — build {ANARA_BUILD}")
     try:
+        from core.lifecycle import record_process_start, record_process_exit
+        record_process_start("backend", os.getpid())
+    except Exception:
+        pass
+    try:
         start_whatsapp_bridge()
     except Exception as e:
         logger.warning(f"[Startup] WhatsApp bridge start skipped: {e}")
@@ -142,6 +147,12 @@ async def lifespan(app: FastAPI):
     try:
         from integrations.telegram import stop_telegram_polling_daemon
         stop_telegram_polling_daemon()
+    except Exception:
+        pass
+
+    try:
+        from core.lifecycle import record_process_exit
+        record_process_exit("backend")
     except Exception:
         pass
 
