@@ -37,6 +37,15 @@ class ToolRegistry:
 
     def __init__(self):
         self._tools: Dict[str, ToolDefinition] = {}
+        self._aliases: Dict[str, str] = {}
+
+    def register_alias(self, alias_name: str, target_name: str):
+        """Registers a backward-compatible alias for an existing tool."""
+        self._aliases[alias_name] = target_name
+
+    def resolve_name(self, name: str) -> str:
+        """Resolves alias to canonical tool name."""
+        return self._aliases.get(name, name)
 
     def register(
         self,
@@ -105,14 +114,15 @@ class ToolRegistry:
         )
 
     def get_tool(self, name: str) -> Optional[ToolDefinition]:
-        return self._tools.get(name)
+        canonical = self.resolve_name(name)
+        return self._tools.get(canonical)
 
     def get_handler(self, name: str) -> Optional[Callable[..., Any]]:
-        tool = self._tools.get(name)
+        tool = self.get_tool(name)
         return tool.handler if tool else None
 
     def get_risk(self, name: str) -> str:
-        tool = self._tools.get(name)
+        tool = self.get_tool(name)
         return tool.risk if tool else "mutating"
 
     def get_all_declarations(self, read_only: bool = False, enabled_set: Optional[Set[str]] = None) -> List[types.FunctionDeclaration]:
@@ -160,7 +170,7 @@ class ToolRegistry:
 
     async def dispatch(self, name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         """Executes a tool by looking up its handler dynamically (Zero if-elif ladder)."""
-        tool = self._tools.get(name)
+        tool = self.get_tool(name)
         if not tool:
             return {"status": "error", "message": f"Alat '{name}' tidak terdaftar."}
 

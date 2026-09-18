@@ -388,12 +388,19 @@ async def _execute_build_mode(
     req: ChannelRequest,
     progress_callback: Optional[Callable[[str], Any]] = None,
     pending_tool_call: Optional[Dict[str, Any]] = None,
+    plan: Optional[Dict[str, Any]] = None,
+    **kwargs: Any,
 ) -> ChannelResponse:
     """Executes the approved plan in Build Mode with system-reminder mode injection."""
     from core.agent import anara_agent
     anara_agent.set_active_session_id(session_id)
     from tools.artifact_tools import clear_turn_artifacts, get_turn_artifacts
     clear_turn_artifacts()
+
+    if not pending_tool_call and plan:
+        pending_tool_call = plan.get("pending_tool_call")
+
+    resolved_task = str((plan or {}).get("original_prompt") or user_prompt)
 
     if progress_callback:
         try:
@@ -420,7 +427,7 @@ async def _execute_build_mode(
         workspace_tree=ws_tree,
         is_chat_mode=True,
         session_type="chat",
-        user_task=user_prompt,
+        user_task=resolved_task,
         channel=req.channel,
         session_id=session_id,
     ) + system_reminder
@@ -441,7 +448,6 @@ async def _execute_build_mode(
             except Exception:
                 pass
 
-    effective_prompt = user_prompt
     all_history = memory_engine.get_recent_conversations(
         limit=25,
         speaker_name=req.sender_name,
@@ -458,11 +464,13 @@ async def _execute_build_mode(
             f"Pengguna telah menyetujui eksekusi tindakan berikut:\n"
             f"• Alat: {t_name}\n"
             f"• Parameter: {json.dumps(t_args, ensure_ascii=False)}\n"
-            f"Permintaan asli pengguna: \"{user_prompt}\"\n\n"
+            f"Permintaan asli pengguna: \"{resolved_task}\"\n\n"
             f"Jalankan tindakan di atas menggunakan alat yang tersedia, dan laporkan hasilnya secara tuntas."
         )
     elif dialogue_context:
-        effective_prompt = f"{dialogue_context}Pesan User: {user_prompt}"
+        effective_prompt = f"{dialogue_context}Pesan User: {resolved_task}"
+    else:
+        effective_prompt = resolved_task
 
     reply = await call_universal_chat_model(
         model_id=get_active_model_id(),

@@ -534,7 +534,10 @@ def is_safe_read_only_cli_command(command: str) -> bool:
         "win32_operatingsystem", "win32_processor", "win32_computersystem", "freeprivatebytes",
         "get-process", "get-service", "get-ciminstance", "get-wmiobject", "wmic",
         "systeminfo", "hostname", "get-uptime", "reg query", "tasklist", "driverquery", "node -v", "npm -v", "python -v", "git status", "git log", "git diff",
-        "test-path", "get-childitem", "get-item", "get-command", "get-location", "get-date"
+        "test-path", "get-childitem", "get-item", "get-command", "get-location", "get-date",
+        "shell.application", "namespace(", ".items()", "select-object", "format-table", "format-list",
+        "measure-object", "sort-object", "where-object", "out-string", "get-acl", "get-content",
+        "recycle.bin", "recyclebin", "get-itemproperty", "findstr", "dir /", "dir ", "ls "
     ]
     if any(k in cmd_lower for k in safe_roots):
         return True

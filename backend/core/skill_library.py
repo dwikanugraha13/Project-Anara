@@ -156,22 +156,50 @@ Gunakan keahlian ini saat diminta atau mendeteksi tugas dengan kata kunci: {', '
         }
 
     def list_skills(self, status_filter: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Scans all subfolders in backend/skills/ and parses their SKILL.md."""
+        """Scans all folders and subfolders in backend/skills/ and parses their SKILL.md."""
         results = []
         if not os.path.isdir(self.root_dir):
             return results
 
-        for item in os.listdir(self.root_dir):
-            folder = os.path.join(self.root_dir, item)
-            if os.path.isdir(folder):
-                skill_file = os.path.join(folder, "SKILL.md")
-                parsed = self.parse_skill_file(skill_file)
-                if parsed:
-                    if status_filter and parsed.get("status") != status_filter:
-                        continue
-                    results.append(parsed)
+        from pathlib import Path
+        for skill_path in Path(self.root_dir).rglob("SKILL.md"):
+            parsed = self.parse_skill_file(str(skill_path))
+            if parsed:
+                if status_filter and parsed.get("status") != status_filter:
+                    continue
+                results.append(parsed)
 
         return sorted(results, key=lambda s: s.get("name", ""))
+
+    def get_skill(self, name_or_slug: str) -> Optional[Dict[str, Any]]:
+        """Retrieves a skill by name or slug."""
+        clean = name_or_slug.strip().lower()
+        for s in self.list_skills():
+            if s["slug"].lower() == clean or s["name"].lower() == clean or slugify(s["name"]) == clean:
+                return s
+        return None
+
+    def get_skill_file(self, skill_name_or_slug: str, relative_file_path: str) -> Optional[Dict[str, Any]]:
+        """Retrieves a sub-resource file (e.g. references/*.md, scripts/*.py) inside a skill folder."""
+        skill = self.get_skill(skill_name_or_slug)
+        if not skill:
+            return None
+        folder = os.path.dirname(skill["file_path"])
+        target_path = os.path.normpath(os.path.join(folder, relative_file_path))
+        if not target_path.startswith(folder) or not os.path.isfile(target_path):
+            return None
+        try:
+            with open(target_path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+            return {
+                "skill_name": skill["name"],
+                "file_path": relative_file_path,
+                "size_kb": round(len(content) / 1024, 1),
+                "content": content,
+            }
+        except Exception as e:
+            logger.warning(f"[SkillLibrary] Error reading {target_path}: {e}")
+            return None
 
     def approve_skill(self, slug: str) -> bool:
         """Promotes a skill from 'pending' to 'active'."""

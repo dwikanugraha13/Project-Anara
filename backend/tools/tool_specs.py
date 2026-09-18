@@ -1296,4 +1296,21 @@ for spec in ALL_TOOL_SPECS:
         icon=spec["icon"],
     )
 
-logger.info(f"[ToolSpecs] Initialized & registered {len(ALL_TOOL_SPECS)} tools into ToolRegistry.")
+UNIVERSAL_TOOL_ALIASES = {
+    "terminal": "execute_cli_command",
+    "read_file": "read_local_file",
+    "write_file": "write_local_file",
+    "patch": "edit_file",
+    "search_files": "glob_find_files",
+    "clarify": "interactive_question",
+    "delegate_task": "delegate_subagent",
+    "web_extract": "fetch_webpage",
+    "todo_list": "manage_memory_and_todos",
+    "file_search": "glob_find_files",
+    "dir_list": "list_directory",
+}
+
+for alias, target in UNIVERSAL_TOOL_ALIASES.items():
+    registry.register_alias(alias, target)
+
+logger.info(f"[ToolSpecs] Initialized & registered {len(ALL_TOOL_SPECS)} tools ({len(UNIVERSAL_TOOL_ALIASES)} aliases) into ToolRegistry.")
