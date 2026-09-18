@@ -143,7 +143,59 @@ async def _tool_vision_analyze(
     if not img_bytes:
         return {"status": "error", "message": "Data gambar kosong."}
 
-    # 2. Multimodal Analysis via Primary Engine (Google GenAI)
+    # 2. Check if active/configured vision model is from a Custom Provider (e.g. 9Router, OpenRouter)
+    v_model = _resolve_vision_model()
+    try:
+        from memory import memory_engine
+        custom_nodes = memory_engine.get_custom_providers()
+        for c_node in custom_nodes:
+            c_prefix = c_node.get("prefix", "")
+            if c_prefix and v_model.startswith(f"{c_prefix}/"):
+                target_model = v_model.replace(f"{c_prefix}/", "")
+                base_url = (c_node.get("base_url") or "").rstrip("/")
+                api_key = c_node.get("api_key") or ""
+                headers = {"Content-Type": "application/json"}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
+
+                b64_str = base64.b64encode(img_bytes).decode("ascii")
+                data_url = f"data:{mime_type};base64,{b64_str}"
+                payload = {
+                    "model": target_model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": user_query},
+                                {"type": "image_url", "image_url": {"url": data_url}}
+                            ]
+                        }
+                    ],
+                    "max_tokens": 2048
+                }
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    resp = await client.post(f"{base_url}/chat/completions", headers=headers, json=payload)
+                    if resp.status_code == 200:
+                        analysis_text = resp.json()["choices"][0]["message"]["content"]
+                        _emit_agent_event("agent_action_complete", {
+                            "tool_name": "vision_analyze",
+                            "action_title": "Analisis Visual Selesai",
+                            "summary": analysis_text[:120] + "...",
+                            "icon": "eye"
+                        })
+                        return {
+                            "status": "success",
+                            "image_target": clean_target,
+                            "mime_type": mime_type,
+                            "question": user_query,
+                            "analysis": analysis_text,
+                            "provider": c_prefix,
+                            "model": target_model
+                        }
+    except Exception as c_err:
+        logger.warning(f"[VisionTools] Custom provider vision check note: {c_err}")
+
+    # 3. Multimodal Analysis via Primary Engine (Google GenAI)
     try:
         from core import key_manager
         from google.genai import types
@@ -155,9 +207,10 @@ async def _tool_vision_analyze(
                 f"Tugas: {user_query}\n"
                 "Analisis gambar berikut secara cermat, akurat, dan jelas. Berikan jawaban komprehensif."
             )
-            v_model = _resolve_vision_model()
+            # Ensure model name sent to Google GenAI SDK does not contain foreign provider prefixes
+            clean_g_model = v_model.split("/")[-1] if ("/" in v_model and not v_model.startswith("models/")) else v_model
             response = await client.aio.models.generate_content(
-                model=v_model,
+                model=clean_g_model,
                 contents=[image_part, prompt],
                 config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=2048)
             )
@@ -272,8 +325,9 @@ async def _tool_video_analyze(
                 "Analisis rekaman video berikut secara objektif, detail, dan runtut."
             )
             v_model = _resolve_vision_model()
+            clean_v_model = v_model.split("/")[-1] if ("/" in v_model and not v_model.startswith("models/")) else v_model
             response = await client.aio.models.generate_content(
-                model=v_model,
+                model=clean_v_model,
                 contents=[video_part, prompt],
                 config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=2048)
             )

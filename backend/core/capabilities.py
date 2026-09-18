@@ -249,17 +249,16 @@ def _gemini_input_modalities(model_id: str) -> List[str]:
 
 def get_fast_auxiliary_model() -> str:
     """
-    Hermes-Standard Dynamic Auxiliary Model Resolver:
-    Determines the best low-latency, cost-effective auxiliary helper model
-    for internal sub-tasks (RAG entity classification, skill extraction, summarize, titles):
-    1. Reads user-configured override from config.yaml: model.auxiliary or model.fast.
-    2. Inspects active account/provider:
-       - If active model is a Gemini variant: returns "gemini-2.5-flash"
-       - If active model is OpenAI / Codex: returns "gpt-4o-mini"
-       - If active model is Anthropic / Claude: returns "claude-3-5-haiku-latest"
-       - If active model is DeepSeek: returns "deepseek-chat"
-       - If active model is Qwen: returns "qwen-2.5-7b-instruct"
-    3. Fallback: "gemini-2.5-flash"
+    Hermes-Standard Model Sovereignty Resolver:
+    Uses the user's explicitly selected active model ID by default, guaranteeing
+    identical reasoning capacity, zero intelligence degradation, and 100% provider route preservation
+    (e.g. 9router/ag/gemini-3.8-flash-high, openrouter/..., ollama/..., claude-3-7-sonnet).
+
+    Only adapts if:
+    1. The user explicitly sets an auxiliary override in config (model.auxiliary or model.fast).
+    2. The active model is a pure audio/bidi model (*live-preview / *realtime) that does not accept
+       standard text completion formats, in which case it strips the live preview suffix within
+       the EXACT SAME custom provider / prefix without switching providers.
     """
     try:
         from config import cfg_get
@@ -271,17 +270,15 @@ def get_fast_auxiliary_model() -> str:
 
     try:
         from providers.accounts import get_active_model_id
-        active = (get_active_model_id() or "").lower()
-        if "gpt" in active or "openai" in active:
-            return "gpt-4o-mini"
-        if "claude" in active or "anthropic" in active:
-            return "claude-3-5-haiku-latest"
-        if "deepseek" in active:
-            return "deepseek-chat"
-        if "qwen" in active:
-            return "qwen-2.5-7b-instruct"
-        if "gemini" in active:
-            return "gemini-2.5-flash"
+        active = get_active_model_id()
+        if active and active.strip():
+            clean_active = active.strip()
+            # If active model is a native audio/bidi live-preview model (e.g. gemini-3.1-flash-live-preview)
+            # which does not support text completions, clean the suffix while preserving prefix
+            if "live-preview" in clean_active or "native-audio" in clean_active or "realtime" in clean_active:
+                cleaned = clean_active.replace("-live-preview", "").replace("-realtime", "").replace("-native-audio", "")
+                return cleaned or clean_active
+            return clean_active
     except Exception:
         pass
 

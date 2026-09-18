@@ -483,11 +483,23 @@ def test_anara_vision_and_video_tools():
     assert evaluate_command_safety('python -c "import sys; print(sys.version)"') == "read_only"
     assert evaluate_command_safety('python -c "import os; os.remove(\'x.txt\')"') == "mutating"
 
-    # 10. Verify Dynamic Auxiliary Model Resolution
+    # 10. Verify Model Sovereignty & Dynamic Model Resolution
     from core.capabilities import get_fast_auxiliary_model, ModelCapabilityRegistry
-    aux_m = get_fast_auxiliary_model()
-    assert isinstance(aux_m, str) and len(aux_m) > 0
-    assert ModelCapabilityRegistry.resolve_auxiliary_model() == aux_m
+    from providers.accounts import set_active_model_id, get_active_model_id
+
+    # Test preserving active model with custom provider prefix (e.g. 9Router proxy)
+    orig_active = get_active_model_id()
+    try:
+        set_active_model_id("9router/ag/gemini-3.8-flash-high")
+        assert get_fast_auxiliary_model() == "9router/ag/gemini-3.8-flash-high"
+
+        # Test audio live-preview cleaning while keeping prefix intact
+        set_active_model_id("9router/gemini-3.1-flash-live-preview")
+        assert get_fast_auxiliary_model() == "9router/gemini-3.1-flash"
+    finally:
+        set_active_model_id(orig_active)
+
+    assert ModelCapabilityRegistry.resolve_auxiliary_model() == get_fast_auxiliary_model()
 
 
 

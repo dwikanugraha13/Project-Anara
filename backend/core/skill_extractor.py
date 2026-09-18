@@ -69,30 +69,26 @@ KEMBALIKAN HANYA JSON VALID:
 }}"""
 
         try:
-            from core.key_manager import key_manager
             from core.capabilities import get_fast_auxiliary_model
-            from google.genai import types
-            client = key_manager.get_client()
+            from providers.caller import call_universal_chat_model
 
-            cfg = types.GenerateContentConfig(
-                max_output_tokens=350,
-                temperature=0.2
-            )
             aux_model = get_fast_auxiliary_model()
-            res = await asyncio.wait_for(
-                client.aio.models.generate_content(
-                    model=aux_model,
-                    contents=[prompt],
-                    config=cfg
+            raw = await asyncio.wait_for(
+                call_universal_chat_model(
+                    model_id=aux_model,
+                    user_prompt=prompt,
+                    max_tokens=350,
+                    temperature=0.2,
+                    read_only=True
                 ),
-                timeout=8.0
+                timeout=12.0
             )
 
-            if not res or not res.text:
+            if not raw or not isinstance(raw, str):
                 return None
 
-            raw = res.text.strip()
-            json_match = re.search(r"\{.*\}", raw, re.DOTALL)
+            raw_str = raw.strip()
+            json_match = re.search(r"\{.*\}", raw_str, re.DOTALL)
             if not json_match:
                 return None
 

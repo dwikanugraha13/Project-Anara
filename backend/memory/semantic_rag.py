@@ -61,10 +61,49 @@ def get_current_indonesian_time_str(offset_minutes: Optional[int] = None, tz_nam
     }
 
 
+def _exec_universal_llm(prompt: str, max_tokens: int = 350) -> Optional[str]:
+    """
+    Executes an internal cognitive prompt using the user's active model (Model Sovereignty)
+    through call_universal_chat_model without hardcoding provider SDKs.
+    """
+    from core.capabilities import get_fast_auxiliary_model
+    from providers.caller import call_universal_chat_model
+
+    active_model = get_fast_auxiliary_model()
+
+    async def _async_call():
+        return await call_universal_chat_model(
+            model_id=active_model,
+            user_prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=0.2,
+            read_only=True
+        )
+
+    try:
+        import asyncio
+        import concurrent.futures
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                res = pool.submit(lambda: asyncio.run(_async_call())).result(timeout=15.0)
+        else:
+            res = asyncio.run(_async_call())
+
+        return str(res) if res else None
+    except Exception as e:
+        logger.warning(f"[SemanticRAG] Universal LLM call error on {active_model}: {e}")
+        return None
+
+
 def classify_preference_entity_ai(entity: str, speaker_name: str = "Pengguna") -> Dict[str, Any]:
     """
-    Uses Gemini Zero-Shot Semantic Classification to dynamically recognize ANY entity
-    and generates natural companion commentary and confirmation prompts without hardcoded dictionaries.
+    Uses Zero-Shot Semantic Classification with the user's active model
+    to dynamically recognize ANY entity and generates natural companion commentary without hardcoded dictionaries.
     """
     cache_key = entity.lower().strip()
     if cache_key in _DYNAMIC_ENTITY_CACHE:
@@ -96,34 +135,17 @@ KEMBALIKAN HANYA JSON VALID:
   "confirmation_question": "Bahwa Panda adalah hewan kesukaan kamu, Anara boleh mengingatnya, {eff_speaker}?"
 }}"""
 
-    try:
-        from core import key_manager
-        from core.capabilities import get_fast_auxiliary_model
-        from google.genai import types
-        aux_model = get_fast_auxiliary_model()
-        for attempt in range(len(key_manager._keys) or 3):
-            key = key_manager.get_active_key()
-            client = key_manager.get_client()
+    raw_text = _exec_universal_llm(prompt, max_tokens=350)
+    if raw_text:
+        raw = raw_text.strip()
+        if "{" in raw and "}" in raw:
             try:
-                res = client.models.generate_content(
-                    model=aux_model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(max_output_tokens=350, temperature=0.2)
-                )
-                if res and res.text:
-                    raw = res.text.strip()
-                    if "{" in raw and "}" in raw:
-                        json_str = raw[raw.find("{"):raw.rfind("}")+1]
-                        parsed = json.loads(json_str)
-                        _DYNAMIC_ENTITY_CACHE[cache_key] = parsed
-                        return parsed
-            except Exception as e:
-                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e) or "403" in str(e):
-                    key_manager.rotate_key(key, reason=str(e))
-                    continue
-                break
-    except Exception as e:
-        logger.warning(f"[DynamicEntityAI] Error classifying '{entity}': {e}")
+                json_str = raw[raw.find("{"):raw.rfind("}")+1]
+                parsed = json.loads(json_str)
+                _DYNAMIC_ENTITY_CACHE[cache_key] = parsed
+                return parsed
+            except Exception as j_err:
+                logger.debug(f"[SemanticRAG] JSON parse note: {j_err}")
 
     fallback = {
         "is_multi_entity": False,
@@ -174,32 +196,15 @@ KEMBALIKAN HANYA JSON VALID:
   "confirmation_prompt": "Bahwa Panda adalah hewan kesukaan kamu, Anara boleh mengingatnya, {eff_speaker}?"
 }}"""
 
-    try:
-        from core import key_manager
-        from core.capabilities import get_fast_auxiliary_model
-        from google.genai import types
-        aux_model = get_fast_auxiliary_model()
-        for attempt in range(len(key_manager._keys) or 3):
-            key = key_manager.get_active_key()
-            client = key_manager.get_client()
+    raw_text = _exec_universal_llm(prompt, max_tokens=300)
+    if raw_text:
+        raw = raw_text.strip()
+        if "{" in raw and "}" in raw:
             try:
-                res = client.models.generate_content(
-                    model=aux_model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(max_output_tokens=300, temperature=0.2)
-                )
-                if res and res.text:
-                    raw = res.text.strip()
-                    if "{" in raw and "}" in raw:
-                        json_str = raw[raw.find("{"):raw.rfind("}")+1]
-                        return json.loads(json_str)
-            except Exception as e:
-                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e) or "403" in str(e):
-                    key_manager.rotate_key(key, reason=str(e))
-                    continue
-                break
-    except Exception as e:
-        logger.warning(f"[ContextualMemoryAI] Error resolving command '{command}': {e}")
+                json_str = raw[raw.find("{"):raw.rfind("}")+1]
+                return json.loads(json_str)
+            except Exception as j_err:
+                logger.debug(f"[SemanticRAG] Contextual memory parse note: {j_err}")
     return None
 
 
