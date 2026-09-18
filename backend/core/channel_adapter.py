@@ -510,7 +510,7 @@ async def process_channel_request(
             else:
                 cleaned = re.sub(r"```(?:json)?\s*\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\}\s*```", "", reply).strip()
                 cleaned = re.sub(r"<tool_call>[\s\S]*?</tool_call>", "", cleaned).strip()
-                final_reply = cleaned or "Tugas sedang diproses dan dianalisis."
+                final_reply = cleaned if (cleaned and '"action": "tool_call"' not in cleaned) else "Tugas sedang diproses dan dianalisis."
         else:
             final_reply = reply.strip()
     else:
@@ -614,14 +614,39 @@ async def _execute_build_mode(
 
     if pending_tool_call:
         t_name = pending_tool_call.get("tool", "")
-        t_args = pending_tool_call.get("arguments", {})
+        t_args = pending_tool_call.get("arguments", {}) or {}
+        from tools import dispatch_tool_call
+        if progress_callback:
+            msg = _format_tool_progress_message({"tool_name": t_name, "status": "running", "detail": str(t_args)[:80]})
+            try:
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback(msg)
+                else:
+                    progress_callback(msg)
+            except Exception:
+                pass
+
+        tool_res = await dispatch_tool_call(t_name, t_args, read_only=False)
+        if t_name not in tools_used:
+            tools_used.append(t_name)
+
+        if progress_callback:
+            try:
+                summary_str = (tool_res.get("message") or tool_res.get("summary") or "")[:120] if isinstance(tool_res, dict) else str(tool_res)[:120]
+                msg = _format_tool_progress_message({"tool_name": t_name, "status": "done", "summary": summary_str})
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback(msg)
+                else:
+                    progress_callback(msg)
+            except Exception:
+                pass
+
         effective_prompt = (
             f"{dialogue_context}"
-            f"Pengguna telah menyetujui eksekusi tindakan berikut:\n"
-            f"• Alat: {t_name}\n"
-            f"• Parameter: {json.dumps(t_args, ensure_ascii=False)}\n"
-            f"Permintaan asli pengguna: \"{resolved_task}\"\n\n"
-            f"Jalankan tindakan di atas menggunakan alat yang tersedia, dan laporkan hasilnya secara tuntas."
+            f"Tindakan '{t_name}' telah dieksekusi di sistem dengan hasil observasi berikut:\n"
+            f"```json\n{json.dumps(tool_res, ensure_ascii=False)}\n```\n\n"
+            f"Permintaan asli pengguna: \"{resolved_task}\"\n"
+            "Berdasarkan hasil observasi alat di atas, jelaskan laporannya kepada pengguna secara cerdas, ramah, dan tuntas dalam teks percakapan biasa (tanpa format JSON pemanggilan alat)."
         )
     elif dialogue_context:
         effective_prompt = f"{dialogue_context}Pesan User: {resolved_task}"
@@ -642,7 +667,10 @@ async def _execute_build_mode(
     if isinstance(reply, str):
         cleaned = re.sub(r"```(?:json)?\s*\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\}\s*```", "", reply).strip()
         cleaned = re.sub(r"<tool_call>[\s\S]*?</tool_call>", "", cleaned).strip()
-        final_reply = cleaned or reply.strip()
+        if not cleaned or '"action": "tool_call"' in cleaned or '<tool_call>' in cleaned:
+            final_reply = "Tindakan telah selesai dieksekusi oleh sistem."
+        else:
+            final_reply = cleaned
     else:
         final_reply = "Eksekusi berhasil diselesaikan."
 

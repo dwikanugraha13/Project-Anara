@@ -400,6 +400,15 @@ async def _execute_json_agent_loop(
             raw_out = await provider_caller(messages)
 
         if not raw_out or not raw_out.strip():
+            # Hermes conversation_loop.py parity:
+            # _EMPTY_TOOL_RESPONSE_NUDGE = "You just executed tool calls but returned an empty response. Please process the tool results above and continue with the task."
+            if step > 0 and len(messages) >= 2 and "[TOOL RESULT for" in messages[-1].get("content", ""):
+                logger.info("[AgentLoop] Empty response after tool execution detected. Nudging model (Hermes parity)...")
+                messages.append({
+                    "role": "user",
+                    "content": "Kamu baru saja mengeksekusi alat di atas tetapi belum memberikan penjelasan atau tindakan lanjutan. Tolong proses hasil alat di atas dan berikan penjelasan akhir yang ramah, cerdas, dan lengkap kepada pengguna."
+                })
+                continue
             break
         last_response = raw_out.strip()
         
@@ -419,7 +428,11 @@ async def _execute_json_agent_loop(
             # Strip any leaked or orphaned tool tags before presenting to user (Hermes parity)
             cleaned_text = re.sub(r"```(?:json)?\s*\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\}\s*```", "", last_response).strip()
             cleaned_text = re.sub(r"<tool_call>[\s\S]*?</tool_call>", "", cleaned_text).strip()
-            final_text = cleaned_text or last_response
+            # CRITICAL HERMES FIX: Never fallback to last_response if it contains a tool_call block!
+            if not cleaned_text or '"action": "tool_call"' in cleaned_text or '<tool_call>' in cleaned_text:
+                final_text = "Tugas dan pemeriksaan sistem telah selesai diproses."
+            else:
+                final_text = cleaned_text
             if token_cb and not accumulated_narrative and final_text:
                 res = token_cb(final_text)
                 if asyncio.iscoroutine(res):
@@ -517,6 +530,29 @@ async def _execute_json_agent_loop(
             except Exception:
                 pass
         
+    # If the loop finished and last_response is STILL a tool call (Hermes Turn-Completion Enforcement):
+    # Never return raw JSON tool call to the user!
+    if '"action": "tool_call"' in last_response or '<tool_call>' in last_response:
+        logger.info("[AgentLoop] Final turn terminated on unclosed tool call. Executing Hermes Closing Narrative Pass...")
+        try:
+            closing_prompt = [
+                *messages,
+                {
+                    "role": "user",
+                    "content": "Berdasarkan seluruh hasil kerja dan observasi alat di atas, berikan kesimpulan akhir yang ramah, cerdas, dan lengkap kepada pengguna dalam teks percakapan biasa (tanpa format JSON pemanggilan alat)."
+                }
+            ]
+            synth = await provider_caller(closing_prompt)
+            if synth and synth.strip():
+                cleaned_synth = re.sub(r"```(?:json)?\s*\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\}\s*```", "", synth).strip()
+                cleaned_synth = re.sub(r"<tool_call>[\s\S]*?</tool_call>", "", cleaned_synth).strip()
+                if cleaned_synth and '"action": "tool_call"' not in cleaned_synth:
+                    return cleaned_synth
+        except Exception as e_synth:
+            logger.warning(f"[AgentLoop] Closing narrative synthesis pass error: {e_synth}")
+
+        return "Pemeriksaan dan tindakan sistem telah selesai dilakukan."
+
     return last_response
 
 
