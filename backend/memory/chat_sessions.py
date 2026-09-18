@@ -327,8 +327,10 @@ class ChatSessionsMixin:
         title = ""
         try:
             from google.genai import types as _types
+            from core.capabilities import get_fast_auxiliary_model
             cfg = _types.GenerateContentConfig(max_output_tokens=30, temperature=0.3)
-            for mdl in ("gemini-3.5-flash-lite", "gemini-3.1-flash-lite"):
+            aux_mdl = get_fast_auxiliary_model()
+            for mdl in (aux_mdl, "gemini-2.5-flash"):
                 try:
                     res = await asyncio.wait_for(
                         client.aio.models.generate_content(model=mdl, contents=prompt, config=cfg),

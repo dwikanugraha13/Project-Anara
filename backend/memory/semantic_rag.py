@@ -98,13 +98,15 @@ KEMBALIKAN HANYA JSON VALID:
 
     try:
         from core import key_manager
+        from core.capabilities import get_fast_auxiliary_model
         from google.genai import types
+        aux_model = get_fast_auxiliary_model()
         for attempt in range(len(key_manager._keys) or 3):
             key = key_manager.get_active_key()
             client = key_manager.get_client()
             try:
                 res = client.models.generate_content(
-                    model="gemini-3.5-flash-lite",
+                    model=aux_model,
                     contents=prompt,
                     config=types.GenerateContentConfig(max_output_tokens=350, temperature=0.2)
                 )
@@ -174,13 +176,15 @@ KEMBALIKAN HANYA JSON VALID:
 
     try:
         from core import key_manager
+        from core.capabilities import get_fast_auxiliary_model
         from google.genai import types
+        aux_model = get_fast_auxiliary_model()
         for attempt in range(len(key_manager._keys) or 3):
             key = key_manager.get_active_key()
             client = key_manager.get_client()
             try:
                 res = client.models.generate_content(
-                    model="gemini-3.5-flash-lite",
+                    model=aux_model,
                     contents=prompt,
                     config=types.GenerateContentConfig(max_output_tokens=300, temperature=0.2)
                 )

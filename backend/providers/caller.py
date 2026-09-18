@@ -31,7 +31,8 @@ async def stream_universal_chat_model(
         from google.genai import types
         gemini_model_name = model_id.replace("models/", "")
         if "live-preview" in gemini_model_name or "native-audio" in gemini_model_name:
-            gemini_model_name = "gemini-3.5-flash-lite"
+            from core.capabilities import get_fast_auxiliary_model
+            gemini_model_name = get_fast_auxiliary_model()
         cfg_kwargs: Dict[str, Any] = {
             "temperature": temperature,
         }
@@ -540,7 +541,8 @@ async def call_universal_chat_model(
 
         gemini_model_name = model_id.replace("models/", "")
         if "live-preview" in gemini_model_name or "native-audio" in gemini_model_name:
-            gemini_model_name = "gemini-3.5-flash-lite"
+            from core.capabilities import get_fast_auxiliary_model
+            gemini_model_name = get_fast_auxiliary_model()
 
         active_target_model = gemini_model_name
 
@@ -806,11 +808,13 @@ async def call_universal_chat_model(
             return await _execute_json_agent_loop(_custom_call, user_prompt, system_instruction, read_only=read_only, progress_cb=progress_cb, token_cb=token_cb, intercept_mutating_tools=intercept_mutating_tools)
 
     from core import key_manager
+    from core.capabilities import get_fast_auxiliary_model
     from tools import generate_text_response_with_tools
     client = key_manager.get_client()
+    aux_model = get_fast_auxiliary_model()
     return await generate_text_response_with_tools(
         client=client,
-        model="gemini-3.5-flash-lite",
+        model=aux_model,
         user_prompt=user_prompt,
         system_instruction=system_instruction,
         max_tokens=max_tokens,

@@ -119,7 +119,14 @@ def get_active_model_id() -> str:
     saved = memory_engine.get_app_setting("active_ai_model")
     if saved and saved.strip():
         return saved.strip()
-    return "gemini-3.5-flash-lite"
+    try:
+        from config import cfg_get
+        conf = cfg_get("model.default")
+        if conf and str(conf).strip():
+            return str(conf).strip()
+    except Exception:
+        pass
+    return "gemini-2.5-flash"
 
 
 def set_active_model_id(model_id: str) -> bool:

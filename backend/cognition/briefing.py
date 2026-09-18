@@ -82,8 +82,10 @@ async def _fetch_weather(client: genai.Client, city: str) -> Optional[Dict[str, 
         .replace("{date_str}", parts["date_str"])
         .replace("{time_str}", parts["time_str"])
     )
+    from core.capabilities import get_fast_auxiliary_model
     cfg = types.GenerateContentConfig(max_output_tokens=200, temperature=0.3)
-    for mdl in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]:
+    aux_m = get_fast_auxiliary_model()
+    for mdl in [aux_m, "gemini-2.5-flash"]:
         try:
             res = await asyncio.wait_for(
                 client.aio.models.generate_content(model=mdl, contents=prompt, config=cfg),
@@ -160,7 +162,7 @@ async def generate_daily_briefing(
             "Aturan: Ucapkan dalam 2-3 kalimat Bahasa Indonesia yang natural, mengalir, dan hangat. "
             "Dilarang kaku seperti robot atau format formulir."
         )
-        for mdl in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]:
+        for mdl in [aux_m, "gemini-2.5-flash"]:
             try:
                 cfg_synth = types.GenerateContentConfig(max_output_tokens=180, temperature=0.7)
                 res_synth = await asyncio.wait_for(

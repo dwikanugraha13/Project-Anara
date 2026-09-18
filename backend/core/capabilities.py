@@ -120,6 +120,11 @@ class ModelCapabilityRegistry:
         return results
 
     @classmethod
+    def resolve_auxiliary_model(cls) -> str:
+        """Returns the dynamic auxiliary helper model id."""
+        return get_fast_auxiliary_model()
+
+    @classmethod
     def normalize_id(cls, model_id: str) -> str:
         """Strips the 'models/' prefix that the Gemini SDK adds to model names."""
         if not model_id:
@@ -240,3 +245,44 @@ def _gemini_input_modalities(model_id: str) -> List[str]:
     if "audio" in mid or "live" in mid or "realtime" in mid:
         mods.append("audio")
     return mods
+
+
+def get_fast_auxiliary_model() -> str:
+    """
+    Hermes-Standard Dynamic Auxiliary Model Resolver:
+    Determines the best low-latency, cost-effective auxiliary helper model
+    for internal sub-tasks (RAG entity classification, skill extraction, summarize, titles):
+    1. Reads user-configured override from config.yaml: model.auxiliary or model.fast.
+    2. Inspects active account/provider:
+       - If active model is a Gemini variant: returns "gemini-2.5-flash"
+       - If active model is OpenAI / Codex: returns "gpt-4o-mini"
+       - If active model is Anthropic / Claude: returns "claude-3-5-haiku-latest"
+       - If active model is DeepSeek: returns "deepseek-chat"
+       - If active model is Qwen: returns "qwen-2.5-7b-instruct"
+    3. Fallback: "gemini-2.5-flash"
+    """
+    try:
+        from config import cfg_get
+        configured = cfg_get("model.auxiliary") or cfg_get("model.fast")
+        if configured and str(configured).strip():
+            return str(configured).strip()
+    except Exception:
+        pass
+
+    try:
+        from providers.accounts import get_active_model_id
+        active = (get_active_model_id() or "").lower()
+        if "gpt" in active or "openai" in active:
+            return "gpt-4o-mini"
+        if "claude" in active or "anthropic" in active:
+            return "claude-3-5-haiku-latest"
+        if "deepseek" in active:
+            return "deepseek-chat"
+        if "qwen" in active:
+            return "qwen-2.5-7b-instruct"
+        if "gemini" in active:
+            return "gemini-2.5-flash"
+    except Exception:
+        pass
+
+    return "gemini-2.5-flash"

@@ -139,7 +139,9 @@ class VoicePipeline:
             res = None
             stt_config = types.GenerateContentConfig(max_output_tokens=80, temperature=0.1)
             active_client = key_manager.get_client()
-            for mdl in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]:
+            from core.capabilities import get_fast_auxiliary_model
+            aux_m = get_fast_auxiliary_model()
+            for mdl in [aux_m, "gemini-2.5-flash"]:
                 try:
                     res = await asyncio.wait_for(
                         active_client.aio.models.generate_content(

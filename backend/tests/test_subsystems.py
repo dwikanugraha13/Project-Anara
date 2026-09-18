@@ -483,6 +483,12 @@ def test_anara_vision_and_video_tools():
     assert evaluate_command_safety('python -c "import sys; print(sys.version)"') == "read_only"
     assert evaluate_command_safety('python -c "import os; os.remove(\'x.txt\')"') == "mutating"
 
+    # 10. Verify Dynamic Auxiliary Model Resolution
+    from core.capabilities import get_fast_auxiliary_model, ModelCapabilityRegistry
+    aux_m = get_fast_auxiliary_model()
+    assert isinstance(aux_m, str) and len(aux_m) > 0
+    assert ModelCapabilityRegistry.resolve_auxiliary_model() == aux_m
+
 
 
 

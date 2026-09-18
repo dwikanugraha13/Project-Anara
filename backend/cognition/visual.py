@@ -194,7 +194,7 @@ async def generate_visual_projection(
     client: genai.Client,
     user_text: str,
     system_prompt: str,
-    model_name: str = "gemini-3.5-flash-lite"
+    model_name: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Analyzes user query and produces JARVIS-style multi-modal holographic visual projections:
@@ -342,7 +342,9 @@ async def generate_visual_projection(
             temperature=0.3
         )
         res = None
-        for mdl in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.5-flash"]:
+        from core.capabilities import get_fast_auxiliary_model
+        eff_mdl = model_name or get_fast_auxiliary_model()
+        for mdl in [eff_mdl, "gemini-2.5-flash"]:
             try:
                 res = await asyncio.wait_for(
                     client.aio.models.generate_content(
@@ -722,7 +724,9 @@ async def generate_smart_hud_card(
     gen_config = types.GenerateContentConfig(max_output_tokens=1200, temperature=0.1)
     timeout_s = 8.0
     res = None
-    for mdl in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]:
+    from core.capabilities import get_fast_auxiliary_model
+    aux_m = get_fast_auxiliary_model()
+    for mdl in [aux_m, "gemini-2.5-flash"]:
         try:
             res = await asyncio.wait_for(
                 client.aio.models.generate_content(

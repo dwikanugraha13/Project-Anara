@@ -70,6 +70,7 @@ KEMBALIKAN HANYA JSON VALID:
 
         try:
             from core.key_manager import key_manager
+            from core.capabilities import get_fast_auxiliary_model
             from google.genai import types
             client = key_manager.get_client()
 
@@ -77,9 +78,10 @@ KEMBALIKAN HANYA JSON VALID:
                 max_output_tokens=350,
                 temperature=0.2
             )
+            aux_model = get_fast_auxiliary_model()
             res = await asyncio.wait_for(
                 client.aio.models.generate_content(
-                    model="gemini-3.5-flash-lite",
+                    model=aux_model,
                     contents=[prompt],
                     config=cfg
                 ),
