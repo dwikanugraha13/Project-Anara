@@ -437,9 +437,9 @@ async def _execute_json_agent_loop(
             continue
 
         tool_risk = get_tool_risk(tool_name)
-        is_safe_cli = (tool_name == "execute_cli_command" and is_safe_read_only_cli_command(tool_args.get("command", "")))
-        if is_safe_cli:
-            tool_risk = "read_only"
+        if tool_name in ("execute_cli_command", "terminal", "run_terminal_command"):
+            from core.plan_detector import evaluate_command_safety
+            tool_risk = evaluate_command_safety(tool_args.get("command", ""))
 
         if intercept_mutating_tools and tool_risk in ("mutating", "ask"):
             logger.info(f"[ToolInterceptor JSON] Intercepted mutating tool '{tool_name}' for Plan approval.")

@@ -496,12 +496,17 @@ import re
 def is_safe_read_only_cli_command(command: str) -> bool:
     """
     Validates if a CLI command in Plan Mode is purely for safe host/environment inspection
-    (e.g. battery query, RAM, storage, processes, node -v, Test-Path, Get-ChildItem, systeminfo)
-    and does not mutate disk/state.
+    using the unified Parameter-Aware AST Dissector in plan_detector.py.
     """
     cmd = (command or "").strip()
     if not cmd:
         return False
+
+    try:
+        from core.plan_detector import evaluate_command_safety
+        return evaluate_command_safety(cmd) == "read_only"
+    except Exception:
+        pass
 
     # Check for actual shell file redirection (> or >>), ignoring arrows (->, =>) and quotes
     cmd_no_quotes = re.sub(r'"[^"]*"|\'[^\']*\'', "", cmd)
@@ -1015,9 +1020,9 @@ async def generate_text_response_with_tools(
             logger.info(f"[AnaraAgent Step {step+1}] Invoked: {fn_name!r} (clean={clean_fn_name!r}, id={fn_id}) with args {fn_args}")
 
             risk = get_tool_risk(clean_fn_name)
-            is_safe_cli = (clean_fn_name == "execute_cli_command" and is_safe_read_only_cli_command(fn_args.get("command", "")))
-            if is_safe_cli:
-                risk = "read_only"
+            if clean_fn_name in ("execute_cli_command", "terminal", "run_terminal_command"):
+                from core.plan_detector import evaluate_command_safety
+                risk = evaluate_command_safety(fn_args.get("command", ""))
 
             if intercept_mutating_tools and risk in ("mutating", "ask"):
                 logger.info(f"[ToolInterceptor Native] Intercepted mutating tool '{clean_fn_name}' for Plan approval.")

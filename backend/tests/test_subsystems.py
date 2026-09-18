@@ -443,6 +443,46 @@ def test_anara_vision_and_video_tools():
     empty_trans = asyncio.run(transcribe_audio_file(""))
     assert empty_trans is None
 
+    # 9. Verify Structured CLI Argument Tokenizer & AST Dissector
+    from core.plan_detector import split_shell_pipeline, evaluate_command_safety
+
+    # Test quote-safe pipeline splitting
+    pipe_parts = split_shell_pipeline('python -c "import os; print(os.getcwd())"')
+    assert len(pipe_parts) == 1
+    assert "import os; print" in pipe_parts[0]
+
+    multi_parts = split_shell_pipeline("git status --short; git log -n 5 | Select-Object -First 3")
+    assert len(multi_parts) == 3
+    assert multi_parts[0] == "git status --short"
+
+    # Test deterministic subcommand risk matrix
+    assert evaluate_command_safety("git status --short") == "read_only"
+    assert evaluate_command_safety("git log -n 5") == "read_only"
+    assert evaluate_command_safety("git diff") == "read_only"
+    assert evaluate_command_safety("git branch") == "read_only"
+    assert evaluate_command_safety("git branch -D old-branch") == "mutating"
+    assert evaluate_command_safety("git reset --hard HEAD~1") == "mutating"
+    assert evaluate_command_safety("git commit -m 'feat'") == "mutating"
+
+    assert evaluate_command_safety("npm -v") == "read_only"
+    assert evaluate_command_safety("npm list --depth=0") == "read_only"
+    assert evaluate_command_safety("npm install axios") == "mutating"
+
+    assert evaluate_command_safety("pip list") == "read_only"
+    assert evaluate_command_safety("pip install fastapi") == "mutating"
+
+    assert evaluate_command_safety("Get-Process | Select-Object -First 5") == "read_only"
+    assert evaluate_command_safety("dir && type notes.txt") == "read_only"
+
+    # Chained escalation
+    assert evaluate_command_safety("dir; rm -rf temp") == "mutating"
+    assert evaluate_command_safety("dir; rm -rf /") == "ask"
+    assert evaluate_command_safety("format c:") == "ask"
+
+    # Python one-liner inspection
+    assert evaluate_command_safety('python -c "import sys; print(sys.version)"') == "read_only"
+    assert evaluate_command_safety('python -c "import os; os.remove(\'x.txt\')"') == "mutating"
+
 
 
 
