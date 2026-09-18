@@ -4,3 +4,7 @@ export { default as ModelSelectorDropdown } from "./ModelSelectorDropdown";
 export type { AIModelInfo } from "./ModelSelectorDropdown";
 export { default as AnaraMediaPlayer } from "./AnaraMediaPlayer";
 export type { MediaSession, AnaraMediaPlayerProps } from "./AnaraMediaPlayer";
+export * from "./DockPlanChecklist";
+export * from "./DockAudioWaveform";
+export * from "./DockAttachmentChips";
+

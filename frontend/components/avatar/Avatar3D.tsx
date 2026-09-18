@@ -24,6 +24,10 @@ import { useGLTF, useAnimations } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useLipSync } from "@/hooks/useLipSync";
+import { useAvatarBlink } from "@/hooks/useAvatarBlink";
+import { useAvatarSaccades } from "@/hooks/useAvatarSaccades";
+import { useAvatarMicroExpressions } from "@/hooks/useAvatarMicroExpressions";
+import { useAvatarGestures } from "@/hooks/useAvatarGestures";
 import {
   analyzeSpeechSentiment,
   type AvatarEmotion,
@@ -142,10 +146,29 @@ function retargetClips(clips: THREE.AnimationClip[], prefix: string): THREE.Anim
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
 
+interface CachedMorphMesh {
+  mesh: THREE.SkinnedMesh;
+  influences: number[];
+  dict: Record<string, number>;
+  blinkL?: number;
+  blinkR?: number;
+  eyesClosed?: number;
+  eyeLookUpLeft?: number;
+  eyeLookDownLeft?: number;
+  eyeLookUpRight?: number;
+  eyeLookDownRight?: number;
+  eyeLookInLeft?: number;
+  eyeLookOutLeft?: number;
+  eyeLookInRight?: number;
+  eyeLookOutRight?: number;
+}
+
 const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
   ({ url, idleAnimationUrl, talkingAnimationUrl, isSpeaking, audioIntensity, onLoad, onDanceStart, onDanceEnd, backendEmotion, backendGesture, isVoiceMode = true }, ref) => {
     const group = useRef<THREE.Group>(null!);
     const morphMeshesRef = useRef<THREE.SkinnedMesh[]>([]);
+    const cachedMorphMeshesRef = useRef<CachedMorphMesh[]>([]);
+    const frameThrottleRef = useRef(0);
 
     // Load avatar model and lightweight GLTF animations (false = no external Draco CDN download needed)
     const { scene, animations: gltfAnimations } = useGLTF(url, false);
@@ -228,41 +251,11 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
     const smoothHeadYawRef = useRef(0);
     const smoothHeadRollRef = useRef(0);
 
-    // ── Blink State Machine ───────────────────────────────────────────────────
-    const blinkPhaseRef = useRef<0 | 1 | 2 | 3>(0);
-    const blinkPhaseTimerRef = useRef(0);
-    const blinkIdleTimerRef = useRef(0);
-    const nextBlinkWaitRef = useRef(
-      Math.random() * (BLINK_INTERVAL_MAX - BLINK_INTERVAL_MIN) + BLINK_INTERVAL_MIN
-    );
-    const blinkInfluenceRef = useRef(0);
-
-    // ── Eye Saccades ────────────────────────────────────────────────────────────
-    const saccadeTimerRef = useRef(0);
-    const nextSaccadeRef = useRef(2.0);
-    const targetSaccadeRef = useRef({ x: 0, y: 0 });
-    const currentSaccadeRef = useRef({ x: 0, y: 0 });
-    const saccadeReturnRef = useRef(false);
-
-    // ── Facial Micro-Expressions ("living face" system) ──────────────────────
-    const microExprTimerRef = useRef(0);
-    const nextMicroExprRef = useRef(3.0 + Math.random() * 4.0);
-    const microExprTargetRef = useRef<Record<string, number>>({});
-    const microExprCurrentRef = useRef<Record<string, number>>({});
-    const MICRO_EXPR_POOL: Array<Record<string, number>> = [
-      { browInnerUp: 0.10, browDownLeft: 0.06 },
-      { mouthSmileLeft: 0.14, cheekSquintLeft: 0.10 },
-      { mouthSmileRight: 0.14, cheekSquintRight: 0.10 },
-      { browInnerUp: 0.12, browOuterUpLeft: 0.09, browOuterUpRight: 0.09 },
-      { noseSneerLeft: 0.06 },
-      { mouthPressLeft: 0.07, mouthPressRight: 0.07 },
-      { cheekSquintLeft: 0.12, cheekSquintRight: 0.10 },
-      { mouthDimpleLeft: 0.10 },
-      { mouthDimpleRight: 0.10 },
-      {},
-      {},
-      {},
-    ];
+    // ── Modular Subsystems (Anara Standard Modular Hooks) ────────────────────
+    const { updateBlink } = useAvatarBlink();
+    const { updateSaccades } = useAvatarSaccades();
+    const { updateMicroExpressions } = useAvatarMicroExpressions();
+    const { speechCadenceRef, applyProceduralGestures } = useAvatarGestures();
 
     // ── Rich Emotion Morph State ──────────────────────────────────────────────
     const currentEmotionRef = useRef<AvatarEmotion>("neutral");
@@ -277,7 +270,6 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
     const backendGestureActiveRef = useRef(false);
     const emotionAnimResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const speechCadenceRef = useRef(0);
     const currentActionNameRef = useRef<string | null>(null);
     const cuteIdleCycleRef = useRef(0);
     const externalActionsRef = useRef<Record<string, THREE.AnimationAction>>({});
@@ -705,6 +697,7 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
         rightFingers: [],
       };
       const morphMeshes: THREE.SkinnedMesh[] = [];
+      const cachedMorphs: CachedMorphMesh[] = [];
       baseRotationsRef.current.clear();
 
       // Gunakan material & tekstur bawaan avatar.glb + sentuhan dewy skin glowing pada wajah
@@ -727,6 +720,23 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
             const meshName = (child.name || "").toLowerCase();
             if (meshName.includes("head") || meshName.includes("teeth") || meshName.includes("eye") || meshName.includes("mouth") || meshName.includes("avaturn")) {
               morphMeshes.push(child);
+              const dict = child.morphTargetDictionary;
+              cachedMorphs.push({
+                mesh: child,
+                influences: child.morphTargetInfluences || [],
+                dict,
+                blinkL: dict["eyeBlinkLeft"],
+                blinkR: dict["eyeBlinkRight"],
+                eyesClosed: dict["eyesClosed"],
+                eyeLookUpLeft: dict["eyeLookUpLeft"],
+                eyeLookDownLeft: dict["eyeLookDownLeft"],
+                eyeLookUpRight: dict["eyeLookUpRight"],
+                eyeLookDownRight: dict["eyeLookDownRight"],
+                eyeLookInLeft: dict["eyeLookInLeft"],
+                eyeLookOutLeft: dict["eyeLookOutLeft"],
+                eyeLookInRight: dict["eyeLookInRight"],
+                eyeLookOutRight: dict["eyeLookOutRight"],
+              });
             }
           }
         }
@@ -759,6 +769,7 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
 
       bonesRef.current = bones;
       morphMeshesRef.current = morphMeshes;
+      cachedMorphMeshesRef.current = cachedMorphs;
       applyEmotionTargets("neutral");
       setIsLoaded(true);
       onLoadRef.current?.();
@@ -865,168 +876,26 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
 
 
 
-      // Increment gesture timer
+      // ── [3] PROCEDURAL GESTURES & FINGER REST KINEMATICS (Anara Standard Hook) ─
       if (isGesturing) gestureTimerRef.current += safeDelta * 1000;
+      const gestureProgress = gestureDurationRef.current > 0 ? gestureTimerRef.current / gestureDurationRef.current : 1.0;
 
-      // Speaking accent (no gesture, any mode)
-      if (isSpeaking && !isGesturing) speechCadenceRef.current += safeDelta * 2.4;
-
-      // Arm lerp speed (when animation clip is playing, let skeletal animation drive with 100% pure smoothness)
-      const armSpeed = animDriven
-        ? 0.0
-        : safeDelta * (isGesturing ? 10.0 : isSpeaking ? 6.0 : 4.0); // procedural fallback only if no animation clip loaded
-
-      const lerpB = (bone: THREE.Bone | undefined, tx: number, ty: number, tz: number) => {
-        if (!bone || armSpeed === 0) return;
-        const s = Math.min(armSpeed, 1);
-        bone.rotation.x = THREE.MathUtils.lerp(bone.rotation.x, tx, s);
-        bone.rotation.y = THREE.MathUtils.lerp(bone.rotation.y, ty, s);
-        bone.rotation.z = THREE.MathUtils.lerp(bone.rotation.z, tz, s);
-      };
-
-      if (!isDancing && (isGesturing || (!animDriven))) {
-        // Read base: current rotation (anim pose) or bind pose + rest offset
-        const lArmBase = getBase(bones.leftArm);
-        const rArmBase = getBase(bones.rightArm);
-        const lForeBase = getBase(bones.leftForeArm);
-        const rForeBase = getBase(bones.rightForeArm);
-        const lHandBase = getBase(bones.leftHand);
-        const rHandBase = getBase(bones.rightHand);
-
-        // When animation is playing, use CURRENT bone rotation as gesture base
-        const lArmRot = animDriven && bones.leftArm ? bones.leftArm.rotation : lArmBase;
-        const rArmRot = animDriven && bones.rightArm ? bones.rightArm.rotation : rArmBase;
-        const lForeRot = animDriven && bones.leftForeArm ? bones.leftForeArm.rotation : lForeBase;
-        const rForeRot = animDriven && bones.rightForeArm ? bones.rightForeArm.rotation : rForeBase;
-        const lHandRot = animDriven && bones.leftHand ? bones.leftHand.rotation : lHandBase;
-        const rHandRot = animDriven && bones.rightHand ? bones.rightHand.rotation : rHandBase;
-
-        // Rest targets: bring arms from T-pose bind to natural relaxed position
-        // Avaturn/RPM: bind pose = T-pose (z≈0). Positive Z → left arm down, Negative Z → right arm down.
-        let tLArmX = animDriven ? lArmRot.x : lArmBase.x;
-        let tLArmY = animDriven ? lArmRot.y : lArmBase.y;
-        let tLArmZ = animDriven ? lArmRot.z : lArmBase.z + 1.35;
-        let tRArmX = animDriven ? rArmRot.x : rArmBase.x;
-        let tRArmY = animDriven ? rArmRot.y : rArmBase.y;
-        let tRArmZ = animDriven ? rArmRot.z : rArmBase.z - 1.35;
-        let tLForeX = animDriven ? lForeRot.x : lForeBase.x;
-        let tLForeY = animDriven ? lForeRot.y : lForeBase.y;
-        let tLForeZ = animDriven ? lForeRot.z : lForeBase.z;
-        let tRForeX = animDriven ? rForeRot.x : rForeBase.x;
-        let tRForeY = animDriven ? rForeRot.y : rForeBase.y;
-        let tRForeZ = animDriven ? rForeRot.z : rForeBase.z;
-        let tLHandX = animDriven ? lHandRot.x : lHandBase.x;
-        let tLHandY = animDriven ? lHandRot.y : lHandBase.y;
-        let tLHandZ = animDriven ? lHandRot.z : lHandBase.z;
-        let tRHandX = animDriven ? rHandRot.x : rHandBase.x;
-        let tRHandY = animDriven ? rHandRot.y : rHandBase.y;
-        let tRHandZ = animDriven ? rHandRot.z : rHandBase.z;
-
-        // ── Speaking accent (procedural) ────────────────────────────────────
-        if (isSpeaking && !isGesturing) {
-          const cad = speechCadenceRef.current;
-          const vol = Math.min(1.0, audioIntensity * 2.5);
-          const liftR = (Math.sin(cad * 0.9) * 0.5 + 0.5) * (0.10 + vol * 0.06);
-          const microBeat = Math.sin(cad * 2.1) * (0.04 + vol * 0.03);
-          tRForeX += liftR * 0.20 + microBeat;
-          tRForeY += liftR * 0.08;
-          tRHandX += microBeat * 0.4;
-        }
-
-        // ── Gesture offsets (additive on base) ────────────────────────────────
-        if (isGesturing) {
-          const prog = Math.min(1.0, gestureTimerRef.current / gestureDurationRef.current);
-          const ease = Math.sin(prog * Math.PI);
-          const easeC = ease * ease * (3 - 2 * ease);
-
-          switch (activeGestureRef.current) {
-            case "salute": {
-              tRArmX += 0.40 * easeC; tRArmZ -= 0.55 * easeC;
-              tRForeX += 0.85 * easeC; tRForeY += 0.35 * easeC;
-              tRHandX += 0.25 * easeC; tRHandZ += 0.20 * easeC;
-              break;
-            }
-            case "wave": {
-              const wOsc = Math.sin(t * 8.5) * 0.40 * ease;
-              tRArmX += 0.45 * easeC; tRArmZ -= 0.60 * easeC;
-              tRForeX += 0.55 * easeC; tRForeZ += wOsc * 0.38;
-              tRHandZ += wOsc * 0.50;
-              break;
-            }
-            case "shy": {
-              tRArmX += 0.50 * easeC; tRArmZ -= 0.30 * easeC;
-              tRForeX += 0.75 * easeC; tRForeY += 0.25 * easeC;
-              tRHandX += 0.35 * easeC;
-              break;
-            }
-            case "angry":
-            case "angry_pointing": {
-              const tr = Math.sin(t * 18) * 0.012 * ease;
-              tRArmX += 0.35 * easeC; tRArmZ -= 0.55 * easeC;
-              tRForeX += 0.55 * easeC + tr; tRForeY += 0.15 * easeC;
-              tRHandX += 0.25 * easeC + tr;
-              break;
-            }
-            case "think": {
-              tRArmX += 0.38 * easeC; tRArmZ -= 0.45 * easeC;
-              tRForeX += 0.65 * easeC; tRHandX += 0.25 * easeC;
-              break;
-            }
-            case "joy": {
-              const jB = Math.sin(t * 5.0) * 0.08 * ease;
-              tLArmZ += 0.28 * easeC; tRArmZ -= 0.28 * easeC;
-              tLForeX += (0.22 + jB) * easeC; tRForeX += (0.22 + jB) * easeC;
-              break;
-            }
-            case "empathy": {
-              tRArmX += 0.28 * easeC; tRArmZ -= 0.30 * easeC;
-              tRForeX += 0.40 * easeC; tRHandX += 0.20 * easeC;
-              break;
-            }
-            case "sad": {
-              tLForeX -= 0.12 * easeC; tRForeX -= 0.12 * easeC;
-              break;
-            }
-            case "nod": case "shake": { break; }
-            case "explain": {
-              const rDom = (Math.sin(t * 3.0) + 1) * 0.5;
-              tRArmZ -= 0.25 * easeC;
-              tRForeX += (0.35 + 0.15 * rDom) * easeC;
-              tRForeY += 0.08 * easeC * rDom;
-              break;
-            }
-            case "question": {
-              tRArmZ -= 0.30 * easeC;
-              tRForeX += 0.35 * easeC; tRHandX += 0.12 * easeC;
-              break;
-            }
-          }
-          if (prog >= 1.0) activeGestureRef.current = "none";
-        }
-
-        lerpB(bones.leftArm, tLArmX, tLArmY, tLArmZ);
-        lerpB(bones.rightArm, tRArmX, tRArmY, tRArmZ);
-        lerpB(bones.leftForeArm, tLForeX, tLForeY, tLForeZ);
-        lerpB(bones.rightForeArm, tRForeX, tRForeY, tRForeZ);
-        lerpB(bones.leftHand, tLHandX, tLHandY, tLHandZ);
-        lerpB(bones.rightHand, tRHandX, tRHandY, tRHandZ);
-      }
-
-      if (!isDancing) {
-        // ── Natural Anatomical Finger Rest (Elegan & Halus Alami) ──
-        for (const finger of bones.leftFingers) {
-          const base = getBase(finger);
-          finger.rotation.x = THREE.MathUtils.lerp(finger.rotation.x, base.x, armSpeed);
-          finger.rotation.y = THREE.MathUtils.lerp(finger.rotation.y, base.y, armSpeed);
-          finger.rotation.z = THREE.MathUtils.lerp(finger.rotation.z, base.z, armSpeed);
-        }
-        for (const finger of bones.rightFingers) {
-          const base = getBase(finger);
-          finger.rotation.x = THREE.MathUtils.lerp(finger.rotation.x, base.x, armSpeed);
-          finger.rotation.y = THREE.MathUtils.lerp(finger.rotation.y, base.y, armSpeed);
-          finger.rotation.z = THREE.MathUtils.lerp(finger.rotation.z, base.z, armSpeed);
-        }
-      }
+      applyProceduralGestures({
+        safeDelta,
+        t,
+        isGesturing,
+        isSpeaking,
+        isDancing,
+        animDriven,
+        audioIntensity,
+        activeGesture: activeGestureRef.current,
+        gestureProgress,
+        bones,
+        getBase,
+        onGestureComplete: () => {
+          activeGestureRef.current = "none";
+        },
+      });
 
       // ── [4] LIVING GAZE & SPEAKING DYNAMICS (Applied gracefully at root level) ─
       const gazePitch = THREE.MathUtils.clamp(-mouse.y * 0.08, -0.08, 0.08);
@@ -1046,61 +915,9 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
         group.current.position.y = THREE.MathUtils.lerp(group.current.position.y, targetGroupPosY, Math.min(safeDelta * 2.0, 1));
       }
 
-      // ── [5] EYE SACCADES & BLINKING ─────────────────────────────────────────
-      saccadeTimerRef.current += safeDelta;
-      if (saccadeTimerRef.current >= nextSaccadeRef.current) {
-        saccadeTimerRef.current = 0;
-        nextSaccadeRef.current = Math.random() * 2.8 + 1.2;
-        targetSaccadeRef.current = {
-          x: (Math.random() - 0.5) * 0.022,
-          y: (Math.random() - 0.5) * 0.015,
-        };
-      }
-      currentSaccadeRef.current.x = THREE.MathUtils.lerp(currentSaccadeRef.current.x, targetSaccadeRef.current.x, Math.min(safeDelta * 9, 1.0));
-      currentSaccadeRef.current.y = THREE.MathUtils.lerp(currentSaccadeRef.current.y, targetSaccadeRef.current.y, Math.min(safeDelta * 9, 1.0));
-
-      blinkPhaseTimerRef.current += safeDelta;
-      switch (blinkPhaseRef.current) {
-        case 0:
-          blinkIdleTimerRef.current += safeDelta;
-          if (blinkIdleTimerRef.current >= nextBlinkWaitRef.current) {
-            blinkIdleTimerRef.current = 0;
-            nextBlinkWaitRef.current = Math.random() * (BLINK_INTERVAL_MAX - BLINK_INTERVAL_MIN) + BLINK_INTERVAL_MIN;
-            blinkPhaseRef.current = 1;
-            blinkPhaseTimerRef.current = 0;
-          }
-          blinkInfluenceRef.current = THREE.MathUtils.lerp(blinkInfluenceRef.current, 0, Math.min(safeDelta * 20, 1.0));
-          break;
-        case 1: {
-          const progress = Math.min(1.0, blinkPhaseTimerRef.current / BLINK_CLOSE_DURATION);
-          blinkInfluenceRef.current = Math.sin(progress * (Math.PI / 2));
-          if (progress >= 1.0) {
-            blinkPhaseRef.current = 2;
-            blinkPhaseTimerRef.current = 0;
-          }
-          break;
-        }
-        case 2:
-          blinkInfluenceRef.current = 1.0;
-          if (blinkPhaseTimerRef.current >= BLINK_HOLD_DURATION) {
-            blinkPhaseRef.current = 3;
-            blinkPhaseTimerRef.current = 0;
-          }
-          break;
-        case 3: {
-          const progress = Math.min(1.0, blinkPhaseTimerRef.current / BLINK_OPEN_DURATION);
-          blinkInfluenceRef.current = Math.cos(progress * (Math.PI / 2));
-          if (progress >= 1.0) {
-            blinkInfluenceRef.current = 0;
-            blinkPhaseRef.current = 0;
-            blinkPhaseTimerRef.current = 0;
-            blinkIdleTimerRef.current = 0;
-          }
-          break;
-        }
-      }
-
-      const blinkW = blinkInfluenceRef.current;
+      // ── [5] EYE SACCADES & BLINKING (Modular Subsystems - Anara Standard) ────
+      const saccade = updateSaccades(safeDelta);
+      const blinkW = updateBlink(safeDelta);
 
       // ── [6] FACIAL EXPRESSION LERP (WITH VIBRANT PROSODY EMOTION) ───────────
       // Gentle, subtle conversational eyebrow & cheek prosody
@@ -1128,57 +945,60 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
       }
 
       // ── [7] APPLY MORPHS TO ALL FACIAL MESHES (Avaturn ARKit) ───────────────
-      const sx = currentSaccadeRef.current.x;
-      const sy = currentSaccadeRef.current.y;
+      const sx = saccade.x;
+      const sy = saccade.y;
+      const eyeLookUp = Math.max(0, Math.min(1, sy));
+      const eyeLookDown = Math.max(0, Math.min(1, -sy));
+      const eyeLookInL = Math.max(0, Math.min(1, sx));
+      const eyeLookOutL = Math.max(0, Math.min(1, -sx));
+      const eyeLookInR = Math.max(0, Math.min(1, -sx));
+      const eyeLookOutR = Math.max(0, Math.min(1, sx));
 
-      for (const mesh of meshes) {
-        const dict = mesh.morphTargetDictionary;
-        const infl = mesh.morphTargetInfluences;
-        if (!dict || !infl) continue;
+      const microExprCurrent = updateMicroExpressions(safeDelta);
+      const cachedMorphs = cachedMorphMeshesRef.current;
+      const curEmotions = currentEmotionMorphsRef.current;
+
+      for (let i = 0; i < cachedMorphs.length; i++) {
+        const item = cachedMorphs[i];
+        const infl = item.influences;
+        const dict = item.dict;
 
         // Blinking
-        const blinkLIdx = dict["eyeBlinkLeft"];
-        const blinkRIdx = dict["eyeBlinkRight"];
-        const eyesClosedIdx = dict["eyesClosed"];
-        if (blinkLIdx !== undefined) infl[blinkLIdx] = blinkW;
-        if (blinkRIdx !== undefined) infl[blinkRIdx] = blinkW;
-        if (eyesClosedIdx !== undefined) infl[eyesClosedIdx] = blinkW;
+        if (item.blinkL !== undefined) infl[item.blinkL] = blinkW;
+        if (item.blinkR !== undefined) infl[item.blinkR] = blinkW;
+        if (item.eyesClosed !== undefined) infl[item.eyesClosed] = blinkW;
 
         // Saccades
-        const applyEyeLook = (morphName: string, value: number) => {
-          const idx = dict[morphName];
-          if (idx !== undefined && !isNaN(value)) infl[idx] = THREE.MathUtils.clamp(value, 0, 1);
-        };
-        applyEyeLook("eyeLookUpLeft", sy);
-        applyEyeLook("eyeLookDownLeft", -sy);
-        applyEyeLook("eyeLookUpRight", sy);
-        applyEyeLook("eyeLookDownRight", -sy);
-        applyEyeLook("eyeLookInLeft", sx);
-        applyEyeLook("eyeLookOutLeft", -sx);
-        applyEyeLook("eyeLookInRight", -sx);
-        applyEyeLook("eyeLookOutRight", sx);
+        if (item.eyeLookUpLeft !== undefined) infl[item.eyeLookUpLeft] = eyeLookUp;
+        if (item.eyeLookDownLeft !== undefined) infl[item.eyeLookDownLeft] = eyeLookDown;
+        if (item.eyeLookUpRight !== undefined) infl[item.eyeLookUpRight] = eyeLookUp;
+        if (item.eyeLookDownRight !== undefined) infl[item.eyeLookDownRight] = eyeLookDown;
+        if (item.eyeLookInLeft !== undefined) infl[item.eyeLookInLeft] = eyeLookInL;
+        if (item.eyeLookOutLeft !== undefined) infl[item.eyeLookOutLeft] = eyeLookOutL;
+        if (item.eyeLookInRight !== undefined) infl[item.eyeLookInRight] = eyeLookInR;
+        if (item.eyeLookOutRight !== undefined) infl[item.eyeLookOutRight] = eyeLookOutR;
 
         // Emotional blendshapes (emotion layer + micro-expression layer combined)
-        for (const [morphName, val] of Object.entries(currentEmotionMorphsRef.current)) {
+        for (const morphName in curEmotions) {
           const idx = dict[morphName];
           if (idx !== undefined) {
-            // Add micro-expression on top, capped so it never exceeds 1.0
-            const microVal = microExprCurrentRef.current[morphName] ?? 0;
-            infl[idx] = THREE.MathUtils.clamp(val + microVal, 0, 1);
+            const val = curEmotions[morphName];
+            const microVal = microExprCurrent[morphName] ?? 0;
+            infl[idx] = Math.min(Math.max(val + microVal, 0), 1);
           }
         }
+
         // Apply micro-expression morphs that aren't in the emotion layer
-        for (const [morphName, microVal] of Object.entries(microExprCurrentRef.current)) {
-          if (morphName in currentEmotionMorphsRef.current) continue;
+        for (const morphName in microExprCurrent) {
+          if (morphName in curEmotions) continue;
           const idx = dict[morphName];
           if (idx !== undefined) {
-            infl[idx] = THREE.MathUtils.clamp(microVal, 0, 1);
+            infl[idx] = Math.min(Math.max(microExprCurrent[morphName], 0), 1);
           }
         }
       }
 
       // ── [8] PHONETIC SPEECH LIP-SYNC ───────────────────────────────────────
-      setAudioIntensity(audioIntensity);
       updateMorphTargets(safeDelta);
     });
 

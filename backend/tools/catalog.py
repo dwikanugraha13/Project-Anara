@@ -479,7 +479,16 @@ ASK_TOOL_NAMES = {
 
 def get_tool_risk(tool_name: str) -> str:
     """Returns the risk tier of a given tool ('read_only', 'action', 'mutating', or 'ask')."""
-    return TOOL_RISK_CLASSIFICATION.get(tool_name, "mutating")
+    if tool_name in TOOL_RISK_CLASSIFICATION:
+        return TOOL_RISK_CLASSIFICATION[tool_name]
+    try:
+        from .registry import registry
+        import tools.tool_specs
+        if tool_name in registry._tools:
+            return registry.get_risk(tool_name)
+    except Exception:
+        pass
+    return "mutating"
 
 
 import re
@@ -552,10 +561,10 @@ def is_safe_read_only_cli_command(command: str) -> bool:
 
 def check_tool_permission(tool_name: str, mode: str = "plan", args: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
-    Claude Code & OpenCode Standard Permission Gate:
+    Anara Standard Permission Gate:
     Enforces 3-tier risk boundary (read_only, mutating, ask) programmatically at code level.
     """
-    risk = TOOL_RISK_CLASSIFICATION.get(tool_name, "mutating")
+    risk = get_tool_risk(tool_name)
 
     # Plan Mode Gate: strictly block mutating tools, permit safe read-only CLI inspection
     if mode == "plan":
@@ -605,21 +614,50 @@ def check_tool_permission(tool_name: str, mode: str = "plan", args: Optional[Dic
     return {"allowed": True, "risk": risk}
 
 
-def get_agent_tools(read_only: bool = False) -> List[types.Tool]:
+def get_agent_tools(read_only: bool = False, enabled_set: Optional[Set[str]] = None) -> List[types.Tool]:
     """Returns the Tool object wrapping function declarations. In Plan Mode, write tools are physically stripped."""
-    if read_only:
-        decls = [fn for fn in ANARA_FUNCTION_DECLARATIONS if fn.name in READ_ONLY_TOOL_NAMES]
-        return [types.Tool(function_declarations=decls)]
-    return [types.Tool(function_declarations=ANARA_FUNCTION_DECLARATIONS)]
+    seen_names = set()
+    decls = []
 
-
-def get_tools_catalog() -> List[Dict[str, Any]]:
-    """Returns a structured JSON catalog of all registered agent tools for UI inspection."""
-    catalog = []
+    # 1. Base catalog function declarations
     for fn in ANARA_FUNCTION_DECLARATIONS:
         name = fn.name
+        if enabled_set is not None and name not in enabled_set:
+            continue
+        if read_only and name not in READ_ONLY_TOOL_NAMES:
+            continue
+        if name not in seen_names:
+            seen_names.add(name)
+            decls.append(fn)
+
+    # 2. Decentralized dynamic registry declarations
+    try:
+        from .registry import registry
+        import tools.tool_specs
+        for name, t in registry._tools.items():
+            if enabled_set is not None and name not in enabled_set:
+                continue
+            if read_only and t.risk != "read_only":
+                continue
+            if name not in seen_names and t.declaration:
+                seen_names.add(name)
+                decls.append(t.declaration)
+    except Exception as e:
+        logger.debug(f"[AgentTools] Error merging registry tools: {e}")
+
+    return [types.Tool(function_declarations=decls)]
+
+
+def get_tools_catalog(enabled_set: Optional[Set[str]] = None) -> List[Dict[str, Any]]:
+    """Returns a structured JSON catalog of all registered agent tools for UI inspection."""
+    catalog = []
+    seen = set()
+
+    for fn in ANARA_FUNCTION_DECLARATIONS:
+        name = fn.name
+        seen.add(name)
         desc = fn.description or ""
-        risk = TOOL_RISK_CLASSIFICATION.get(name, "mutating")
+        risk = get_tool_risk(name)
         is_ro = risk == "read_only"
 
         if name in ["edit_file", "write_local_file", "generate_file_artifact", "create_zip_archive", "rezip_archive"]:
@@ -656,8 +694,35 @@ def get_tools_catalog() -> List[Dict[str, Any]]:
             "risk": risk,
             "is_read_only": is_ro,
             "mode_label": "Plan & Build" if is_ro else "Build Only",
+            "is_enabled": name in enabled_set if enabled_set else True,
             "parameters": p_dict
         })
+
+    # Merge additional tools from registry
+    try:
+        from .registry import registry
+        import tools.tool_specs
+        for name, t in registry._tools.items():
+            if name in seen:
+                continue
+            seen.add(name)
+            is_ro = (t.risk == "read_only")
+            catalog.append({
+                "name": name,
+                "description": t.description,
+                "category": t.category,
+                "icon": t.icon,
+                "risk": t.risk,
+                "is_read_only": is_ro,
+                "mode_label": "Plan & Build" if is_ro else "Build Only",
+                "toolset_id": t.toolset,
+                "toolset_title": t.toolset.replace("_", " ").title(),
+                "is_enabled": name in enabled_set if enabled_set else True,
+                "parameters": t.parameters
+            })
+    except Exception as e:
+        logger.debug(f"[AgentTools] Error merging registry catalog: {e}")
+
     return catalog
 
 
@@ -841,6 +906,15 @@ async def dispatch_tool_call(
                 procedure_steps=args.get("procedure_steps"),
             )
         else:
+            try:
+                from .registry import registry
+                import tools.tool_specs
+                handler = registry.get_handler(name)
+                if handler:
+                    return await registry.dispatch(name, args)
+            except Exception as reg_err:
+                logger.error(f"[AgentTools] Registry dispatch error for {name}: {reg_err}")
+
             logger.warning(f"[AgentTools] Unrecognized tool '{name}'")
             return {"status": "error", "message": f"Alat '{name}' tidak terdaftar."}
     except Exception as e:

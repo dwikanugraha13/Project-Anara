@@ -28,6 +28,11 @@ from .caller import (
     stream_universal_chat_model,
     call_universal_chat_model,
 )
+from .profile_registry import (
+    get_registered_profiles,
+    register_provider_profile,
+    resolve_provider_profile,
+)
 
 __all__ = [
     "PROVIDER_METADATA",
@@ -52,4 +57,7 @@ __all__ = [
     "get_all_dynamic_models",
     "stream_universal_chat_model",
     "call_universal_chat_model",
+    "get_registered_profiles",
+    "register_provider_profile",
+    "resolve_provider_profile",
 ]

@@ -3,6 +3,9 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import ModelSelectorDropdown, { AIModelInfo } from "./ModelSelectorDropdown";
 import InteractiveQuestionCard, { InteractiveQuestionData } from "../chat/InteractiveQuestionCard";
+import { DockPlanChecklist } from "./DockPlanChecklist";
+import { DockAudioWaveform } from "./DockAudioWaveform";
+import { DockAttachmentChips } from "./DockAttachmentChips";
 import type { ToolProgressPayload } from "@/hooks/useWebSocket";
 
 export type AssistantStatus = "idle" | "listening" | "thinking" | "speaking";
@@ -252,98 +255,13 @@ export default function BottomDock({
         </div>
       )}
 
-      {/* ── Sticky Plan / Todo Checklist Widget ── */}
-      {checklistData && checklistData.items.length > 0 && (
-        <div className="w-full liquid-glass rounded-2xl border border-white/15 shadow-2xl shadow-black/80 pointer-events-auto backdrop-blur-3xl overflow-hidden transition-all duration-300 relative select-none animate-fade-in">
-          <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/25 to-transparent pointer-events-none" />
-
-          <button
-            type="button"
-            onClick={() => setIsPlanChecklistExpanded((v) => !v)}
-            className="w-full flex items-center justify-between px-3.5 py-2.5 hover:bg-white/[0.04] transition-colors cursor-pointer text-left"
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span
-                className={`px-1.5 py-0.5 rounded-[5px] font-mono text-[9.5px] font-bold border transition-colors shrink-0 ${
-                  checklistData.completedCount === checklistData.total
-                    ? "bg-emerald-500/15 border-emerald-400/30 text-emerald-300 shadow-[0_0_8px_rgba(52,211,153,0.15)]"
-                    : "bg-cyan-500/15 border-cyan-400/30 text-cyan-300"
-                }`}
-              >
-                {checklistData.completedCount}/{checklistData.total}
-              </span>
-              <span className="text-[12px] font-medium text-slate-200 tracking-tight font-sans truncate">
-                {checklistData.title}
-              </span>
-            </div>
-            <div className="p-0.5 rounded text-slate-400 hover:text-white transition-colors shrink-0">
-              <svg
-                className={`w-3.5 h-3.5 transition-transform duration-200 ease-out ${
-                  isPlanChecklistExpanded ? "rotate-180" : ""
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
-          </button>
-
-          {isPlanChecklistExpanded && (
-            <div className="px-2.5 pb-2 pt-1 space-y-0.5 border-t border-white/[0.08] max-h-[120px] overflow-y-auto no-scrollbar">
-              {checklistData.items.map((step, sIdx) => {
-                const isDone = step.isCompleted;
-                const isActive = step.isInProgress;
-                const cleanTitle = step.title.replace(/^Langkah\s*\d+\s*:\s*/i, "");
-
-                return (
-                  <div
-                    key={sIdx}
-                    className={`flex items-start gap-2.5 py-1.5 px-2 rounded-xl transition-all ${
-                      isDone
-                        ? "bg-white/[0.015] hover:bg-white/[0.03]"
-                        : isActive
-                        ? "bg-cyan-500/10 border border-cyan-400/25 shadow-[0_0_10px_rgba(34,211,238,0.1)]"
-                        : "hover:bg-white/[0.03]"
-                    }`}
-                  >
-                    {isDone ? (
-                      <span className="w-3.5 h-3.5 rounded-[4px] bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 flex items-center justify-center shrink-0 mt-0.5 shadow-[0_0_6px_rgba(52,211,153,0.15)]">
-                        <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                        </svg>
-                      </span>
-                    ) : isActive ? (
-                      <span className="w-3.5 h-3.5 rounded-[4px] bg-cyan-500/15 border border-cyan-400/50 flex items-center justify-center shrink-0 mt-0.5 shadow-[0_0_8px_rgba(34,211,238,0.25)]">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-300 animate-ping" />
-                      </span>
-                    ) : (
-                      <span className="w-3.5 h-3.5 rounded-[4px] border border-white/20 bg-white/[0.02] flex items-center justify-center shrink-0 mt-0.5" />
-                    )}
-
-                    <span className="font-mono text-[10px] text-slate-500 shrink-0 mt-0.5 select-none">
-                      {String(sIdx + 1).padStart(2, "0")}
-                    </span>
-
-                    <span
-                      className={`flex-1 leading-snug font-sans text-[12px] truncate ${
-                        isDone
-                          ? "text-slate-400/75 line-through decoration-slate-600/70"
-                          : isActive
-                          ? "text-white font-medium"
-                          : "text-slate-300"
-                      }`}
-                      title={cleanTitle}
-                    >
-                      {cleanTitle}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+      {/* ── Sticky Plan / Todo Checklist Widget (Modular Anara Semantic Slot) ── */}
+      {checklistData && (
+        <DockPlanChecklist
+          checklistData={checklistData}
+          isExpanded={isPlanChecklistExpanded}
+          onToggle={() => setIsPlanChecklistExpanded((v) => !v)}
+        />
       )}
 
       {/* ── INTERACTIVE QUESTION CARD WIZARD IN BOTTOM DOCK (OpenCode Style) ── */}
@@ -393,66 +311,18 @@ export default function BottomDock({
         {/* 1. Top Section: Input / Voice Waveform */}
         <div className={`w-full flex items-center gap-2 ${isInputExpanded ? "flex-1 min-h-0 overflow-hidden" : "min-h-[36px]"}`}>
           {interactionMode === "voice" && !inputMessage.trim() && attachedFiles.length === 0 ? (
-            <div className="w-full flex items-center justify-between py-1 px-1">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="flex items-center gap-1 h-5 shrink-0 px-2 py-0.5 bg-black/40 rounded-lg border border-cyan-400/20">
-                  {[...Array(6)].map((_, i) => {
-                    const barHeight = Math.max(
-                      3,
-                      Math.min(18, activeIntensity * 30 * (1 + (i % 3) * 0.4) + (status !== "idle" ? 6 : 3))
-                    );
-                    return (
-                      <span
-                        key={i}
-                        className={`w-1 rounded-full transition-all duration-75 ${
-                          status === "speaking"
-                            ? "bg-cyan-400 shadow-[0_0_6px_#22d3ee]"
-                            : status === "listening"
-                            ? "bg-indigo-400 shadow-[0_0_6px_#818cf8]"
-                            : "bg-slate-600"
-                        }`}
-                        style={{ height: `${barHeight}px` }}
-                      />
-                    );
-                  })}
-                </div>
-                <p className="text-xs font-mono font-medium text-slate-300 truncate" suppressHydrationWarning>
-                  {status === "speaking"
-                    ? "AI Sedang Berbicara..."
-                    : status === "thinking"
-                    ? "AI Sedang Berpikir..."
-                    : isMuted
-                    ? "Mikrofon Dibisukan"
-                    : isMicActive
-                    ? "Mendengarkan suara Anda..."
-                    : "Mikrofon Siap (Klik Voice untuk Bicara)"}
-                </p>
-              </div>
-            </div>
+            <DockAudioWaveform
+              status={status}
+              activeIntensity={activeIntensity}
+              isMicActive={isMicActive}
+              isMuted={isMuted}
+            />
           ) : (
             <div className={`w-full flex flex-col gap-1.5 relative ${isInputExpanded ? "h-full flex-1 min-h-0" : ""}`}>
-              {/* Attached Chips */}
-              {attachedFiles.length > 0 && (
-                <div className="w-full flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1.5 pt-0.5 px-0.5 shrink-0">
-                  {attachedFiles.map((file, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center gap-2 pl-2.5 pr-1.5 py-1 rounded-xl bg-white/[0.06] hover:bg-white/[0.09] border border-white/10 text-xs text-slate-200 transition-all shrink-0 max-w-[220px] sm:max-w-[260px] group shadow-sm"
-                    >
-                      <span className="truncate font-mono font-medium text-[11px] text-white">
-                        {file.name}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setAttachedFiles((prev) => prev.filter((_, i) => i !== idx))}
-                        className="w-4 h-4 rounded-full flex items-center justify-center text-slate-400 hover:text-rose-300 hover:bg-rose-500/20 transition-all text-[10px] cursor-pointer shrink-0"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <DockAttachmentChips
+                attachedFiles={attachedFiles}
+                onRemove={(idx) => setAttachedFiles((prev) => prev.filter((_, i) => i !== idx))}
+              />
 
               {/* Textarea Form */}
               <form

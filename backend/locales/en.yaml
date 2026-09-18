@@ -1,0 +1,25 @@
+# Anara Localization Catalog — English (en)
+greetings:
+  late_night: "It's late at night"
+  morning: "Good morning"
+  afternoon: "Good afternoon"
+  evening: "Good evening"
+  night: "Good night"
+  welcome_back: "Welcome back. How can Anara assist you today?"
+
+briefing:
+  header: "{greeting} {name}! Here is your briefing for {date_str}."
+  relaxed: "Your schedule is clear and relaxed today."
+  pending_tasks: "You have {count} pending tasks waiting for you:"
+  more_tasks: "...and {count} more tasks."
+
+proactive:
+  due_reminder: "{name_part}reminder: '{title}' is past its due time ({due_time} {tz_label})."
+  stale_project: "{speaker}, it has been {days} days since we last discussed project '{name}'. How is the progress?"
+
+weather:
+  comfortable: "Weather conditions are very comfortable for activities today."
+  rain_umbrella: "Bring an umbrella or raincoat if traveling outside."
+  hot_hydration: "The weather is hot, make sure to drink plenty of water to stay hydrated."
+  cold_warmth: "The temperature is cool, wear warm clothes if outside at night."
+  fog_mask: "Visibility is limited, wear a mask if in high pollution areas."

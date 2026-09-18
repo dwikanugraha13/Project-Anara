@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -166,3 +167,121 @@ async def _tool_custom_webhook(url: str, method: str = "POST", payload_json: Opt
     except Exception as e:
         logger.warning(f"[AgentTools] Webhook error: {e}")
         return {"status": "error", "message": str(e)}
+
+
+async def _tool_web_search_images(query: str, limit: int = 4) -> Dict[str, Any]:
+    """
+    Searches the live web for actual image photos, news documentation, or visuals matching query.
+    Returns image URLs, thumbnails, titles, and automatically projects them or sends to chat.
+    """
+    q = (query or "").strip()
+    if not q:
+        return {"status": "error", "message": "Query pencarian gambar tidak boleh kosong"}
+
+    _emit_agent_event("agent_action_start", {
+        "tool_name": "web_search_images",
+        "action_title": "Pencarian Foto & Gambar Web",
+        "detail": f"Mencari foto: '{q}'",
+        "icon": "🖼️"
+    })
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+    }
+
+    images = []
+    try:
+        bing_url = f"https://www.bing.com/images/search?q={urllib.parse.quote(q)}&first=1"
+        async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
+            r = await client.get(bing_url, headers=headers)
+            if r.status_code == 200:
+                m_tags = re.findall(r'm="([^"]+)"', r.text)
+                for m_raw in m_tags[:max(1, limit * 2)]:
+                    try:
+                        clean_json = m_raw.replace("&quot;", '"').replace("&amp;", "&")
+                        d = json.loads(clean_json)
+                        img_url = d.get("murl")
+                        if img_url and img_url.startswith("http"):
+                            images.append({
+                                "image_url": img_url,
+                                "thumbnail_url": d.get("turl") or img_url,
+                                "title": d.get("t", q),
+                                "source_domain": d.get("desc", ""),
+                                "markdown": f"![{d.get('t', q)}]({img_url})"
+                            })
+                            if len(images) >= limit:
+                                break
+                    except Exception:
+                        continue
+    except Exception as e:
+        logger.warning(f"[AgentTools] Image search error: {e}")
+
+    # Fallback to Wikimedia Commons API if Bing has no results
+    if not images:
+        try:
+            wiki_url = f"https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch={urllib.parse.quote(q)}&gsrnamespace=6&prop=imageinfo&iiprop=url|extmetadata&format=json"
+            async with httpx.AsyncClient(timeout=8.0, verify=False, follow_redirects=True) as client:
+                res = await client.get(wiki_url, headers=headers)
+                if res.status_code == 200:
+                    pages = res.json().get("query", {}).get("pages", {})
+                    for pid, pdata in pages.items():
+                        infos = pdata.get("imageinfo", [])
+                        if infos and infos[0].get("url"):
+                            u = infos[0]["url"]
+                            title = pdata.get("title", "").replace("File:", "")
+                            images.append({
+                                "image_url": u,
+                                "thumbnail_url": u,
+                                "title": title,
+                                "source_domain": "wikimedia.org",
+                                "markdown": f"![{title}]({u})"
+                            })
+                            if len(images) >= limit:
+                                break
+        except Exception:
+            pass
+
+    if not images:
+        return {
+            "status": "warning",
+            "query": q,
+            "total_found": 0,
+            "images": [],
+            "message": f"Tidak ditemukan foto spesifik untuk '{q}' di web."
+        }
+
+    # Emit HUD visual card
+    first_img = images[0]
+    _emit_agent_event("hud_project", {
+        "type": "image",
+        "title": first_img["title"],
+        "image_url": first_img["image_url"],
+        "summary": f"Foto terkait {q} ditemukan dari web."
+    })
+
+    # Auto-dispatch to active remote channel (Telegram / WhatsApp) if user is mobile
+    try:
+        from core.channel_adapter import get_active_channel_context
+        ctx = get_active_channel_context()
+        if ctx and ctx.get("channel") == "telegram" and ctx.get("channel_id"):
+            from integrations.telegram import send_telegram_photo
+            asyncio.create_task(send_telegram_photo(
+                photo=first_img["image_url"],
+                chat_id=ctx["channel_id"],
+                caption=f"📷 {first_img['title']}"
+            ))
+            logger.info(f"[ImageSearch] Auto-sent photo to Telegram chat {ctx['channel_id']}: {first_img['image_url']}")
+    except Exception as dispatch_err:
+        logger.debug(f"[ImageSearch] Auto-dispatch error: {dispatch_err}")
+
+    return {
+        "status": "success",
+        "query": q,
+        "total_found": len(images),
+        "primary_image_url": first_img["image_url"],
+        "images": images,
+        "message": f"Ditemukan {len(images)} foto untuk '{q}'. Foto pertama telah diproses untuk dikirim langsung ke obrolan."
+    }
+

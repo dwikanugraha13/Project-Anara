@@ -141,6 +141,102 @@ async def _tool_manage_memory_and_todos(action: str, title: str, content: Option
         return {"status": "error", "message": str(e)}
 
 
+async def _tool_anara_memory(
+    action: str,
+    target: str = "memory",
+    content: Optional[str] = None,
+    old_text: Optional[str] = None
+) -> Dict[str, Any]:
+    """Universal Anara Persistent Memory Tool for MEMORY.md and USER.md."""
+    from memory.file_memory import file_memory
+    act = (action or "add").strip().lower()
+    tgt = (target or "memory").strip().lower()
+
+    _emit_agent_event("agent_action_start", {
+        "tool_name": "memory",
+        "action_title": f"Anara Memory ({act})",
+        "detail": f"Target: {tgt} | {('Substr: ' + old_text) if old_text else ('Content: ' + (content[:50] if content else ''))}",
+        "icon": "🧠"
+    })
+
+    try:
+        res = file_memory.execute_memory_action(
+            action=act,
+            target=tgt,
+            content=content,
+            old_text=old_text
+        )
+        _emit_agent_event("agent_action_complete", {
+            "tool_name": "memory",
+            "action_title": f"Anara Memory {res.get('status', 'complete').title()}",
+            "summary": res.get("message", "Operasi memori selesai."),
+            "icon": "🧠"
+        })
+        return res
+    except Exception as e:
+        logger.warning(f"[AgentTools] Anara memory tool error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+async def _tool_session_search(query: str, limit: int = 5) -> Dict[str, Any]:
+    """Anara Long-Term Conversation History & Session Recall."""
+    from memory import memory_engine
+    clean_q = (query or "").strip()
+    safe_limit = max(1, min(limit or 5, 20))
+
+    _emit_agent_event("agent_action_start", {
+        "tool_name": "session_search",
+        "action_title": "Mencari Riwayat Sesi Obrolan",
+        "detail": f"Query: '{clean_q}'",
+        "icon": "search"
+    })
+
+    try:
+        results = memory_engine.search_conversation_history(query=clean_q, limit=safe_limit)
+        if not results:
+            msg = f"Tidak ditemukan percakapan terdahulu yang cocok dengan kata kunci '{clean_q}'."
+            _emit_agent_event("agent_action_complete", {
+                "tool_name": "session_search",
+                "action_title": "Pencarian Riwayat Selesai",
+                "summary": msg,
+                "icon": "search"
+            })
+            return {"status": "success", "results": [], "message": msg}
+
+        formatted = []
+        for r in results:
+            created = (r.get("created_at") or "")[:19]
+            session = r.get("session_title") or f"Sesi #{r.get('session_id', '?')}"
+            speaker = r.get("speaker_name") or "Pengguna"
+            u_text = (r.get("user_text") or "").strip()
+            a_text = (r.get("ai_text") or "").strip()
+            if len(a_text) > 300:
+                a_text = a_text[:300] + "..."
+            formatted.append({
+                "timestamp": created,
+                "session": session,
+                "speaker": speaker,
+                "user_text": u_text,
+                "ai_text": a_text
+            })
+
+        msg = f"Ditemukan {len(formatted)} riwayat percakapan yang relevan."
+        _emit_agent_event("agent_action_complete", {
+            "tool_name": "session_search",
+            "action_title": "Pencarian Riwayat Berhasil",
+            "summary": msg,
+            "icon": "search"
+        })
+        return {
+            "status": "success",
+            "results": formatted,
+            "message": msg
+        }
+    except Exception as e:
+        logger.warning(f"[AgentTools] session_search error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
 async def _tool_system_control(action: str, target: Optional[str] = None) -> Dict[str, Any]:
     """Controls desktop applications and OS functions locally on Windows."""
     act = (action or "open").strip().lower()
@@ -372,5 +468,66 @@ async def _tool_interactive_question(questions: Any) -> Dict[str, Any]:
         return {"status": "error", "message": "Daftar pertanyaan kuesioner tidak valid atau kosong."}
 
     return await request_interactive_question(parsed_questions, timeout=300.0)
+
+
+async def _tool_skill_view(name: str, file_path: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Anara Skill Viewer:
+    Loads and views the complete procedure, CLI scripts, sub-resource files (references/templates/scripts),
+    and workflow instructions of any skill from the agentskills.io library on demand.
+    """
+    clean_name = (name or "").strip()
+    if not clean_name:
+        return {"status": "error", "message": "Nama skill tidak boleh kosong."}
+
+    from core.skill_library import skill_library
+
+    # If a specific sub-resource file path is requested (e.g. references/*.md)
+    if file_path and file_path.strip():
+        sub_file = skill_library.get_skill_file(clean_name, file_path.strip())
+        if not sub_file:
+            return {
+                "status": "error",
+                "message": f"Berkas referensi '{file_path}' tidak ditemukan di dalam skill '{clean_name}'."
+            }
+        _emit_agent_event("agent_action_complete", {
+            "tool_name": "skill_view",
+            "action_title": f"Memuat Referensi Skill: {sub_file['file_path']}",
+            "detail": f"Skill: {sub_file['skill_name']}",
+            "summary": f"Berkas referensi '{file_path}' berhasil dimuat ({sub_file['size_kb']} KB).",
+            "icon": "book-open"
+        })
+        return {
+            "status": "success",
+            "skill_name": sub_file["skill_name"],
+            "file_path": sub_file["file_path"],
+            "size_kb": sub_file["size_kb"],
+            "content": sub_file["content"],
+        }
+
+    skill = skill_library.get_skill(clean_name)
+    if not skill:
+        return {
+            "status": "error",
+            "message": f"Skill '{clean_name}' tidak ditemukan di perpustakaan skill (agentskills.io)."
+        }
+
+    _emit_agent_event("agent_action_complete", {
+        "tool_name": "skill_view",
+        "action_title": f"Memuat Keahlian: {skill['name']}",
+        "detail": f"Kategori: {skill['category']}",
+        "summary": f"Petunjuk teknis dan prosedur skill '{skill['name']}' berhasil dimuat ke memori aktif.",
+        "icon": "book-open"
+    })
+
+    return {
+        "status": "success",
+        "name": skill["name"],
+        "category": skill["category"],
+        "description": skill["description"],
+        "instructions": skill["body"],
+        "file_path": skill["file_path"],
+    }
+
 
 

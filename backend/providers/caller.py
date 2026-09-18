@@ -220,7 +220,7 @@ async def _execute_json_agent_loop(
     from tools.catalog import is_safe_read_only_cli_command
     
     tool_spec_doc = (
-        "\n\n[UNIVERSAL AUTONOMOUS AGENT PROTOCOL — CLAUDE CODE / OPENCODE / HERMES STANDARD]\n"
+        "\n\n[UNIVERSAL AUTONOMOUS AGENT PROTOCOL — CLAUDE CODE / OPENCODE / ANARA STANDARD]\n"
         "Kamu adalah Autonomous AI Agent cerdas, berdaya cipta tinggi, dan solutif.\n"
         "Untuk membaca kode, menjelajahi proyek, mengedit berkas, menjalankan perintah terminal, atau membuat artefak:\n"
         "BALAS HANYA DENGAN SATU BLOK JSON VALID BERIKUT:\n"
