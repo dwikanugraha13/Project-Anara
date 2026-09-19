@@ -154,6 +154,27 @@ async def wa_webhook_endpoint(payload: WhatsAppWebhookPayload):
             logger.info(f"[WAWebhook] Message from {clean_phone} skipped (not in whatsapp_allowed_numbers whitelist).")
             return {"status": "skipped", "reason": "not_in_whitelist"}
 
+    # Check for /stop command immediately before starting turn
+    if clean_text.strip().lower().startswith(("/stop", "/cancel", "/abort", "/batal")):
+        from core.session_manager import session_state_manager
+        interrupt_info = await session_state_manager.request_hard_interrupt(
+            channel="whatsapp",
+            channel_id=payload.phone,
+            reason="whatsapp_user_stop"
+        )
+        details = []
+        if interrupt_info.get("task_cancelled"):
+            details.append("eksekusi tugas dibatalkan")
+        if interrupt_info.get("processes_killed", 0) > 0:
+            details.append(f"{interrupt_info['processes_killed']} subproses OS dihentikan")
+        if interrupt_info.get("pending_cleared"):
+            details.append("rencana tertahan dibersihkan")
+        detail_str = f" ({', '.join(details)})" if details else ""
+
+        cancel_reply = f"🛑 *Tugas Anara telah dihentikan via /stop.*{detail_str}"
+        await send_whatsapp_message(payload.phone, cancel_reply)
+        return {"status": "cancelled", "interrupt_info": interrupt_info}
+
     req = ChannelRequest(
         text=clean_text,
         channel="whatsapp",
@@ -171,14 +192,34 @@ async def wa_webhook_endpoint(payload: WhatsAppWebhookPayload):
 
     try:
         res = await process_channel_request(req, progress_callback=_send_prog)
-        if res.plan_pending and res.plan_id:
-            proposal = (
-                f"📋 *RENCANA TINDAKAN ANARA*\n\n"
-                f"{res.text}\n\n"
-                f"Balas *'setujui rencana'* untuk mulai eksekusi atau *'batal'* untuk membatalkan."
-            )
-            await send_whatsapp_message(payload.phone, proposal)
-        else:
+        from core.command_hub import get_chat_voice_mode
+        voice_mode = get_chat_voice_mode("whatsapp", payload.phone)  # 'text', 'only', 'both', 'auto'
+        is_voice_turn = (payload.mediaType == "audio")
+
+        # ALL slash commands and UI responses are ALWAYS delivered as text, NEVER voice!
+        is_command_or_ui = getattr(res, "is_command", False) or clean_text.strip().startswith("/") or res.plan_pending
+
+        should_send_voice = False
+        if not is_command_or_ui:
+            if voice_mode in ("only", "both"):
+                should_send_voice = True
+            elif voice_mode == "auto":
+                should_send_voice = is_voice_turn
+
+        voice_sent = False
+        if should_send_voice and res.text:
+            try:
+                from cognition.audio import synthesize_speech_audio
+                voice_file = await synthesize_speech_audio(res.text)
+                if voice_file:
+                    from integrations.whatsapp import send_whatsapp_document
+                    await send_whatsapp_document(to=payload.phone, file_path=voice_file, caption="")
+                    voice_sent = True
+            except Exception as wa_v_err:
+                logger.warning(f"[WAWebhook] Voice reply error: {wa_v_err}")
+
+        should_send_text = (voice_mode != "only") or not voice_sent or is_command_or_ui
+        if res.text and should_send_text:
             await send_whatsapp_message(payload.phone, res.text)
         return {"status": "processed", "plan_pending": res.plan_pending}
     except Exception as e:

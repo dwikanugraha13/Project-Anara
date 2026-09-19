@@ -299,42 +299,237 @@ def is_stt_hallucination(text: str) -> bool:
 
 
 async def transcribe_audio_file(audio_path: str) -> Optional[str]:
-    """Transcribes an audio file (.ogg, .mp3, .wav) using Gemini / multimodal failover."""
+    """
+    Dynamic Tiered Audio Transcription Engine (Hermes Parity):
+    Tier 1: Directly probes user's active provider (e.g. 9router with input_audio, OpenAI multimodal, etc.).
+    Tier 2: Discovers secondary configured audio providers in SQLite (Google AI Studio gemini-3.6-flash, etc.).
+    Tier 3: Graceful fallback without hardcoding or unhandled exceptions.
+    """
     import os
+    import base64
+    import json
     import logging
+    import httpx
     _log = logging.getLogger(__name__)
 
     if not audio_path or not os.path.isfile(audio_path):
         return None
+
+    ext = os.path.splitext(audio_path)[1].lower()
+    clean_fmt = ext.lstrip(".") or "ogg"
+
+    with open(audio_path, "rb") as f:
+        audio_bytes = f.read()
+
+    # ── TIER 1: User's Active Provider Probe (Dynamic & Zero-Hardcode) ──
+    try:
+        from providers.accounts import get_active_model_id
+        from memory import memory_engine
+        active_m = get_active_model_id()
+        custom_providers = memory_engine.get_custom_providers()
+
+        for cp in custom_providers:
+            prefix = cp.get("prefix", "")
+            if prefix and active_m.startswith(f"{prefix}/"):
+                target_model = active_m.replace(f"{prefix}/", "")
+                base_url = cp.get("base_url", "").rstrip("/")
+                api_key = cp.get("api_key", "")
+                audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+
+                headers = {"Content-Type": "application/json"}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
+
+                payload = {
+                    "model": target_model,
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Transkripsikan isi ucapan dalam audio ini secara persis kata per kata. Tuliskan teks ucapannya saja tanpa awalan atau akhiran."},
+                            {"type": "input_audio", "input_audio": {"data": audio_b64, "format": clean_fmt}}
+                        ]
+                    }],
+                    "max_tokens": 120,
+                    "temperature": 0.0,
+                    "stream": False
+                }
+
+                async with httpx.AsyncClient(timeout=25.0) as client:
+                    resp = await client.post(f"{base_url}/chat/completions", headers=headers, json=payload)
+                    if resp.status_code == 200:
+                        raw_body = resp.text.strip()
+                        extracted = ""
+                        if raw_body.startswith("data:"):
+                            chunks = []
+                            for line in raw_body.splitlines():
+                                if line.startswith("data:") and "[DONE]" not in line:
+                                    try:
+                                        j = json.loads(line[5:].strip())
+                                        d = j.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                        if d:
+                                            chunks.append(d)
+                                    except Exception:
+                                        pass
+                            extracted = "".join(chunks).strip()
+                        else:
+                            try:
+                                j = resp.json()
+                                extracted = j.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                            except Exception:
+                                pass
+
+                        if extracted and not is_stt_hallucination(extracted):
+                            _log.info(f"[AudioSTT] Successfully transcribed via active provider '{prefix}' ({target_model}): '{extracted}'")
+                            return extracted
+    except Exception as e_t1:
+        _log.debug(f"[AudioSTT] Tier 1 active provider probe notice: {e_t1}")
+
+    # ── TIER 2: Secondary Configured Providers (Google GenAI Gemini 3.6 Flash Fallback) ──
     try:
         from core import key_manager
         from google.genai import types
 
-        with open(audio_path, "rb") as f:
-            audio_bytes = f.read()
-
-        ext = os.path.splitext(audio_path)[1].lower()
         mime_map = {".ogg": "audio/ogg", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4"}
         mime = mime_map.get(ext, "audio/ogg")
 
         async def _transcribe_call(client: Any) -> str:
             audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime)
-            prompt = "Transkripsikan isi rekaman suara ini secara akurat kata per kata dalam teks. Jangan tambahkan komentar atau penjelasan, cukup kembalikan teks hasil transkripsi ucapan."
-            from tools.vision_tools import _resolve_vision_model
-            response = await client.aio.models.generate_content(
-                model=_resolve_vision_model(),
-                contents=[audio_part, prompt],
-                config=types.GenerateContentConfig(temperature=0.1, max_output_tokens=1024)
-            )
-            return response.text or ""
+            prompt = "Transkripsikan isi rekaman suara ini secara akurat kata per kata dalam teks. Keluarkan hanya teks hasil transkripsi ucapan."
+            for m_candidate in ["gemini-3.6-flash", "gemini-3.0-flash", "gemini-2.5-flash"]:
+                try:
+                    response = await client.aio.models.generate_content(
+                        model=m_candidate,
+                        contents=[audio_part, prompt],
+                        config=types.GenerateContentConfig(temperature=0.0, max_output_tokens=256)
+                    )
+                    if response and response.text:
+                        return response.text
+                except Exception as m_err:
+                    _log.debug(f"[AudioSTT] Candidate '{m_candidate}' tried: {m_err}")
+            return ""
 
         text = await key_manager.execute_with_failover(_transcribe_call)
         clean = text.strip() if text else ""
         if clean and not is_stt_hallucination(clean):
+            _log.info(f"[AudioSTT] Successfully transcribed via Google GenAI key pool: '{clean}'")
             return clean
-        return clean or None
-    except Exception as e:
-        _log.warning(f"[AudioSTT] Audio transcription error: {e}")
+    except Exception as e_t2:
+        _log.debug(f"[AudioSTT] Tier 2 Google GenAI fallback notice: {e_t2}")
+
+    return None
+
+
+def filter_tts_speech_text(text: str) -> str:
+    """
+    Cleans text intended for Text-to-Speech (TTS) / Gemini Live voice synthesis (Hermes Parity).
+    Strips raw code blocks, file paths, URLs, markdown symbols, and technical syntax
+    so that voice synthesis speaks pure conversational narration without reading out code.
+    """
+    if not text:
+        return ""
+
+    import re
+    s = text
+
+    # 1. Remove entire fenced code blocks (```shell ... ```)
+    s = re.sub(r"```[\s\S]*?```", "", s)
+
+    # 2. Remove inline code snippets (`...`)
+    s = re.sub(r"`[^`]*`", "", s)
+
+    # 3. Remove HTML tags
+    s = re.sub(r"<[^>]+>", "", s)
+
+    # 4. Remove URLs
+    s = re.sub(r"https?://\S+", "", s)
+
+    # 5. Remove long file paths (e.g. C:/Users/... or /home/...)
+    s = re.sub(r"[A-Za-z]:[\\/][^\s,]+", "berkas terkait", s)
+    s = re.sub(r"/(?:[a-zA-Z0-9_\-]+/)+[a-zA-Z0-9_\-\.]+", "berkas terkait", s)
+
+    # 6. Remove markdown formatting markers (*, #, _, ~, [ ])
+    s = re.sub(r"[*_~#]", "", s)
+    s = re.sub(r"\[[ xX]\]", "", s)
+    s = re.sub(r"^[ \t]*[-•][ \t]*", "", s, flags=re.MULTILINE)
+
+    # 7. Normalize excess whitespace and line breaks
+    s = re.sub(r"\n+", ". ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+
+    if not s or len(s) < 3:
+        return "Tindakan teknis telah selesai diproses."
+
+    return s
+
+
+async def synthesize_speech_audio(
+    text: str,
+    output_path: Optional[str] = None,
+    voice: str = "id-ID-GadisNeural"
+) -> Optional[str]:
+    """
+    Synthesizes conversational text into high-quality audio file for Telegram voice notes,
+    WhatsApp PTT, Discord, and Slack (Hermes Parity).
+    Uses Edge-TTS Neural Voice (free, natural Indonesian) with automatic failover.
+    """
+    clean = filter_tts_speech_text(text)
+    if not clean or len(clean) < 2:
         return None
+
+    import os
+    import uuid
+    from pathlib import Path
+    from constants import get_anara_cache_dir
+
+    if not output_path:
+        cache_dir = get_anara_cache_dir("voice_notes")
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        out_f = cache_dir / f"anara_voice_{uuid.uuid4().hex[:8]}.mp3"
+        target_path = str(out_f)
+    else:
+        target_path = os.path.abspath(os.path.expanduser(output_path))
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+
+    # 1. Edge-TTS Primary Synthesizer
+    try:
+        import edge_tts
+        communicate = edge_tts.Communicate(clean, voice)
+        await communicate.save(target_path)
+        if os.path.isfile(target_path) and os.path.getsize(target_path) > 500:
+            return target_path
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"[TTS] Edge-TTS error: {e}")
+
+    # 2. Google GenAI / Gemini Speech Synthesizer Failover
+    try:
+        from core import key_manager
+        client = key_manager.get_client()
+        if client:
+            from google.genai import types
+            audio_resp = await client.aio.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=f"Ucapkan kalimat ini secara alami dalam bahasa Indonesia: {clean}",
+                config=types.GenerateContentConfig(
+                    response_modalities=["AUDIO"],
+                    speech_config=types.SpeechConfig(
+                        voice_config=types.VoiceConfig(
+                            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Puck")
+                        )
+                    )
+                )
+            )
+            for part in audio_resp.candidates[0].content.parts:
+                if getattr(part, "inline_data", None) and part.inline_data.data:
+                    with open(target_path, "wb") as fh:
+                        fh.write(part.inline_data.data)
+                    return target_path
+    except Exception as e_genai:
+        import logging
+        logging.getLogger(__name__).debug(f"[TTS] Google Audio failover notice: {e_genai}")
+
+    return None
+
+
 
 

@@ -9,6 +9,7 @@ from .skill_extractor import SkillExtractor
 from .skill_library import SkillLibraryManager, skill_library
 from .sandbox import CommandSandbox, command_sandbox, get_sanitized_environment, check_command_safety
 from .security import check_prompt_injection, is_authorized_approver
+from .session_manager import ActionState, PendingAction, session_state_manager
 from .autonomous_engine import (
     AutonomousEngine,
     autonomous_engine,
@@ -19,12 +20,33 @@ from .channel_adapter import (
     ChannelResponse,
     process_channel_request,
     resolve_pending_plan_callback,
+    UniversalChannelAdapter,
+    BaseChannelPresenter,
+    generate_dynamic_action_rationale,
+    synthesize_action_rationale,
 )
 from .plan_detector import (
     needs_plan,
     is_explicit_plan_approval,
+    classify_approval_intent,
+    smart_evaluate_command_safety,
     detect_tools_from_text,
     get_highest_risk,
+)
+from .command_hub import (
+    handle_channel_command,
+    get_chat_voice_mode,
+    set_chat_voice_mode,
+    command_hub,
+    CommandButton,
+    UniversalCommandContext,
+    UniversalCommandResponse,
+    UnifiedCommandHub,
+)
+from .runner import (
+    AnaraExecutionRunner,
+    TurnEvent,
+    AgentTurnResult,
 )
 
 __all__ = [
@@ -56,8 +78,25 @@ __all__ = [
     "ChannelResponse",
     "process_channel_request",
     "resolve_pending_plan_callback",
+    "UniversalChannelAdapter",
+    "BaseChannelPresenter",
+    "generate_dynamic_action_rationale",
+    "synthesize_action_rationale",
     "needs_plan",
     "is_explicit_plan_approval",
+    "classify_approval_intent",
+    "smart_evaluate_command_safety",
     "detect_tools_from_text",
     "get_highest_risk",
+    "handle_channel_command",
+    "get_chat_voice_mode",
+    "set_chat_voice_mode",
+    "command_hub",
+    "CommandButton",
+    "UniversalCommandContext",
+    "UniversalCommandResponse",
+    "UnifiedCommandHub",
+    "AnaraExecutionRunner",
+    "TurnEvent",
+    "AgentTurnResult",
 ]

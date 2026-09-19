@@ -91,35 +91,6 @@ def is_authorized_approver(user_id: str, plan_owner_id: str, channel: str = "tel
     return False
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Secret Redaction & Gateway Security
-# ─────────────────────────────────────────────────────────────────────────────
-
-SECRET_PATTERNS = [
-    (re.compile(r"sk-(?:proj-)?[A-Za-z0-9_-]{32,}"), "[REDACTED_OPENAI_KEY]"),
-    (re.compile(r"sk-ant-[A-Za-z0-9_-]{30,}"), "[REDACTED_ANTHROPIC_KEY]"),
-    (re.compile(r"AIzaSy[A-Za-z0-9_-]{33}"), "[REDACTED_GOOGLE_KEY]"),
-    (re.compile(r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b"), "[REDACTED_TELEGRAM_TOKEN]"),
-    (re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,}"), "[REDACTED_GITHUB_TOKEN]"),
-    (re.compile(r"eyJ[A-Za-z0-9_-]{20,}\.eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}"), "[REDACTED_JWT_TOKEN]"),
-    (re.compile(r"-----BEGIN (?:[A-Z ]+)?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z ]+)?PRIVATE KEY-----"), "[REDACTED_PRIVATE_KEY]"),
-]
-
-
-def redact_sensitive_text(val: Any) -> Any:
-    """Scrubs API keys, passwords, and tokens before sending to LLM or logs."""
-    if isinstance(val, str):
-        res = val
-        for pat, replacement in SECRET_PATTERNS:
-            res = pat.sub(replacement, res)
-        return res
-    if isinstance(val, dict):
-        return {k: redact_sensitive_text(v) for k, v in val.items()}
-    if isinstance(val, list):
-        return [redact_sensitive_text(item) for item in val]
-    return val
-
-
 import hashlib
 import hmac
 import time

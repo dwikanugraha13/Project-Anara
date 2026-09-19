@@ -1,6 +1,13 @@
 from .events import register_agent_event_listener, _emit_agent_event
 from .base import anara_tool, extract_schema_from_callable
-from .loopbreaker import AnaraLoopBreaker
+from .self_correction import (
+    AnaraLoopBreaker,
+    ContextMicroCompactor,
+    ErrorClassifier,
+    SelfCorrectionTracker,
+    format_recovery_guidance,
+    format_graceful_diagnostic_card,
+)
 from .vision_tools import _tool_vision_analyze, _tool_video_analyze
 from .catalog import (
     ANARA_FUNCTION_DECLARATIONS,
@@ -15,6 +22,7 @@ from .catalog import (
     get_tools_catalog,
     dispatch_tool_call,
     generate_text_response_with_tools,
+    _normalize_tool_args,
 )
 
 __all__ = [
@@ -23,6 +31,11 @@ __all__ = [
     "anara_tool",
     "extract_schema_from_callable",
     "AnaraLoopBreaker",
+    "ContextMicroCompactor",
+    "ErrorClassifier",
+    "SelfCorrectionTracker",
+    "format_recovery_guidance",
+    "format_graceful_diagnostic_card",
     "_tool_vision_analyze",
     "_tool_video_analyze",
     "ANARA_FUNCTION_DECLARATIONS",
@@ -37,4 +50,5 @@ __all__ = [
     "get_tools_catalog",
     "dispatch_tool_call",
     "generate_text_response_with_tools",
+    "_normalize_tool_args",
 ]

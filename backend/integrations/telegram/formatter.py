@@ -101,13 +101,13 @@ def format_telegram_html(text: str) -> str:
 
     s = re.sub(r"`([^`\n]+)`", _cb_inline, s)
 
-    # Protect existing valid Telegram HTML tags
+    # Protect existing valid Telegram HTML tags (including attributes like class, href, expandable)
     valid_tags = []
     def _cb_tag(m):
         valid_tags.append(m.group(0))
         return f"___VALID_TAG_{len(valid_tags)-1}___"
 
-    tag_pat = r"</?(?:b|i|u|s|code|pre|blockquote|a|tg-spoiler)(?:\s+(?:href=[\"\'][^\"\']*[\"\']|expandable))?\s*/?>"
+    tag_pat = r"</?(?:b|i|u|s|code|pre|blockquote|a|tg-spoiler)(?:\s+[^>]*)?>"
     s = re.sub(tag_pat, _cb_tag, s, flags=re.IGNORECASE)
 
     # Escape remaining HTML entities (&, <, >)

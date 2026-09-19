@@ -147,7 +147,23 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                 await edit_telegram_message(chat_id=chat_id, message_id=message_id, text=confirm_text)
             return
 
-        # Case D: Interactive Question Wizard Answer
+        # Case D: Selected Voice Mode (/voice)
+        if cb_data.startswith("vmode:"):
+            target_mode = cb_data.split(":", 1)[1]
+            from core.command_hub import set_chat_voice_mode, VOICE_MODE_LABELS
+            new_m = set_chat_voice_mode("telegram", chat_id, target_mode)
+            lbl = VOICE_MODE_LABELS.get(new_m, new_m)
+            await answer_telegram_callback_query(cb_id, text=f"Mode suara: {new_m}")
+            if message_id:
+                await edit_telegram_message(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text=f"✅ <b>Mode Suara Berhasil Diperbarui!</b>\n\nMode aktif di chat ini:\n<b>{lbl}</b>",
+                    reply_markup=None
+                )
+            return
+
+        # Case E: Interactive Question Wizard Answer
         if cb_data.startswith("qans:"):
             parts = cb_data.split(":")
             if len(parts) >= 4:
@@ -205,9 +221,16 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                     await edit_telegram_message(chat_id=chat_id, message_id=message_id, text=skip_msg, reply_markup=None)
             return
 
-        # Case F: Plan Approval
-        if ":" in cb_data:
-            action, plan_id = cb_data.split(":", 1)
+        # Case F: Plan & Action Approval (Hermes Decoupled State Machine)
+        if ":" in cb_data and (cb_data.startswith("approve:") or cb_data.startswith("reject:") or cb_data.startswith("appr:")):
+            if cb_data.startswith("appr:"):
+                parts = cb_data.split(":")
+                action = parts[2] if len(parts) >= 3 else "approve"
+                plan_id = parts[1]
+            else:
+                action, plan_id = cb_data.split(":", 1)
+
+            action = "approve" if action in ("approve", "yes", "setujui") else "reject"
             await answer_telegram_callback_query(cb_id, text=f"Memproses {action}...")
 
             pending = resolve_pending_plan_callback(plan_id, action, user_id)
@@ -222,16 +245,16 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                         return
 
                     if message_id:
-                        plan_display = pending.get("plan_text", "").split("\n<i>Apakah")[0].strip()
+                        plan_display = pending.get("lead_narration") or pending.get("plan_text", "").split("\n<i>Apakah")[0].strip()
                         await edit_telegram_message(
                             chat_id=chat_id,
                             message_id=message_id,
-                            text=f"{plan_display}\n\n<i>[✓ Rencana disetujui — sedang dieksekusi di PC...]</i>",
+                            text=f"{plan_display}\n\n<i>[✓ Disetujui — sedang dieksekusi di PC...]</i>",
                             reply_markup=None
                         )
 
                     req = ChannelRequest(
-                        text=f"Eksekusi rencana: {pending['original_prompt']}",
+                        text=f"Eksekusi: {pending.get('original_prompt') or pending.get('tool_name')}",
                         channel="telegram",
                         channel_id=chat_id,
                         user_id=user_id,
@@ -257,28 +280,36 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                     except asyncio.CancelledError:
                         await status_tracker.cleanup()
                         logger.info(f"[TelegramService] Build mode execution in chat {chat_id} was stopped.")
-                        await send_telegram_message(text="🛑 <b>Eksekusi Build Mode telah dihentikan via /stop.</b>", chat_id=chat_id)
+                        await send_telegram_message(text="🛑 <b>Eksekusi telah dihentikan via /stop.</b>", chat_id=chat_id)
                     except Exception as exec_err:
                         await status_tracker.cleanup()
                         logger.error(f"[TelegramService] Build mode execution error: {exec_err}", exc_info=True)
-                        await send_telegram_message(text=f"⚠️ <b>Gagal mengeksekusi rencana:</b> {str(exec_err)}", chat_id=chat_id)
+                        await send_telegram_message(text=f"⚠️ <b>Gagal mengeksekusi:</b> {str(exec_err)}", chat_id=chat_id)
                     finally:
                         await status_tracker.cleanup()
                         if _ACTIVE_CHAT_TASKS.get(chat_id) is current_task:
                             _ACTIVE_CHAT_TASKS.pop(chat_id, None)
                 else:
-                    await send_telegram_message(text="⚠️ Rencana telah kedaluwarsa atau sedang/sudah diproses.", chat_id=chat_id)
+                    if message_id:
+                        await edit_telegram_message(
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            text="⏱️ <b>Rencana tindakan telah kedaluwarsa</b> (melebihi batas waktu 5 menit). Seluruh ingatan dan konteks obrolan tetap tersimpan aman.",
+                            reply_markup=None
+                        )
+                    else:
+                        await send_telegram_message(text="⏱️ <b>Rencana tindakan telah kedaluwarsa</b> (melebihi batas waktu 5 menit).", chat_id=chat_id)
             else:
                 if message_id:
                     await edit_telegram_message(
                         chat_id=chat_id,
                         message_id=message_id,
-                        text="❌ <b>Rencana dibatalkan.</b> Tidak ada perubahan yang dilakukan.",
+                        text="❌ <b>Tindakan dibatalkan.</b> Tidak ada perubahan yang dilakukan.",
                         reply_markup=None
                     )
                 else:
-                    await send_telegram_message(text="❌ Rencana dibatalkan. Tidak ada perubahan yang dilakukan.", chat_id=chat_id)
-        return
+                    await send_telegram_message(text="❌ Tindakan dibatalkan. Tidak ada perubahan yang dilakukan.", chat_id=chat_id)
+            return
 
     # ── 2. Handle Text Messages, Documents, Photos & Slash Commands ──
     msg = u.get("message") or u.get("edited_message")
@@ -428,8 +459,11 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                 reply_context = f"[KONTEKS: PENGGUNA MEMBALAS/MEREPLY PESAN DARI {r_sender_name.upper()}]:\n\"{quoted_body}\"\n\n"
 
         if incoming_attachments:
+            voice_att = next((att for att in incoming_attachments if att.get("type") in ("voice", "audio")), None)
+            doc_attachments = [att for att in incoming_attachments if att.get("type") not in ("voice", "audio")]
+
             att_info = []
-            for att in incoming_attachments:
+            for att in doc_attachments:
                 att_info.append(
                     f"[BERKAS DILAMPIRKAN DARI TELEGRAM]:\n"
                     f"- Nama Berkas: {att['file_name']}\n"
@@ -444,18 +478,24 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                     except Exception:
                         pass
             att_header = "\n".join(att_info)
-            voice_att = next((att for att in incoming_attachments if att.get("type") in ("voice", "audio")), None)
+
             if voice_att:
                 from cognition.audio import transcribe_audio_file
                 voice_transcript = await transcribe_audio_file(voice_att["local_path"])
-                if voice_transcript:
-                    text = f"{voice_transcript}\n\n<i>[Transkripsi Pesan Suara Telegram]:\n{att_header}</i>"
+                if voice_transcript and voice_transcript.strip():
+                    text = voice_transcript.strip()
+                    if att_header:
+                        text = f"{text}\n\n{att_header}"
                 else:
-                    text = f"[Pesan suara masuk]\n\n{att_header}"
+                    await send_telegram_message(
+                        chat_id=chat_id,
+                        text="🎙️ <i>Maaf, pesan suara tidak dapat ditranskripsikan. Pastikan provider atau model yang aktif mendukung input audio, atau silakan kirim perintah dalam teks.</i>"
+                    )
+                    return
             elif raw_text:
-                text = f"{raw_text}\n\n{att_header}"
+                text = f"{raw_text}\n\n{att_header}" if att_header else raw_text
             else:
-                text = f"Tolong proses berkas yang saya kirimkan ini:\n\n{att_header}"
+                text = f"Tolong proses berkas yang saya kirimkan ini:\n\n{att_header}" if att_header else ""
         else:
             text = raw_text
 
@@ -489,16 +529,32 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
 
         # ── 3. Handle Commands & Standard Requests via Unified Dispatcher ──
         if text.strip().lower().startswith(("/stop", "/cancel", "/abort", "/batal")):
-            active_task = _ACTIVE_CHAT_TASKS.get(chat_id)
+            from core.session_manager import session_state_manager
+            interrupt_info = await session_state_manager.request_hard_interrupt("telegram", chat_id, reason="telegram_stop")
+            active_task = _ACTIVE_CHAT_TASKS.pop(chat_id, None)
             if active_task and not active_task.done():
                 active_task.cancel()
-                _ACTIVE_CHAT_TASKS.pop(chat_id, None)
 
             for q_id, q_data in list(_PENDING_TELEGRAM_QUESTIONS.items()):
                 if q_data.get("chat_id") == chat_id:
                     from tools.events import resolve_question_response
                     resolve_question_response(q_id, None, dismissed=True)
                     _PENDING_TELEGRAM_QUESTIONS.pop(q_id, None)
+
+            details = []
+            if interrupt_info.get("task_cancelled"):
+                details.append("eksekusi tugas dibatalkan")
+            if interrupt_info.get("processes_killed", 0) > 0:
+                details.append(f"{interrupt_info['processes_killed']} subproses OS dihentikan")
+            if interrupt_info.get("pending_cleared"):
+                details.append("rencana tertahan dibersihkan")
+            detail_str = f" ({', '.join(details)})" if details else ""
+
+            await send_telegram_message(
+                text=f"🛑 <b>Tugas agen telah dihentikan via /stop.</b>{detail_str}",
+                chat_id=chat_id
+            )
+            return
 
         req = ChannelRequest(
             text=text,
@@ -516,12 +572,53 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
             _ACTIVE_CHAT_TASKS[chat_id] = current_task
 
         try:
+            await status_tracker.update("⚙️ Sedang menganalisis & merumuskan langkah... [Langkah 1]")
             res = await process_channel_request(req, progress_callback=status_tracker.update)
             await status_tracker.cleanup()
 
-            if res.plan_pending and res.plan_id:
-                await send_telegram_plan_proposal(chat_id=chat_id, plan_text=res.text, plan_id=res.plan_id)
-            elif res.text:
+            from core.command_hub import get_chat_voice_mode
+            voice_mode = get_chat_voice_mode("telegram", chat_id)  # 'text', 'only', 'both', 'auto'
+            is_voice_turn = any(att.get("type") in ("voice", "audio") for att in incoming_attachments)
+
+            # ALL slash commands (e.g. /voice, /model, /help) and UI button responses are ALWAYS delivered as text/UI, NEVER voice!
+            is_command_or_ui = getattr(res, "is_command", False) or text.strip().startswith("/") or bool(res.reply_markup) or res.plan_pending
+
+            should_send_voice = False
+            if not is_command_or_ui:
+                if voice_mode in ("only", "both"):
+                    should_send_voice = True
+                elif voice_mode == "auto":
+                    should_send_voice = is_voice_turn
+
+            voice_sent = False
+            if should_send_voice and res.text:
+                try:
+                    from cognition.audio import synthesize_speech_audio
+                    from .client import send_telegram_voice
+                    voice_file = await synthesize_speech_audio(res.text)
+                    if voice_file:
+                        await send_telegram_voice(file_path=voice_file, chat_id=chat_id)
+                        voice_sent = True
+                except Exception as v_err:
+                    logger.warning(f"[TelegramVoice] Error sending voice note: {v_err}")
+
+            should_send_text = (voice_mode != "only") or not voice_sent or is_command_or_ui
+
+            if res.plan_pending:
+                markup = res.reply_markup
+                if not markup and res.plan_id:
+                    from core.channel_adapter import UniversalChannelAdapter
+                    from core.session_manager import session_state_manager
+                    p = session_state_manager.get_pending_by_id(res.plan_id)
+                    if p:
+                        rendered = UniversalChannelAdapter.render_approval_payload("telegram", res.text, p)
+                        markup = rendered.get("reply_markup")
+                        res.text = rendered.get("text") or res.text
+                if not markup and res.plan_id:
+                    await send_telegram_plan_proposal(chat_id=chat_id, plan_text=res.text, plan_id=res.plan_id)
+                else:
+                    await send_telegram_message(text=res.text, chat_id=chat_id, reply_markup=markup)
+            elif res.text and should_send_text:
                 await send_telegram_message(text=res.text, chat_id=chat_id, reply_markup=res.reply_markup)
         except asyncio.CancelledError:
             await status_tracker.cleanup()

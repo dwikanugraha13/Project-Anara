@@ -20,25 +20,15 @@ async def _tool_execute_cli_command(command: str, workdir: Optional[str] = None)
     if not cmd:
         return {"status": "error", "message": "Perintah terminal kosong"}
 
-    cmd_lower = cmd.lower()
-    dangerous_patterns = [
-        r"\brm\s+-[rf]{1,2}\s+[/~]",
-        r"\brmdir\s+/[sq]\s+[a-z]:\\",
-        r"\bdel\s+/[fs]\s+[a-z]:\\",
-        r"\bformat\s+[a-z]:",
-        r"\bdiskpart\b",
-        r"\bdrop\s+database\b",
-        r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;",
-        r"\bshutdown\b",
-        r"\breboot\b",
-    ]
-    for dp in dangerous_patterns:
-        if re.search(dp, cmd_lower):
-            logger.warning(f"[High-Risk Guard] Blocked potentially destructive command: {cmd}")
-            return {
-                "status": "error",
-                "message": f"DITOLAK SISTEM KEAMANAN ANARA: Perintah '{cmd}' terdeteksi berisiko tinggi terhadap integritas sistem operasi."
-            }
+    # Dynamic pre-flight validation via Sandbox Security Engine (Single Source of Truth)
+    from core.sandbox import check_command_safety
+    is_safe, denial_reason = check_command_safety(cmd)
+    if not is_safe:
+        logger.warning(f"[High-Risk Guard] Blocked potentially destructive command: {cmd}")
+        return {
+            "status": "error",
+            "message": denial_reason or f"DITOLAK SISTEM KEAMANAN ANARA: Perintah '{cmd}' terdeteksi berisiko tinggi."
+        }
 
     # Windows 11 Compatibility: auto-translate deprecated WMIC syntax to modern PowerShell CIM cmdlets
     if os.name == "nt":
@@ -83,12 +73,13 @@ async def _tool_execute_cli_command(command: str, workdir: Optional[str] = None)
             "icon": "terminal"
         })
 
+        from tools.output_manager import compact_tool_output
         return {
             "status": "success" if is_ok else "error",
             "return_code": return_code,
             "working_directory": cwd,
             "sandboxed": True,
-            "output": combined[:4000]
+            "output": compact_tool_output(combined, max_lines=60, max_chars=4000, source_label="cli_output")
         }
     except Exception as e:
         logger.warning(f"[AgentTools] CLI exec error: {e}")

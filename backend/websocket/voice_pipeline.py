@@ -33,8 +33,6 @@ ENROLLMENT_PROMPTS = [
     "Tolong bantu aku menyelesaikan tugas dan pekerjaan ya."
 ]
 
-CONFIRM_YES = ("ya", "iya", "oke", "ok", "lanjut", "siap", "boleh", "yup", "yes", "mau")
-CONFIRM_NO = ("batal", "tidak", "jangan", "nggak", "gak", "nanti", "skip", "stop")
 
 def clean_transcript_text(text: str) -> str:
     """Removes common markdown and formatting noise from STT output."""
@@ -216,8 +214,9 @@ class VoicePipeline:
 
         if stage == "awaiting_confirmation":
             u_text = await self.stt_transcribe(audio_pcm)
-            clean_words = (u_text or "").lower().split()
-            if any(w in clean_words for w in CONFIRM_NO):
+            from core.plan_detector import classify_approval_intent
+            spoken_intent = await classify_approval_intent(u_text or "", f"Konfirmasi kalibrasi suara untuk {sp_name}")
+            if spoken_intent == "reject":
                 self.voice_enrollment = None
                 reply = f"Baik {sp_name}, kalibrasi dibatalkan. Kita lanjut ngobrol seperti biasa ya!"
                 if live_svc:
@@ -226,7 +225,7 @@ class VoicePipeline:
                 await self.websocket.send_json({"type": "transcript", "data": reply, "speaker": "output"})
                 self.log_turn(user_text=u_text, ai_text=reply, speaker_name=self.get_current_speaker())
                 return
-            elif any(w in clean_words for w in CONFIRM_YES):
+            elif spoken_intent == "approve":
                 self.voice_enrollment["stage"] = "recording"
                 self.voice_enrollment["round"] = 0
                 self.voice_enrollment["last_ts"] = _time.time()
@@ -357,6 +356,93 @@ class VoicePipeline:
         ))
 
         live_svc = self.get_gemini_service()
+
+        # ── VOICE PASS-THROUGH APPROVAL (Hands-Free Hermes Parity) ──
+        from core.session_manager import session_state_manager, ActionState
+        from core.plan_detector import is_explicit_plan_approval
+
+        pending_act = (
+            session_state_manager.get_pending("voice", "default")
+            or session_state_manager.get_pending("voice_hud", "default")
+            or session_state_manager.get_pending("web_studio", "default")
+        )
+        if not pending_act:
+            from core.agent import anara_agent
+            cur_sid = anara_agent.get_active_session_id()
+            if cur_sid:
+                pending_act = (
+                    session_state_manager.get_pending("voice", str(cur_sid))
+                    or session_state_manager.get_pending("voice_hud", str(cur_sid))
+                    or session_state_manager.get_pending("web_studio", str(cur_sid))
+                )
+
+        if pending_act and pending_act.is_expired:
+            session_state_manager.resolve_action(pending_act.channel, pending_act.channel_id, pending_act.action_id, ActionState.EXPIRED)
+            pending_act = None
+
+        u_text_clean = u_text.strip().lower()
+        from core.plan_detector import classify_approval_intent
+        plan_ctx = pending_act.plan_text if pending_act else ""
+        spoken_intent = await classify_approval_intent(u_text_clean, plan_ctx)
+        is_approval = (spoken_intent == "approve")
+        is_cancel = (spoken_intent == "reject")
+
+        if pending_act and is_approval:
+            logger.info(f"[VoicePipeline] Spoken approval detected for pending action #{pending_act.action_id} ('{u_text}'). Executing...")
+            session_state_manager.resolve_action(pending_act.channel, pending_act.channel_id, pending_act.action_id, ActionState.EXECUTING)
+            if live_svc:
+                await live_svc.interrupt()
+                await live_svc.send_text("Sistem: Katakan singkat dengan mantap: Baik, tindakan disetujui. Sedang dieksekusi sekarang.")
+
+            await self.websocket.send_json({
+                "type": "transcript",
+                "data": "Baik, tindakan disetujui. Sedang dieksekusi sekarang.",
+                "speaker": "output",
+                "is_final": True
+            })
+
+            from core.runner import AnaraExecutionRunner
+            runner = AnaraExecutionRunner(
+                session_id=pending_act.session_id,
+                speaker_name=current_speaker_name,
+                platform="voice",
+            )
+            exec_res = await runner.execute_turn(
+                user_message=f"Eksekusi tindakan: {pending_act.original_prompt or pending_act.tool_name}",
+                requested_mode="build"
+            )
+            session_state_manager.resolve_action(pending_act.channel, pending_act.channel_id, pending_act.action_id, ActionState.EXECUTED)
+
+            from cognition.audio import filter_tts_speech_text
+            spoken_summary = filter_tts_speech_text(exec_res.text)
+            if live_svc:
+                await live_svc.send_text(f"Sistem: Jelaskan hasil eksekusi ini kepada pengguna dengan ramah dan ringkas: {spoken_summary}")
+
+            await self.websocket.send_json({
+                "type": "transcript",
+                "data": exec_res.text,
+                "speaker": "output",
+                "is_final": True
+            })
+            self.log_turn(user_text=u_text, ai_text=exec_res.text, speaker_name=current_speaker_name)
+            return
+
+        elif pending_act and is_cancel:
+            logger.info(f"[VoicePipeline] Spoken cancellation for pending action #{pending_act.action_id}.")
+            session_state_manager.resolve_action(pending_act.channel, pending_act.channel_id, pending_act.action_id, ActionState.REJECTED)
+            cancel_msg = "Baik, tindakan telah dibatalkan. Tidak ada perubahan yang dilakukan."
+            if live_svc:
+                await live_svc.interrupt()
+                await live_svc.send_text(f"Sistem: Ucapkan singkat dan ramah: {cancel_msg}")
+
+            await self.websocket.send_json({
+                "type": "transcript",
+                "data": cancel_msg,
+                "speaker": "output",
+                "is_final": True
+            })
+            self.log_turn(user_text=u_text, ai_text=cancel_msg, speaker_name=current_speaker_name)
+            return
 
         if is_briefing_request(u_text) and not self.dance_blocked():
             logger.info(f"[Briefing] Request detected: {u_text!r}")

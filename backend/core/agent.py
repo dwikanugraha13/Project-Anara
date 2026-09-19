@@ -65,6 +65,24 @@ class AnaraAgent:
                 pass
         return False
 
+    @classmethod
+    def get_project_repo_root(cls) -> str:
+        """Dynamically locates the root directory of the active project repository (Hermes Parity)."""
+        cwd = os.path.abspath(os.getcwd())
+        curr = cwd
+        while True:
+            if os.path.isdir(os.path.join(curr, ".git")):
+                return curr
+            parent = os.path.dirname(curr)
+            if parent == curr:
+                break
+            curr = parent
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        for cand in [base, os.path.dirname(base)]:
+            if os.path.isdir(os.path.join(cand, ".git")):
+                return os.path.abspath(cand)
+        return cwd
+
     def get_session_dir(self, session_id: Optional[int] = None) -> str:
         """Returns the active external folder, or isolated temporary directory, strictly for a session."""
         effective_sid = session_id if session_id is not None else self._active_session_id
@@ -81,7 +99,7 @@ class AnaraAgent:
                 sess = memory_engine.get_session(effective_sid)
                 if sess and sess.get("workspace_info"):
                     stored_path = sess["workspace_info"].get("root_path")
-                    if stored_path and sess["workspace_info"].get("is_external") and os.path.isdir(stored_path):
+                    if stored_path and os.path.isdir(stored_path):
                         self._session_active_paths[effective_sid] = stored_path
                         name = sess["workspace_info"].get("name")
                         if name:
@@ -90,7 +108,13 @@ class AnaraAgent:
             except Exception:
                 pass
 
-            # 3. Dedicated clean session workspace folder
+            # 3. Dynamic Hermes Parity: Omni-channel sessions (Telegram, WA, Discord, Web Chat)
+            # automatically connect to the active project repository root rather than an empty isolated void
+            repo_root = self.get_project_repo_root()
+            if os.path.isdir(repo_root):
+                return repo_root
+
+            # 4. Dedicated clean session workspace folder
             s_dir = os.path.join(self.base_workspace_path, f"session_{effective_sid}")
             os.makedirs(s_dir, exist_ok=True)
             return s_dir
@@ -98,6 +122,10 @@ class AnaraAgent:
         active_path = self._session_active_paths.get(0)
         if active_path and os.path.isdir(active_path):
             return active_path
+
+        repo_root = self.get_project_repo_root()
+        if os.path.isdir(repo_root):
+            return repo_root
 
         s_dir = os.path.join(self.base_workspace_path, "default")
         os.makedirs(s_dir, exist_ok=True)
@@ -326,8 +354,9 @@ class AnaraAgent:
     def get_workspace_tree(self, session_id: Optional[int] = None) -> Dict[str, Any]:
         """Returns both flat file items and recursive nested folder tree of active workspace for a session."""
         effective_sid = session_id if session_id is not None else self._active_session_id
+        target_dir = self.get_session_dir(effective_sid)
 
-        if effective_sid is None and (0 not in self._session_active_paths and 0 not in self._session_custom_names):
+        if not target_dir or not os.path.isdir(target_dir):
             return {
                 "workspace_name": "Project Workspace",
                 "root_path": "",
@@ -338,8 +367,7 @@ class AnaraAgent:
             }
 
         items = []
-        target_dir = self.get_session_dir(effective_sid)
-        custom_name = self._session_custom_names.get(effective_sid if effective_sid is not None else 0)
+        custom_name = self._session_custom_names.get(effective_sid if effective_sid is not None else 0) or os.path.basename(target_dir.rstrip("\\/"))
         
         # If no custom name yet, try looking up from database
         if not custom_name and effective_sid is not None:

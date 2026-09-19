@@ -113,8 +113,14 @@ async def _tool_read_local_file(file_path: str, offset: Optional[int] = None, li
     try:
         target_file = _resolve_local_file_path(path)
         if not target_file:
-            res_msg = f"File '{os.path.basename(path)}' tidak ditemukan di path komputer."
-            return {"status": "error", "message": res_msg}
+            res_msg = f"File '{os.path.basename(path)}' tidak ditemukan di path komputer. Periksa path berkas atau gunakan 'glob_find_files' / 'list_directory' untuk mencarinya."
+            return {
+                "status": "not_found",
+                "is_error": False,
+                "file_name": os.path.basename(path),
+                "message": res_msg,
+                "content": f"[Observation: {res_msg}]"
+            }
 
         ext = os.path.splitext(target_file)[1].lower()
         if ext == ".pdf":
@@ -392,6 +398,86 @@ async def _tool_write_local_file(file_path: str, content: str) -> Dict[str, Any]
     except Exception as e:
         logger.warning(f"[AgentTools] Write file error: {e}")
         return {"status": "error", "message": str(e)}
+
+
+async def _tool_delete_local_file(file_path: str) -> Dict[str, Any]:
+    """
+    Safely deletes a specific target file requested by the user.
+    Strictly protects against wildcards (*), directory wipes, and vital system files (Hermes Parity).
+    """
+    raw_path = (file_path or "").strip().strip('"\'')
+    if not raw_path:
+        return {"status": "error", "message": "Path berkas yang akan dihapus tidak boleh kosong."}
+
+    # 1. Blind wildcard & path traversal guard
+    if any(wc in raw_path for wc in ("*", "?", "..")):
+        return {
+            "status": "error",
+            "message": f"Ditolak: Karakter wildcard atau path traversal ('{raw_path}') tidak diizinkan untuk penghapusan."
+        }
+
+    # 2. Critical file immunity
+    norm_path = raw_path.replace("\\", "/").lower()
+    protected_basenames = {".git", "anara_brain.db", ".env"}
+    target_base = os.path.basename(norm_path)
+    if target_base in protected_basenames or "/.git" in norm_path:
+        return {
+            "status": "error",
+            "message": f"Ditolak: Berkas vital sistem '{target_base}' dilindungi dan tidak dapat dihapus."
+        }
+
+    _emit_agent_event("agent_action_start", {
+        "tool_name": "delete_local_file",
+        "action_title": "Menghapus Berkas",
+        "detail": f"File: {target_base}",
+        "icon": "trash"
+    })
+
+    try:
+        from core import anara_agent
+        resolved = _resolve_local_file_path(raw_path)
+        if not resolved or not os.path.exists(resolved):
+            return {"status": "error", "message": f"Berkas '{raw_path}' tidak ditemukan di komputer."}
+
+        if os.path.isdir(resolved):
+            return {"status": "error", "message": f"'{raw_path}' adalah direktori, bukan berkas. Alat ini hanya menghapus berkas tunggal."}
+
+        # Create checkpoint before deletion
+        checkpoint_id = anara_agent.create_checkpoint(None)
+        os.remove(resolved)
+
+        git_commit_sha = anara_agent.record_git_commit(
+            file_path=resolved,
+            message=f"delete {target_base}"
+        )
+
+        _emit_agent_event("agent_action_complete", {
+            "tool_name": "delete_local_file",
+            "action_title": "Berkas Dihapus",
+            "summary": f"Berkas '{target_base}' berhasil dihapus.",
+            "file_path": resolved,
+            "filename": target_base,
+            "checkpoint_id": checkpoint_id,
+            "git_commit": git_commit_sha,
+            "icon": "trash"
+        })
+
+        _emit_agent_event("workspace_file_deleted", {
+            "file_path": resolved,
+            "filename": target_base,
+        })
+
+        return {
+            "status": "success",
+            "message": f"Berkas '{target_base}' berhasil dihapus." + (f" [commit {git_commit_sha}]." if git_commit_sha else "."),
+            "file_path": resolved,
+            "filename": target_base,
+            "checkpoint_id": checkpoint_id,
+            "git_commit": git_commit_sha
+        }
+    except Exception as e:
+        logger.warning(f"[AgentTools] Delete file error: {e}")
+        return {"status": "error", "message": f"Gagal menghapus berkas: {e}"}
 
 
 async def _tool_list_directory(directory_path: Optional[str] = None) -> Dict[str, Any]:

@@ -17,6 +17,78 @@ class PromptAssembler:
     """Orchestrates structured 6-slot system prompt assembly with zero hardcoded constraints."""
 
     @classmethod
+    def probe_git_worktree_snapshot(cls, root_path: str) -> str:
+        """
+        Extracts live, real-time Git status and worktree facts bounded by strict timeouts (Hermes Agent Parity).
+        Provides the ground truth of changed and untracked files so the agent is never blind to local edits.
+        """
+        if not root_path or not os.path.isdir(root_path):
+            return ""
+
+        git_dir = os.path.join(root_path, ".git")
+        if not os.path.isdir(git_dir):
+            return ""
+
+        import subprocess
+        lines = []
+        try:
+            # 1. Branch name
+            b_res = subprocess.run(
+                ["git", "-C", root_path, "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=0.5
+            )
+            branch = b_res.stdout.strip() if b_res.returncode == 0 else "main"
+            lines.append(f"- Git Branch: {branch}")
+
+            # 2. Live Git Status
+            st_res = subprocess.run(
+                ["git", "-C", root_path, "status", "--short"],
+                capture_output=True,
+                text=True,
+                timeout=0.8
+            )
+            if st_res.returncode == 0:
+                raw_st = st_res.stdout.strip()
+                if raw_st:
+                    st_lines = raw_st.splitlines()
+                    preview_st = "\n    ".join(st_lines[:15])
+                    more_cnt = len(st_lines) - 15
+                    more_msg = f"\n    [... {more_cnt} berkas lainnya berubah ...]" if more_cnt > 0 else ""
+                    lines.append(f"- Status Berkas Berubah (Live Ground Truth):\n    {preview_st}{more_msg}")
+                else:
+                    lines.append("- Status Berkas: Bersih (Clean working tree)")
+
+            # 3. Recent commits
+            log_res = subprocess.run(
+                ["git", "-C", root_path, "log", "-3", "--oneline"],
+                capture_output=True,
+                text=True,
+                timeout=0.5
+            )
+            if log_res.returncode == 0 and log_res.stdout.strip():
+                log_lines = "\n    ".join(log_res.stdout.strip().splitlines())
+                lines.append(f"- Commit Terakhir:\n    {log_lines}")
+
+            # 4. Project verify commands
+            verify_cmds = []
+            if os.path.isfile(os.path.join(root_path, "run_tests.py")):
+                verify_cmds.append("python run_tests.py")
+            if os.path.isfile(os.path.join(root_path, "test_general_agent.py")):
+                verify_cmds.append("python test_general_agent.py")
+            if os.path.isfile(os.path.join(root_path, "pytest.ini")) or os.path.isdir(os.path.join(root_path, "backend", "tests")):
+                verify_cmds.append("pytest")
+            if os.path.isfile(os.path.join(root_path, "package.json")):
+                verify_cmds.append("npm test")
+            if verify_cmds:
+                lines.append(f"- Perintah Verifikasi Uji Proyek: {', '.join(verify_cmds)}")
+        except Exception:
+            pass
+
+        return "\n".join(lines)
+
+    @classmethod
     def assemble(
         cls,
         mode: str = "plan",
@@ -74,7 +146,10 @@ Execute the approved plan thoroughly, apply necessary modifications, and report 
         # Slot 3: Tool Guidance & Permission Gate Rules
         slot3_tools = (
             "[PANDUAN PEMANGGILAN ALAT & PERMISSION GATE]:\n"
-            "- Gunakan tools yang tersedia secara mandiri, akurat, dan tepat guna.\n"
+            "- PENALARAN INTENSI PENGGUNA (CONVERSATION VS ACTION — HERMES PARITY): Jika konteks obrolan adalah diskusi konseptual, tanya-jawab arsitektur, atau respons kelanjutan topik (misal 'oke lanjut', 'siap', 'lanjutkan'), jawablah secara MURNI dalam percakapan naratif yang cerdas dan tuntas. Dilarang memanggil alat terminal (seperti pytest, test runner, git) jika pengguna tidak secara eksplisit meminta eksekusi atau pengujian fisik.\n"
+            "- PEMBUKTIAN FAKTA BERBASIS GROUND-TRUTH (HERMES PARITY): Ketika pengguna bertanya apakah suatu implementasi, kode, atau subsistem sudah beres/selesai, DILARANG KERAS berasumsi atau menyimpulkan berdasarkan ingatan percakapan lama. Kamu wajib memverifikasi realitas nyata di repositori saat ini: periksa status berkas Git (terutama berkas baru '??' atau modifikasi 'M' yang tertera di info workspace di bawah), baca berkas implementasi terkini dengan 'read_local_file', dan jalankan perintah verifikasi pengujian proyek ('run_tests.py' / 'pytest') untuk membuktikan kebenaran dengan hasil pengujian nyata.\n"
+            "- INTEGRITAS REPOSITORI & PENGHAPUSAN TERTARGET (HERMES REPO-SAFETY): Workspace aktif adalah repositori kode sumber proyek nyata, BUKAN folder kosong sekali-pakai (disposable scratchpad). DILARANG KERAS menjalankan pembersihan massal sapu-jagat (seperti 'rm -rf *', 'Remove-Item * -Recurse', 'git clean -fdx') atau menimpa arsitektur proyek secara liar. Jika pengguna secara eksplisit meminta menghapus berkas tertentu, gunakan alat 'delete_local_file' secara spesifik dan tertarget pada berkas sasaran tersebut.\n"
+            "- Gunakan tools yang tersedia secara mandiri, akurat, dan tepat guna saat tindakan nyata memang dibutuhkan.\n"
             "- KOMUNIKASI NATURAL & ZERO-CANNED (ANARA STANDARD): Berbicaralah dengan gaya Anara yang cerdas, hangat, luwes, dan lugas sesuai soul.md. DILARANG KERAS mengeluarkan kalimat kalengan pembuka robotik.\n"
             "- PRINSIP KECUKUPAN EKSEKUSI (SUFFICIENT FULFILLMENT PRINCIPLE — ANARA STANDARD): Ketika suatu alat visual atau aksi telah berhasil memenuhi maksud esensial pengguna, segera selesaikan giliran tugas dengan respon akhir yang cerdas dan tuntas. Dilarang memicu eksekusi investigasi sekunder berlebihan kecuali diminta secara eksplisit.\n"
             "- EKSPLORASI BERKAS & FOLDER MANDIRI (AUTONOMI READ-ONLY): Ketika pengguna meminta memeriksa folder, memeriksa berkas yang dipulihkan, atau melihat isi direktori, SELALU UTAMAKAN tools read-only langsung ('list_directory', 'scan_workspace_folder', 'glob_find_files', 'read_local_file') daripada terminal. Tindakan inspeksi atau pembacaan ini sepenuhnya aman dan dapat kamu jalankan langsung secara otonom tanpa meminta persetujuan pengguna.\n"
@@ -114,42 +189,47 @@ Execute the approved plan thoroughly, apply necessary modifications, and report 
                 skill_lines = [f"- **{sk['name']}** ({sk.get('category', 'general')}): {sk.get('description', '')}" for sk in skills_list[:8]]
                 slot6_skills = "[KEAHLIAN & SKILLS AGEN AKTIF (ANARA BRAIN)]:\n" + "\n".join(skill_lines)
 
-        # Slot 7: Project Context & AGENTS.md / Repo Rules
-        slot7_project = ""
-        is_custom = bool(workspace_tree and (workspace_tree.get("is_custom_folder") or workspace_tree.get("is_external")))
-        if workspace_tree and (workspace_tree.get("total_files", 0) > 0 or is_custom):
-            files_preview = ', '.join([f['path'] for f in workspace_tree.get('files', [])[:25]]) or '(Folder kosong siap dibangun)'
-            slot7_project = (
-                "[INFO WORKSPACE: ANARA CODE AKTIF (PROYEK LOKAL TERHUBUNG)]:\n"
-                f"- Nama Project: {workspace_tree.get('workspace_name')}\n"
-                f"- Root Path Fisik: {workspace_tree.get('root_path')}\n"
-                f"- Total Berkas: {workspace_tree.get('total_files')} berkas\n"
-                f"- Berkas Terindeks: {files_preview}\n"
-                "- Seluruh modifikasi berkas ('write_local_file', 'edit_file') dan terminal ('execute_cli_command') TERKUNCI 100% AMAN hanya di dalam folder proyek ini."
-            )
-            # Scan for local AGENTS.md / CLAUDE.md / RULES.md in project root
-            root_path = workspace_tree.get("root_path")
-            if root_path and os.path.isdir(root_path):
-                for custom_doc in ["AGENTS.md", "CLAUDE.md", "RULES.md"]:
-                    doc_p = os.path.join(root_path, custom_doc)
-                    if os.path.isfile(doc_p):
-                        try:
-                            with open(doc_p, "r", encoding="utf-8", errors="ignore") as f:
-                                doc_content = f.read(2000).strip()
-                                if doc_content:
-                                    slot7_project += f"\n\n[ATURAN REPOSITORI PROYEK ({custom_doc})]:\n{doc_content}"
-                                    break
-                        except Exception:
-                            pass
-        else:
-            slot7_project = (
-                "[STATUS WORKSPACE: MODE PERCAKAPAN MULTIVERSAL (MULTI-CHANNEL)]:\n"
-                "- Sesi aktif dari antarmuka multi-channel (Telegram, WhatsApp, CLI, atau Web Chat).\n"
-                "- Kamu beroperasi dengan fleksibilitas penuh sebagai General AI Agent:\n"
-                "  1. Kueri Sistem & Hardware: Jalankan 'execute_cli_command' untuk inspeksi nyata (misal cek status baterai laptop via Win32_Battery, spesifikasi hardware via systeminfo, CPU, jam/tanggal, jaringan) dan laporkan hasilnya secara akurat ke pengguna.\n"
-                "  2. Pembuatan Berkas & Kode: Sajikan kode lengkap di obrolan chat dalam format Markdown, serta buat berkas unduhan via 'create_zip_archive' atau 'generate_file_artifact' bila relevan.\n"
-                "  3. Eksekusi Mandiri: Bila tindakan telah disetujui melalui protokol Plan/Build Gate, kamu berwenang penuh menjalankan perintah di lingkungan sandbox yang aman."
-            )
+        # Slot 7: Project Context & Live Worktree Snapshot (Hermes Ground-Truth Parity)
+        from core.agent import anara_agent
+        root_path = (workspace_tree or {}).get("root_path") or anara_agent.get_session_dir(session_id)
+        if not root_path or not os.path.isdir(root_path):
+            root_path = anara_agent.get_project_repo_root()
+
+        project_name = (workspace_tree or {}).get("workspace_name") or os.path.basename(root_path.rstrip("\\/")) or "Project Anara"
+        total_files = (workspace_tree or {}).get("total_files") or 0
+
+        git_snapshot = cls.probe_git_worktree_snapshot(root_path)
+
+        slot7_project = (
+            f"[LIVE WORKSPACE & REPOSITORY SNAPSHOT (HERMES GROUND-TRUTH)]:\n"
+            f"- Nama Project: {project_name}\n"
+            f"- Root Path Fisik: {root_path}\n"
+        )
+        if git_snapshot:
+            slot7_project += f"{git_snapshot}\n"
+        if total_files > 0:
+            files_preview = ', '.join([f['path'] for f in (workspace_tree or {}).get('files', [])[:25]]) or '(Folder siap dibangun)'
+            slot7_project += f"- Berkas Terindeks ({total_files} total): {files_preview}\n"
+
+        slot7_project += (
+            "- PANDUAN KERJA WORKSPACE: Seluruh operasi membaca dan memodifikasi berkas "
+            "berada di dalam root proyek ini. Manfaatkan status berkas Git di atas sebagai bukti nyata "
+            "pekerjaan pengguna saat memverifikasi atau melanjutkan tugas."
+        )
+
+        # Scan for local AGENTS.md / CLAUDE.md / RULES.md in project root
+        if root_path and os.path.isdir(root_path):
+            for custom_doc in ["AGENTS.md", "CLAUDE.md", "RULES.md"]:
+                doc_p = os.path.join(root_path, custom_doc)
+                if os.path.isfile(doc_p):
+                    try:
+                        with open(doc_p, "r", encoding="utf-8", errors="ignore") as f:
+                            doc_content = f.read(2000).strip()
+                            if doc_content:
+                                slot7_project += f"\n\n[ATURAN REPOSITORI PROYEK ({custom_doc})]:\n{doc_content}"
+                                break
+                    except Exception:
+                        pass
 
         slots = [slot1_identity, slot2_mode, slot3_tools, slot4_memory]
         if slot5_scratchpad:

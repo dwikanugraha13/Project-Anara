@@ -40,7 +40,11 @@ class BaseProviderProfile(ABC):
         max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         read_only: bool = False,
-        usage_out: Optional[Dict[str, Any]] = None,
-    ) -> str:
-        """Executes a single non-streaming conversational generation turn."""
+        progress_cb: Optional[Callable[[Dict[str, Any]], Any]] = None,
+        token_cb: Optional[Callable[[str], Any]] = None,
+        intercept_mutating_tools: bool = False,
+        platform: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Executes a full multi-turn conversational or ReAct tool turn (Hermes Agent Parity)."""
         pass

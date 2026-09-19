@@ -372,10 +372,61 @@ class AgentRunner:
                                             read_only=(agent_mode == "plan"),
                                             progress_cb=_emit_tool_progress,
                                             token_cb=_handle_live_token,
+                                            platform="web_studio",
+                                            intercept_mutating_tools=(agent_mode == "plan"),
                                         ),
                                         timeout=180.0
                                     )
-                                    if raw_res:
+                                    if isinstance(raw_res, dict) and raw_res.get("intercepted"):
+                                        import uuid
+                                        from core.session_manager import PendingAction, session_state_manager
+                                        from core.channel_adapter import synthesize_action_rationale, UniversalChannelAdapter
+                                        t_name = raw_res.get("tool_name", "")
+                                        t_args = raw_res.get("tool_args", {})
+                                        lead = raw_res.get("lead_text", "")
+                                        p_id = f"plan_{uuid.uuid4().hex[:8]}"
+
+                                        lead_narration = lead
+                                        if not lead_narration:
+                                            lead_narration = await synthesize_action_rationale(
+                                                tool_name=t_name,
+                                                tool_args=t_args,
+                                                prompt=text
+                                            )
+
+                                        pending_act = PendingAction(
+                                            plan_id=p_id,
+                                            session_id=sid,
+                                            channel="web_studio",
+                                            channel_id=str(sid),
+                                            tool_name=t_name,
+                                            tool_args=t_args,
+                                            original_prompt=text,
+                                            plan_text=lead_narration,
+                                            lead_narration=lead_narration,
+                                            risk_level=raw_res.get("tool_risk") or "mutating",
+                                            status="pending",
+                                            user_id=self.get_current_speaker(),
+                                            pending_tool_call=raw_res.get("raw_call"),
+                                        )
+                                        session_state_manager.store_pending(pending_act)
+                                        reply_text = lead_narration
+
+                                        rendered = UniversalChannelAdapter.render_approval_payload(
+                                            channel="web_studio",
+                                            narration=lead_narration,
+                                            action=pending_act
+                                        )
+
+                                        await self.websocket.send_json({
+                                            "type": "plan_pending",
+                                            "plan_id": p_id,
+                                            "tool_name": t_name,
+                                            "tool_args": t_args,
+                                            "text": lead_narration,
+                                            "action_metadata": rendered.get("action_metadata"),
+                                        })
+                                    elif raw_res and isinstance(raw_res, str):
                                         raw_out = raw_res.strip()
                                         raw_out = re.sub(r"^(?:Language|Response|Output|Anara|Assistant)\s*:\s*[^\n]*\n*", "", raw_out, flags=re.IGNORECASE).strip()
                                         if raw_out:

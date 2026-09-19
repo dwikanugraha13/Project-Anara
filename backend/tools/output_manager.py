@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 from constants import get_anara_logs_dir
 
 TOOL_LOGS_DIR = get_anara_logs_dir("tool_logs")
@@ -32,7 +32,8 @@ def compact_tool_output(
     if not output:
         return ""
 
-    text = str(output)
+    from tools.self_correction import ContextMicroCompactor
+    text = ContextMicroCompactor.clean_terminal_noise(str(output)).strip()
     line_count = text.count("\n") + 1
 
     # If within safe limits, return verbatim
@@ -75,3 +76,80 @@ def compact_tool_output(
         f"--- [OUTPUT TERPOTONG: {omitted_chars:,} karakter disembunyikan. {log_notice}] ---\n\n"
         f"{tail_text}"
     )
+
+
+def compact_tool_payload(
+    payload: Any,
+    tool_name: str = "tool",
+    max_lines: int = 60,
+    max_chars: int = 4000,
+    head_ratio: float = 0.4,
+    max_list_items: int = 40,
+    _depth: int = 0,
+) -> Any:
+    """
+    Normalizes and compacts any tool execution payload (dict, str, or list)
+    recursively preserving structured metadata while preventing token bloat.
+    Handles giant lists (e.g. 500+ files from glob/find) and nested collections (Hermes Standard).
+    """
+    if payload is None or _depth > 4:
+        return payload
+
+    if isinstance(payload, str):
+        return compact_tool_output(
+            payload,
+            max_lines=max_lines,
+            max_chars=max_chars,
+            head_ratio=head_ratio,
+            source_label=tool_name,
+        )
+
+    if isinstance(payload, list):
+        items = payload
+        # 1. Truncate giant collections (e.g. hundreds of search results)
+        if len(items) > max_list_items:
+            head_count = max(1, int(max_list_items * head_ratio))
+            tail_count = max(1, max_list_items - head_count)
+            omitted = len(items) - (head_count + tail_count)
+            stub = f"[... {omitted:,} entri lainnya disembunyikan untuk menghemat kuota token ...]"
+            items = items[:head_count] + [stub] + items[-tail_count:]
+
+        # 2. Recursively compact each item
+        return [
+            compact_tool_payload(
+                it,
+                tool_name=tool_name,
+                max_lines=max_lines,
+                max_chars=max_chars,
+                head_ratio=head_ratio,
+                max_list_items=max_list_items,
+                _depth=_depth + 1,
+            )
+            for it in items
+        ]
+
+    if isinstance(payload, dict):
+        compacted = dict(payload)
+        for k, v in compacted.items():
+            if isinstance(v, str):
+                if k in ("output", "stdout", "stderr", "content", "message", "result", "diff", "raw", "summary") or len(v) > max_chars:
+                    compacted[k] = compact_tool_output(
+                        v,
+                        max_lines=max_lines,
+                        max_chars=max_chars,
+                        head_ratio=head_ratio,
+                        source_label=f"{tool_name}_{k}",
+                    )
+            elif isinstance(v, (list, dict)):
+                compacted[k] = compact_tool_payload(
+                    v,
+                    tool_name=f"{tool_name}_{k}",
+                    max_lines=max_lines,
+                    max_chars=max_chars,
+                    head_ratio=head_ratio,
+                    max_list_items=max_list_items,
+                    _depth=_depth + 1,
+                )
+        return compacted
+
+    return payload

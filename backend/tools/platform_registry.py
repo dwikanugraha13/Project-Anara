@@ -14,6 +14,7 @@ CORE_TOOLS: List[str] = [
     "read_local_file",
     "edit_file",
     "write_local_file",
+    "delete_local_file",
     "execute_cli_command",
     "memory",
     "manage_memory_and_todos",
@@ -106,59 +107,55 @@ PLATFORM_ALIASES: Dict[str, str] = {
     "wa": "whatsapp",
 }
 
-# Domain keywords for on-demand lazy toolset expansion
+# Named Capability Toolsets (Hermes Parity)
+TOOLSETS: Dict[str, List[str]] = {
+    "web": ["web_search", "web_search_images", "fetch_webpage"],
+    "browser": [
+        "browser_navigate", "browser_click", "browser_type",
+        "browser_snapshot", "browser_screenshot", "browser_close",
+        "browser_scroll", "browser_press", "browser_back",
+    ],
+    "media": ["spotify_playback", "spotify_search", "image_generate", "video_generate"],
+    "iot": ["ha_list_entities", "ha_call_service", "ha_get_state"],
+    "automation": ["cronjob_manage", "custom_webhook"],
+    "collaboration": ["discord_read_messages", "discord_send_message", "slack_read_messages", "slack_send_message", "gmail_read_inbox", "calendar_get_schedule"],
+    "kanban": ["kanban_create_task", "kanban_list_tasks", "kanban_update_task", "kanban_request_review"],
+    "mcp": ["mcp_manage"],
+}
+
+# Domain keywords for on-demand capability expansion
 INTENT_TOOL_TRIGGERS: List[tuple[re.Pattern, List[str]]] = [
     (
-        re.compile(r"\b(?:spotify|musik|lagu|playlist|play\s+music)\b", re.IGNORECASE),
-        ["spotify_playback", "spotify_search"],
+        re.compile(r"\b(?:spotify|musik|lagu|playlist|play\s+music|song|audio)\b", re.IGNORECASE),
+        TOOLSETS["media"],
     ),
     (
-        re.compile(r"\b(?:lampu|saklar|ac|suhu|iot|home\s*assistant|ha_)\b", re.IGNORECASE),
-        ["ha_list_entities", "ha_call_service", "ha_get_state"],
+        re.compile(r"\b(?:lampu|saklar|ac|suhu|iot|home\s*assistant|ha_|sensor|device)\b", re.IGNORECASE),
+        TOOLSETS["iot"],
     ),
     (
-        re.compile(r"\b(?:browser|buka\s+web|playwright|klik\s+tombol|snapshot|crawl|youtube)\b", re.IGNORECASE),
-        [
-            "browser_navigate", "browser_click", "browser_type",
-            "browser_snapshot", "browser_screenshot", "browser_close",
-            "browser_scroll", "browser_press", "browser_back",
-        ],
+        re.compile(r"\b(?:browser|buka\s+web|playwright|klik|snapshot|crawl|youtube|browse|url|website)\b", re.IGNORECASE),
+        TOOLSETS["browser"],
     ),
     (
-        re.compile(r"\b(?:jadwalkan|jadwal|cron|otomatisasi\s+waktu|tiap\s+jam|tiap\s+hari)\b", re.IGNORECASE),
-        ["cronjob_manage"],
+        re.compile(r"\b(?:jadwalkan|jadwal|cron|otomatisasi|schedule|timer|every)\b", re.IGNORECASE),
+        TOOLSETS["automation"],
     ),
     (
-        re.compile(r"\b(?:gambar\s+ai|generate\s+image|dall-e|flux|bikin\s+gambar|lukis)\b", re.IGNORECASE),
-        ["image_generate"],
+        re.compile(r"\b(?:gambar|image|photo|lukis|visual|video|animasi)\b", re.IGNORECASE),
+        ["image_generate", "video_generate"],
     ),
     (
-        re.compile(r"\b(?:video\s+ai|generate\s+video|cogvideox|bikin\s+video)\b", re.IGNORECASE),
-        ["video_generate"],
-    ),
-    (
-        re.compile(r"\b(?:gmail|email|surat|kalender|calendar|agenda\s+acara)\b", re.IGNORECASE),
-        ["gmail_read_inbox", "calendar_get_schedule"],
-    ),
-    (
-        re.compile(r"\b(?:discord)\b", re.IGNORECASE),
-        ["discord_read_messages", "discord_send_message"],
-    ),
-    (
-        re.compile(r"\b(?:slack)\b", re.IGNORECASE),
-        ["slack_read_messages", "slack_send_message"],
+        re.compile(r"\b(?:gmail|email|surat|kalender|calendar|agenda|discord|slack)\b", re.IGNORECASE),
+        TOOLSETS["collaboration"],
     ),
     (
         re.compile(r"\b(?:mcp|model\s*context\s*protocol)\b", re.IGNORECASE),
-        ["mcp_manage"],
+        TOOLSETS["mcp"],
     ),
     (
-        re.compile(r"\b(?:kanban|papan\s+tugas|trello)\b", re.IGNORECASE),
-        ["kanban_create_task", "kanban_list_tasks", "kanban_update_task", "kanban_request_review"],
-    ),
-    (
-        re.compile(r"\b(?:webhook)\b", re.IGNORECASE),
-        ["custom_webhook"],
+        re.compile(r"\b(?:kanban|papan\s+tugas|trello|board|backlog)\b", re.IGNORECASE),
+        TOOLSETS["kanban"],
     ),
 ]
 

@@ -38,6 +38,8 @@ HOST_TAKEOVER_PATTERNS = [
     r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;",
     r"\bshutdown\b",
     r"\breboot\b",
+    # Protect core repository internal database & credentials from deletion
+    r"(?:rm|del|remove-item|rmdir)\b.*(?:[\/\\]|\s+)(?:\.git|anara_brain\.db|\.env)\b",
     # Registry & system security tampering
     r"\breg\s+(?:add|delete|copy|restore|import)\b",
     r"\bset-mppreference\b",
@@ -155,35 +157,52 @@ class CommandSandbox:
             exec_args = ["bash", "-c", command]
             use_shell = False
 
-        def _run_subprocess_sync() -> subprocess.CompletedProcess:
-            return subprocess.run(
+        # 5. Process execution with real-time PID tracking and instant reaper
+        from core.channel_adapter import get_active_channel_context
+        from core.session_manager import session_state_manager
+
+        act_ctx = get_active_channel_context()
+        channel = act_ctx.get("channel", "cli") if act_ctx else "cli"
+        channel_id = str(act_ctx.get("channel_id", "default") if act_ctx else "default")
+
+        proc: Optional[subprocess.Popen] = None
+        try:
+            proc = subprocess.Popen(
                 exec_args,
                 cwd=safe_cwd,
                 env=clean_env,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=timeout_seconds,
                 shell=use_shell
             )
+            if proc.pid:
+                session_state_manager.register_process_pid(channel, channel_id, proc.pid)
 
-        try:
-            completed_proc: subprocess.CompletedProcess = await asyncio.to_thread(_run_subprocess_sync)
-            out_text = (completed_proc.stdout or "").strip()
-            err_text = (completed_proc.stderr or "").strip()
+            stdout, stderr = await asyncio.wait_for(
+                asyncio.to_thread(proc.communicate),
+                timeout=timeout_seconds
+            )
+            out_text = (stdout or "").strip()
+            err_text = (stderr or "").strip()
             full_output = f"{out_text}\n{err_text}".strip() if err_text else out_text
 
             return {
-                "status": "success" if completed_proc.returncode == 0 else "error",
+                "status": "success" if proc.returncode == 0 else "error",
                 "output": full_output,
-                "exit_code": completed_proc.returncode,
+                "exit_code": proc.returncode,
                 "sandboxed": True,
                 "timed_out": False,
             }
 
-        except subprocess.TimeoutExpired:
-            logger.warning(f"[Sandbox] Command timed out after {timeout_seconds}s: '{command}'")
+        except (asyncio.CancelledError, asyncio.TimeoutError) as err:
+            logger.warning(f"[Sandbox] Process interrupted/timed-out for command: '{command}'")
+            if proc and proc.pid:
+                cls._kill_process_tree(proc.pid)
+            if isinstance(err, asyncio.CancelledError):
+                raise
             return {
                 "status": "timeout",
                 "output": f"Perintah terputus karena melebihi batas waktu aman ({timeout_seconds} detik).",
@@ -194,6 +213,8 @@ class CommandSandbox:
 
         except Exception as e:
             logger.error(f"[Sandbox] Execution exception: {e}")
+            if proc and proc.pid:
+                cls._kill_process_tree(proc.pid)
             return {
                 "status": "error",
                 "output": f"Kesalahan internal sandbox: {str(e) or type(e).__name__}",
@@ -201,6 +222,10 @@ class CommandSandbox:
                 "sandboxed": True,
                 "timed_out": False,
             }
+
+        finally:
+            if proc and proc.pid:
+                session_state_manager.unregister_process_pid(channel, channel_id, proc.pid)
 
     @staticmethod
     def _kill_process_tree(pid: int):

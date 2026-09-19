@@ -11,6 +11,7 @@ from .fs_tools import (
     _tool_read_local_file,
     _tool_edit_file,
     _tool_write_local_file,
+    _tool_delete_local_file,
     _tool_list_directory,
     _tool_scan_workspace_folder,
     _tool_glob_find_files,
@@ -218,6 +219,17 @@ ANARA_FUNCTION_DECLARATIONS = [
                 "content": {"type": "STRING", "description": "Isi teks file yang ingin ditulis."}
             },
             "required": ["file_path", "content"]
+        }
+    ),
+    types.FunctionDeclaration(
+        name="delete_local_file",
+        description="Menghapus berkas spesifik di komputer pengguna secara aman dan tertarget atas perintah pengguna. Dilarang menggunakan wildcard (*) atau menghapus direktori.",
+        parameters={
+            "type": "OBJECT",
+            "properties": {
+                "file_path": {"type": "STRING", "description": "Path berkas spesifik yang ingin dihapus (misal 'temp.txt' atau 'src/old.py')."}
+            },
+            "required": ["file_path"]
         }
     ),
     types.FunctionDeclaration(
@@ -453,6 +465,7 @@ TOOL_RISK_CLASSIFICATION: Dict[str, str] = {
     # Tier 3: MUTATING (Modifies file/system/code/shell — ALWAYS requires Plan Mode first)
     "edit_file": "mutating",
     "write_local_file": "mutating",
+    "delete_local_file": "mutating",
     "execute_cli_command": "mutating",
     "generate_file_artifact": "mutating",
     "create_zip_archive": "mutating",
@@ -496,7 +509,8 @@ import re
 def is_safe_read_only_cli_command(command: str) -> bool:
     """
     Validates if a CLI command in Plan Mode is purely for safe host/environment inspection
-    using the unified Parameter-Aware AST Dissector in plan_detector.py.
+    using the unified Parameter-Aware AST Dissector in plan_detector.py (Hermes Parity).
+    Zero duplicate regex lists or static keyword branches.
     """
     cmd = (command or "").strip()
     if not cmd:
@@ -506,75 +520,8 @@ def is_safe_read_only_cli_command(command: str) -> bool:
         from core.plan_detector import evaluate_command_safety
         return evaluate_command_safety(cmd) == "read_only"
     except Exception:
-        pass
-
-    # Check for actual shell file redirection (> or >>), ignoring arrows (->, =>) and quotes
-    cmd_no_quotes = re.sub(r'"[^"]*"|\'[^\']*\'', "", cmd)
-    if re.search(r"(?<![-=])>[>]?", cmd_no_quotes):
         return False
 
-    cmd_lower = cmd.lower()
-    mutating_tokens = [
-        "npm i ", "npm install", "npm run", "npm test", "npm start", "npm exec", "npm build", "npm create", "npx ", "vite create",
-        "pip install", "pip uninstall", "yarn add", "yarn test", "yarn run", "yarn start",
-        "pnpm add", "pnpm test", "pnpm run", "pnpm start", "cargo add", "cargo build", "cargo test", "cargo run",
-        "git commit", "git push", "git merge", "git rebase", "git checkout -b", "git branch -d",
-        "rmdir", "del ", "erase ", "mkdir ", "new-item",
-        "set-content", "add-content", "out-file", "remove-item", "move-item", "copy-item",
-        "stop-process", "taskkill", "kill "
-    ]
-    for tok in mutating_tokens:
-        if tok in cmd_lower:
-            return False
-
-    # Short 2-char mutating command aliases MUST use word boundary to avoid false-matching 'cmd /c', 'term', etc.
-    for p in [r"\bmd\s+", r"\bni\s+", r"\brm\s+"]:
-        if re.search(p, cmd_lower):
-            return False
-
-    # Direct fast-match for safe read-only inspection commands
-    safe_roots = [
-        "win32_battery", "powerstatus", "batteryreport", "estimatedchargeremaining", "batterystatus",
-        "get-psdrive", "get-volume", "get-disk", "win32_logicaldisk", "psdrive", "diskfree", "df ", "free ",
-        "win32_operatingsystem", "win32_processor", "win32_computersystem", "freeprivatebytes",
-        "get-process", "get-service", "get-ciminstance", "get-wmiobject", "wmic",
-        "systeminfo", "hostname", "get-uptime", "reg query", "tasklist", "driverquery", "node -v", "npm -v", "python -v", "git status", "git log", "git diff",
-        "test-path", "get-childitem", "get-item", "get-command", "get-location", "get-date",
-        "shell.application", "namespace(", ".items()", "select-object", "format-table", "format-list",
-        "measure-object", "sort-object", "where-object", "out-string", "get-acl", "get-content",
-        "recycle.bin", "recyclebin", "get-itemproperty", "findstr", "dir /", "dir ", "ls "
-    ]
-    if any(k in cmd_lower for k in safe_roots):
-        return True
-
-    # Python one-liner inspection (python -c "import ... print(...)")
-    if re.search(r"^python(?:\.exe)?\s+-c\b", cmd_lower) or re.search(r"^python3(?:\.exe)?\s+-c\b", cmd_lower):
-        py_mutating = [
-            "open(", "write(", ".write", "os.remove", "os.unlink", "os.rmdir", "shutil.rmtree",
-            "os.rename", "os.replace", "shutil.move", "shutil.copy", "subprocess.", "os.system"
-        ]
-        if not any(pm in cmd_lower for pm in py_mutating):
-            return True
-
-    safe_patterns = [
-        r"^node\s+-[vV]", r"^npm\s+-[vV]", r"^pnpm\s+-[vV]", r"^yarn\s+-[vV]", r"^bun\s+-[vV]",
-        r"^python\s+--?version", r"^python\s+-V", r"^pip\s+--?version", r"^pip\s+list",
-        r"^git\s+--version", r"^git\s+status", r"^git\s+branch", r"^git\s+log", r"^git\s+diff",
-        r"^\$env:\w+", r"^test-path\b", r"^get-childitem\b", r"^get-item\b", r"^get-command\b", r"^get-location\b",
-        r"^pwd\b", r"^dir\b", r"^ls\b", r"^where(?:\.exe)?\b", r"^which\b", r"^whoami\b",
-        r"^wmic\b", r"^get-ciminstance\b", r"^get-wmiobject\b", r"^powercfg\b",
-        r"^get-psdrive\b", r"^get-volume\b", r"^get-disk\b", r"^df\b", r"^free\b",
-        r"^systeminfo\b", r"^hostname\b", r"^date\b", r"^time\b", r"^get-date\b",
-        r"^get-process\b", r"^get-service\b", r"^get-uptime\b",
-        r"^ipconfig\b", r"^ping\b", r"^nslookup\b", r"^netstat\b", r"^curl\b",
-        r"^cat\b", r"^type\b", r"^head\b", r"^tail\b", r"^echo\b", r"^write-output\b",
-        r"^select\b", r"^select-object\b", r"^format-table\b", r"^format-list\b",
-        r"^measure-object\b", r"^sort-object\b", r"^where-object\b",
-    ]
-
-    first_clean = re.sub(r"^(?:powershell(?:\.exe)?|cmd(?:\.exe)?)\s+(?:-(?:c|command|k)\s+)?", "", cmd, flags=re.IGNORECASE).strip()
-    first_clean = first_clean.lstrip("([\"' $").strip()
-    return any(re.search(pat, first_clean, re.IGNORECASE) for pat in safe_patterns)
 
 def check_tool_permission(tool_name: str, mode: str = "plan", args: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
@@ -743,13 +690,92 @@ def get_tools_catalog(enabled_set: Optional[Set[str]] = None) -> List[Dict[str, 
     return catalog
 
 
-async def dispatch_tool_call(
+def _get_tool_expected_params(name: str) -> List[str]:
+    """Dynamically extracts expected parameter names from tool catalog declarations (Hermes Parity)."""
+    for decl in ANARA_FUNCTION_DECLARATIONS:
+        if decl.name == name:
+            params = decl.parameters
+            if hasattr(params, "properties") and isinstance(params.properties, dict):
+                return list(params.properties.keys())
+            if isinstance(params, dict) and "properties" in params:
+                return list(params["properties"].keys())
+    return []
+
+
+def _normalize_tool_args(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Dynamically aligns LLM parameter variations to expected tool schema parameters (Hermes Parity).
+    Uses fuzzy schema inspection and semantic stemming rather than hardcoded static lookup.
+    """
+    if not isinstance(args, dict):
+        return {}
+    a = dict(args)
+
+    expected = _get_tool_expected_params(name)
+    clean_incoming = {re.sub(r"[^a-z0-9]", "", k.lower()): (k, v) for k, v in args.items()}
+
+    # 1. Dynamic fuzzy schema alignment
+    for target in expected:
+        if target in a and a[target]:
+            continue
+        clean_target = re.sub(r"[^a-z0-9]", "", target.lower())
+
+        # Exact alphanumeric match (e.g. filepath -> file_path, cmd -> command)
+        if clean_target in clean_incoming:
+            orig_k, val = clean_incoming[clean_target]
+            a[target] = val
+            continue
+
+        # Substring & semantic stem match (e.g. path -> file_path, dir -> directory_path)
+        matched_val = None
+        for clean_k, (orig_k, val) in clean_incoming.items():
+            if len(clean_k) >= 3 and (clean_k in clean_target or clean_target in clean_k):
+                matched_val = val
+                break
+        if matched_val is not None:
+            a[target] = matched_val
+
+    # 2. Universal supplementary fallback for core tools
+    if "file_path" in expected or name in ("read_local_file", "write_local_file", "edit_file", "delete_local_file"):
+        if "file_path" not in a:
+            for alias in ("path", "filePath", "target", "file"):
+                if alias in a and isinstance(a[alias], str) and a[alias].strip():
+                    a["file_path"] = a[alias].strip()
+                    break
+
+    if "pattern" in expected or name in ("grep_search_code", "glob_find_files"):
+        if "pattern" not in a:
+            for alias in ("query", "regex", "term", "keyword"):
+                if alias in a and isinstance(a[alias], str) and a[alias].strip():
+                    a["pattern"] = a[alias].strip()
+                    break
+
+    if "command" in expected or name in ("execute_cli_command", "terminal"):
+        if "command" not in a:
+            for alias in ("cmd", "script", "cli"):
+                if alias in a and isinstance(a[alias], str) and a[alias].strip():
+                    a["command"] = a[alias].strip()
+                    break
+
+    # 3. Numeric offsets
+    for num_field in ("offset", "limit"):
+        if num_field in a and a[num_field] is not None:
+            try:
+                a[num_field] = int(a[num_field])
+            except (ValueError, TypeError):
+                a[num_field] = None
+
+    return a
+
+
+async def _raw_dispatch_tool_call(
     name: str,
     args: Dict[str, Any],
     read_only: bool = False,
     mode: Optional[str] = None
 ) -> Dict[str, Any]:
     """Routes an incoming function_call from Gemini Live or ReAct loop to its Python executor."""
+    args = _normalize_tool_args(name, args)
     effective_mode = mode if mode else ("plan" if read_only else "build")
     logger.info(f"[AnaraAgent] Dispatching tool '{name}' with args: {args} (mode={effective_mode})")
 
@@ -835,6 +861,8 @@ async def dispatch_tool_call(
             )
         elif name == "write_local_file":
             return await _tool_write_local_file(args.get("file_path", ""), args.get("content", ""))
+        elif name == "delete_local_file":
+            return await _tool_delete_local_file(args.get("file_path", ""))
         elif name == "list_directory":
             return await _tool_list_directory(args.get("directory_path"))
         elif name == "scan_workspace_folder":
@@ -939,6 +967,25 @@ async def dispatch_tool_call(
         return {"status": "error", "message": f"Kesalahan pada tool {name}: {str(e)}"}
 
 
+async def dispatch_tool_call(
+    name: str,
+    args: Dict[str, Any],
+    read_only: bool = False,
+    mode: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Standard Anara Tool Dispatcher:
+    Routes function_call to executor, sniffs error anchors via ContextMicroCompactor on failure,
+    and enforces micro-compaction (40:60 Head:Tail + disk logging) on all outputs to protect LLM context windows.
+    """
+    raw_res = await _raw_dispatch_tool_call(name, args, read_only=read_only, mode=mode)
+    if isinstance(raw_res, dict) and raw_res.get("status") == "error" and raw_res.get("output"):
+        from tools.self_correction import ContextMicroCompactor
+        raw_res["output"] = ContextMicroCompactor.compact_output(str(raw_res["output"]), max_lines=35, source_label=f"err_{name}")
+    from tools.output_manager import compact_tool_payload
+    return compact_tool_payload(raw_res, tool_name=name)
+
+
 async def generate_text_response_with_tools(
     client: Any,
     model: str,
@@ -950,202 +997,23 @@ async def generate_text_response_with_tools(
     progress_cb: Optional[Callable[[Dict[str, Any]], Any]] = None,
     token_cb: Optional[Callable[[str], Any]] = None,
     intercept_mutating_tools: bool = False,
+    platform: Optional[str] = None,
 ) -> Any:
-    """Executes a multi-step ReAct turn using Gemini model with native tool chaining (uncapped tokens by default)."""
-    tools = get_agent_tools(read_only=read_only)
-    cfg_kwargs: Dict[str, Any] = {
-        "temperature": temperature,
-        "tools": tools,
-    }
-    if max_tokens is not None and max_tokens > 0:
-        cfg_kwargs["max_output_tokens"] = max_tokens
-    if system_instruction and system_instruction.strip():
-        cfg_kwargs["system_instruction"] = system_instruction.strip()
-    config = types.GenerateContentConfig(**cfg_kwargs)
-    
-    contents = [user_prompt]
-    last_tool_summary = ""
-    for step in range(25):
-        try:
-            res = await client.aio.models.generate_content(
-                model=model,
-                contents=contents,
-                config=config
-            )
-        except Exception as step_err:
-            err_str = str(step_err).lower()
-            if "thought_signature" in err_str or "function_call" in err_str:
-                logger.warning(f"[AnaraAgent Step {step+1}] Model {model} hit thought_signature requirement — breaking to synthesis: {step_err}")
-                break
-            raise step_err
-
-        if not res:
-            break
-
-        function_calls = getattr(res, "function_calls", None)
-        if not function_calls and res.candidates:
-            for part in (res.candidates[0].content.parts or []):
-                if getattr(part, "function_call", None):
-                    if not function_calls:
-                        function_calls = []
-                    function_calls.append(part.function_call)
-
-        if not function_calls:
-            if res.text and res.text.strip():
-                try:
-                    from memory import memory_engine
-                    u_meta = getattr(res, "usage_metadata", None)
-                    p_tok = getattr(u_meta, "prompt_token_count", 0) if u_meta else 0
-                    c_tok = getattr(u_meta, "candidates_token_count", 0) if u_meta else 0
-                    if p_tok or c_tok:
-                        memory_engine.record_token_usage(
-                            model_id=model,
-                            provider="gemini",
-                            prompt_tokens=p_tok,
-                            completion_tokens=c_tok
-                        )
-                except Exception:
-                    pass
-                return res.text.strip()
-            break
-
-        contents.append(res.candidates[0].content)
-
-        fn_parts = []
-        for fc in function_calls:
-            fn_name = getattr(fc, "name", "")
-            clean_fn_name = fn_name.split(":")[-1]
-            fn_args = getattr(fc, "args", {}) or {}
-            fn_id = getattr(fc, "id", None)
-            logger.info(f"[AnaraAgent Step {step+1}] Invoked: {fn_name!r} (clean={clean_fn_name!r}, id={fn_id}) with args {fn_args}")
-
-            risk = get_tool_risk(clean_fn_name)
-            if clean_fn_name in ("execute_cli_command", "terminal", "run_terminal_command"):
-                from core.plan_detector import evaluate_command_safety
-                risk = evaluate_command_safety(fn_args.get("command", ""))
-
-            if intercept_mutating_tools and risk in ("mutating", "ask"):
-                logger.info(f"[ToolInterceptor Native] Intercepted mutating tool '{clean_fn_name}' for Plan approval.")
-                cmd_preview = fn_args.get("command") or fn_args.get("file_path") or fn_args.get("title") or ""
-                return {
-                    "intercepted": True,
-                    "tool_name": clean_fn_name,
-                    "tool_args": fn_args,
-                    "tool_risk": risk,
-                    "cmd_preview": cmd_preview,
-                    "raw_call": {"tool": clean_fn_name, "arguments": fn_args},
-                }
-
-            if progress_cb:
-                try:
-                    res_cb = progress_cb({"tool_name": fn_name, "status": "running"})
-                    if asyncio.iscoroutine(res_cb):
-                        await res_cb
-                except Exception:
-                    pass
-
-            tool_res = await dispatch_tool_call(fn_name, fn_args, read_only=read_only)
-
-            if fn_name == "interactive_question" and isinstance(tool_res, dict) and tool_res.get("dismissed"):
-                dismiss_notice = "Pertanyaan ditutup."
-                if token_cb:
-                    try:
-                        res = token_cb(dismiss_notice)
-                        if asyncio.iscoroutine(res):
-                            await res
-                    except Exception:
-                        pass
-                return dismiss_notice
-            
-            if progress_cb:
-                try:
-                    res_cb = progress_cb({
-                        "tool_name": fn_name,
-                        "status": "done",
-                        "summary": (tool_res.get("message") or tool_res.get("summary") or "")[:160] if isinstance(tool_res, dict) else str(tool_res)[:160]
-                    })
-                    if asyncio.iscoroutine(res_cb):
-                        await res_cb
-                except Exception:
-                    pass
-
-            if isinstance(tool_res, dict) and tool_res.get("message"):
-                last_tool_summary = tool_res.get("message")
-
-            fn_parts.append(
-                types.Part(
-                    function_response=types.FunctionResponse(
-                        name=fn_name,
-                        id=fn_id,
-                        response={"result": tool_res}
-                    )
-                )
-            )
-
-        contents.append(types.Content(parts=fn_parts))
-
-    if last_tool_summary or len(contents) > 1:
-        if progress_cb:
-            try:
-                res_cb = progress_cb({
-                    "tool_name": "agent",
-                    "status": "thinking",
-                    "summary": "Merumuskan cetak biru arsitektur & spesifikasi..." if read_only else "Menyusun perubahan kode & ringkasan hasil..."
-                })
-                if asyncio.iscoroutine(res_cb):
-                    await res_cb
-            except Exception:
-                pass
-        try:
-            synth_kwargs: Dict[str, Any] = {
-                "temperature": temperature,
-            }
-            if max_tokens is not None and max_tokens > 0:
-                synth_kwargs["max_output_tokens"] = max_tokens
-            if system_instruction and system_instruction.strip():
-                synth_kwargs["system_instruction"] = system_instruction.strip()
-            synth_config = types.GenerateContentConfig(**synth_kwargs)
-            prompt_with_summary = (
-                f"{user_prompt}\n\n"
-                f"[LAPORAN HASIL EKSEKUSI ALAT]:\n{last_tool_summary or 'Aksi alat selesai dieksekusi.'}\n\n"
-                "Instruksi: Sebagai AI Agent, jelaskan secara cerdas, tuntas, dan alami apa yang telah kamu kerjakan, "
-                "struktur atau perubahan berkas yang terjadi, dan rekomendasi langkah berikutnya. "
-                "Dilarang menggunakan kalimat template kaku."
-            )
-            synth_res = await client.aio.models.generate_content(
-                model=model,
-                contents=[prompt_with_summary],
-                config=synth_config
-            )
-            if synth_res and synth_res.text and synth_res.text.strip():
-                if token_cb:
-                    try:
-                        res = token_cb(synth_res.text.strip())
-                        if asyncio.iscoroutine(res):
-                            await res
-                    except Exception:
-                        pass
-                try:
-                    from memory import memory_engine
-                    u_meta = getattr(synth_res, "usage_metadata", None)
-                    p_tok = getattr(u_meta, "prompt_token_count", 0) if u_meta else 0
-                    c_tok = getattr(u_meta, "candidates_token_count", 0) if u_meta else 0
-                    if p_tok or c_tok:
-                        memory_engine.record_token_usage(
-                            model_id=model,
-                            provider="gemini",
-                            prompt_tokens=p_tok,
-                            completion_tokens=c_tok
-                        )
-                except Exception:
-                    pass
-                return synth_res.text.strip()
-        except Exception as e:
-            logger.warning(f"[AnaraAgent] Synthesis step error: {e}")
-            if last_tool_summary:
-                return str(last_tool_summary)
-            raise e
-
-    if last_tool_summary:
-        return str(last_tool_summary)
+    """
+    Unified ReAct turn delegator for Google Gemini model (Hermes Agent Parity).
+    Routes all Gemini turns through the universal agent execution loop in providers/caller.py.
+    """
+    from providers.caller import call_universal_chat_model
+    return await call_universal_chat_model(
+        model_id=model,
+        user_prompt=user_prompt,
+        system_instruction=system_instruction,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        read_only=read_only,
+        progress_cb=progress_cb,
+        token_cb=token_cb,
+        intercept_mutating_tools=intercept_mutating_tools,
+        platform=platform,
+    )
     return ""

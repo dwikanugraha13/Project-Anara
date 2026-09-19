@@ -88,9 +88,10 @@ class GeminiProviderProfile(BaseProviderProfile):
         progress_cb: Optional[Callable[[Dict[str, Any]], Any]] = None,
         token_cb: Optional[Callable[[str], Any]] = None,
         intercept_mutating_tools: bool = False,
+        platform: Optional[str] = None,
+        **kwargs: Any,
     ) -> Any:
-        from core import key_manager
-        from tools import generate_text_response_with_tools
+        from .caller import _make_gemini_raw_call, _execute_json_agent_loop
 
         gemini_model_name = model_id.replace("models/", "")
         if "live-preview" in gemini_model_name or "native-audio" in gemini_model_name:
@@ -99,21 +100,25 @@ class GeminiProviderProfile(BaseProviderProfile):
 
         active_target_model = gemini_model_name
 
-        async def _call(client):
-            return await generate_text_response_with_tools(
-                client=client,
-                model=active_target_model,
-                user_prompt=user_prompt,
-                system_instruction=system_instruction,
-                max_tokens=max_tokens,
+        async def _gemini_call(msgs: List[Dict[str, str]], on_chunk: Optional[Callable[[str], Any]] = None) -> str:
+            return await _make_gemini_raw_call(
+                model_name=active_target_model,
+                msgs=msgs,
                 temperature=temperature,
-                read_only=read_only,
-                progress_cb=progress_cb,
-                token_cb=token_cb,
-                intercept_mutating_tools=intercept_mutating_tools,
+                max_tokens=max_tokens,
+                on_chunk=on_chunk,
             )
 
-        return await key_manager.execute_with_failover(_call)
+        return await _execute_json_agent_loop(
+            provider_caller=_gemini_call,
+            user_prompt=user_prompt,
+            system_instruction=system_instruction,
+            read_only=read_only,
+            progress_cb=progress_cb,
+            token_cb=token_cb,
+            intercept_mutating_tools=intercept_mutating_tools,
+            platform=platform,
+        )
 
 
 class CodexOpenAIProviderProfile(BaseProviderProfile):
@@ -259,6 +264,8 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
         progress_cb: Optional[Callable[[Dict[str, Any]], Any]] = None,
         token_cb: Optional[Callable[[str], Any]] = None,
         intercept_mutating_tools: bool = False,
+        platform: Optional[str] = None,
+        **kwargs: Any,
     ) -> Any:
         from memory import memory_engine
         from .caller import _execute_json_agent_loop
@@ -380,6 +387,7 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
             progress_cb=progress_cb,
             token_cb=token_cb,
             intercept_mutating_tools=intercept_mutating_tools,
+            platform=platform,
         )
 
 
@@ -421,6 +429,8 @@ class AnthropicProviderProfile(BaseProviderProfile):
         progress_cb: Optional[Callable[[Dict[str, Any]], Any]] = None,
         token_cb: Optional[Callable[[str], Any]] = None,
         intercept_mutating_tools: bool = False,
+        platform: Optional[str] = None,
+        **kwargs: Any,
     ) -> Any:
         from memory import memory_engine
         from .caller import _execute_json_agent_loop
@@ -490,6 +500,7 @@ class AnthropicProviderProfile(BaseProviderProfile):
             progress_cb=progress_cb,
             token_cb=token_cb,
             intercept_mutating_tools=intercept_mutating_tools,
+            platform=platform,
         )
 
 
@@ -550,6 +561,8 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
         progress_cb: Optional[Callable[[Dict[str, Any]], Any]] = None,
         token_cb: Optional[Callable[[str], Any]] = None,
         intercept_mutating_tools: bool = False,
+        platform: Optional[str] = None,
+        **kwargs: Any,
     ) -> Any:
         from memory import memory_engine
         from .caller import _execute_json_agent_loop
@@ -626,6 +639,7 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                     progress_cb=progress_cb,
                     token_cb=token_cb,
                     intercept_mutating_tools=intercept_mutating_tools,
+                    platform=platform,
                 )
 
         # Check custom nodes (including 9Router)
@@ -698,6 +712,7 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                     progress_cb=progress_cb,
                     token_cb=token_cb,
                     intercept_mutating_tools=intercept_mutating_tools,
+                    platform=platform,
                 )
 
         raise ValueError(f"No configured provider could handle model: {model_id}")

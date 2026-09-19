@@ -165,12 +165,23 @@ async def send_telegram_plan_proposal(
     plan_text: str,
     plan_id: str,
 ) -> Dict[str, Any]:
-    """Sends a formatted Plan Proposal with inline Setujui / Batalkan buttons."""
+    """Sends a formatted Plan Proposal with inline Setujui / Batalkan buttons via UniversalChannelAdapter."""
     from .client import send_telegram_message
+    from core.channel_adapter import UniversalChannelAdapter
+    from core.session_manager import session_state_manager
+    p = session_state_manager.get_pending_by_id(plan_id)
+    if p:
+        rendered = UniversalChannelAdapter.render_approval_payload("telegram", plan_text, p)
+        return await send_telegram_message(
+            text=rendered.get("text") or plan_text,
+            chat_id=chat_id,
+            parse_mode=rendered.get("parse_mode", "HTML"),
+            reply_markup=rendered.get("reply_markup")
+        )
     keyboard = {
         "inline_keyboard": [
             [
-                {"text": "✅ Setujui & Jalankan Rencana", "callback_data": f"approve:{plan_id}"},
+                {"text": "✅ Setujui & Jalankan", "callback_data": f"approve:{plan_id}"},
                 {"text": "❌ Batalkan", "callback_data": f"reject:{plan_id}"}
             ]
         ]

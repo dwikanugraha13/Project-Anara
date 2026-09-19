@@ -227,9 +227,12 @@ async def send_telegram_message(
             return {"status": "ok", "method": "sendMessage_HTML", "result": res_data, "message_id": msg_id}
 
         logger.warning(f"[TelegramClient] HTML sendMessage returned {res.status_code}: {res.text}. Trying plain text fallback...")
-        # 3. Fallback: plain text
+        # 3. Fallback: plain text (preserves reply_markup so interactive buttons are never lost)
         clean_plain = text.replace("<details>", "").replace("</details>", "").replace("<summary>", "").replace("</summary>", "")
-        res_plain = await client.post(url, json={"chat_id": target_chat, "text": clean_plain})
+        plain_payload: Dict[str, Any] = {"chat_id": target_chat, "text": clean_plain}
+        if reply_markup:
+            plain_payload["reply_markup"] = reply_markup
+        res_plain = await client.post(url, json=plain_payload)
         if res_plain.status_code == 200 and res_plain.json().get("ok"):
             res_json = res_plain.json()
             res_data = res_json.get("result", {})
