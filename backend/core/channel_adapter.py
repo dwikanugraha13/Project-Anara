@@ -527,19 +527,15 @@ async def _enrich_message_with_vision(user_text: str, attachments: List[Dict[str
             if res.get("status") == "success" and res.get("analysis"):
                 desc = res["analysis"].strip()
                 note = (
-                    f"[LAMPIRAN VISUAL / GAMBAR YANG DIKIRIM PENGGUNA]:\n"
-                    f"Nama Berkas: {os.path.basename(img_path)}\n"
-                    f"Hasil Pengamatan Visual:\n{desc}\n"
-                    f"[Jika kamu membutuhkan detail visual lebih lanjut, panggil tool 'vision_analyze' dengan image_path: '{img_path}']"
+                    f"[ATTACHED IMAGE ANALYSIS — {os.path.basename(img_path)}]:\n"
+                    f"{desc}\n"
+                    f"[If further visual detail is required, invoke 'vision_analyze' with image_path: '{img_path}']"
                 )
             else:
-                note = (
-                    f"[Pengguna melampirkan gambar '{os.path.basename(img_path)}' di path '{img_path}'. "
-                    f"Gunakan tool 'vision_analyze' untuk memeriksanya.]"
-                )
+                note = f"[Attached Image: '{os.path.basename(img_path)}' saved at '{img_path}'. Use 'vision_analyze' to inspect.]"
         except Exception as e:
             logger.error(f"[InboundVision] Error analyzing image {img_path}: {e}")
-            note = f"[Pengguna melampirkan gambar di path '{img_path}'. Gunakan 'vision_analyze' untuk memeriksanya.]"
+            note = f"[Attached Image: '{os.path.basename(img_path)}' saved at '{img_path}'. Use 'vision_analyze' to inspect.]"
         enriched_parts.append(note)
 
     if not enriched_parts:

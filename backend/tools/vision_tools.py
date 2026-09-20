@@ -27,14 +27,13 @@ SUPPORTED_VIDEO_EXTS = {".mp4", ".webm", ".mov", ".mkv", ".avi"}
 
 def _resolve_vision_model() -> str:
     """
-    Dynamically determines the best vision model without static hardcoding:
+    Dynamically determines the vision model following Model Sovereignty (Hermes Parity):
     1. Reads user-configured model from config.yaml (model.vision).
-    2. Checks if active model supports vision via ModelCapabilityRegistry.
-    3. Gracefully falls back to primary multimodal engine model.
+    2. Uses the user's actively selected chat model directly.
+    Zero static hardcoding to arbitrary models.
     """
     try:
         from config import cfg_get
-        from core.capabilities import ModelCapabilityRegistry
         from providers.accounts import get_active_model_id
 
         configured = cfg_get("model.vision")
@@ -42,17 +41,13 @@ def _resolve_vision_model() -> str:
             return str(configured).strip()
 
         active = get_active_model_id()
-        if active and ModelCapabilityRegistry.supports_vision(active):
-            clean_mid = active.replace("models/", "")
-            if "live-preview" not in clean_mid:
-                return clean_mid
-
-        if "gemini" in (active or "").lower():
-            return "gemini-2.5-flash"
+        if active and str(active).strip():
+            return str(active).strip()
     except Exception as e:
         logger.debug(f"[VisionTools] Dynamic model resolution note: {e}")
 
-    return "gemini-2.5-flash"
+    from providers.accounts import get_active_model_id
+    return get_active_model_id() or "gpt-4o"
 
 
 def _resolve_fallback_vision_model() -> str:
@@ -171,27 +166,59 @@ async def _tool_vision_analyze(
                             ]
                         }
                     ],
-                    "max_tokens": 2048
+                    "max_tokens": 2048,
+                    "stream": False
                 }
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     resp = await client.post(f"{base_url}/chat/completions", headers=headers, json=payload)
                     if resp.status_code == 200:
-                        analysis_text = resp.json()["choices"][0]["message"]["content"]
-                        _emit_agent_event("agent_action_complete", {
-                            "tool_name": "vision_analyze",
-                            "action_title": "Analisis Visual Selesai",
-                            "summary": analysis_text[:120] + "...",
-                            "icon": "eye"
-                        })
-                        return {
-                            "status": "success",
-                            "image_target": clean_target,
-                            "mime_type": mime_type,
-                            "question": user_query,
-                            "analysis": analysis_text,
-                            "provider": c_prefix,
-                            "model": target_model
-                        }
+                        analysis_text = ""
+                        # Dual Parser: Handle both standard JSON object and SSE line stream
+                        try:
+                            d = resp.json()
+                            if isinstance(d, dict) and d.get("choices"):
+                                c0 = d["choices"][0]
+                                analysis_text = (c0.get("message") or {}).get("content") or (c0.get("delta") or {}).get("content") or ""
+                        except Exception:
+                            pass
+
+                        if not analysis_text:
+                            # Stream reconstruction fallback
+                            stream_parts = []
+                            for line in resp.text.splitlines():
+                                line_str = line.strip()
+                                if line_str.startswith("data:"):
+                                    d_raw = line_str[5:].strip()
+                                    if d_raw == "[DONE]":
+                                        break
+                                    try:
+                                        chunk = json.loads(d_raw)
+                                        choices = chunk.get("choices") or []
+                                        if choices:
+                                            delta = (choices[0].get("delta") or {}).get("content") or (choices[0].get("message") or {}).get("content") or ""
+                                            if delta:
+                                                stream_parts.append(delta)
+                                    except Exception:
+                                        continue
+                            if stream_parts:
+                                analysis_text = "".join(stream_parts).strip()
+
+                        if analysis_text:
+                            _emit_agent_event("agent_action_complete", {
+                                "tool_name": "vision_analyze",
+                                "action_title": "Visual Analysis Complete",
+                                "summary": analysis_text[:120] + "...",
+                                "icon": "eye"
+                            })
+                            return {
+                                "status": "success",
+                                "image_target": clean_target,
+                                "mime_type": mime_type,
+                                "question": user_query,
+                                "analysis": analysis_text,
+                                "provider": c_prefix,
+                                "model": target_model
+                            }
     except Exception as c_err:
         logger.warning(f"[VisionTools] Custom provider vision check note: {c_err}")
 
@@ -203,24 +230,26 @@ async def _tool_vision_analyze(
         async def _analyze_with_gemini(client: Any) -> str:
             image_part = types.Part.from_bytes(data=img_bytes, mime_type=mime_type)
             prompt = (
-                f"Kamu adalah modul penglihatan visual (Vision Engine) Project Anara.\n"
-                f"Tugas: {user_query}\n"
-                "Analisis gambar berikut secara cermat, akurat, dan jelas. Berikan jawaban komprehensif."
+                f"You are the visual understanding engine for Project Anara.\n"
+                f"Task: {user_query}\n"
+                "Analyze this image accurately, factually, and thoroughly."
             )
             # Ensure model name sent to Google GenAI SDK does not contain foreign provider prefixes
             clean_g_model = v_model.split("/")[-1] if ("/" in v_model and not v_model.startswith("models/")) else v_model
+            if not clean_g_model.startswith("gemini"):
+                clean_g_model = "gemini-2.5-flash"
             response = await client.aio.models.generate_content(
                 model=clean_g_model,
                 contents=[image_part, prompt],
                 config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=2048)
             )
-            return response.text or "Tidak ada teks yang dapat dideskripsikan."
+            return response.text or ""
 
         analysis_text = await key_manager.execute_with_failover(_analyze_with_gemini)
 
         _emit_agent_event("agent_action_complete", {
             "tool_name": "vision_analyze",
-            "action_title": "Analisis Visual Selesai",
+            "action_title": "Visual Analysis Complete",
             "summary": analysis_text[:120] + "...",
             "icon": "eye"
         })
@@ -326,6 +355,8 @@ async def _tool_video_analyze(
             )
             v_model = _resolve_vision_model()
             clean_v_model = v_model.split("/")[-1] if ("/" in v_model and not v_model.startswith("models/")) else v_model
+            if not clean_v_model.startswith("gemini"):
+                clean_v_model = "gemini-2.5-flash"
             response = await client.aio.models.generate_content(
                 model=clean_v_model,
                 contents=[video_part, prompt],
