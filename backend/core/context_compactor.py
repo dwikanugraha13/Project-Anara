@@ -12,21 +12,73 @@ logger = logging.getLogger(__name__)
 
 
 def prune_tool_output(content: str, max_chars: int = 1500) -> str:
-    """Anara Standard: Prunes massive code or tool outputs inside context history."""
+    """Anara Standard: Prunes massive code or tool outputs inside context history (language-neutral Hermes Parity)."""
     if len(content) <= max_chars:
         return content
     if "```" in content:
-        return re.sub(r"```[\s\S]*?```", "[... cuplikan kode dipangkas ...]", content)
+        return re.sub(r"```[\s\S]*?```", "[... truncated output ...]", content)
     head = max_chars // 2
     tail = max_chars - head
-    return content[:head] + "\n[... cuplikan kode dipangkas ...]\n" + content[-tail:]
+    return content[:head] + "\n[... truncated output ...]\n" + content[-tail:]
 
 
 class ContextCompactor:
     """Manages context window compaction to maintain infinite multi-turn dialogue without token overflow."""
 
-    @staticmethod
+    @classmethod
+    def normalize_history(cls, history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Normalizes conversation history into strictly chronological, cleanly paired turns (Hermes Parity).
+        - Detects newest-first SQL results (id descending) and inverts them to chronological order (oldest-first).
+        - Re-stitches orphaned half-turns (e.g. user_text without ai_text followed by ai_text without user_text).
+        - Discards internal websocket JSON control frames.
+        """
+        if not history:
+            return []
+
+        # 1. Invert if newest-first (SQL ORDER BY id DESC)
+        if len(history) > 1:
+            first_id = history[0].get("id") or 0
+            last_id = history[-1].get("id") or 0
+            if first_id > last_id:
+                chronological = list(reversed(history))
+            else:
+                chronological = list(history)
+        else:
+            chronological = list(history)
+
+        # 2. Pair and clean
+        paired: List[Dict[str, Any]] = []
+        i = 0
+        while i < len(chronological):
+            curr = dict(chronological[i])
+            u = (curr.get("user_text") or "").strip()
+            a = (curr.get("ai_text") or "").strip()
+
+            if u.startswith("{") and '"type"' in u:
+                i += 1
+                continue
+
+            # Check if this row is an orphaned user prompt and next row is the orphaned AI response
+            if u and not a and i + 1 < len(chronological):
+                next_row = chronological[i + 1]
+                next_u = (next_row.get("user_text") or "").strip()
+                next_a = (next_row.get("ai_text") or "").strip()
+                if not next_u and next_a:
+                    curr["ai_text"] = next_a
+                    paired.append(curr)
+                    i += 2
+                    continue
+
+            if u or a:
+                paired.append(curr)
+            i += 1
+
+        return paired
+
+    @classmethod
     def compact_history(
+        cls,
         history: List[Dict[str, Any]],
         verbatim_turns: int = 5,
         max_summary_tokens: int = 400,
@@ -40,16 +92,7 @@ class ContextCompactor:
         if not history:
             return ""
 
-        # Filter out empty turns or internal leaked control frames
-        cleaned = []
-        for h in history:
-            u = (h.get("user_text") or "").strip()
-            a = (h.get("ai_text") or "").strip()
-            if u.startswith("{") and '"type"' in u:
-                continue
-            if u or a:
-                cleaned.append(h)
-
+        cleaned = cls.normalize_history(history)
         if not cleaned:
             return ""
 
@@ -82,7 +125,7 @@ class ContextCompactor:
                 first_u = u.split("\n")[0][:90]
                 capsule_lines.append(f"• User: {first_u}")
             if a:
-                summary_a = re.sub(r"```[\s\S]*?```", "[cuplikan kode/file]", a)
+                summary_a = re.sub(r"```[\s\S]*?```", "[code block]", a)
                 first_a = summary_a.split("\n")[0][:110]
                 capsule_lines.append(f"  Anara: {first_a}")
 

@@ -59,6 +59,13 @@ tests = [
     ("Self-Correction Circuit Breaker & Card", ts.test_subsystem_4_self_correction_circuit_breaker_and_card),
     ("Live Worktree Snapshot & Ground Truth", ts.test_subsystem_4_workspace_ground_truth_snapshot),
     ("Targeted Delete & Repo Protection", ts.test_subsystem_4_targeted_delete_and_repo_protection),
+    ("Screen Metrics & Chronological Context", ts.test_subsystem_2_screen_metrics_and_chronological_context),
+    ("Universal Computer Use (CUA)", ts.test_subsystem_2_computer_use_multiversal),
+    ("Workspace Sentinel & Ground Truth", ts.test_subsystem_5_workspace_sentinel_and_ground_truth),
+    ("Sub-Agent Delegation Engine", ts.test_pilar_1_subagent_delegation_engine),
+    ("Omnichannel Approval Dispatcher", ts.test_subsystem_3_universal_channel_approval_dispatch),
+    ("Live Telemetry & Visual HUD Events", ts.test_pillar_2_telemetry_hud_visual_events),
+    ("Episodic ADR Project Memory", ts.test_pillar_3_episodic_adr_project_memory),
 ]
 
 passed = 0
@@ -72,7 +79,9 @@ for name, test_fn in tests:
         print(f"  [PASS] {name:42} ({dt:.1f}ms)")
         passed += 1
     except Exception as e:
-        print(f"  [FAIL] {name:42} -> {e}")
+        import traceback
+        err_detail = traceback.format_exc().strip().splitlines()[-1]
+        print(f"  [FAIL] {name:42} -> {err_detail}")
         failed += 1
 
 print("\n" + "-" * 65)

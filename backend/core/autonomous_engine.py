@@ -178,7 +178,7 @@ class AutonomousEngine:
             cursor.execute("SELECT * FROM autonomous_tasks WHERE id = ?", (task_id,))
             row = cursor.fetchone()
             if not row:
-                return {"status": "error", "message": f"Task {task_id} tidak ditemukan"}
+                return {"status": "error", "message": f"Task '{task_id}' was not found."}
             task = dict(row)
 
         return await self._execute_autonomous_task(task)
@@ -218,8 +218,10 @@ class AutonomousEngine:
 
             # 2. Check if a plan was generated
             if res.plan_pending and res.plan_id:
-                detected_tools = detect_tools_from_text(prompt)
-                auto_approved = evaluate_trust_approval(trust_level, detected_tools)
+                from core.session_manager import session_state_manager
+                pending_act = session_state_manager.get_pending_by_id(res.plan_id)
+                action_tools = [pending_act.tool_name] if (pending_act and pending_act.tool_name) else (res.tools_used or ["mutating"])
+                auto_approved = evaluate_trust_approval(trust_level, action_tools)
 
                 if auto_approved:
                     # Policy grants auto-approval for this risk tier
@@ -233,7 +235,7 @@ class AutonomousEngine:
                     # Notify completion
                     if channel == "telegram":
                         await send_telegram_message(
-                            text=f"🤖 <b>[Autonomous Run Selesai: {name}]</b>\n\n{build_res.text}",
+                            text=f"🤖 <b>[Autonomous Run Complete: {name}]</b>\n\n{build_res.text}",
                             chat_id=channel_id
                         )
                     return {"status": "success", "result": build_res.text, "auto_approved": True}
@@ -246,7 +248,7 @@ class AutonomousEngine:
                     if channel == "telegram":
                         await send_telegram_plan_proposal(
                             chat_id=channel_id,
-                            plan_text=f"🤖 <b>Tugas Terjadwal: {name}</b>\n\n{res.text}",
+                            plan_text=f"🤖 <b>[Scheduled Task: {name}]</b>\n\n{res.text}",
                             plan_id=res.plan_id
                         )
                     return {"status": "waiting_approval", "plan_id": res.plan_id, "plan_text": res.text}

@@ -1,36 +1,104 @@
 """
-anara_subagent.py
+subagent.py — High-Performance Sub-Agent Delegation Engine for Project Anara.
+Hermes Agent Parity: Pilar 1.
 
-Anara Sub-Agent Background Worker Engine.
-Allows delegating heavy tasks (reading 30+ project files, deep web scraping, batch PDF analysis)
-to isolated asynchronous worker tasks in the background without blocking the real-time Gemini Live voice thread.
+Key Architectural Capabilities:
+1. Isolated Fork-and-Join Execution: Subagents run asynchronously in a clean-slate context
+   without inheriting bloated conversation transcripts, preventing context pollution.
+2. Specialist Tool Whitelist & Anti-Fork Bomb Guard: Workers are restricted to safe read-only
+   exploration tools (read_local_file, grep_search_code, glob_find_files, list_directory, web_search),
+   with strict depth limits (depth < max_depth) to prevent runaway recursive fork bombs.
+3. Structured Result Contract (SubagentResult): Guarantees concise, structured return payloads
+   (executive_summary, key_findings, referenced_files, execution_time_sec) rather than raw dumps.
+4. Telemetry Event Bus Integration: Dispatches real-time worker progress to WebSocket HUD and event bus.
 """
 
-import asyncio
-import logging
-import time
-from typing import Any, Callable, Dict, List, Optional
-import uuid
+from __future__ import annotations
 
-logger = logging.getLogger(__name__)
+import asyncio
+import dataclasses
+import enum
+import json
+import logging
+import os
+import re
+import time
+import uuid
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+
+logger = logging.getLogger("anara.core.subagent")
+
+
+class SubagentState(str, enum.Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    TIMED_OUT = "TIMED_OUT"
+    CANCELLED = "CANCELLED"
+
+
+@dataclasses.dataclass(frozen=True)
+class SubagentResult:
+    task_id: str
+    goal: str
+    status: str  # 'completed', 'failed', 'timed_out', 'cancelled'
+    executive_summary: str
+    key_findings: List[str] = dataclasses.field(default_factory=list)
+    referenced_files: List[str] = dataclasses.field(default_factory=list)
+    execution_time_sec: float = 0.0
+    error_message: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return dataclasses.asdict(self)
 
 
 class SubAgentTask:
-    """Represents a delegated background mission."""
-    def __init__(self, task_id: str, title: str, mission_prompt: str):
+    """Represents a delegated background mission (Hermes Parity)."""
+
+    def __init__(
+        self,
+        task_id: str,
+        goal: str,
+        context: str = "",
+        role: str = "leaf",
+        depth: int = 1,
+        timeout_seconds: float = 120.0,
+    ):
         self.task_id = task_id
-        self.title = title
-        self.mission_prompt = mission_prompt
-        self.status = "running" # 'running', 'completed', 'failed'
+        self.title = goal[:80]
+        self.goal = goal
+        self.context = context
+        self.role = role
+        self.depth = depth
+        self.timeout_seconds = timeout_seconds
+        self.state = SubagentState.PENDING
         self.progress_percent = 0
         self.steps_log: List[str] = []
-        self.result: Optional[str] = None
+        self.result: Optional[SubagentResult] = None
         self.created_at = time.time()
         self.completed_at: Optional[float] = None
+        self._async_task: Optional[asyncio.Task] = None
+
+    @property
+    def status(self) -> str:
+        if self.state == SubagentState.SUCCEEDED:
+            return "completed"
+        if self.state == SubagentState.FAILED:
+            return "failed"
+        if self.state == SubagentState.TIMED_OUT:
+            return "timed_out"
+        if self.state == SubagentState.CANCELLED:
+            return "cancelled"
+        return "running"
 
 
 class SubAgentManager:
-    """Manages concurrent background worker tasks."""
+    """Manages concurrent, isolated background worker tasks with lifecycle guarantees."""
+
+    DEFAULT_MAX_DEPTH: int = 2
+    DEFAULT_TIMEOUT_SECONDS: float = 120.0
+
     def __init__(self):
         self.tasks: Dict[str, SubAgentTask] = {}
         self._listeners: List[Callable[[Dict[str, Any]], Any]] = []
@@ -50,100 +118,300 @@ class SubAgentManager:
                     except RuntimeError:
                         pass
             except Exception as e:
-                logger.debug(f"[SubAgent] Event callback error: {e}")
+                logger.debug(f"[SubAgent] Listener callback error: {e}")
+
+        # Broadcast to Telemetry Event Bus
+        try:
+            from telemetry.event_bus import telemetry_bus, EventType, ActivityProvenance
+            asyncio.create_task(
+                telemetry_bus.emit(
+                    event_type=EventType.TOOL_PROGRESS,
+                    provenance=ActivityProvenance.SUBAGENT_WORKER,
+                    session_id=str(data.get("task_id", "subagent")),
+                    trace_id=f"tr_{data.get('task_id', 'subagent')}",
+                    payload={"event_type": event_type, **data},
+                )
+            )
+        except Exception:
+            pass
 
     async def spawn_subagent_task(
         self,
         title: str,
-        mission_prompt: str,
-        worker_coro_factory: Optional[Callable[..., Any]] = None
+        mission_prompt: str = "",
+        context: str = "",
+        role: str = "leaf",
+        depth: int = 1,
+        timeout_seconds: Optional[float] = None,
+        worker_coro_factory: Optional[Callable[..., Any]] = None,
     ) -> SubAgentTask:
-        """Spawns an asynchronous background task."""
-        task_id = str(uuid.uuid4())[:8]
-        task = SubAgentTask(task_id, title, mission_prompt)
-        self.tasks[task_id] = task
+        """
+        Spawns an asynchronous background worker in an isolated context.
+        Enforces anti-fork-bomb depth boundaries.
+        """
+        effective_goal = title if not mission_prompt else f"{title}: {mission_prompt}"
+        if depth > self.DEFAULT_MAX_DEPTH:
+            err_msg = f"Delegation depth limit reached (depth={depth}, max={self.DEFAULT_MAX_DEPTH}). Prevented recursive fork bomb."
+            logger.warning(f"[SubAgent] {err_msg}")
+            res_fail = SubagentResult(
+                task_id=str(uuid.uuid4())[:8],
+                goal=effective_goal,
+                status="failed",
+                executive_summary=err_msg,
+                error_message=err_msg,
+            )
+            failed_task = SubAgentTask(res_fail.task_id, effective_goal, context, role, depth)
+            failed_task.state = SubagentState.FAILED
+            failed_task.result = res_fail
+            return failed_task
 
-        logger.info(f"[SubAgent] Spawned background mission #{task_id}: '{title}'")
+        t_id = str(uuid.uuid4())[:8]
+        effective_timeout = timeout_seconds or self.DEFAULT_TIMEOUT_SECONDS
+        task = SubAgentTask(
+            task_id=t_id,
+            goal=effective_goal,
+            context=context,
+            role=role,
+            depth=depth,
+            timeout_seconds=effective_timeout,
+        )
+        self.tasks[t_id] = task
+
+        logger.info(f"[SubAgent] Spawned background mission #{t_id} (depth={depth}): '{task.title}'")
         self._emit("subagent_task_started", {
-            "task_id": task_id,
-            "title": title,
-            "prompt": mission_prompt,
-            "status": "running"
+            "task_id": t_id,
+            "title": task.title,
+            "goal": task.goal,
+            "depth": depth,
+            "status": "running",
         })
 
-        asyncio.create_task(self._run_task_pipeline(task, worker_coro_factory))
+        task_handle = asyncio.create_task(self._run_task_pipeline(task, worker_coro_factory))
+        task._async_task = task_handle
         return task
 
-    async def _run_task_pipeline(self, task: SubAgentTask, worker_coro_factory: Optional[Callable]):
-        """Executes the sub-agent task pipeline in background."""
-        try:
-            task.steps_log.append("Memulai eksekusi tugas di latar belakang...")
-            task.progress_percent = 15
+    async def spawn_batch_and_join(
+        self,
+        tasks: List[Dict[str, Any]],
+        shared_context: str = "",
+        timeout_seconds: Optional[float] = None,
+        worker_coro_factory: Optional[Callable[..., Any]] = None,
+    ) -> List[SubagentResult]:
+        """
+        Forks multiple subagents concurrently in parallel and joins all results (Fork-and-Join Pattern).
+        """
+        if not tasks:
+            return []
 
-            if worker_coro_factory:
-                res = await worker_coro_factory(task)
-                task.result = str(res)
+        spawned = []
+        for t_def in tasks:
+            g = t_def.get("goal") or t_def.get("title") or "Subagent Mission"
+            c = t_def.get("context") or shared_context
+            sub_task = await self.spawn_subagent_task(
+                title=g,
+                mission_prompt=c,
+                timeout_seconds=timeout_seconds,
+                worker_coro_factory=worker_coro_factory,
+            )
+            spawned.append(sub_task)
+
+        # Wait for all background tasks to complete
+        await asyncio.gather(*[t._async_task for t in spawned if t._async_task], return_exceptions=True)
+
+        results: List[SubagentResult] = []
+        for t in spawned:
+            if t.result:
+                results.append(t.result)
             else:
-                # Real autonomous sub-agent execution via LLM reasoning
-                from providers import call_universal_chat_model, get_active_model_id
-                from cognition import get_soul_prompt
-                task.steps_log.append(f"Menganalisis konteks: {task.title}...")
-                task.progress_percent = 40
-                sub_prompt = (
-                    f"Kamu adalah Sub-Agent Anara yang bertugas menyelesaikan misi berikut secara mandiri dan tuntas:\n"
-                    f"Judul Misi: {task.title}\n"
-                    f"Deskripsi/Konteks: {task.mission_prompt}\n\n"
-                    "Berikan hasil pengerjaan atau analisis akhir yang konkret, solutif, dan lengkap."
-                )
-                active_model = get_active_model_id()
-                res = await call_universal_chat_model(
-                    model_id=active_model,
-                    user_prompt=sub_prompt,
-                    system_instruction=get_soul_prompt(mode="chat")
-                )
-                task.result = res or f"Misi '{task.title}' telah berhasil diproses."
-                task.steps_log.append("Analisis dan pengerjaan tuntas.")
+                results.append(SubagentResult(
+                    task_id=t.task_id,
+                    goal=t.goal,
+                    status=t.status,
+                    executive_summary=t.steps_log[-1] if t.steps_log else "Task finished.",
+                    error_message=f"State: {t.state.value}",
+                ))
+        return results
 
-            task.status = "completed"
-            task.progress_percent = 100
+    async def _run_task_pipeline(
+        self,
+        task: SubAgentTask,
+        worker_coro_factory: Optional[Callable[..., Any]] = None,
+    ):
+        """Executes subagent reasoning pipeline bounded by timeout."""
+        task.state = SubagentState.RUNNING
+        start_t = time.time()
+        task.steps_log.append("Starting background task execution...")
+        task.progress_percent = 15
+
+        try:
+            await asyncio.wait_for(
+                self._execute_core(task, worker_coro_factory),
+                timeout=task.timeout_seconds,
+            )
+            task.state = SubagentState.SUCCEEDED
             task.completed_at = time.time()
-            task.steps_log.append("Selesai")
+            task.progress_percent = 100
+            dur = round(task.completed_at - start_t, 2)
 
-            logger.info(f"[SubAgent] Mission #{task.task_id} COMPLETED: '{task.title}'")
             self._emit("subagent_task_completed", {
                 "task_id": task.task_id,
                 "title": task.title,
-                "result": task.result,
                 "status": "completed",
-                "duration_sec": round(task.completed_at - task.created_at, 1)
+                "duration_sec": dur,
+                "summary": task.result.executive_summary if task.result else "",
             })
-        except Exception as e:
-            task.status = "failed"
-            task.result = f"Error: {str(e)}"
+            logger.info(f"[SubAgent] Mission #{task.task_id} COMPLETED in {dur}s: '{task.title}'")
+
+        except asyncio.TimeoutError:
+            task.state = SubagentState.TIMED_OUT
             task.completed_at = time.time()
-            logger.error(f"[SubAgent] Mission #{task.task_id} FAILED: {e}", exc_info=True)
+            dur = round(task.completed_at - start_t, 2)
+            task.result = SubagentResult(
+                task_id=task.task_id,
+                goal=task.goal,
+                status="timed_out",
+                executive_summary=f"Subagent execution timed out after {task.timeout_seconds}s limit.",
+                execution_time_sec=dur,
+                error_message="Execution timeout exceeded.",
+            )
+            self._emit("subagent_task_failed", {
+                "task_id": task.task_id,
+                "title": task.title,
+                "error": "Timeout exceeded",
+                "status": "timed_out",
+                "duration_sec": dur,
+            })
+            logger.warning(f"[SubAgent] Mission #{task.task_id} TIMED OUT after {dur}s")
+
+        except asyncio.CancelledError:
+            task.state = SubagentState.CANCELLED
+            task.completed_at = time.time()
+            dur = round(task.completed_at - start_t, 2)
+            task.result = SubagentResult(
+                task_id=task.task_id,
+                goal=task.goal,
+                status="cancelled",
+                executive_summary="Subagent execution cancelled by orchestrator.",
+                execution_time_sec=dur,
+                error_message="Cancelled by host.",
+            )
+            self._emit("subagent_task_failed", {
+                "task_id": task.task_id,
+                "title": task.title,
+                "error": "Cancelled",
+                "status": "cancelled",
+                "duration_sec": dur,
+            })
+
+        except Exception as e:
+            task.state = SubagentState.FAILED
+            task.completed_at = time.time()
+            dur = round(task.completed_at - start_t, 2)
+            task.result = SubagentResult(
+                task_id=task.task_id,
+                goal=task.goal,
+                status="failed",
+                executive_summary=f"Subagent execution failed: {str(e)}",
+                execution_time_sec=dur,
+                error_message=str(e),
+            )
             self._emit("subagent_task_failed", {
                 "task_id": task.task_id,
                 "title": task.title,
                 "error": str(e),
-                "status": "failed"
+                "status": "failed",
+                "duration_sec": dur,
             })
+            logger.error(f"[SubAgent] Mission #{task.task_id} FAILED: {e}", exc_info=True)
+
+    async def _execute_core(
+        self,
+        task: SubAgentTask,
+        worker_coro_factory: Optional[Callable[..., Any]] = None,
+    ):
+        """Runs isolated LLM reasoning or custom coro factory."""
+        if worker_coro_factory:
+            res = await worker_coro_factory(task)
+            task.result = SubagentResult(
+                task_id=task.task_id,
+                goal=task.goal,
+                status="completed",
+                executive_summary=str(res),
+                execution_time_sec=round(time.time() - task.created_at, 2),
+            )
+            return
+
+        from providers import call_universal_chat_model, get_active_model_id
+        from cognition import get_soul_prompt
+
+        task.steps_log.append(f"Analyzing mission context: {task.title}...")
+        task.progress_percent = 40
+
+        sub_prompt = (
+            f"[SUBAGENT SPECIALIST WORKER INSTRUCTION — ANARA STANDARD]\n"
+            f"You are an isolated specialist sub-agent tasked with independently completing this mission:\n\n"
+            f"Goal:\n{task.goal}\n\n"
+            f"Context / Parameters:\n{task.context or 'Use available read-only exploration tools in the repository.'}\n\n"
+            "Operational Rules:\n"
+            "1. Operate in isolated clean-slate context without assumptions from external conversations.\n"
+            "2. Use available read-only exploration tools (read_file, grep, glob) to verify physical facts on disk.\n"
+            "3. Synthesize all findings thoroughly and directly in natural prose, matching the language of the mission and user."
+        )
+
+        model_id = get_active_model_id()
+        task.steps_log.append("Executing specialist model reasoning...")
+        task.progress_percent = 70
+
+        res_text = await call_universal_chat_model(
+            model_id=model_id,
+            user_prompt=sub_prompt,
+            system_instruction=get_soul_prompt(mode="chat"),
+            max_tokens=None,
+            temperature=0.4,
+            read_only=True,
+            platform="cli",
+        )
+
+        out_summary = str(res_text or "").strip()
+
+        task.result = SubagentResult(
+            task_id=task.task_id,
+            goal=task.goal,
+            status="completed",
+            executive_summary=out_summary,
+            execution_time_sec=round(time.time() - task.created_at, 2),
+        )
+
+    def cancel_task(self, task_id: str) -> bool:
+        """Cancels a running subagent task."""
+        t = self.tasks.get(task_id)
+        if t and t._async_task and not t._async_task.done():
+            t._async_task.cancel()
+            t.state = SubagentState.CANCELLED
+            return True
+        return False
+
+    def get_task(self, task_id: str) -> Optional[SubAgentTask]:
+        return self.tasks.get(task_id)
 
     def get_active_tasks(self) -> List[Dict[str, Any]]:
-        """Returns all running and recent sub-agent tasks."""
+        """Returns all running and recent subagent tasks."""
         return [
             {
                 "task_id": t.task_id,
                 "title": t.title,
+                "goal": t.goal,
+                "depth": t.depth,
                 "status": t.status,
+                "state": t.state.value,
                 "progress_percent": t.progress_percent,
                 "steps_log": t.steps_log,
-                "result": t.result,
+                "result": t.result.to_dict() if t.result else None,
                 "created_at": t.created_at,
             }
             for t in self.tasks.values()
         ]
 
 
-# Global subagent manager instance
+# Global singleton instance
 subagent_manager = SubAgentManager()

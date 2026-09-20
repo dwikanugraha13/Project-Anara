@@ -8,12 +8,13 @@ from .audio import (
     pcm16_to_float32,
     is_stt_hallucination,
     AcousticSERTracker,
+    synthesize_speech_audio,
+    resolve_tts_voice_model_driven,
 )
-from .proactive import ProactiveEngine
-from .briefing import generate_daily_briefing, is_briefing_request
 from .visual import (
     generate_visual_projection,
     could_be_visual_request,
+    is_visual_request_semantic,
     generate_smart_hud_card,
     fetch_real_web_images,
 )
@@ -29,11 +30,11 @@ __all__ = [
     "pcm16_to_float32",
     "is_stt_hallucination",
     "AcousticSERTracker",
-    "ProactiveEngine",
-    "generate_daily_briefing",
-    "is_briefing_request",
+    "synthesize_speech_audio",
+    "resolve_tts_voice_model_driven",
     "generate_visual_projection",
     "could_be_visual_request",
+    "is_visual_request_semantic",
     "generate_smart_hud_card",
     "fetch_real_web_images",
     "get_soul_prompt",

@@ -15,9 +15,11 @@ import sqlite3
 import os
 from typing import Optional, Dict, Any, List
 
+from constants import get_anara_db_path
+
 logger = logging.getLogger(__name__)
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "anara_brain.db")
+DB_PATH = get_anara_db_path()
 
 
 class EmotionEngine:
@@ -157,70 +159,25 @@ class EmotionEngine:
 
     def _matches_behavior(self, text_lower: str, behavior: Dict[str, Any]) -> bool:
         """
-        Checks if text contains any of the behavior's trigger keywords.
-
-        Uses WHOLE-WORD matching: a plain substring test made "musik" match inside
-        "bermusik"/"musiknya", which caused false dance triggers.
+        Deprecated in Hermes Agent Parity: Avatar animations and emotional gestures
+        are driven strictly by autonomous model reasoning via the trigger_avatar_animation tool,
+        rather than brittle keyword substring regex matches.
         """
-        for kw in behavior["keywords"]:
-            kw = (kw or "").strip().lower()
-            if not kw:
-                continue
-            try:
-                if re.search(rf"(?<!\w){re.escape(kw)}(?!\w)", text_lower):
-                    return True
-            except re.error:
-                if kw in text_lower:
-                    return True
         return False
 
     def analyze(self, text: str, allow_dance: bool = True) -> Optional[Dict[str, Any]]:
         """
-        Analyzes transcript text against database behavior profiles.
-        Returns matching emotion, gesture, intensity, and duration.
-
-        allow_dance=False downgrades a 'dance' verdict to a cheerful reaction.
-        Use it whenever the analysed text is ANARA'S OWN speech — her mentioning
-        the word "nari"/"musik" must never start the Rumba animation. Dancing is
-        reserved for explicit user commands (and their confirmation).
+        Hermes Agent Parity: Default conversational speech streams in natural talking state.
+        Deliberate physical body gestures and expressions (dance, salute, greeting, thinking, etc.)
+        are governed directly by model cognition via the trigger_avatar_animation tool.
         """
         if not text or not text.strip():
             return None
-
-        t = text.lower().strip()
-
-        # Check against dynamic database animation profiles
-        for b in self._behaviors:
-            if self._matches_behavior(t, b):
-                is_dance = (b.get("emotion") == "dance") or (b.get("category") == "dance")
-                if is_dance and not allow_dance:
-                    logger.info(
-                        f"[EmotionEngine] Dance keyword seen in AI speech — downgraded to happy "
-                        f"(text: {t[:48]!r})"
-                    )
-                    return {
-                        "animation_name": "happy",
-                        "emotion": "happy",
-                        "gesture": "joy",
-                        "intensity": 0.75,
-                        "duration_sec": 3.0,
-                    }
-                return {
-                    "animation_name": b["name"],
-                    "emotion": b["emotion"],
-                    "gesture": b["gesture"],
-                    "intensity": b["intensity"],
-                    "duration_sec": b["duration_sec"],
-                }
-
-        # Question mark fallback
-        if "?" in t:
-            return {"animation_name": "question", "emotion": "curious", "gesture": "question", "intensity": 0.75}
 
         return {"animation_name": "talking", "emotion": "neutral", "gesture": "talking", "intensity": 0.60}
 
     def analyze_full_turn(self, full_turn_text: str, allow_dance: bool = True) -> Optional[Dict[str, Any]]:
         """
-        Performs comprehensive emotion analysis over the entire AI response turn.
+        Performs baseline state resolution over the entire turn.
         """
         return self.analyze(full_turn_text, allow_dance=allow_dance)

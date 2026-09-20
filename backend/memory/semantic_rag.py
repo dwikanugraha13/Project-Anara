@@ -61,10 +61,10 @@ def get_current_indonesian_time_str(offset_minutes: Optional[int] = None, tz_nam
     }
 
 
-def _exec_universal_llm(prompt: str, max_tokens: int = 350) -> Optional[str]:
+def _exec_universal_llm(prompt: str, max_tokens: Optional[int] = None) -> Optional[str]:
     """
     Executes an internal cognitive prompt using the user's active model (Model Sovereignty)
-    through call_universal_chat_model without hardcoding provider SDKs.
+    through call_universal_chat_model without hardcoding provider SDKs or artificial token chokeholds.
     """
     from core.capabilities import get_fast_auxiliary_model
     from providers.caller import call_universal_chat_model
@@ -135,7 +135,7 @@ KEMBALIKAN HANYA JSON VALID:
   "confirmation_question": "Bahwa Panda adalah hewan kesukaan kamu, Anara boleh mengingatnya, {eff_speaker}?"
 }}"""
 
-    raw_text = _exec_universal_llm(prompt, max_tokens=350)
+    raw_text = _exec_universal_llm(prompt, max_tokens=None)
     if raw_text:
         raw = raw_text.strip()
         if "{" in raw and "}" in raw:
@@ -196,7 +196,7 @@ KEMBALIKAN HANYA JSON VALID:
   "confirmation_prompt": "Bahwa Panda adalah hewan kesukaan kamu, Anara boleh mengingatnya, {eff_speaker}?"
 }}"""
 
-    raw_text = _exec_universal_llm(prompt, max_tokens=300)
+    raw_text = _exec_universal_llm(prompt, max_tokens=None)
     if raw_text:
         raw = raw_text.strip()
         if "{" in raw and "}" in raw:
@@ -385,58 +385,6 @@ class SemanticRAGMixin:
             + "\n".join([f"- {n}" for n in proactive_notes]) + "\n"
         )
 
-    def set_pending_proposal(self, speaker_name: str, proposal: Dict[str, Any]):
-        """Stages a proposed fact/task waiting for user's explicit verbal/chat confirmation."""
-        proposal["timestamp"] = time.time()
-        self._pending_proposals[speaker_name.strip().title()] = proposal
-
-    def get_pending_proposal(self, speaker_name: str) -> Optional[Dict[str, Any]]:
-        """Retrieves active pending proposal if within 3-minute window."""
-        p = self._pending_proposals.get(speaker_name.strip().title())
-        if p and (time.time() - p.get("timestamp", 0)) < 180:
-            return p
-        return None
-
-    def commit_pending_proposal(self, speaker_name: str) -> Optional[str]:
-        """User confirmed: commits the pending fact/task/deletion to SQLite database."""
-        p = self.get_pending_proposal(speaker_name)
-        if not p:
-            return None
-        self._pending_proposals.pop(speaker_name.strip().title(), None)
-        p_type = p.get("type", "fact")
-        target_name = canonicalize_speaker_name(speaker_name) or speaker_name.strip().title()
-        if p_type == "fact":
-            self.store_memory(target_name, p["key"], p["value"], p.get("category", "preference"))
-            title_lbl = p.get("title", p["key"].replace("_", " "))
-            return f"Siap {target_name}! Anara akan selalu mengingat bahwa '{p['value']}' adalah {title_lbl} kamu. ✨"
-        elif p_type == "todo":
-            self.create_note_or_todo(
-                title=p["title"],
-                content=p.get("content", ""),
-                category=p.get("category", "todo"),
-                due_date=p.get("due_date"),
-                speaker_name=target_name
-            )
-            return f"Siap {target_name}! Tugas '{p['title']}' sudah resmi Anara catat di daftar to-do kamu."
-        elif p_type == "delete_speaker":
-            target_del = p.get("target_speaker", target_name)
-            self.delete_speaker(target_del)
-            return f"Profil {target_del} beserta seluruh ingatan dan catatan telah resmi dihapus dari database Anara."
-        elif p_type == "enroll_speaker":
-            target_sp = p.get("target_speaker", "Tamu")
-            self.enroll_or_update_speaker(target_sp)
-            return f"Siap {target_name}! Profil pengguna baru '{target_sp}' telah berhasil didaftarkan di sistem database Anara."
-        return None
-
-    def reject_pending_proposal(self, speaker_name: str) -> Optional[str]:
-        p = self._pending_proposals.pop(speaker_name.strip().title(), None)
-        if not p:
-            return None
-        p_type = p.get("type", "fact")
-        if p_type == "delete_speaker":
-            return "Baik, penghapusan profil dibatalkan. Profil dan seluruh catatanmu tetap aman di database Anara."
-        return "Baik, pencatatan dibatalkan. Tidak ada data yang disimpan ke database."
-
     def store_memory(self, speaker_name: str, key: str, value: str, category: str = "preference") -> bool:
         """Stores or updates a specific fact or preference for a speaker, replacing and deduplicating old keys."""
         norm_key = self.normalize_memory_key(key)
@@ -577,11 +525,11 @@ class SemanticRAGMixin:
             return [dict(r) for r in cursor.fetchall()]
 
     def search_knowledge(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
-        """Keyword-scored search across stored voice notes."""
+        """Multilingual Unicode tokenized search across stored voice notes (Hermes Parity)."""
         q = (query or "").strip().lower()
         if not q:
             return []
-        terms = [t for t in re.findall(r"[a-z0-9]+", q) if len(t) > 2]
+        terms = [t for t in re.findall(r"[\w\d]+", q, re.UNICODE) if len(t) > 1]
         entries = self.get_knowledge_entries(limit=200)
         scored: List[Any] = []
         for e in entries:
@@ -609,9 +557,9 @@ class SemanticRAGMixin:
         """
         time_info = get_current_indonesian_time_str()
         time_header = (
-            f"\n[WAKTU & KALENDER REAL-TIME]:\n"
-            f"Hari & Tanggal: {time_info['date_full']}\n"
-            f"Waktu Sekarang: {time_info['time_str']} ({time_info['tz_offset']})\n\n"
+            f"\n[REAL-TIME SYSTEM CLOCK / WAKTU REAL-TIME]:\n"
+            f"Date / Tanggal: {time_info['date_full']}\n"
+            f"Time / Waktu: {time_info['time_str']} ({time_info['tz_offset']})\n\n"
         )
 
         target_speaker = canonicalize_speaker_name(speaker_name) if speaker_name else (self.get_last_active_speaker_name() or "Agnan")
@@ -672,20 +620,20 @@ class SemanticRAGMixin:
 
         projs = self.get_projects_for_speaker(speaker_name=target_speaker)
         active_projs = [p for p in projs if p.get("status") == "active"][:3]
-        proj_str = "\n".join([f"- Proyek '{p['name']}'" + (f" ({p['tech_stack']})" if p.get('tech_stack') else "") + (f": Target '{p['goal']}'" if p.get('goal') else "") for p in active_projs]) if active_projs else "- Belum ada proyek aktif tersimpan."
+        proj_str = "\n".join([f"- Proyek '{p['name']}'" + (f" ({p['tech_stack']})" if p.get('tech_stack') else "") + (f": Target '{p['goal']}'" if p.get('goal') else "") for p in active_projs]) if active_projs else ""
+        proj_section = f"[PROYEK AKTIF {target_speaker.upper()}]:\n{proj_str}\n\n" if proj_str else ""
 
         m_rows = self.get_memories_for_speaker(target_speaker)
         mem_str = "\n".join([f"- {r['key'].replace('_', ' ').title()} ({r['category']}): {r['value']}" for r in m_rows]) if m_rows else f"- Nama: {target_speaker} (Profil aktif utama di database Anara)."
 
-        tone_guidance = "Gunakan bahasa Indonesia yang ramah, hangat, natural, dan ringkas (1-2 kalimat)."
+        tone_guidance = "Sesuaikan bahasa responmu secara alami dengan bahasa pengguna (match user's language). Jawab secara ramah, hangat, natural, dan ringkas (1-2 kalimat)."
 
         if is_chat_mode:
             active_section = (
                 f"[PROFIL PENGGUNA AKTIF]: {target_speaker}\n\n"
                 f"[FAKTA DAN INGATAN PRIBADI {target_speaker.upper()} DI DATABASE]:\n"
                 f"{mem_str}\n\n"
-                f"[PROYEK AKTIF & RIWAYAT KERJA {target_speaker.upper()}]:\n"
-                f"{proj_str}\n\n"
+                f"{proj_section}"
                 f"[CATATAN & TO-DO {target_speaker.upper()} DI DATABASE]:\n"
                 f"{todo_str}\n\n"
                 f"[PANDUAN INTERAKSI WORKSPACE CHAT]:\n"
@@ -698,8 +646,7 @@ class SemanticRAGMixin:
                 f"[PROFIL PENGGUNA AKTIF]: {target_speaker}\n\n"
                 f"[FAKTA DAN INGATAN PRIBADI {target_speaker.upper()} DI DATABASE]:\n"
                 f"{mem_str}\n\n"
-                f"[PROYEK AKTIF & RIWAYAT KERJA {target_speaker.upper()}]:\n"
-                f"{proj_str}\n\n"
+                f"{proj_section}"
                 f"[CATATAN & TO-DO {target_speaker.upper()} DI DATABASE]:\n"
                 f"{todo_str}\n\n"
                 f"[PANDUAN INTERAKSI UTAMA]:\n"

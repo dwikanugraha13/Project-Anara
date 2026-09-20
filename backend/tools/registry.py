@@ -176,19 +176,19 @@ class ToolRegistry:
 
         fn = tool.handler
         try:
-            if inspect.iscoroutinefunction(fn):
-                return await fn(**args)
-            else:
-                return fn(**args)
+            res = fn(**args)
+            if inspect.isawaitable(res):
+                return await res
+            return res
         except TypeError as te:
             # Handle possible extra/missing kwargs
             try:
                 sig = inspect.signature(fn)
                 valid_args = {k: v for k, v in args.items() if k in sig.parameters}
-                if inspect.iscoroutinefunction(fn):
-                    return await fn(**valid_args)
-                else:
-                    return fn(**valid_args)
+                res = fn(**valid_args)
+                if inspect.isawaitable(res):
+                    return await res
+                return res
             except Exception as e:
                 logger.error(f"[ToolRegistry] Error calling {name}: {e}")
                 return {"status": "error", "message": f"Kesalahan pemanggilan tool {name}: {str(e)}"}

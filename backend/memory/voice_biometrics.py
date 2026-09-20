@@ -175,13 +175,10 @@ def extract_voice_embedding(audio_pcm: bytes, sample_rate: int = 16000) -> Optio
 
 
 def canonicalize_speaker_name(name: Optional[str]) -> Optional[str]:
-    """Ensures consistent title-cased and stripped speaker name, mapping known speech-to-text typos."""
+    """Ensures consistent title-cased and stripped speaker name (zero hardcoded typos)."""
     if not name:
         return None
-    clean = name.strip().strip("'\"").title()
-    if clean.lower() in ("adnan", "ag nan", "ad nan"):
-        return "Agnan"
-    return clean
+    return name.strip().strip("'\"").title()
 
 
 class VoiceBiometricsMixin:
@@ -191,7 +188,7 @@ class VoiceBiometricsMixin:
         """Enrolls a new speaker or updates an existing speaker without duplicates."""
         clean_name = canonicalize_speaker_name(name)
         if not clean_name:
-            return {"status": "error", "message": "Nama tidak valid"}
+            return {"status": "error", "message": "Invalid speaker name"}
 
         emb = extract_voice_embedding(audio_pcm) if audio_pcm else None
         emb_json = json.dumps(emb.tolist()) if emb is not None else None
@@ -243,10 +240,10 @@ class VoiceBiometricsMixin:
     def calibrate_speaker_voice(self, name: str, audio_pcm: bytes) -> Dict[str, Any]:
         """Explicitly calibrates voice embedding for a given speaker profile from audio."""
         if not audio_pcm or len(audio_pcm) < 3200:
-            return {"status": "error", "message": "Sampel audio terlalu pendek untuk kalibrasi biometrik."}
+            return {"status": "error", "message": "Audio sample is too short for biometric calibration (minimum 200ms required)."}
         emb = extract_voice_embedding(audio_pcm)
         if emb is None:
-            return {"status": "error", "message": "Gagal mengekstrak sidik suara dari audio. Pastikan Anda berbicara dengan jelas."}
+            return {"status": "error", "message": "Failed to extract voice embedding from audio. Speak clearly into the microphone."}
         return self.enroll_or_update_speaker(name, audio_pcm)
 
     def get_last_active_speaker_name(self) -> Optional[str]:
@@ -388,23 +385,10 @@ class VoiceBiometricsMixin:
             return True
 
     def normalize_memory_key(self, raw_key: str) -> str:
-        """Normalizes any variation of a preference key (e.g. lagu_favorit_baru) to its canonical key."""
+        """
+        Normalizes memory key format (snake_case) and cleans temporal suffixes (Hermes Parity).
+        Semantic naming is preserved directly from model reasoning without rigid word dictionaries.
+        """
         k = raw_key.strip().lower().replace("-", "_").replace(" ", "_")
-        k = re.sub(r"_(?:baru|baruku|sekarang|ini|terbaru)$", "", k)
-        if "band" in k or "grup_musik" in k:
-            return "band_favorit"
-        if "lagu" in k or "musik" in k:
-            return "lagu_favorit"
-        if "makan" in k or "kuliner" in k:
-            return "makanan_favorit"
-        if "minum" in k:
-            return "minuman_favorit"
-        if "hobi" in k or "kegemaran" in k:
-            return "hobi"
-        if "warna" in k:
-            return "warna_favorit"
-        if "film" in k or "movie" in k:
-            return "film_favorit"
-        if "game" in k or "permainan" in k:
-            return "game_favorit"
+        k = re.sub(r"_(?:baru|baruku|sekarang|ini|terbaru|new|current|latest|recent)$", "", k)
         return k

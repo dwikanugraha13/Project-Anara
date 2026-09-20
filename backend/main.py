@@ -41,15 +41,12 @@ from routers.gateway_routes import router as gateway_router
 from routers.telemetry_routes import router as telemetry_router
 from websocket.handler import router as websocket_router
 
+from core.logger import setup_anara_logging
+
 load_dotenv()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logging.getLogger("ai_service").setLevel(logging.DEBUG)
-logging.getLogger("watchfiles.main").setLevel(logging.WARNING)
-logging.getLogger("watchfiles").setLevel(logging.WARNING)
+# Initialize enterprise rotating file & console logger (Hermes Parity)
+setup_anara_logging()
 
 logger = logging.getLogger("anara.main")
 ANARA_BUILD = "2026-09-12-modular-architecture-v2"

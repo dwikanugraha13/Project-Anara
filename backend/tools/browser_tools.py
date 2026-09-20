@@ -137,10 +137,10 @@ async def _tool_browser_navigate(url: str, headed: Optional[bool] = None, use_br
         await page.goto(clean_url, wait_until="domcontentloaded", timeout=25000)
         title = await page.title()
 
-        msg = f"Berhasil menavigasi ke '{title or clean_url}' (URL: {page.url})."
+        msg = f"Navigated successfully to '{title or clean_url}' (URL: {page.url})."
         _emit_agent_event("agent_action_complete", {
             "tool_name": "browser_navigate",
-            "action_title": "Laman Terbuka",
+            "action_title": "Page Navigated",
             "detail": title,
             "summary": msg,
             "icon": "globe"
@@ -155,21 +155,21 @@ async def _tool_browser_navigate(url: str, headed: Optional[bool] = None, use_br
         }
     except Exception as e:
         logger.error(f"[BrowserTools] Navigate error: {e}")
-        return {"status": "error", "message": f"Gagal membuka URL: {e}"}
+        return {"status": "error", "message": f"Failed to open URL: {e}"}
 
 
 async def _tool_browser_click(selector_or_text: str) -> Dict[str, Any]:
     """Clicks an interactive element on the current page by CSS selector or text."""
     target = (selector_or_text or "").strip()
     if not target:
-        return {"status": "error", "message": "Selector atau teks target tidak boleh kosong."}
+        return {"status": "error", "message": "Selector or target text cannot be empty."}
 
     if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
-        return {"status": "error", "message": "Belum ada browser yang terbuka. Panggil 'browser_navigate' terlebih dahulu."}
+        return {"status": "error", "message": "No active browser session open. Call 'browser_navigate' first."}
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "browser_click",
-        "action_title": "Mengeklik Elemen",
+        "action_title": "Click Element",
         "detail": target,
         "icon": "mouse-pointer"
     })
@@ -193,23 +193,26 @@ async def _tool_browser_click(selector_or_text: str) -> Dict[str, Any]:
             except Exception:
                 pass
 
-        # Specific YouTube result fallback: clicking video title
-        if not clicked and ("#video-title" in target or "video" in target.lower()):
-            yt_loc = page.locator("a#video-title, ytd-video-renderer a#thumbnail, h3.title-and-badge a").first
-            if await yt_loc.count() > 0:
-                await yt_loc.click(timeout=5000)
-                clicked = True
+        # Try locator by attribute or tag if previous attempts failed
+        if not clicked:
+            try:
+                locator = page.locator(target).first
+                if await locator.count() > 0:
+                    await locator.click(timeout=4000)
+                    clicked = True
+            except Exception:
+                pass
 
         if clicked:
             await page.wait_for_timeout(1000)
             title = await page.title()
-            msg = f"Berhasil mengeklik '{target}' (Laman sekarang: {title})."
+            msg = f"Clicked '{target}' successfully (Current page: {title})."
             return {"status": "success", "url": page.url, "title": title, "message": msg}
         else:
-            return {"status": "error", "message": f"Elemen '{target}' tidak dapat ditemukan atau tidak dapat diklik pada laman saat ini."}
+            return {"status": "error", "message": f"Element '{target}' could not be located or clicked on current page."}
     except Exception as e:
         logger.error(f"[BrowserTools] Click error: {e}")
-        return {"status": "error", "message": f"Gagal mengeklik: {e}"}
+        return {"status": "error", "message": f"Failed to click: {e}"}
 
 
 async def _tool_browser_type(selector: str, text: str, press_enter: bool = False) -> Dict[str, Any]:
@@ -218,7 +221,7 @@ async def _tool_browser_type(selector: str, text: str, press_enter: bool = False
     val = str(text or "").strip()
 
     if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
-        return {"status": "error", "message": "Belum ada browser yang terbuka. Panggil 'browser_navigate' terlebih dahulu."}
+        return {"status": "error", "message": "No active browser session open. Call 'browser_navigate' first."}
 
     try:
         page = _ACTIVE_PAGE
@@ -236,17 +239,17 @@ async def _tool_browser_type(selector: str, text: str, press_enter: bool = False
             await loc.press("Enter")
             await page.wait_for_timeout(1500)
 
-        msg = f"Berhasil mengetikkan '{val}' ke dalam input '{sel}'."
+        msg = f"Typed '{val}' into input '{sel}' successfully."
         return {"status": "success", "url": page.url, "message": msg}
     except Exception as e:
         logger.error(f"[BrowserTools] Type error: {e}")
-        return {"status": "error", "message": f"Gagal mengetik: {e}"}
+        return {"status": "error", "message": f"Failed to type: {e}"}
 
 
 async def _tool_browser_snapshot() -> Dict[str, Any]:
     """Returns a clean accessibility summary of interactive elements on the current page."""
     if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
-        return {"status": "error", "message": "Belum ada browser yang terbuka."}
+        return {"status": "error", "message": "No active browser session open."}
 
     try:
         page = _ACTIVE_PAGE
@@ -279,13 +282,13 @@ async def _tool_browser_snapshot() -> Dict[str, Any]:
             "elements": elements
         }
     except Exception as e:
-        return {"status": "error", "message": f"Gagal mengambil snapshot: {e}"}
+        return {"status": "error", "message": f"Failed to capture snapshot: {e}"}
 
 
 async def _tool_browser_screenshot(filename: Optional[str] = None) -> Dict[str, Any]:
     """Captures a screenshot of the current page and saves it to staging directory."""
     if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
-        return {"status": "error", "message": "Belum ada browser yang terbuka."}
+        return {"status": "error", "message": "No active browser session open."}
 
     try:
         page = _ACTIVE_PAGE
@@ -303,10 +306,10 @@ async def _tool_browser_screenshot(filename: Optional[str] = None) -> Dict[str, 
             "status": "success",
             "file_path": out_path,
             "filename": safe_name,
-            "message": f"Screenshot berhasil disimpan: {out_path}"
+            "message": f"Screenshot saved successfully: {out_path}"
         }
     except Exception as e:
-        return {"status": "error", "message": f"Gagal mengambil screenshot: {e}"}
+        return {"status": "error", "message": f"Failed to capture screenshot: {e}"}
 
 
 async def _tool_browser_close() -> Dict[str, Any]:
@@ -333,13 +336,13 @@ async def _tool_browser_close() -> Dict[str, Any]:
             _ACTIVE_BROWSER = None
         _CURRENT_HEADED_STATE = None
 
-    return {"status": "success", "message": "Sesi browser berhasil ditutup."}
+    return {"status": "success", "message": "Browser session closed successfully."}
 
 
 async def _tool_browser_scroll(direction: str = "down", amount: int = 500) -> Dict[str, Any]:
     """Scrolls the current browser page up or down."""
     if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
-        return {"status": "error", "message": "Belum ada browser yang terbuka."}
+        return {"status": "error", "message": "No active browser session open."}
 
     dir_clean = (direction or "down").strip().lower()
     scroll_amt = max(100, int(amount or 500))
@@ -355,33 +358,33 @@ async def _tool_browser_scroll(direction: str = "down", amount: int = 500) -> Di
             await page.mouse.wheel(0, delta_y)
 
         await page.wait_for_timeout(300)
-        return {"status": "success", "message": f"Halaman digeser {dir_clean} ({scroll_amt}px)."}
+        return {"status": "success", "message": f"Page scrolled {dir_clean} ({scroll_amt}px)."}
     except Exception as e:
-        return {"status": "error", "message": f"Gagal menggulir halaman: {e}"}
+        return {"status": "error", "message": f"Failed to scroll page: {e}"}
 
 
 async def _tool_browser_press(key: str) -> Dict[str, Any]:
     """Presses a keyboard key on the active browser page (e.g. Enter, Escape, Tab, ArrowDown, Backspace)."""
     if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
-        return {"status": "error", "message": "Belum ada browser yang terbuka."}
+        return {"status": "error", "message": "No active browser session open."}
 
     clean_key = (key or "").strip()
     if not clean_key:
-        return {"status": "error", "message": "Parameter 'key' wajib diisi (misal 'Enter', 'Escape', 'Tab')."}
+        return {"status": "error", "message": "Parameter 'key' is required (e.g. 'Enter', 'Escape', 'Tab')."}
 
     try:
         page = _ACTIVE_PAGE
         await page.keyboard.press(clean_key)
         await page.wait_for_timeout(300)
-        return {"status": "success", "message": f"Tombol keyboard '{clean_key}' berhasil ditekan."}
+        return {"status": "success", "message": f"Key '{clean_key}' pressed successfully."}
     except Exception as e:
-        return {"status": "error", "message": f"Gagal menekan tombol '{clean_key}': {e}"}
+        return {"status": "error", "message": f"Failed to press key '{clean_key}': {e}"}
 
 
 async def _tool_browser_back() -> Dict[str, Any]:
     """Navigates back to the previous page in history."""
     if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
-        return {"status": "error", "message": "Belum ada browser yang terbuka."}
+        return {"status": "error", "message": "No active browser session open."}
 
     try:
         page = _ACTIVE_PAGE
@@ -391,8 +394,8 @@ async def _tool_browser_back() -> Dict[str, Any]:
             "status": "success",
             "url": page.url,
             "title": await page.title(),
-            "message": f"Kembali ke halaman sebelumnya: {page.url}"
+            "message": f"Navigated back to previous page: {page.url}"
         }
     except Exception as e:
-        return {"status": "error", "message": f"Gagal navigasi kembali: {e}"}
+        return {"status": "error", "message": f"Failed to navigate back: {e}"}
 

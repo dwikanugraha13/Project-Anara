@@ -134,7 +134,7 @@ async def send_telegram_model_search(chat_id: str, query: str):
     matches = [m for m in all_models if q_low in m["id"].lower() or q_low in m.get("name", "").lower()]
     if not matches:
         return await send_telegram_message(
-            text=f"❌ Tidak ditemukan model dengan kata kunci <code>{query}</code>.\n\nGunakan <code>/model</code> untuk melihat menu provider.",
+            text=f"❌ No models found matching <code>{query}</code>.\n\nUse <code>/model</code> to view provider menu.",
             chat_id=chat_id
         )
 
@@ -145,12 +145,12 @@ async def send_telegram_model_search(chat_id: str, query: str):
         cb_val = _make_model_callback_data(m_id)
         buttons.append([{"text": f"{icon}{m.get('name', m_id)}", "callback_data": cb_val}])
 
-    buttons.append([{"text": "⬅️ Menu Provider", "callback_data": "prov:menu"}])
+    buttons.append([{"text": "⬅️ Provider Menu", "callback_data": "prov:menu"}])
     keyboard = {"inline_keyboard": buttons}
     msg_text = (
-        f"🔍 <b>HASIL PENCARIAN MODEL: \"{query}\"</b>\n\n"
-        f"Model aktif saat ini:\n<code>{active_id}</code>\n\n"
-        f"<i>Ketuk model di bawah untuk mengaktifkannya:</i>"
+        f"🔍 <b>MODEL SEARCH: \"{query}\"</b>\n\n"
+        f"Active model:\n<code>{active_id}</code>\n\n"
+        f"<i>Tap a model below to activate:</i>"
     )
     return await send_telegram_message(text=msg_text, chat_id=chat_id, reply_markup=keyboard)
 
@@ -236,14 +236,19 @@ async def render_telegram_question(q_id: str):
         lbl = opt.get("label", str(opt)) if isinstance(opt, dict) else str(opt)
         buttons.append([{"text": lbl, "callback_data": f"qans:{q_id}:{opt_idx}"}])
 
-    buttons.append([{"text": "✖ Tutup / Lewati", "callback_data": f"qdis:{q_id}"}])
+    # Universal language presentation for questionnaire interface (Hermes Parity)
+    dismiss_label = "✖ Dismiss"
+    clarification_title = f"📋 <b>CLARIFICATION ({idx+1}/{len(questions)})</b>"
+    action_hint = "<i>Tap an option below or type your answer:</i>"
+
+    buttons.append([{"text": dismiss_label, "callback_data": f"qdis:{q_id}"}])
     keyboard = {"inline_keyboard": buttons}
 
     msg_text = (
-        f"📋 <b>KLARIFIKASI DIPERLUKAN ({idx+1}/{len(questions)})</b>\n"
+        f"{clarification_title}\n"
         f"<b>{header}</b>\n\n"
         f"{q_text}\n\n"
-        f"<i>Ketuk pilihan di bawah atau ketik jawabanmu langsung:</i>"
+        f"{action_hint}"
     )
 
     if state.get("message_id"):
@@ -264,10 +269,10 @@ async def finish_telegram_interactive_question(q_id: str, dismissed: bool = Fals
     msg_id = state.get("message_id")
     if msg_id:
         if dismissed:
-            await edit_telegram_message(chat_id=chat_id, message_id=msg_id, text="<i>[Klarifikasi dibatalkan oleh pengguna]</i>", reply_markup=None)
+            await edit_telegram_message(chat_id=chat_id, message_id=msg_id, text="<i>[Clarification dismissed by user]</i>", reply_markup=None)
         else:
-            ans_summary = "\n".join([f"• <b>{a.get('header') or 'Poin'}:</b> {a.get('answer')}" for a in state["answers"]])
-            await edit_telegram_message(chat_id=chat_id, message_id=msg_id, text=f"✅ <b>Klarifikasi Selesai:</b>\n{ans_summary}\n\n<i>Melanjutkan eksekusi tugas...</i>", reply_markup=None)
+            ans_summary = "\n".join([f"• <b>{a.get('header') or 'Item'}:</b> {a.get('answer')}" for a in state["answers"]])
+            await edit_telegram_message(chat_id=chat_id, message_id=msg_id, text=f"✅ <b>Clarification Complete:</b>\n{ans_summary}\n\n<i>Continuing task execution...</i>", reply_markup=None)
 
     from tools.events import resolve_interactive_question
     resolve_interactive_question(q_id, state["answers"], dismissed=dismissed)

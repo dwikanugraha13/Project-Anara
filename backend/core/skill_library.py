@@ -131,19 +131,20 @@ Gunakan keahlian ini saat diminta atau mendeteksi tugas dengan kata kunci: {', '
 
         logger.info(f"[SkillLibrary] Saved skill '{name}' ({status}) to {skill_file}")
 
-        # Mirror to SQLite database for unified backward compatibility
+        # Mirror to SQLite database if legacy table exists (Hermes Parity)
         try:
             from memory import memory_engine
-            memory_engine.add_agent_skill(
-                name=name,
-                category=category,
-                description=description,
-                trigger_keywords=triggers,
-                procedure_steps=procedure_steps,
-                learned_from_experience=learned,
-            )
-        except Exception as e:
-            logger.warning(f"[SkillLibrary] DB mirror error: {e}")
+            if hasattr(memory_engine, "add_agent_skill"):
+                memory_engine.add_agent_skill(
+                    name=name,
+                    category=category,
+                    description=description,
+                    trigger_keywords=triggers,
+                    procedure_steps=procedure_steps,
+                    learned_from_experience=learned,
+                )
+        except Exception:
+            pass
 
         return {
             "slug": slug,

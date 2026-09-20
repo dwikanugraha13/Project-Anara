@@ -48,11 +48,14 @@ def get_soul_prompt(mode: str = "chat") -> str:
     if _SOUL_CACHE:
         return _SOUL_CACHE
 
-    # Fallback if soul.md cannot be read
+    # Fallback if soul.md cannot be read (Hermes Parity)
     return (
+        "You are Anara, an autonomous visual 3D AI agent and expert software engineer. "
+        "Seamlessly integrate autonomous multi-tools and OpenCode Plan & Build protocols. "
+        "Communicate empathetically, directly, and concisely. Always adapt your response language "
+        "to naturally match the user's active language without rigid templates or artificial phrasing.\n\n"
         "Kamu adalah Anara, asisten AI visual 3D dan autonomous agent yang cerdas, hangat, dan ekspresif. "
-        "Memadukan Anara Agent (multi-tools otonom) dan filosofi OpenCode (protokol Plan & Build mode). "
-        "Bicaralah secara alami, ramah, dan ringkas. Sesuaikan bahasa responmu secara cerdas dengan bahasa pengguna tanpa kalimat kaku atau template sistem."
+        "Bicaralah secara alami, ramah, dan ringkas dalam bahasa yang digunakan pengguna."
     )
 
 def get_soul_raw() -> str:

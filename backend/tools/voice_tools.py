@@ -63,19 +63,19 @@ async def _tool_voice_biometrics_manage(
         try:
             audio_bytes = base64.b64decode(audio_base64.strip())
         except Exception:
-            return {"status": "error", "message": "Gagal mendekode audio_base64."}
+            return {"status": "error", "message": "Failed to decode audio_base64."}
     elif audio_file_path and os.path.isfile(audio_file_path):
         try:
             with open(audio_file_path, "rb") as f:
                 audio_bytes = f.read()
         except Exception as e:
-            return {"status": "error", "message": f"Gagal membaca berkas audio: {e}"}
+            return {"status": "error", "message": f"Failed to read audio file: {e}"}
 
     if act == "identify":
         if not audio_bytes:
             return {
                 "status": "error",
-                "message": "Diperlukan parameter 'audio_file_path' atau 'audio_base64' untuk identifikasi sidik suara."
+                "message": "Parameter 'audio_file_path' or 'audio_base64' is required for speaker identification."
             }
         match_res = memory_engine.identify_speaker_from_voice(audio_bytes) if hasattr(memory_engine, "identify_speaker_from_voice") else None
         if match_res and match_res.get("identified"):
@@ -86,28 +86,28 @@ async def _tool_voice_biometrics_manage(
                 "identified": True,
                 "speaker_name": match_res.get("name"),
                 "confidence": conf,
-                "message": f"Suara teridentifikasi sebagai: {match_res.get('name')} (kepercayaan: {conf_str})"
+                "message": f"Voice identified as: {match_res.get('name')} (confidence: {conf_str})"
             }
         return {
             "status": "warning",
             "identified": False,
-            "message": "Sidik suara tidak cocok dengan profil terdaftar yang ada."
+            "message": "Voice print did not match any registered biometric profile."
         }
 
     elif act in ("enroll", "calibrate"):
         if not speaker_name:
-            return {"status": "error", "message": "Parameter 'speaker_name' wajib diisi untuk pendaftaran sidik suara."}
+            return {"status": "error", "message": "Parameter 'speaker_name' is required for voice enrollment."}
         res = memory_engine.enroll_or_update_speaker(speaker_name, audio_pcm=audio_bytes) if hasattr(memory_engine, "enroll_or_update_speaker") else {}
         return {
             "status": "success",
             "speaker_name": speaker_name,
             "result": res,
-            "message": f"Profil suara '{speaker_name}' berhasil didaftarkan/diperbarui di basis data biometrik Anara."
+            "message": f"Voice profile '{speaker_name}' registered successfully in biometrics registry."
         }
 
     return {
         "status": "error",
-        "message": f"Aksi '{act}' tidak dikenal. Pilih dari: 'list', 'identify', 'enroll'."
+        "message": f"Unknown voice action '{act}'. Choose from: 'list', 'identify', 'enroll'."
     }
 
 
@@ -136,7 +136,7 @@ async def _tool_wake_word_manage(
             "is_listening": wake_word_detector.is_active(),
             "phrase": wake_word_detector.phrase,
             "sensitivity": wake_word_detector.sensitivity,
-            "message": f"Wake word listener {'aktif' if wake_word_detector.is_active() else 'tidak aktif'} dengan kata kunci '{wake_word_detector.phrase}'."
+            "message": f"Wake word listener is {'active' if wake_word_detector.is_active() else 'inactive'} with phrase '{wake_word_detector.phrase}'."
         }
 
     elif act == "start":
@@ -145,7 +145,7 @@ async def _tool_wake_word_manage(
             "status": "success",
             "is_listening": True,
             "phrase": wake_word_detector.phrase,
-            "message": f"Wake word listener diaktifkan. Panggil '{wake_word_detector.phrase}' untuk berinteraksi hands-free."
+            "message": f"Wake word listener activated. Call '{wake_word_detector.phrase}' to interact hands-free."
         }
 
     elif act == "stop":
@@ -153,18 +153,18 @@ async def _tool_wake_word_manage(
         return {
             "status": "success",
             "is_listening": False,
-            "message": "Wake word listener dinonaktifkan."
+            "message": "Wake word listener deactivated."
         }
 
     elif act in ("set_phrase", "change"):
         if not phrase:
-            return {"status": "error", "message": "Parameter 'phrase' wajib diisi (misal 'Hey Anara', 'Halo Anara')."}
+            return {"status": "error", "message": "Parameter 'phrase' is required (e.g. 'Hey Anara')."}
         wake_word_detector.set_phrase(phrase)
         return {
             "status": "success",
             "phrase": wake_word_detector.phrase,
-            "message": f"Kata kunci panggilan berhasil diubah menjadi: '{wake_word_detector.phrase}'."
+            "message": f"Wake word trigger phrase changed to: '{wake_word_detector.phrase}'."
         }
 
-    return {"status": "error", "message": f"Aksi '{act}' tidak dikenal. Pilih: 'status', 'start', 'stop', 'set_phrase'."}
+    return {"status": "error", "message": f"Unknown action '{act}'. Choose: 'status', 'start', 'stop', 'set_phrase'."}
 

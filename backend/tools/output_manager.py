@@ -45,9 +45,9 @@ def compact_tool_output(
     dump_file = TOOL_LOGS_DIR / f"{source_label}_{dump_id}.log"
     try:
         dump_file.write_text(text, encoding="utf-8", errors="replace")
-        log_notice = f"Log lengkap ({len(text):,} karakter) tersimpan di: {dump_file}"
+        log_notice = f"Full log ({len(text):,} chars) saved to: {dump_file}"
     except Exception:
-        log_notice = f"Total karakter: {len(text):,}"
+        log_notice = f"Total chars: {len(text):,}"
 
     # 2. Line-based truncation if multi-line
     lines = text.splitlines()
@@ -60,7 +60,7 @@ def compact_tool_output(
 
         return (
             f"{head}\n\n"
-            f"--- [OUTPUT TERPOTONG: {omitted} baris disembunyikan. {log_notice}] ---\n\n"
+            f"--- [OUTPUT TRUNCATED: {omitted} lines omitted. {log_notice}] ---\n\n"
             f"{tail}"
         )
 
@@ -73,7 +73,7 @@ def compact_tool_output(
 
     return (
         f"{head_text}\n\n"
-        f"--- [OUTPUT TERPOTONG: {omitted_chars:,} karakter disembunyikan. {log_notice}] ---\n\n"
+        f"--- [OUTPUT TRUNCATED: {omitted_chars:,} chars omitted. {log_notice}] ---\n\n"
         f"{tail_text}"
     )
 
@@ -111,7 +111,7 @@ def compact_tool_payload(
             head_count = max(1, int(max_list_items * head_ratio))
             tail_count = max(1, max_list_items - head_count)
             omitted = len(items) - (head_count + tail_count)
-            stub = f"[... {omitted:,} entri lainnya disembunyikan untuk menghemat kuota token ...]"
+            stub = f"[... {omitted:,} additional items omitted to conserve context ...]"
             items = items[:head_count] + [stub] + items[-tail_count:]
 
         # 2. Recursively compact each item

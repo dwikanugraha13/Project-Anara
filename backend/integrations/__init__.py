@@ -35,8 +35,14 @@ from .media import (
     search_youtube,
     resolve_media_request,
 )
+from .platform_registry import platform_registry, PlatformRegistry, BasePlatformAdapter
+from .manager import channel_manager
 
 __all__ = [
+    "platform_registry",
+    "PlatformRegistry",
+    "BasePlatformAdapter",
+    "channel_manager",
     "start_whatsapp_bridge",
     "stop_whatsapp_bridge",
     "get_whatsapp_status",

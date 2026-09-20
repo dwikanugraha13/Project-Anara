@@ -40,7 +40,7 @@ async def _tool_process_manage(
 
     if act == "start":
         if not command:
-            return {"status": "error", "message": "Parameter 'command' wajib diisi untuk memulai proses."}
+            return {"status": "error", "message": "Parameter 'command' is required to start a process."}
         return process_registry.start_process(command=command, cwd=cwd, process_id=process_id)
 
     elif act == "list":
@@ -53,12 +53,12 @@ async def _tool_process_manage(
 
     elif act in ("logs", "tail", "output"):
         if not process_id:
-            return {"status": "error", "message": "Parameter 'process_id' wajib diisi untuk melihat log proses."}
+            return {"status": "error", "message": "Parameter 'process_id' is required to inspect process logs."}
         return process_registry.get_logs(process_id=process_id, lines=lines)
 
     elif act in ("stop", "kill", "terminate"):
         if not process_id:
-            return {"status": "error", "message": "Parameter 'process_id' wajib diisi untuk menghentikan proses."}
+            return {"status": "error", "message": "Parameter 'process_id' is required to stop a process."}
         return process_registry.stop_process(process_id=process_id)
 
-    return {"status": "error", "message": f"Aksi '{act}' tidak dikenal. Gunakan: 'start', 'list', 'logs', 'stop'."}
+    return {"status": "error", "message": f"Unknown process action '{act}'. Use: 'start', 'list', 'logs', 'stop'."}

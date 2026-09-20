@@ -88,16 +88,12 @@ class MediaController:
             if kind == "playlist_create":
                 tracks = await search_youtube(intent["query"], kind="music", limit=8)
                 if not tracks:
-                    miss = f"Maaf, Anara tidak menemukan lagu untuk playlist '{intent['name']}'."
-                    await self.websocket.send_json({"type": "transcript", "data": miss, "speaker": "output"})
                     if gemini_service:
-                        await gemini_service.send_text(f"Sistem: Ucapkan dengan ramah: {miss}")
+                        await gemini_service.send_text(f"Sistem: Beritahu pengguna dengan ramah bahwa lagu untuk playlist '{intent['name']}' tidak ditemukan.")
                     return
                 res = memory_engine.save_playlist(intent["name"], tracks, speaker_name)
-                done = f"Playlist '{res.get('name')}' siap dengan {res.get('count')} lagu. Anara mulai putar ya."
-                await self.websocket.send_json({"type": "transcript", "data": done, "speaker": "output"})
                 if gemini_service:
-                    await gemini_service.send_text(f"Sistem: Ucapkan dengan ceria: {done}")
+                    await gemini_service.send_text(f"Sistem: Beritahu pengguna dengan ceria bahwa playlist '{res.get('name')}' ({res.get('count')} lagu) siap dan mulai diputar.")
                 await self.send_media_play(
                     tracks[0], "music", tracks[1:],
                     playlist={"id": res.get("id"), "name": res.get("name"), "tracks": tracks, "index": 0}
@@ -118,10 +114,8 @@ class MediaController:
 
             elif kind == "playlist_add_current":
                 if not self.now_playing:
-                    msg = "Belum ada lagu yang sedang diputar untuk ditambahkan."
-                    await self.websocket.send_json({"type": "transcript", "data": msg, "speaker": "output"})
                     if gemini_service:
-                        await gemini_service.send_text(f"Sistem: Ucapkan dengan ramah: {msg}")
+                        await gemini_service.send_text("Sistem: Beritahu pengguna dengan santai bahwa belum ada lagu yang sedang diputar untuk ditambahkan.")
                     return
                 memory_engine.add_track_to_playlist(intent["name"], self.now_playing, speaker_name)
                 return

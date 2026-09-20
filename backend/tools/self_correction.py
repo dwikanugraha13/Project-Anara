@@ -97,9 +97,9 @@ class AnaraLoopBreaker:
             if recent_6[0] == recent_6[2] == recent_6[4] and recent_6[1] == recent_6[3] == recent_6[5] and recent_6[0] != recent_6[1]:
                 t1, t2 = list(self.tool_names)[-2], list(self.tool_names)[-1]
                 msg = (
-                    f"[SYSTEM REFLECTION: PENCEGAH LOOP AKTIF]: Terdeteksi siklus bolak-balik (ping-pong loop) "
-                    f"antara alat '{t1}' dan '{t2}'. Evaluasi data yang telah kamu kumpulkan, "
-                    "hentikan pengulangan ini, dan selesaikan giliran tugasmu sekarang."
+                    f"[SYSTEM REFLECTION: PING-PONG LOOP DETECTED]: Alternating thrashing detected (ping-pong loop) "
+                    f"between tools '{t1}' and '{t2}'. Review your collected observations, "
+                    "cease further repetitive calls, and conclude your response now."
                 )
                 logger.warning(f"[LoopBreaker] Ping-pong cycle detected between '{t1}' and '{t2}'.")
                 return True, msg
@@ -114,8 +114,8 @@ class AnaraLoopBreaker:
             self.consecutive_errors += 1
             if self.consecutive_errors >= self.max_consecutive_errors:
                 msg = (
-                    f"[SYSTEM REFLECTION]: Terdeteksi {self.consecutive_errors} kegagalan alat berturut-turut. "
-                    "Tinjau kembali akar masalah dari pesan error sebelumnya dan ubah pendekatanmu."
+                    f"[SYSTEM REFLECTION]: Detected {self.consecutive_errors} consecutive tool execution failures. "
+                    "Re-evaluate the underlying error message and pivot your strategy."
                 )
                 logger.warning(f"[LoopBreaker] Consecutive error threshold hit ({self.consecutive_errors}).")
                 return True, msg
@@ -207,10 +207,10 @@ class ContextMicroCompactor:
 
             parts = []
             if head_omitted > 0:
-                parts.append(f"[... {head_omitted} baris awal dipangkas oleh compactor ...]")
+                parts.append(f"[... {head_omitted} lines truncated by compactor / dipangkas oleh compactor ...]")
             parts.append("\n".join(important_slice))
             if tail_omitted > 0:
-                parts.append(f"[... {tail_omitted} baris lanjutan disembunyikan. {log_notice} ...]")
+                parts.append(f"[... {tail_omitted} lines omitted / disembunyikan. {log_notice} ...]")
             return "\n".join(parts)
 
         # 3. Fallback: Preserves Head (40%) + Tail (60%)
@@ -222,7 +222,7 @@ class ContextMicroCompactor:
 
         return (
             "\n".join(head_lines)
-            + f"\n\n[... {omitted} baris noise dipangkas oleh compactor. {log_notice} ...]\n\n"
+            + f"\n\n[... {omitted} lines of noise truncated by compactor / dipangkas oleh compactor. {log_notice} ...]\n\n"
             + "\n".join(tail_lines)
         )
 
@@ -297,20 +297,23 @@ class ErrorClassifier:
                 model_id=model_id,
                 user_prompt=user_p,
                 system_instruction=sys_p,
-                max_tokens=60,
+                max_tokens=None,
                 temperature=0.0,
                 read_only=True,
             )
             if isinstance(res, str) and "{" in res and "}" in res:
-                import json
-                m = re.search(r"\{[\s\S]*?\}", res)
-                if m:
-                    data = json.loads(m.group(0))
-                    return data.get("error_type", "execution_error"), data.get("detail", "")
+                from providers.caller import _extract_json_balanced, _robust_parse_json
+                for candidate, _, _ in _extract_json_balanced(res):
+                    data = _robust_parse_json(candidate)
+                    if isinstance(data, dict) and "error_type" in data:
+                        return data.get("error_type", "execution_error"), data.get("detail", "")
+                parsed = _robust_parse_json(res.strip())
+                if isinstance(parsed, dict) and "error_type" in parsed:
+                    return parsed.get("error_type", "execution_error"), parsed.get("detail", "")
         except Exception as e:
             logger.debug(f"[ErrorClassifier] Semantic fallback notice: {e}")
 
-        return "execution_error", "Perintah menghasilkan kode keluar non-zero atau kegagalan."
+        return "execution_error", "Command produced a non-zero exit code or execution failure."
 
 
 # ==============================================================================
@@ -454,30 +457,13 @@ def format_recovery_guidance(
     Zero hardcoded canned definitions: empowers the model's own reasoning to diagnose and fix the issue.
     """
     diag_line = f"Kategori kendala: {err_type or 'execution_error'}" + (f" ({detail})" if detail else "")
-
-    hints = []
-    if detail:
-        hints.append(f"Detail terdeteksi: '{detail}'.")
-    if err_type == "missing_python_pkg":
-        hints.append(f"Dependensi Python '{detail}' belum terpasang.")
-    elif err_type == "missing_node_pkg":
-        hints.append(f"Modul Node.js '{detail}' tidak ditemukan (pertimbangkan: npm install {detail}).")
-    elif err_type == "port_conflict":
-        hints.append(f"Port {detail or 'layanan'} sedang digunakan oleh proses lain.")
-    elif err_type == "file_not_found":
-        hints.append(f"Jalur berkas '{detail}' tidak ditemukan di sistem.")
-    elif err_type == "permission_denied":
-        hints.append("Akses ditolak oleh izin sistem operasi.")
-    elif err_type == "syntax_error":
-        hints.append(f"Kesalahan sintaks terdeteksi: '{detail}'.")
-
-    hints.append("Analisis pesan error di atas, sesuaikan parameter pemanggilan, atau gunakan pendekatan/alat alternatif.")
-    hint_text = " ".join(hints)
-
     return (
         f"\n\n[SYSTEM INNER-VERIFICATION / ACTION RECOVERY (Percobaan {attempt}/{max_retries})]:\n"
         f"{diag_line}\n"
-        f"Panduan Pemulihan Mandiri: {hint_text}"
+        f"Panduan Pemulihan Mandiri: Alat '{tool_name}' mengalami kendala berulang ({err_type or 'error'}). "
+        "Jangan mengulang pemanggilan yang sama persis tanpa perubahan. "
+        "Periksa pesan error di atas, verifikasi asumsi jalur atau dependensi, sesuaikan parameter, "
+        "atau gunakan pendekatan alat alternatif untuk menyelesaikan tugas pengguna."
     )
 
 
@@ -514,7 +500,7 @@ async def synthesize_diagnostic_explanation(
             model_id=model_id,
             user_prompt=user_p,
             system_instruction=sys_p,
-            max_tokens=250,
+            max_tokens=None,
             temperature=0.3,
             read_only=True,
         )
@@ -549,15 +535,15 @@ def format_graceful_diagnostic_card(
     steps_str = "\n".join(steps_attempted) if steps_attempted else "3 kali upaya perbaikan mandiri"
 
     card = (
-        f"⚠️ <b>DIAGNOSTIK EKSEKUSI ANARA (Siklus Mandiri Selesai)</b>\n\n"
-        f"<b>1. Sasaran Tugas:</b>\n"
-        f"\"{original_task[:120] or 'Menyelesaikan langkah sistem'}\"\n\n"
-        f"<b>2. Akar Masalah (Root Cause):</b>\n"
+        f"⚠️ <b>DIAGNOSTIK EKSEKUSI ANARA / EXECUTION DIAGNOSTICS</b>\n\n"
+        f"<b>1. Sasaran Tugas / Task Goal:</b>\n"
+        f"\"{original_task[:120] or 'System step execution'}\"\n\n"
+        f"<b>2. Akar Masalah / Root Cause:</b>\n"
         f"Tindakan <code>{tool_name}</code> pada <code>{str(target)[:60]}</code> belum berhasil diselesaikan karena kendala: <b>{err_type}</b>.\n\n"
-        f"<b>3. Upaya Mandiri yang Telah Dijalankan:</b>\n"
+        f"<b>3. Upaya Mandiri yang Telah Dijalankan / Self-Correction Attempts:</b>\n"
         f"{steps_str}\n\n"
-        f"<b>4. Rekomendasi Solusi:</b>\n"
+        f"<b>4. Rekomendasi Solusi / Recommendations:</b>\n"
         f"• Periksa apakah dependensi eksternal atau hak akses sistem operasi memerlukan izin khusus.\n"
-        f"• Verifikasi konfigurasi berkas atau jalankan perintah secara manual di terminal jika diperlukan."
+        f"• Verify system permissions, file configuration, or execute manually if needed."
     )
     return card

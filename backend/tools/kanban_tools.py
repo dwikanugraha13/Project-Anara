@@ -50,11 +50,11 @@ async def _tool_kanban_create_task(
     """Creates a new task card on the Kanban project board."""
     clean_title = (title or "").strip()
     if not clean_title:
-        return {"status": "error", "message": "Judul task tidak boleh kosong."}
+        return {"status": "error", "message": "Task title cannot be empty."}
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "kanban_create_task",
-        "action_title": "Kanban: Buat Task Baru",
+        "action_title": "Kanban: Create Task",
         "detail": f"[{priority}] {clean_title}",
         "icon": "clipboard"
     })
@@ -81,11 +81,11 @@ async def _tool_kanban_create_task(
             "task_id": task_id,
             "title": clean_title,
             "column": "todo",
-            "message": f"Task #{task_id} '{clean_title}' berhasil ditambahkan ke kolom To Do."
+            "message": f"Task #{task_id} '{clean_title}' created successfully in 'todo' column."
         }
     except Exception as e:
         logger.error(f"[KanbanTools] Create task error: {e}")
-        return {"status": "error", "message": f"Gagal membuat task: {e}"}
+        return {"status": "error", "message": f"Failed to create task: {e}"}
 
 
 async def _tool_kanban_list_tasks(status: Optional[str] = None) -> Dict[str, Any]:
@@ -116,7 +116,7 @@ async def _tool_kanban_list_tasks(status: Optional[str] = None) -> Dict[str, Any
         }
     except Exception as e:
         logger.error(f"[KanbanTools] List tasks error: {e}")
-        return {"status": "error", "message": f"Gagal membaca list task: {e}"}
+        return {"status": "error", "message": f"Failed to list tasks: {e}"}
 
 
 async def _tool_kanban_update_task(
@@ -133,12 +133,12 @@ async def _tool_kanban_update_task(
     if clean_status not in valid_statuses:
         return {
             "status": "error",
-            "message": f"Status '{status}' tidak valid. Pilih dari: {', '.join(valid_statuses)}"
+            "message": f"Status '{status}' is invalid. Choose from: {', '.join(valid_statuses)}"
         }
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "kanban_update_task",
-        "action_title": f"Kanban: Geser #{task_id} -> {clean_status.upper()}",
+        "action_title": f"Kanban: Move #{task_id} -> {clean_status.upper()}",
         "detail": notes or "",
         "icon": "check-square"
     })
@@ -155,7 +155,7 @@ async def _tool_kanban_update_task(
             updated = cursor.rowcount > 0
 
         if not updated:
-            return {"status": "error", "message": f"Task #{task_id} tidak ditemukan di Kanban."}
+            return {"status": "error", "message": f"Task #{task_id} was not found in Kanban board."}
 
         _emit_agent_event("hud_project", {
             "type": "kanban_card",
@@ -168,11 +168,11 @@ async def _tool_kanban_update_task(
             "status": "success",
             "task_id": task_id,
             "new_status": clean_status,
-            "message": f"Task #{task_id} berhasil dipindahkan ke kolom '{clean_status}'."
+            "message": f"Task #{task_id} moved to '{clean_status}' column successfully."
         }
     except Exception as e:
         logger.error(f"[KanbanTools] Update task error: {e}")
-        return {"status": "error", "message": f"Gagal mengupdate task: {e}"}
+        return {"status": "error", "message": f"Failed to update task: {e}"}
 
 
 async def _tool_kanban_request_review(task_id: int, review_summary: str) -> Dict[str, Any]:

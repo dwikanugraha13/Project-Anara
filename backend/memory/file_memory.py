@@ -180,42 +180,107 @@ class FileMemoryManager:
         return ok
 
     @classmethod
+    def execute_memory_action(
+        cls,
+        action: str,
+        target: str = "memory",
+        content: Optional[str] = None,
+        old_text: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Executes an agent-level memory housekeeping action (Hermes Parity).
+        Supports:
+          - 'add': Appends a new fact/preference to MEMORY.md or USER.md.
+          - 'replace': Replaces an existing entry matching old_text with new content.
+          - 'remove': Deletes an entry matching old_text or content.
+          - 'view' / 'get': Reads current contents of the target memory file.
+        """
+        act = (action or "add").strip().lower()
+        tgt = (target or "memory").strip().lower()
+        file_path = USER_FILE_PATH if tgt in ("user", "user.md", "profile") else MEMORY_FILE_PATH
+        target_name = "USER.md" if file_path == USER_FILE_PATH else "MEMORY.md"
+
+        if act in ("view", "get", "read"):
+            curr = cls.get_user_profile() if file_path == USER_FILE_PATH else cls.get_memory_facts()
+            return {"status": "success", "target": target_name, "content": curr, "message": f"Read {target_name}."}
+
+        if act == "add":
+            if not content or not content.strip():
+                return {"status": "error", "message": "Content parameter is required for 'add' action."}
+            clean_c = content.strip()
+            if file_path == USER_FILE_PATH:
+                ok = cls.update_user_profile(clean_c)
+            else:
+                ok = cls.append_memory_fact(clean_c)
+            if ok:
+                return {"status": "success", "target": target_name, "message": f"Added to {target_name}: {clean_c}"}
+            return {"status": "error", "message": f"Failed to write to {target_name}."}
+
+        if act == "replace":
+            if not old_text or not old_text.strip():
+                return {"status": "error", "message": "old_text parameter is required for 'replace' action."}
+            if content is None:
+                return {"status": "error", "message": "content parameter is required for 'replace' action."}
+
+            curr = cls.get_user_profile() if file_path == USER_FILE_PATH else cls.get_memory_facts()
+            needle = old_text.strip().lower()
+            lines = curr.split("\n")
+            found_idx = -1
+            for idx, l in enumerate(lines):
+                if needle in l.lower() and not l.strip().startswith("#"):
+                    found_idx = idx
+                    break
+
+            if found_idx == -1:
+                return {"status": "error", "message": f"Entry matching '{old_text}' not found in {target_name}."}
+
+            clean_new = filter_sensitive_data(content.strip())
+            # Format as bullet if needed
+            if file_path == MEMORY_FILE_PATH and not clean_new.startswith("-"):
+                today_str = datetime.now().strftime("%Y-%m-%d")
+                lines[found_idx] = f"- [{today_str}] {clean_new}"
+            elif file_path == USER_FILE_PATH and not clean_new.startswith("-"):
+                lines[found_idx] = f"- {clean_new}"
+            else:
+                lines[found_idx] = clean_new
+
+            new_text = "\n".join(lines)
+            ok = cls._write_file_safe(file_path, new_text)
+            if ok:
+                return {"status": "success", "target": target_name, "message": f"Replaced entry in {target_name}."}
+            return {"status": "error", "message": f"Failed to update {target_name}."}
+
+        if act in ("remove", "delete"):
+            needle = (old_text or content or "").strip().lower()
+            if not needle:
+                return {"status": "error", "message": "old_text or content is required for 'remove' action."}
+
+            curr = cls.get_user_profile() if file_path == USER_FILE_PATH else cls.get_memory_facts()
+            lines = curr.split("\n")
+            new_lines = [l for l in lines if (needle not in l.lower() or l.strip().startswith("#"))]
+
+            if len(new_lines) == len(lines):
+                return {"status": "error", "message": f"Entry matching '{needle}' not found in {target_name}."}
+
+            ok = cls._write_file_safe(file_path, "\n".join(new_lines))
+            if ok:
+                return {"status": "success", "target": target_name, "message": f"Removed matching entry from {target_name}."}
+            return {"status": "error", "message": f"Failed to update {target_name}."}
+
+        return {"status": "error", "message": f"Unknown memory action '{action}'. Supported: add, replace, remove, view."}
+
+    @classmethod
     def detect_and_record_memory(cls, user_text: str, speaker_name: Optional[str] = None) -> Optional[str]:
         """
-        Detects explicit memory triggers in user speech/text (FR-11):
-        'ingat bahwa...', 'catat bahwa...', 'preferensi saya...', 'nama saya...'
-        and persists them into USER.md or MEMORY.md.
+        Deprecated: In Hermes Agent Parity, memory extraction is handled via autonomous
+        model tool calling (memory tool) rather than rigid regex word filtering.
+        Retained as a graceful fallback / legacy interface.
         """
         text = (user_text or "").strip()
         if not text:
             return None
 
-        # 1. User Profile Triggers -> USER.md
-        user_patterns = [
-            r"(?i)\b(?:ingat|catat)?\s*(?:bahwa\s+)?nama(?:ku| saya)\s*(?:adalah|:|=)?\s*([a-zA-Z\s]{2,30})",
-            r"(?i)\b(?:saya|aku)\s+(?:lebih\s+suka|preferensi\s+saya|biasanya\s+pakai)\s+([^\.\n]+)",
-            r"(?i)\b(?:gaya\s+bicara|bicara\s+dengan)\s+([^\.\n]+)",
-        ]
-        for pat in user_patterns:
-            m = re.search(pat, text)
-            if m:
-                extracted = m.group(0).strip()
-                cls.update_user_profile(extracted, speaker_name=speaker_name)
-                return f"Tercatat di profil: {extracted}"
-
-        # 2. General Fact / Knowledge Triggers -> MEMORY.md
-        fact_patterns = [
-            r"(?i)\b(?:ingat|catat|simpan\s+ke\s+memori)\s*(?:bahwa)?\s*:\s*([^\n]+)",
-            r"(?i)\b(?:ingat|catat)\s+bahwa\s+([^\n\.]+)",
-            r"(?i)\b(?:jangan\s+lupa|pastikan\s+ingat)\s+bahwa\s+([^\n\.]+)",
-        ]
-        for pat in fact_patterns:
-            m = re.search(pat, text)
-            if m:
-                fact = m.group(1).strip()
-                cls.append_memory_fact(fact)
-                return f"Tercatat di memori: {fact}"
-
+        # Minimal fallback for explicit prefix commands if needed
         return None
 
     @classmethod

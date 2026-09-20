@@ -19,8 +19,7 @@ from cognition import (
     is_stt_hallucination,
     generate_visual_projection,
     could_be_visual_request,
-    generate_daily_briefing,
-    is_briefing_request,
+    is_visual_request_semantic,
 )
 from memory import memory_engine
 from shared_state import pcm_to_wav_bytes
@@ -218,31 +217,25 @@ class VoicePipeline:
             spoken_intent = await classify_approval_intent(u_text or "", f"Konfirmasi kalibrasi suara untuk {sp_name}")
             if spoken_intent == "reject":
                 self.voice_enrollment = None
-                reply = f"Baik {sp_name}, kalibrasi dibatalkan. Kita lanjut ngobrol seperti biasa ya!"
                 if live_svc:
                     await live_svc.interrupt()
-                    await live_svc.send_text(f"Sistem: Ucapkan dengan suara ramah hanya kalimat ini: {reply}")
-                await self.websocket.send_json({"type": "transcript", "data": reply, "speaker": "output"})
-                self.log_turn(user_text=u_text, ai_text=reply, speaker_name=self.get_current_speaker())
+                    await live_svc.send_text(f"Sistem: Beritahu {sp_name} dengan ramah bahwa kalibrasi suara dibatalkan dan kita lanjut ngobrol biasa.")
+                self.log_turn(user_text=u_text, ai_text="[Kalibrasi suara dibatalkan]", speaker_name=self.get_current_speaker())
                 return
             elif spoken_intent == "approve":
                 self.voice_enrollment["stage"] = "recording"
                 self.voice_enrollment["round"] = 0
                 self.voice_enrollment["last_ts"] = _time.time()
                 p1 = prompts[0]
-                reply = f"Bagus! Kalimat pertama, tolong ucapkan: \"{p1}\""
                 if live_svc:
                     await live_svc.interrupt()
-                    await live_svc.send_text(f"Sistem: Ucapkan dengan suara ceria dan jelas kalimat ini: {reply}")
-                await self.websocket.send_json({"type": "transcript", "data": reply, "speaker": "output"})
-                self.log_turn(user_text=u_text, ai_text=reply, speaker_name=self.get_current_speaker())
+                    await live_svc.send_text(f"Sistem: Minta {sp_name} dengan ceria dan jelas untuk mengucapkan kalimat kalibrasi pertama: \"{p1}\"")
+                self.log_turn(user_text=u_text, ai_text=f"Membaca kalimat kalibrasi pertama: {p1}", speaker_name=self.get_current_speaker())
                 return
             else:
-                reply = f"Mau kalibrasi suara sekarang agar aku lebih akurat mengenalimu, {sp_name}? Jawab iya atau batal ya."
                 if live_svc:
                     await live_svc.interrupt()
-                    await live_svc.send_text(f"Sistem: Ucapkan dengan ramah kalimat ini: {reply}")
-                await self.websocket.send_json({"type": "transcript", "data": reply, "speaker": "output"})
+                    await live_svc.send_text(f"Sistem: Tanyakan ramah ke {sp_name} apakah ingin kalibrasi suara sekarang (cukup jawab iya atau batal).")
                 return
 
         elif stage == "recording":
@@ -250,40 +243,32 @@ class VoicePipeline:
             curr_p = prompts[rnd]
             overall_intensity = estimate_audio_intensity(audio_pcm)
             if overall_intensity < 0.006 or len(audio_pcm) < 16000:
-                reply = f"Suaramu kurang jelas terdengar. Tolong ulangi kalimat ini ya: \"{curr_p}\""
                 if live_svc:
                     await live_svc.interrupt()
-                    await live_svc.send_text(f"Sistem: Ucapkan dengan ramah kalimat ini: {reply}")
-                await self.websocket.send_json({"type": "transcript", "data": reply, "speaker": "output"})
+                    await live_svc.send_text(f"Sistem: Suara kurang jelas terdengar. Minta pengguna mengulangi kalimat: \"{curr_p}\"")
                 return
 
             res = memory_engine.calibrate_speaker_voice(sp_name, audio_pcm)
             if not res or not res.get("success"):
-                reply = f"Maaf, aku belum bisa menangkap sidik suaramu dengan jelas. Tolong ucapkan lagi ya: \"{curr_p}\""
                 if live_svc:
                     await live_svc.interrupt()
-                    await live_svc.send_text(f"Sistem: Ucapkan dengan ramah kalimat ini: {reply}")
-                await self.websocket.send_json({"type": "transcript", "data": reply, "speaker": "output"})
+                    await live_svc.send_text(f"Sistem: Sidik suara belum tertangkap jelas. Minta pengguna mengulangi lagi kalimat: \"{curr_p}\"")
                 return
 
             next_round = rnd + 1
             if next_round < len(prompts):
                 self.voice_enrollment["round"] = next_round
                 next_p = prompts[next_round]
-                reply = f"Bagus! Sekarang kalimat kedua: \"{next_p}\""
                 if live_svc:
                     await live_svc.interrupt()
-                    await live_svc.send_text(f"Sistem: Ucapkan dengan ceria kalimat ini: {reply}")
-                await self.websocket.send_json({"type": "transcript", "data": reply, "speaker": "output"})
+                    await live_svc.send_text(f"Sistem: Beri apresiasi singkat lalu minta pengguna membaca kalimat berikutnya: \"{next_p}\"")
                 return
             else:
                 self.voice_enrollment = None
-                reply = f"Sempurna, {sp_name}! Kalibrasi suara selesai dan tersimpan di database Anara. Sekarang aku jauh lebih akurat mengenali suaramu!"
                 if live_svc:
                     await live_svc.interrupt()
-                    await live_svc.send_text(f"Sistem: Ucapkan dengan suara sangat hangat dan senang kalimat ini: {reply}")
-                await self.websocket.send_json({"type": "transcript", "data": reply, "speaker": "output"})
-                self.log_turn(user_text="[Kalibrasi Suara Berhasil]", ai_text=reply, speaker_name=self.get_current_speaker())
+                    await live_svc.send_text(f"Sistem: Beritahu {sp_name} dengan sangat hangat dan senang bahwa kalibrasi suara berhasil dan tersimpan sempurna.")
+                self.log_turn(user_text="[Kalibrasi Suara Berhasil]", ai_text=f"Kalibrasi suara untuk {sp_name} berhasil disimpan.", speaker_name=self.get_current_speaker())
                 return
 
     async def transcribe_and_subtitle_audio(self, audio_pcm: bytes):
@@ -444,34 +429,8 @@ class VoicePipeline:
             self.log_turn(user_text=u_text, ai_text=cancel_msg, speaker_name=current_speaker_name)
             return
 
-        if is_briefing_request(u_text) and not self.dance_blocked():
-            logger.info(f"[Briefing] Request detected: {u_text!r}")
-            if live_svc:
-                await live_svc.interrupt()
-            try:
-                brief = await generate_daily_briefing(
-                    key_manager.get_client(), memory_engine, current_speaker_name
-                )
-                await self.websocket.send_json({
-                    "type": "hud_visual",
-                    "data": brief["reply_text"],
-                    "visualType": "briefing",
-                    "briefingData": brief["briefing_data"],
-                    "mediaType": "hud",
-                })
-                await self.websocket.send_json({
-                    "type": "transcript", "data": brief["reply_text"],
-                    "speaker": "output", "is_final": True,
-                })
-                if live_svc:
-                    await live_svc.send_text(f"Sistem: Bacakan ringkasan ini dengan gaya suara hangat: {brief['speech_text']}")
-                self.log_turn(user_text=u_text, ai_text=brief["reply_text"], speaker_name=current_speaker_name)
-            except Exception as e_brief:
-                logger.error(f"[Briefing] Generation failed: {e_brief}")
-            return
-
-        media_resolved = await resolve_media_request(u_text)
-        if media_resolved and not self.dance_blocked():
+        media_resolved = await resolve_media_request(u_text) if hasattr(self, "media_controller") else None
+        if media_resolved and isinstance(media_resolved, dict) and "track" in media_resolved and not self.dance_blocked():
             logger.info(f"[Media Router] Matched media: {media_resolved.get('title')}")
             if live_svc:
                 await live_svc.interrupt()
@@ -485,7 +444,7 @@ class VoicePipeline:
             self.log_turn(user_text=u_text, ai_text=reply, speaker_name=current_speaker_name)
             return
 
-        intent = memory_engine.classify_conversation_intent(u_text, current_speaker_name)
+        intent = memory_engine.classify_conversation_intent(u_text, current_speaker_name) if hasattr(memory_engine, "classify_conversation_intent") else None
         if intent and intent.get("type") and intent["type"] not in ("chat", "other"):
             if intent.get("type") in ("playlist_create", "playlist_play", "playlist_add_current", "media_history", "playlist_list"):
                 await self.media_controller.handle_playlist_intent(intent, u_text)
@@ -519,7 +478,8 @@ class VoicePipeline:
             speaker_ctx = f"{speaker_ctx}\n{proactive_facts}"
         active_sys_prompt = f"{SYSTEM_PROMPT}\n{speaker_ctx}"
 
-        if could_be_visual_request(u_text) and not self.dance_blocked():
+        is_visual = await is_visual_request_semantic(u_text)
+        if is_visual and not self.dance_blocked():
             vis = await generate_visual_projection(key_manager.get_client(), u_text, active_sys_prompt)
             if vis.get("has_visual"):
                 v_type = vis.get("visual_type", "image")

@@ -443,9 +443,14 @@ def filter_tts_speech_text(text: str) -> str:
     # 4. Remove URLs
     s = re.sub(r"https?://\S+", "", s)
 
-    # 5. Remove long file paths (e.g. C:/Users/... or /home/...)
-    s = re.sub(r"[A-Za-z]:[\\/][^\s,]+", "berkas terkait", s)
-    s = re.sub(r"/(?:[a-zA-Z0-9_\-]+/)+[a-zA-Z0-9_\-\.]+", "berkas terkait", s)
+    # 5. Normalize long file paths to essential filename (language-neutral Hermes Parity)
+    def _extract_basename(m):
+        raw = m.group(0).replace("\\", "/").rstrip("/.")
+        parts = [p for p in raw.split("/") if p]
+        return parts[-1] if parts else ""
+
+    s = re.sub(r"[A-Za-z]:[\\/][^\s,]+", _extract_basename, s)
+    s = re.sub(r"/(?:[a-zA-Z0-9_\-]+/)+[a-zA-Z0-9_\-\.]+", _extract_basename, s)
 
     # 6. Remove markdown formatting markers (*, #, _, ~, [ ])
     s = re.sub(r"[*_~#]", "", s)
@@ -457,24 +462,93 @@ def filter_tts_speech_text(text: str) -> str:
     s = re.sub(r"\s+", " ", s).strip()
 
     if not s or len(s) < 3:
-        return "Tindakan teknis telah selesai diproses."
+        return ""
 
     return s
+
+
+_VOICE_RESOLUTION_CACHE: Dict[str, str] = {}
+
+
+async def resolve_tts_voice_model_driven(text: str) -> str:
+    """
+    Pure Model-Driven TTS Voice Resolution (Hermes Parity).
+    Uses the auxiliary fast LLM to semantically detect the language of the text
+    and select the optimal Microsoft Edge-TTS neural voice identifier dynamically.
+    Eliminates developer maintenance of manual language/voice dictionaries.
+    Caches results by language fingerprint for 0ms conversational latency.
+    """
+    sample = (text or "").strip()[:180]
+    if not sample:
+        return "id-ID-GadisNeural"
+
+    cache_key = sample[:60].lower()
+    if cache_key in _VOICE_RESOLUTION_CACHE:
+        return _VOICE_RESOLUTION_CACHE[cache_key]
+
+    try:
+        import asyncio
+        from providers import call_universal_chat_model
+        from core.capabilities import get_fast_auxiliary_model
+
+        sys_p = (
+            "You are a multilingual TTS voice router for Microsoft Edge-TTS.\n"
+            "Given a sample text in any human language (e.g. Japanese, Korean, Chinese, Arabic, English, Indonesian, French, Spanish, German, etc.), "
+            "determine its language and output ONLY the single best matching Microsoft Edge-TTS neural voice identifier.\n"
+            "Examples:\n"
+            "- Japanese: ja-JP-NanamiNeural\n"
+            "- Korean: ko-KR-SunHiNeural\n"
+            "- Chinese: zh-CN-XiaoxiaoNeural\n"
+            "- English: en-US-AvaNeural\n"
+            "- Indonesian: id-ID-GadisNeural\n"
+            "- French: fr-FR-DeniseNeural\n"
+            "- Spanish: es-ES-ElviraNeural\n"
+            "- German: de-DE-KatjaNeural\n"
+            "- Arabic: ar-SA-ZariyahNeural\n"
+            "Respond with ONLY the exact voice identifier string, nothing else."
+        )
+        user_p = f"Sample text: \"{sample}\"\nEdge-TTS Voice ID:"
+        model_id = get_fast_auxiliary_model()
+        res = await asyncio.wait_for(
+            call_universal_chat_model(
+                model_id=model_id,
+                user_prompt=user_p,
+                system_instruction=sys_p,
+                max_tokens=None,
+                temperature=0.0,
+                read_only=True,
+            ),
+            timeout=4.0
+        )
+        if isinstance(res, str) and "Neural" in res:
+            resolved = res.strip().strip('"\'`')
+            for token in resolved.split():
+                if token.endswith("Neural"):
+                    _VOICE_RESOLUTION_CACHE[cache_key] = token
+                    return token
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).debug(f"[TTSVoiceRouter] Model voice resolution notice: {e}")
+
+    return "id-ID-GadisNeural"
 
 
 async def synthesize_speech_audio(
     text: str,
     output_path: Optional[str] = None,
-    voice: str = "id-ID-GadisNeural"
+    voice: Optional[str] = None
 ) -> Optional[str]:
     """
     Synthesizes conversational text into high-quality audio file for Telegram voice notes,
     WhatsApp PTT, Discord, and Slack (Hermes Parity).
-    Uses Edge-TTS Neural Voice (free, natural Indonesian) with automatic failover.
+    Uses Model-Driven Neural Voice resolution with automatic failover to omnilingual Gemini Audio.
     """
     clean = filter_tts_speech_text(text)
     if not clean or len(clean) < 2:
         return None
+
+    # Dynamically resolve voice using pure model reasoning if not explicitly specified
+    active_voice = voice or await resolve_tts_voice_model_driven(clean)
 
     import os
     import uuid
@@ -493,7 +567,7 @@ async def synthesize_speech_audio(
     # 1. Edge-TTS Primary Synthesizer
     try:
         import edge_tts
-        communicate = edge_tts.Communicate(clean, voice)
+        communicate = edge_tts.Communicate(clean, active_voice)
         await communicate.save(target_path)
         if os.path.isfile(target_path) and os.path.getsize(target_path) > 500:
             return target_path
@@ -501,7 +575,7 @@ async def synthesize_speech_audio(
         import logging
         logging.getLogger(__name__).warning(f"[TTS] Edge-TTS error: {e}")
 
-    # 2. Google GenAI / Gemini Speech Synthesizer Failover
+    # 2. Google GenAI / Gemini Speech Synthesizer Failover (Omnilingual Native Audio)
     try:
         from core import key_manager
         client = key_manager.get_client()
@@ -509,7 +583,7 @@ async def synthesize_speech_audio(
             from google.genai import types
             audio_resp = await client.aio.models.generate_content(
                 model="gemini-2.5-flash",
-                contents=f"Ucapkan kalimat ini secara alami dalam bahasa Indonesia: {clean}",
+                contents=f"Speak this text naturally, matching its language, accent, and tone: {clean}",
                 config=types.GenerateContentConfig(
                     response_modalities=["AUDIO"],
                     speech_config=types.SpeechConfig(

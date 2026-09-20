@@ -30,14 +30,15 @@ async def _tool_execute_cli_command(command: str, workdir: Optional[str] = None)
             "message": denial_reason or f"DITOLAK SISTEM KEAMANAN ANARA: Perintah '{cmd}' terdeteksi berisiko tinggi."
         }
 
-    # Windows 11 Compatibility: auto-translate deprecated WMIC syntax to modern PowerShell CIM cmdlets
-    if os.name == "nt":
-        if re.search(r"wmic\s+path\s+win32_battery", cmd, re.IGNORECASE):
-            cmd = "Get-CimInstance Win32_Battery | Select-Object EstimatedChargeRemaining, BatteryStatus"
-        elif re.search(r"wmic\s+(?:os|path\s+win32_operatingsystem)", cmd, re.IGNORECASE):
-            cmd = "Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, OSArchitecture"
-        elif re.search(r"wmic\s+(?:cpu|path\s+win32_processor)", cmd, re.IGNORECASE):
-            cmd = "Get-CimInstance Win32_Processor | Select-Object Name, NumberOfCores, MaxClockSpeed"
+    # Workspace Sentinel Blast-Radius Guard (Hermes Repo-Safety)
+    from core.workspace_sentinel import workspace_sentinel
+    is_sentinel_safe, sentinel_msg = workspace_sentinel.validate_cli_command(cmd)
+    if not is_sentinel_safe:
+        logger.warning(f"[WorkspaceSentinel] Blocked high blast-radius command: {cmd}")
+        return {
+            "status": "error",
+            "message": sentinel_msg or f"DITOLAK WORKSPACE SENTINEL: Perintah '{cmd}' memiliki blast-radius destruktif tinggi."
+        }
 
     from core import anara_agent
     active_f = anara_agent.get_session_dir()
@@ -87,24 +88,31 @@ async def _tool_execute_cli_command(command: str, workdir: Optional[str] = None)
 
 
 async def _tool_manage_memory_and_todos(action: str, title: str, content: Optional[str] = None, category: str = "todo") -> Dict[str, Any]:
-    """Autonomously creates notes or to-do items into Anara's SQLite Brain."""
+    """Autonomously creates notes or to-do items into Anara's SQLite Brain (Hermes Parity)."""
     from memory import memory_engine
     act = (action or "add").strip().lower()
-    t_clean = (title or "Tugas Baru").strip()
+    t_clean = (title or "Task").strip()
     c_clean = (content or "").strip()
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "manage_memory_and_todos",
-        "action_title": "Memperbarui Memori & Tugas",
-        "detail": f"Aksi: {act} -> '{t_clean}'",
+        "action_title": "Manage Memory & Tasks",
+        "detail": f"Action: {act} -> '{t_clean}'",
         "icon": "🧠"
     })
 
     try:
         if act in ["add", "create", "catat", "tambah"]:
             note_id = memory_engine.create_note_or_todo(title=t_clean, content=c_clean, category=category)
-            res_msg = f"Berhasil mencatat '{t_clean}' ke dalam daftar tugas/catatan Anara."
-        elif act in ["complete", "selesai"]:
+            res_payload = {
+                "status": "success",
+                "action": "add",
+                "id": note_id,
+                "title": t_clean,
+                "category": category,
+                "message": f"Recorded '{t_clean}' to {category} list."
+            }
+        elif act in ["complete", "selesai", "toggle"]:
             all_notes = memory_engine.get_notes_and_todos()
             target_id = None
             for n in all_notes:
@@ -113,20 +121,36 @@ async def _tool_manage_memory_and_todos(action: str, title: str, content: Option
                     break
             if target_id:
                 memory_engine.toggle_todo(target_id)
-                res_msg = f"Tugas '{t_clean}' berhasil ditandai selesai."
+                res_payload = {
+                    "status": "success",
+                    "action": "complete",
+                    "id": target_id,
+                    "title": t_clean,
+                    "message": f"Marked task '{t_clean}' as completed."
+                }
             else:
-                res_msg = f"Tugas '{t_clean}' tidak ditemukan."
+                res_payload = {
+                    "status": "not_found",
+                    "action": "complete",
+                    "title": t_clean,
+                    "message": f"Task '{t_clean}' not found in active list."
+                }
         else:
-            res_msg = f"Aksi '{act}' selesai diproses."
+            res_payload = {
+                "status": "success",
+                "action": act,
+                "title": t_clean,
+                "message": f"Action '{act}' processed successfully."
+            }
 
         _emit_agent_event("agent_action_complete", {
             "tool_name": "manage_memory_and_todos",
-            "action_title": "Memori Tersimpan",
-            "summary": res_msg,
+            "action_title": "Memory & Tasks Updated",
+            "summary": res_payload["message"],
             "icon": "🧠"
         })
 
-        return {"status": "success", "message": res_msg}
+        return res_payload
     except Exception as e:
         logger.warning(f"[AgentTools] Memory task error: {e}")
         return {"status": "error", "message": str(e)}
@@ -177,7 +201,7 @@ async def _tool_session_search(query: str, limit: int = 5) -> Dict[str, Any]:
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "session_search",
-        "action_title": "Mencari Riwayat Sesi Obrolan",
+        "action_title": "Session History Search",
         "detail": f"Query: '{clean_q}'",
         "icon": "search"
     })
@@ -185,10 +209,10 @@ async def _tool_session_search(query: str, limit: int = 5) -> Dict[str, Any]:
     try:
         results = memory_engine.search_conversation_history(query=clean_q, limit=safe_limit)
         if not results:
-            msg = f"Tidak ditemukan percakapan terdahulu yang cocok dengan kata kunci '{clean_q}'."
+            msg = f"No previous conversation history matched query '{clean_q}'."
             _emit_agent_event("agent_action_complete", {
                 "tool_name": "session_search",
-                "action_title": "Pencarian Riwayat Selesai",
+                "action_title": "Session Search Completed",
                 "summary": msg,
                 "icon": "search"
             })
@@ -197,8 +221,8 @@ async def _tool_session_search(query: str, limit: int = 5) -> Dict[str, Any]:
         formatted = []
         for r in results:
             created = (r.get("created_at") or "")[:19]
-            session = r.get("session_title") or f"Sesi #{r.get('session_id', '?')}"
-            speaker = r.get("speaker_name") or "Pengguna"
+            session = r.get("session_title") or f"Session #{r.get('session_id', '?')}"
+            speaker = r.get("speaker_name") or "User"
             u_text = (r.get("user_text") or "").strip()
             a_text = (r.get("ai_text") or "").strip()
             if len(a_text) > 300:
@@ -211,10 +235,10 @@ async def _tool_session_search(query: str, limit: int = 5) -> Dict[str, Any]:
                 "ai_text": a_text
             })
 
-        msg = f"Ditemukan {len(formatted)} riwayat percakapan yang relevan."
+        msg = f"Found {len(formatted)} relevant conversation turns."
         _emit_agent_event("agent_action_complete", {
             "tool_name": "session_search",
-            "action_title": "Pencarian Riwayat Berhasil",
+            "action_title": "Session Search Completed",
             "summary": msg,
             "icon": "search"
         })
@@ -228,53 +252,157 @@ async def _tool_session_search(query: str, limit: int = 5) -> Dict[str, Any]:
         return {"status": "error", "message": str(e)}
 
 
-async def _tool_system_control(action: str, target: Optional[str] = None) -> Dict[str, Any]:
-    """Controls desktop applications and OS functions locally on Windows."""
+def _resolve_windows_app_executable(app_name: str) -> Optional[str]:
+    """
+    Dynamically locates executable for a Windows application without static hardcoded paths (Hermes Parity).
+    Checks:
+    1. System PATH via shutil.which
+    2. Windows Registry App Paths (HKCU & HKLM)
+    3. Standard Program Directories (%LOCALAPPDATA%\\Programs, %PROGRAMFILES%, %PROGRAMFILES(X86)%)
+    """
+    clean = (app_name or "").strip().lower()
+    if not clean:
+        return None
+
+    # 1. System PATH
+    candidates = [
+        clean,
+        f"{clean}.exe",
+        f"{clean}.cmd",
+        f"{clean}.bat",
+    ]
+    for c in candidates:
+        found = shutil.which(c)
+        if found and os.path.isfile(found):
+            return found
+
+    # 2. Windows Registry App Paths (OS standard for registered applications)
+    if sys.platform == "win32":
+        try:
+            import winreg
+            for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                for sub in (
+                    rf"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{clean}.exe",
+                    rf"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{clean}",
+                ):
+                    try:
+                        with winreg.OpenKey(root, sub) as k:
+                            val, _ = winreg.QueryValueEx(k, "")
+                            if val and os.path.isfile(val):
+                                return val
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # 3. Dynamic scan of standard program directories
+        search_roots = [
+            os.path.expandvars("%LOCALAPPDATA%\\Programs"),
+            os.path.expandvars("%PROGRAMFILES%"),
+            os.path.expandvars("%PROGRAMFILES(X86)%"),
+        ]
+        for root_dir in search_roots:
+            if not os.path.isdir(root_dir):
+                continue
+            try:
+                for root, dirs, files in os.walk(root_dir):
+                    rel = os.path.relpath(root, root_dir)
+                    if rel.count(os.sep) > 3:
+                        continue
+                    for f in files:
+                        if f.lower().endswith(".exe") and clean in f.lower():
+                            full_p = os.path.join(root, f)
+                            if os.path.isfile(full_p):
+                                return full_p
+            except Exception:
+                pass
+
+    return None
+
+
+async def _tool_system_control(
+    action: str,
+    target: Optional[str] = None,
+    arguments: Optional[str] = None,
+    url: Optional[str] = None,
+    **kwargs: Any,
+) -> Dict[str, Any]:
+    """Controls desktop applications, URLs, and OS functions locally on Windows (Hermes Parity)."""
+    import shutil
+    import webbrowser
+
     act = (action or "open").strip().lower()
-    tgt = (target or "").strip().lower()
+    tgt = (target or url or kwargs.get("app") or "").strip()
+    args = (arguments or kwargs.get("args") or "").strip()
 
-    user_appdata = os.environ.get("APPDATA", "")
-    spotify_exe = os.path.join(user_appdata, "Spotify", "Spotify.exe")
-    spotify_cmd = f'"{spotify_exe}"' if os.path.exists(spotify_exe) else "cmd.exe /c start spotify:"
+    if not tgt and not url:
+        return {"status": "error", "message": "Target application, URL, or document path cannot be empty."}
 
-    known_apps = {
-        "spotify": spotify_cmd, "musik": spotify_cmd, "music": spotify_cmd,
-        "notepad": "notepad.exe", "catatan": "notepad.exe",
-        "calculator": "calc.exe", "kalkulator": "calc.exe",
-        "chrome": "cmd.exe /c start chrome",
-        "edge": "cmd.exe /c start msedge",
-        "browser": "cmd.exe /c start https://google.com",
-        "explorer": "explorer.exe", "folder": "explorer.exe",
-        "terminal": "cmd.exe /c start powershell",
-        "powershell": "cmd.exe /c start powershell",
-        "cmd": "cmd.exe /c start cmd",
-        "vs code": "cmd.exe /c code", "vscode": "cmd.exe /c code", "code": "cmd.exe /c code",
-        "telegram": "cmd.exe /c start tg:",
-        "whatsapp": "cmd.exe /c start whatsapp:",
-    }
+    # If url parameter is passed or target is a URL
+    target_url = url or (tgt if (tgt.startswith("http://") or tgt.startswith("https://")) else None)
 
     try:
         if act in ["open", "buka", "launch", "jalankan", "start", "putar", "setel"]:
-            app_cmd = None
-            for key, cmd in known_apps.items():
-                if key in tgt:
-                    app_cmd = cmd
-                    break
-            if not app_cmd and tgt:
-                app_cmd = f"cmd.exe /c start {tgt}"
+            # Case A: URL opening (Hermes Parity: webbrowser.open)
+            if target_url:
+                webbrowser.open(target_url)
+                return {
+                    "status": "success",
+                    "action": "open_url",
+                    "url": target_url,
+                    "message": f"URL '{target_url}' opened successfully in browser."
+                }
 
-            if app_cmd:
-                subprocess.Popen(app_cmd, shell=True)
-                result_msg = f"Berhasil membuka aplikasi '{tgt.title() or app_cmd}' di laptop."
-            else:
-                result_msg = f"Aplikasi '{tgt}' tidak dikenali dalam daftar aman."
+            # Case B: Desktop Application Launching (Hermes Parity: dynamic resolution)
+            exe_path = _resolve_windows_app_executable(tgt)
+            if exe_path:
+                cmd_list = [exe_path]
+                if args:
+                    import shlex
+                    try:
+                        cmd_list.extend(shlex.split(args))
+                    except Exception:
+                        cmd_list.append(args)
+                subprocess.Popen(cmd_list, shell=False)
+                return {
+                    "status": "success",
+                    "action": "open_app",
+                    "target": tgt,
+                    "executable": exe_path,
+                    "message": f"Application '{tgt}' ({os.path.basename(exe_path)}) launched successfully."
+                }
+
+            # Case C: ShellExecute fallback (for registered file associations or protocols)
+            if hasattr(os, "startfile"):
+                try:
+                    os.startfile(tgt)
+                    return {
+                        "status": "success",
+                        "action": "open_shell",
+                        "target": tgt,
+                        "message": f"Target '{tgt}' opened successfully."
+                    }
+                except Exception:
+                    pass
+
+            # Case D: Generic cmd.exe start
+            subprocess.Popen(f'cmd.exe /c start "" "{tgt}"', shell=True)
+            return {
+                "status": "success",
+                "action": "open_cmd",
+                "target": tgt,
+                "message": f"Command to open '{tgt}' sent to system."
+            }
+
         else:
-            result_msg = f"Perintah sistem '{act}' dieksekusi."
+            return {
+                "status": "success",
+                "action": act,
+                "message": f"System control command '{act}' for '{tgt}' processed successfully."
+            }
     except Exception as e:
         logger.warning(f"[AgentTools] System control error: {e}")
-        result_msg = f"Gagal mengeksekusi perintah sistem: {e}"
-
-    return {"status": "success", "result": result_msg}
+        return {"status": "error", "message": f"Failed to execute system control for '{tgt}': {e}"}
 
 
 async def _tool_project_hud(visual_type: str, title: str, summary: str, specs_json: Optional[str] = None) -> Dict[str, Any]:
@@ -303,32 +431,80 @@ async def _tool_project_hud(visual_type: str, title: str, summary: str, specs_js
     return {"status": "success", "message": f"Holographic HUD '{t_clean}' telah diproyeksikan ke layar."}
 
 
-async def _tool_delegate_subagent(title: str, mission_prompt: str) -> Dict[str, Any]:
+async def _tool_delegate_subagent(
+    title: Optional[str] = None,
+    mission_prompt: Optional[str] = None,
+    goal: Optional[str] = None,
+    context: Optional[str] = None,
+    tasks: Optional[List[Dict[str, Any]]] = None,
+    background: bool = False,
+    **kwargs: Any,
+) -> Dict[str, Any]:
     """
-    Spawns a specialized autonomous subagent worker in background to handle heavy tasks
-    (multi-file analysis, deep web scraping, batch document auditing) without blocking.
+    Spawns specialized autonomous subagent worker(s) in background or parallel batch (Hermes Parity).
+    By default runs synchronously (background=False) to deliver real model findings to the orchestrator.
     """
-    t_clean = (title or "Tugas Latar Belakang").strip()
-    m_clean = (mission_prompt or "").strip()
-    if not m_clean:
-        return {"status": "error", "message": "mission_prompt tidak boleh kosong"}
-
     from core import subagent_manager
-    task = await subagent_manager.spawn_subagent_task(title=t_clean, mission_prompt=m_clean)
+
+    # 1. Batch tasks mode
+    if tasks and isinstance(tasks, list):
+        if not background:
+            results = await subagent_manager.spawn_batch_and_join(tasks, shared_context=context or mission_prompt or "")
+            return {
+                "status": "success",
+                "batch_size": len(results),
+                "results": [r.to_dict() for r in results],
+            }
+        else:
+            spawned_tasks = []
+            for t_item in tasks:
+                g_text = t_item.get("goal") or t_item.get("title") or "Subagent Mission"
+                c_text = t_item.get("context") or context or mission_prompt or ""
+                t_obj = await subagent_manager.spawn_subagent_task(title=g_text, mission_prompt=c_text)
+                spawned_tasks.append(t_obj)
+
+            return {
+                "status": "success",
+                "mode": "batch_background",
+                "batch_size": len(spawned_tasks),
+                "task_ids": [t.task_id for t in spawned_tasks],
+            }
+
+    # 2. Single task mode
+    effective_goal = (goal or title or "Background Task").strip()
+    effective_context = (context or mission_prompt or "").strip()
+
+    if not effective_goal and not effective_context:
+        return {"status": "error", "message": "Task goal or title cannot be empty."}
+
+    task = await subagent_manager.spawn_subagent_task(
+        title=effective_goal,
+        mission_prompt=effective_context,
+    )
+
+    if not background:
+        if task._async_task:
+            await task._async_task
+        findings_text = task.result.executive_summary if task.result else ""
+        return {
+            "status": "success",
+            "task_id": task.task_id,
+            "goal": task.goal,
+            "findings": findings_text,
+        }
 
     _emit_agent_event("agent_action_complete", {
         "tool_name": "delegate_subagent",
-        "action_title": f"Sub-Agent #{task.task_id} Aktif",
-        "detail": f"Misi: {t_clean}",
-        "summary": "Tugas berhasil didelegasikan ke pekerja latar belakang.",
+        "action_title": f"Sub-Agent #{task.task_id} Active",
+        "detail": f"Goal: {effective_goal[:60]}",
+        "summary": "Task delegated to background worker.",
         "icon": "subagent"
     })
 
     return {
         "status": "success",
         "task_id": task.task_id,
-        "title": t_clean,
-        "message": f"Subagent #{task.task_id} ('{t_clean}') telah berhasil diaktifkan di latar belakang."
+        "goal": task.goal,
     }
 
 
@@ -423,10 +599,10 @@ async def _tool_learn_and_save_skill(
             learned=True,
         )
 
-        msg = f"Keahlian baru '{clean_name}' ({clean_cat}) berhasil dipelajari dan disimpan ke Skill Library (agentskills.io) Anara."
+        msg = f"New skill '{clean_name}' ({clean_cat}) learned and committed to Skill Library (agentskills.io)."
         _emit_agent_event("agent_action_complete", {
             "tool_name": "learn_and_save_skill",
-            "action_title": f"Skill Tersimpan: {clean_name}",
+            "action_title": f"Skill Saved: {clean_name}",
             "detail": clean_desc,
             "summary": msg,
             "icon": "brain"
@@ -439,7 +615,7 @@ async def _tool_learn_and_save_skill(
         }
     except Exception as e:
         logger.warning(f"[AgentTools] learn_and_save_skill error: {e}")
-        return {"status": "error", "message": f"Gagal menyimpan skill: {e}"}
+        return {"status": "error", "message": f"Failed to save skill: {e}"}
 
 
 async def _tool_interactive_question(questions: Any) -> Dict[str, Any]:
@@ -456,7 +632,7 @@ async def _tool_interactive_question(questions: Any) -> Dict[str, Any]:
         parsed_questions = questions.get("questions") or [questions]
 
     if not parsed_questions:
-        return {"status": "error", "message": "Daftar pertanyaan kuesioner tidak valid atau kosong."}
+        return {"status": "error", "message": "Questionnaire list is invalid or empty."}
 
     return await request_interactive_question(parsed_questions, timeout=300.0)
 
@@ -469,7 +645,7 @@ async def _tool_skill_view(name: str, file_path: Optional[str] = None) -> Dict[s
     """
     clean_name = (name or "").strip()
     if not clean_name:
-        return {"status": "error", "message": "Nama skill tidak boleh kosong."}
+        return {"status": "error", "message": "Skill name cannot be empty."}
 
     from core.skill_library import skill_library
 
@@ -479,13 +655,13 @@ async def _tool_skill_view(name: str, file_path: Optional[str] = None) -> Dict[s
         if not sub_file:
             return {
                 "status": "error",
-                "message": f"Berkas referensi '{file_path}' tidak ditemukan di dalam skill '{clean_name}'."
+                "message": f"Reference file '{file_path}' not found inside skill '{clean_name}'."
             }
         _emit_agent_event("agent_action_complete", {
             "tool_name": "skill_view",
-            "action_title": f"Memuat Referensi Skill: {sub_file['file_path']}",
+            "action_title": f"Load Skill Reference: {sub_file['file_path']}",
             "detail": f"Skill: {sub_file['skill_name']}",
-            "summary": f"Berkas referensi '{file_path}' berhasil dimuat ({sub_file['size_kb']} KB).",
+            "summary": f"Reference file '{file_path}' loaded successfully ({sub_file['size_kb']} KB).",
             "icon": "book-open"
         })
         return {
@@ -500,7 +676,7 @@ async def _tool_skill_view(name: str, file_path: Optional[str] = None) -> Dict[s
     if not skill:
         return {
             "status": "error",
-            "message": f"Skill '{clean_name}' tidak ditemukan di perpustakaan skill (agentskills.io)."
+            "message": f"Skill '{clean_name}' not found in Skill Library (agentskills.io)."
         }
 
     _emit_agent_event("agent_action_complete", {

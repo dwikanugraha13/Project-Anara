@@ -28,7 +28,6 @@ from cognition import (
     estimate_audio_intensity,
     EmotionEngine,
     generate_smart_hud_card,
-    ProactiveEngine,
 )
 from memory import memory_engine
 from providers import get_active_model_id
@@ -42,7 +41,7 @@ from shared_state import (
 
 from websocket.media_controller import MediaController
 from websocket.voice_pipeline import VoicePipeline
-from websocket.agent_runner import AgentRunner
+from websocket.stream_consumer import AgentRunner
 
 logger = logging.getLogger("anara.websocket")
 router = APIRouter(tags=["WebSocket"])

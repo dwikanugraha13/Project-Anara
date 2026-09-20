@@ -4,6 +4,7 @@ import logging
 import re
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 import httpx
+from config import cfg_get
 
 from .accounts import (
     get_provider_key,
@@ -128,8 +129,9 @@ async def stream_universal_chat_model(
                     payload["max_completion_tokens"] = payload.pop("max_tokens")
             endpoint_url = "https://api.openai.com/v1/chat/completions"
 
+        gen_timeout = float(cfg_get("agent.generation.timeout", 45.0))
         try:
-            async with httpx.AsyncClient(timeout=45.0) as client:
+            async with httpx.AsyncClient(timeout=gen_timeout) as client:
                 async with client.stream("POST", endpoint_url, headers=headers, json=payload) as response:
                     if response.status_code == 401 and is_oauth_jwt:
                         new_tok = await refresh_codex_oauth_token_if_needed(acc_id)
@@ -266,9 +268,9 @@ def _sanitize_lead_narration(raw_lead: str) -> str:
     # 2. Strip standalone JSON objects with action: tool_call
     text = re.sub(r"\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\}", "", text)
 
-    # 3. Strip observation artifacts (e.g. \f"...", [TOOL RESULT], [STATUS DIREKTORI])
+    # 3. Strip observation artifacts (e.g. \f"...", [TOOL RESULT], [OBSERVATION], [DIRECTORY STATUS])
     text = re.sub(r'\\f["\'][^\n]*', "", text)
-    text = re.sub(r'\[(?:TOOL RESULT|STATUS DIREKTORI|OBSERVASI|HASIL)[^\]]*\][^\n]*', "", text, flags=re.IGNORECASE)
+    text = re.sub(r'\[(?:TOOL[ _](?:RESULT|OBSERVATION|ERROR)|OBSERVATION|DIRECTORY[ _]STATUS|TOOL RESULT|STATUS DIREKTORI|OBSERVASI|HASIL)[^\]]*\][^\n]*', "", text, flags=re.IGNORECASE)
 
     # 4. Strip directory listing lines (e.g. - [DIR] ..., - [FILE] ...)
     text = re.sub(r"(?m)^\s*-\s*\[(?:DIR|FILE)\][^\n]*\n?", "", text)
@@ -283,6 +285,79 @@ def _sanitize_lead_narration(raw_lead: str) -> str:
         return ""
 
     return text
+
+
+def _clean_model_chat_text(raw_text: str) -> str:
+    """
+    Cleans model chat responses by removing markdown tool-call fences,
+    bare JSON tool payloads, observation tags, and trailing punctuation/braces (Hermes Parity).
+    Guarantees that responses consisting solely of brackets or punctuation (e.g. '}', '{}', '```')
+    are treated as empty so proper conversational synthesis is executed.
+    """
+    if not raw_text or not isinstance(raw_text, str):
+        return ""
+    text = raw_text.strip()
+
+    # 1. Strip markdown fences containing tool calls
+    text = re.sub(r"```(?:json)?\s*\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\}\s*```", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"<tool_call>[\s\S]*?</tool_call>", "", text, flags=re.IGNORECASE)
+
+    # 2. Strip standalone/bare JSON blocks containing action: tool_call
+    text = re.sub(r"\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\}", "", text, flags=re.IGNORECASE)
+
+    # 3. Strip observation tags
+    text = re.sub(r'\[(?:TOOL[ _](?:RESULT|OBSERVATION|ERROR)|OBSERVATION|DIRECTORY[ _]STATUS|TOOL RESULT|STATUS DIREKTORI|OBSERVASI|HASIL)[^\]]*\][^\n]*', "", text, flags=re.IGNORECASE)
+
+    # 4. Strip empty fences and trailing/leading structural punctuation
+    text = re.sub(r"```(?:json|shell|bash)?\s*```", "", text)
+    text = text.strip()
+    text = text.strip("{}[]` \t\r\n")
+
+    # 5. Check if remaining text contains actual words (Unicode word characters)
+    words = [w for w in re.findall(r"[\w\d]+", text, re.UNICODE) if w.lower() not in ("json", "action", "tool", "tool_call", "arguments")]
+    if len(words) < 2:
+        return ""
+
+    return text
+
+
+def _extract_json_balanced(text: str) -> List[tuple[str, int, int]]:
+    """
+    Deterministic bracket-balancing parser for JSON objects in text (Hermes Parity).
+    Accurately extracts top-level { ... } pairs while respecting quotes and escape characters.
+    Returns: list of (json_str, start_pos, end_pos)
+    """
+    results = []
+    in_str = False
+    escape = False
+    depth = 0
+    start = None
+
+    for i, ch in enumerate(text):
+        if escape:
+            escape = False
+            continue
+        if ch == '\\' and in_str:
+            escape = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if not in_str:
+            if ch == '{':
+                if depth == 0:
+                    start = i
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0 and start is not None:
+                    results.append((text[start:i+1], start, i+1))
+                    start = None
+                elif depth < 0:
+                    depth = 0
+                    start = None
+
+    return results
 
 
 def _extract_and_parse_tool_calls(raw_out: str) -> tuple[List[Dict[str, Any]], str, bool]:
@@ -348,12 +423,14 @@ def _extract_and_parse_tool_calls(raw_out: str) -> tuple[List[Dict[str, Any]], s
                 earliest_tool_start = 0
                 _normalize_and_add(parsed)
         else:
-            embedded_m = re.search(r"(\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\})", text)
-            if embedded_m:
-                parsed = _robust_parse_json(embedded_m.group(1))
-                if parsed is not None:
-                    earliest_tool_start = embedded_m.start()
-                    _normalize_and_add(parsed)
+            # Deterministic Bracket-Balancing JSON extraction (Hermes Parity)
+            for candidate, start_idx, _ in _extract_json_balanced(text):
+                if ('"action"' in candidate and '"tool_call"' in candidate) or ('"tool"' in candidate and '"arguments"' in candidate):
+                    parsed = _robust_parse_json(candidate)
+                    if parsed is not None:
+                        if earliest_tool_start is None or start_idx < earliest_tool_start:
+                            earliest_tool_start = start_idx
+                        _normalize_and_add(parsed)
 
     lead_text = ""
     if earliest_tool_start is not None and earliest_tool_start > 0:
@@ -390,7 +467,7 @@ async def _execute_json_agent_loop(
     """Universal multi-turn JSON tool loop for OpenAI Codex, Claude, and Custom Providers."""
     from tools import dispatch_tool_call, READ_ONLY_TOOL_NAMES, get_tool_risk, get_tools_catalog, AnaraLoopBreaker
     from tools.catalog import is_safe_read_only_cli_command
-    from tools.platform_registry import PlatformToolRegistry
+    from tools.toolsets import PlatformToolRegistry
 
     target_platform = platform or "web_studio"
     active_tool_names = set(PlatformToolRegistry.get_tools_for_platform(target_platform, user_task=user_prompt))
@@ -418,11 +495,11 @@ async def _execute_json_agent_loop(
         "```\n\n"
         f"Katalog Alat Aktif ({len(tool_lines)} alat):\n"
         f"{dynamic_catalog_str}\n\n"
-        "DISIPLIN KERJA:\n"
-        "1. PENALARAN INTENSI PENGGUNA (CONVERSATION VS ACTION — HERMES PARITY): Jika konteks obrolan adalah diskusi konseptual, tanya-jawab, bedah materi, atau respons kelanjutan topik (seperti 'oke lanjut', 'iya', 'siap', 'jelaskan', 'bagaimana menurutmu?'), BALASLAH MURNI DALAM BAHASA PERCAKAPAN ALAMI (PROSE). JANGAN memanggil alat atau mengeksekusi terminal (seperti pytest, test runner, git) kecuali jika pengguna secara eksplisit meminta pengujian atau eksekusi fisik.\n"
-        "2. Selalu periksa berkas/folder (read_local_file, glob_find_files, list_directory) sebelum menyimpulkan atau mengedit.\n"
-        "3. Gunakan 'edit_file' untuk modifikasi spesifik agar tidak merusak baris lain.\n"
-        "4. Setelah seluruh alat selesai dieksekusi dan tujuan tercapai, berikan penjelasan akhir yang cerdas, tuntas, dan ramah MURNI dengan gayamu sendiri (tanpa blok JSON pemanggilan alat)."
+        "OPERATIONAL GUIDELINES (HERMES PARITY):\n"
+        "1. USER INTENT REASONING (CONVERSATION VS ACTION — HERMES PARITY): If the conversation context is conceptual discussion, Q&A, or conversational follow-up ('ok continue', 'yes', 'explain', 'what do you think?'), RESPOND PURELY IN NATURAL CONVERSATIONAL PROSE. Do NOT call tools or execute terminal commands unless the user explicitly requests physical execution or testing.\n"
+        "2. Always inspect files/directories (read_local_file, glob_find_files, list_directory) before concluding or modifying.\n"
+        "3. Use 'edit_file' for targeted replacements without disturbing surrounding code.\n"
+        "4. Conclude your turn with a complete, direct, and empathetic final response naturally matching the user's active language (no raw tool JSON)."
     )
     
     messages = [
@@ -452,7 +529,7 @@ async def _execute_json_agent_loop(
             for m_idx in range(2, len(messages) - 6):
                 if messages[m_idx].get("role") == "user" and len(messages[m_idx].get("content", "")) > 4000:
                     c = messages[m_idx]["content"]
-                    messages[m_idx]["content"] = c[:1200] + "\n[... output observasi lama dipangkas demi efisiensi konteks ...]\n" + c[-600:]
+                    messages[m_idx]["content"] = c[:1200] + "\n[... earlier observation output truncated for context efficiency ...]\n" + c[-600:]
 
         buffered_chunks = []
         is_tool_candidate = None  # None: undetermined, True: looks like JSON tool call, False: narrative streaming
@@ -520,7 +597,7 @@ async def _execute_json_agent_loop(
                 logger.info("[AgentLoop] Empty response after tool execution detected. Nudging model (Hermes parity)...")
                 messages.append({
                     "role": "user",
-                    "content": "Kamu baru saja mengeksekusi alat di atas tetapi belum memberikan penjelasan atau tindakan lanjutan. Tolong proses hasil alat di atas dan berikan penjelasan akhir yang ramah, cerdas, dan lengkap kepada pengguna."
+                    "content": "You just executed the tool calls above but have not provided a final response. Please process the tool results above and provide your clear, helpful response naturally matching the user's active language."
                 })
                 continue
             break
@@ -533,20 +610,26 @@ async def _execute_json_agent_loop(
             messages.append({"role": "assistant", "content": raw_out})
             messages.append({
                 "role": "user",
-                "content": "[SYSTEM REFLECTION]: Format pemanggilan alat tidak dapat diparse sebagai JSON valid. Pastikan blok ```json berisi objek JSON valid dan gunakan forward slash '/' untuk semua path berkas (contoh: 'C:/path/file.py'). Mohon ulangi panggilan alat dengan benar."
+                "content": "[SYSTEM REFLECTION]: Tool call format could not be parsed as valid JSON. Ensure code blocks contain valid JSON objects with forward slashes '/' for file paths (e.g. 'C:/path/file.py'). Please retry the tool call correctly."
             })
             continue
 
         if not calls:
             # Model responded with actual conversational narrative text!
             # Strip any leaked or orphaned tool tags before presenting to user (Hermes parity)
-            cleaned_text = re.sub(r"```(?:json)?\s*\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\}\s*```", "", last_response).strip()
-            cleaned_text = re.sub(r"<tool_call>[\s\S]*?</tool_call>", "", cleaned_text).strip()
-            # CRITICAL HERMES FIX: Never fallback to last_response if it contains a tool_call block!
+            cleaned_text = _clean_model_chat_text(last_response)
+            # CRITICAL HERMES FIX: If text only contained tool calls or stray braces, invoke dynamic narrative synthesis pass
             if not cleaned_text or '"action": "tool_call"' in cleaned_text or '<tool_call>' in cleaned_text:
-                final_text = "Tugas dan pemeriksaan sistem telah selesai diproses."
-            else:
-                final_text = cleaned_text
+                try:
+                    synth = await provider_caller([
+                        *messages,
+                        {"role": "assistant", "content": last_response},
+                        {"role": "user", "content": "Explain your conclusion or answer clearly to the user in natural conversational prose matching the user's active language."}
+                    ])
+                    cleaned_text = _clean_model_chat_text(synth or "")
+                except Exception:
+                    pass
+            final_text = cleaned_text or "Task execution complete."
             if token_cb and not accumulated_narrative and final_text:
                 res = token_cb(final_text)
                 if asyncio.iscoroutine(res):
@@ -718,6 +801,16 @@ async def _execute_json_agent_loop(
             # are observations, not system execution failures.
             is_err = raw_err and not is_tolerant
 
+            # Ground-Truth Test Verification (Hermes Parity Subsystem 5)
+            if tool_name == "execute_cli_command":
+                cmd_str = str(item["args"].get("command", "")).lower()
+                if any(k in cmd_str for k in ("run_tests", "pytest", "npm test", "npm run test", "test_general_agent")):
+                    from core.workspace_sentinel import workspace_sentinel
+                    gt = workspace_sentinel.verify_ground_truth(res_str, tool_res.get("return_code", 0) if isinstance(tool_res, dict) else 0)
+                    if not gt.get("verified"):
+                        is_err = True
+                        recovery_hints.append(f"\n[GROUND-TRUTH TEST VERIFICATION ALERT]: {gt.get('guidance')}")
+
             loop_breaker.record_result(is_err)
 
             if is_err:
@@ -773,7 +866,7 @@ async def _execute_json_agent_loop(
             guidance = "\n\n".join(recovery_hints)
         else:
             self_correction_tracker.reset()
-            guidance = "\n\nLanjutkan tugas berikutnya atau berikan penjelasan akhir yang cerdas dan lengkap jika semua langkah telah selesai."
+            guidance = "\n\nProceed with the next required action, or provide your final response matching the user's active language if all steps are complete."
 
         combined_tool_feedback = "\n\n".join(tool_result_blocks) + guidance
         messages.append({
@@ -787,37 +880,39 @@ async def _execute_json_agent_loop(
                     "tool_name": "agent",
                     "status": "thinking",
                     "step": step + 2,
-                    "summary": "Merumuskan cetak biru & analisis..." if read_only else "Menganalisis hasil & menyusun langkah implementasi..."
+                    "summary": "Reasoning & planning..." if read_only else "Analyzing results & planning next action..."
                 })
                 if asyncio.iscoroutine(res_cb):
                     await res_cb
             except Exception:
                 pass
         
-    # If the loop finished and last_response is STILL a tool call (Hermes Turn-Completion Enforcement):
-    # Never return raw JSON tool call to the user!
-    if '"action": "tool_call"' in last_response or '<tool_call>' in last_response:
-        logger.info("[AgentLoop] Final turn terminated on unclosed tool call. Executing Hermes Closing Narrative Pass...")
+    # If the loop finished and last_response is STILL a tool call or stray bracket (Hermes Turn-Completion Enforcement):
+    # Never return raw JSON tool call or stray bracket artifacts to the user!
+    cleaned_last = _clean_model_chat_text(last_response)
+    if '"action": "tool_call"' in last_response or '<tool_call>' in last_response or not cleaned_last:
+        logger.info("[AgentLoop] Final turn terminated on unclosed tool call or missing narrative. Executing Hermes Closing Narrative Pass...")
         try:
             closing_prompt = [
                 *messages,
                 {
                     "role": "user",
-                    "content": "Berdasarkan seluruh hasil kerja dan observasi alat di atas, berikan kesimpulan akhir yang ramah, cerdas, dan lengkap kepada pengguna dalam teks percakapan biasa (tanpa format JSON pemanggilan alat)."
+                    "content": "Based on all the work and tool observations above, provide a clear, helpful, and complete final response to the user in natural conversational prose (no raw tool call JSON), matching the user's active language."
                 }
             ]
             synth = await provider_caller(closing_prompt)
             if synth and synth.strip():
-                cleaned_synth = re.sub(r"```(?:json)?\s*\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\}\s*```", "", synth).strip()
-                cleaned_synth = re.sub(r"<tool_call>[\s\S]*?</tool_call>", "", cleaned_synth).strip()
+                cleaned_synth = _clean_model_chat_text(synth)
                 if cleaned_synth and '"action": "tool_call"' not in cleaned_synth:
                     return cleaned_synth
         except Exception as e_synth:
             logger.warning(f"[AgentLoop] Closing narrative synthesis pass error: {e_synth}")
 
-        return "Pemeriksaan dan tindakan sistem telah selesai dilakukan."
+        if cleaned_last:
+            return cleaned_last
+        return "Tugas telah selesai diperiksa dan dieksekusi secara tuntas."
 
-    return last_response
+    return cleaned_last or last_response
 
 
 async def _make_gemini_raw_call(

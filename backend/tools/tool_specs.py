@@ -12,6 +12,7 @@ from .fs_tools import (
     _tool_read_local_file,
     _tool_edit_file,
     _tool_write_local_file,
+    _tool_delete_local_file,
     _tool_list_directory,
     _tool_scan_workspace_folder,
     _tool_glob_find_files,
@@ -75,7 +76,6 @@ from .voice_tools import (
 from .code_execution_tools import _tool_execute_code
 from .computer_use_tool import _tool_computer_use
 from .mcp_tools import _tool_mcp_manage
-from .skills_hub_tools import _tool_skills_hub_manage
 from .process_tools import _tool_process_manage
 from .kanban_tools import (
     _tool_kanban_create_task,
@@ -116,6 +116,10 @@ async def _tool_calendar_get_schedule(days: int = 3) -> Dict[str, Any]:
 
 
 # All 66 Tool Specifications (Anara Standard)
+async def _tool_take_screenshot(title: Optional[str] = None, text: Optional[str] = None, **kw: Any) -> Dict[str, Any]:
+    return await _tool_computer_use(action="screenshot", text=title or text)
+
+
 ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Digital Artifacts ──
     {
@@ -362,6 +366,22 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
         "toolset": "file_operations",
         "category": "coding",
         "icon": "folder",
+    },
+    {
+        "name": "delete_local_file",
+        "description": "Menghapus berkas spesifik di komputer pengguna secara aman dan tertarget atas perintah pengguna. Dilarang menggunakan wildcard (*) atau menghapus direktori.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "file_path": {"type": "STRING", "description": "Path berkas spesifik yang ingin dihapus (misal 'temp.txt' atau 'src/old.py')."}
+            },
+            "required": ["file_path"]
+        },
+        "handler": _tool_delete_local_file,
+        "risk": "mutating",
+        "toolset": "file_operations",
+        "category": "coding",
+        "icon": "trash",
     },
     {
         "name": "list_directory",
@@ -755,38 +775,25 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
         "category": "intelligence",
         "icon": "book-open",
     },
-    {
-        "name": "skills_hub_manage",
-        "description": "Menelusuri, mengunduh, memasang, melihat, dan menghapus keahlian komunitas (Skills Hub) dari GitHub/ClawHub.",
-        "parameters": {
-            "type": "OBJECT",
-            "properties": {
-                "action": {"type": "STRING", "description": "Aksi: 'search', 'install', 'list', 'uninstall'."},
-                "query": {"type": "STRING", "description": "Kata kunci pencarian."},
-                "skill_name": {"type": "STRING", "description": "Nama skill target."},
-                "custom_url": {"type": "STRING", "description": "Tautan URL mentah berkas SKILL.md GitHub."}
-            },
-            "required": ["action"]
-        },
-        "handler": _tool_skills_hub_manage,
-        "risk": "action",
-        "toolset": "skills_engine",
-        "category": "intelligence",
-        "icon": "book-open",
-    },
 
     # ── Delegation ──
     {
         "name": "delegate_subagent",
-        "description": "Mendelegasikan tugas investigasi mandiri ke subagent pekerja latar belakang.",
+        "description": "Mendelegasikan tugas investigasi atau riset mandiri ke subagent pekerja latar belakang (mendukung single mission atau batch tasks paralel).",
         "parameters": {
             "type": "OBJECT",
             "properties": {
                 "title": {"type": "STRING", "description": "Judul singkat misi latar belakang."},
                 "mission_prompt": {"type": "STRING", "description": "Instruksi tugas lengkap."},
-                "subagent_type": {"type": "STRING", "description": "Tipe sub-agent ('researcher', 'coder', 'analyst')."}
-            },
-            "required": ["title", "mission_prompt"]
+                "goal": {"type": "STRING", "description": "Sasaran spesifik tugas yang harus dicapai subagent."},
+                "context": {"type": "STRING", "description": "Latar belakang teknis atau berkas yang relevan untuk tugas ini."},
+                "tasks": {
+                    "type": "ARRAY",
+                    "items": {"type": "OBJECT"},
+                    "description": "Daftar batch tugas [{'goal': '...', 'context': '...'}] untuk dieksekusi secara paralel."
+                },
+                "background": {"type": "BOOLEAN", "description": "Jalankan di latar belakang (default true)."}
+            }
         },
         "handler": _tool_delegate_subagent,
         "risk": "mutating",
@@ -1204,24 +1211,43 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Computer Use ──
     {
         "name": "computer_use",
-        "description": "Otomasi desktop OS Windows tingkat rendah (tangkapan layar, klik mouse, pergerakan kursor, drag, ketik teks, dan tekan tombol keyboard).",
+        "description": "Otomasi antarmuka OS Windows (CUA). Primitif murni: tangkapan layar (screenshot), klik mouse, pergerakan kursor, drag, scroll, ketik teks, tekan tombol, hotkey, dan fokus jendela.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "action": {"type": "STRING", "description": "Aksi: 'screenshot', 'mouse_click', 'mouse_move', 'mouse_drag', 'keyboard_type', 'keyboard_press', 'screen_info'."},
-                "x": {"type": "INTEGER", "description": "Koordinat horizontal piksel layar."},
-                "y": {"type": "INTEGER", "description": "Koordinat vertikal piksel layar."},
+                "action": {"type": "STRING", "description": "Aksi murni OS: 'screenshot', 'mouse_click', 'mouse_move', 'mouse_drag', 'scroll', 'keyboard_type', 'keyboard_press', 'hotkey', 'focus_app', 'wait', 'screen_info'."},
+                "x": {"type": "INTEGER", "description": "Koordinat horizontal piksel layar (opsional)."},
+                "y": {"type": "INTEGER", "description": "Koordinat vertikal piksel layar (opsional)."},
+                "coordinate": {"type": "ARRAY", "items": {"type": "INTEGER"}, "description": "Koordinat [x, y] untuk mouse (opsional)."},
                 "button": {"type": "STRING", "description": "Tombol mouse: 'left', 'right', 'double'."},
-                "text": {"type": "STRING", "description": "Teks yang ingin diketik ke jendela aktif."},
-                "key": {"type": "STRING", "description": "Nama tombol keyboard."}
+                "text": {"type": "STRING", "description": "Teks yang ingin diketik ke jendela aktif atau judul jendela yang ingin difokuskan."},
+                "key": {"type": "STRING", "description": "Nama tombol keyboard atau kombinasi hotkey (misal 'enter', 'tab', 'ctrl+c')."},
+                "amount": {"type": "INTEGER", "description": "Jumlah putaran scroll mouse wheel."},
+                "duration": {"type": "NUMBER", "description": "Durasi jeda dalam detik."},
+                "app": {"type": "STRING", "description": "Nama atau judul jendela aplikasi target."}
             },
             "required": ["action"]
         },
         "handler": _tool_computer_use,
-        "risk": "ask",
+        "risk": "mutating",
         "toolset": "computer_use",
         "category": "system",
         "icon": "monitor",
+    },
+    {
+        "name": "take_screenshot",
+        "description": "Mengambil tangkapan layar penuh (screenshot) desktop/laptop pengguna saat ini.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "title": {"type": "STRING", "description": "Keterangan atau judul tangkapan layar (opsional)."}
+            }
+        },
+        "handler": _tool_take_screenshot,
+        "risk": "read_only",
+        "toolset": "computer_use",
+        "category": "system",
+        "icon": "camera",
     },
 
     # ── MCP Protocol ──

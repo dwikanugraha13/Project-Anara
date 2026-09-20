@@ -318,10 +318,9 @@ class ChatSessionsMixin:
         fallback = (fallback[:36] + "...") if len(fallback) > 36 else fallback
 
         prompt = (
-            "Buat judul SINGKAT (2-5 kata) untuk percakapan berikut, dalam Bahasa Indonesia.\n"
-            "Aturan: tanpa tanda kutip, tanpa titik di akhir, langsung inti topiknya.\n"
-            "Contoh judul bagus: 'Resep Nasi Goreng', 'Setup VPS Telegram', 'Tips Belajar Efektif'.\n\n"
-            f"PERCAKAPAN:\n{convo}\n\nJUDUL:"
+            "Generate a SHORT title (2-5 words) summarizing this conversation.\n"
+            "Rules: match the language used by the user, no quotes, no trailing dot, capture the core topic directly.\n\n"
+            f"CONVERSATION:\n{convo}\n\nTITLE:"
         )
 
         title = ""
@@ -512,8 +511,8 @@ class ChatSessionsMixin:
             u = (r.get("user_text") or "").strip()
             a = (r.get("ai_text") or "").strip()
 
-            u = re.sub(r"```[\s\S]*?```", "[cuplikan kode/file]", u)
-            a = re.sub(r"```[\s\S]*?```", "[cuplikan kode/file]", a)
+            u = re.sub(r"```[\s\S]*?```", "[code block]", u)
+            a = re.sub(r"```[\s\S]*?```", "[code block]", a)
             u = re.sub(r"\s+", " ", u).strip()
             a = re.sub(r"\s+", " ", a).strip()
 

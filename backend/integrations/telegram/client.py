@@ -139,23 +139,19 @@ async def get_recent_telegram_updates(limit: int = 15) -> List[Dict[str, Any]]:
 
 
 async def execute_remote_telegram_command(command_text: str, chat_id: Optional[str] = None) -> Dict[str, Any]:
-    """Executes a command received from Telegram."""
-    from providers import call_universal_chat_model, get_active_model_id
-    sys_inst = (
-        "Kamu adalah Anara, AI assistant yang terhubung melalui Telegram. "
-        "Jawab dengan cerdas, ramah, dan ringkas. Gunakan format yang rapi."
+    """Executes a command received from Telegram via unified channel gateway."""
+    from core.channel_adapter import ChannelRequest, process_channel_request
+    req = ChannelRequest(
+        text=command_text,
+        channel="telegram",
+        channel_id=chat_id or "default",
+        user_id="telegram_remote",
+        sender_name="Pengguna",
     )
-    res = await call_universal_chat_model(
-        model_id=get_active_model_id(),
-        user_prompt=command_text,
-        system_instruction=sys_inst,
-        max_tokens=450,
-        temperature=0.7,
-        read_only=False
-    )
-    if res and chat_id:
-        await send_telegram_message(text=res, chat_id=chat_id)
-    return {"status": "success", "result": res}
+    res = await process_channel_request(req)
+    if res.text and chat_id:
+        await send_telegram_message(text=res.text, chat_id=chat_id, reply_markup=res.reply_markup)
+    return {"status": res.status, "result": res.text, "mode": res.mode}
 
 
 async def send_telegram_message(
@@ -173,11 +169,12 @@ async def send_telegram_message(
     if not target_chat:
         return {"status": "error", "message": "Chat ID tujuan belum ditentukan."}
 
-    # ── SEMANTIC CHUNKING (Threshold: 3000 chars for safe HTML expansion & unlimited parts) ──
-    if len(text) > 3000:
+    # ── SEMANTIC CHUNKING (Threshold: 2200 chars for safe HTML expansion & unlimited parts) ──
+    CHUNK_LIMIT = 2200
+    if len(text) > CHUNK_LIMIT:
         try:
             from .formatter import split_message_chunks
-            parts = split_message_chunks(text, max_chars=3000, add_part_headers=True)
+            parts = split_message_chunks(text, max_chars=CHUNK_LIMIT, add_part_headers=True)
             if len(parts) > 1:
                 logger.info(f"[TelegramClient] Splitting message ({len(text)} chars) into {len(parts)} parts for chat {target_chat}")
                 last_res: Dict[str, Any] = {"status": "ok", "chunks_sent": len(parts)}
@@ -196,6 +193,8 @@ async def send_telegram_message(
             try:
                 rich_url = f"{TELEGRAM_API_BASE}/bot{token}/sendRichMessage"
                 normalized_text = _rich_normalize_linebreaks(text)
+                if len(normalized_text) > 4000:
+                    normalized_text = normalized_text[:3990] + "\n..."
                 rich_payload: Dict[str, Any] = {"chat_id": target_chat, "text": normalized_text}
                 if reply_markup:
                     rich_payload["reply_markup"] = reply_markup
@@ -210,6 +209,8 @@ async def send_telegram_message(
 
         # 2. Standard sendMessage with format_telegram_html
         formatted = format_telegram_html(text) if parse_mode == "HTML" else text
+        if len(formatted) > 4000:
+            formatted = formatted[:3990] + "\n..."
         url = f"{TELEGRAM_API_BASE}/bot{token}/sendMessage"
         payload: Dict[str, Any] = {
             "chat_id": target_chat,
@@ -229,6 +230,8 @@ async def send_telegram_message(
         logger.warning(f"[TelegramClient] HTML sendMessage returned {res.status_code}: {res.text}. Trying plain text fallback...")
         # 3. Fallback: plain text (preserves reply_markup so interactive buttons are never lost)
         clean_plain = text.replace("<details>", "").replace("</details>", "").replace("<summary>", "").replace("</summary>", "")
+        if len(clean_plain) > 4000:
+            clean_plain = clean_plain[:3990] + "\n..."
         plain_payload: Dict[str, Any] = {"chat_id": target_chat, "text": clean_plain}
         if reply_markup:
             plain_payload["reply_markup"] = reply_markup
@@ -320,11 +323,13 @@ async def send_telegram_voice(
 
 
 async def send_telegram_photo(
-    photo: Any,
+    photo: Any = None,
     chat_id: Optional[str] = None,
-    caption: Optional[str] = None
+    caption: Optional[str] = None,
+    file_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Sends a photo directly into Telegram chat from URL or local file path."""
+    photo_target = photo or file_path
     token = get_stored_telegram_token()
     if not token:
         return {"status": "error", "message": "Token Telegram Bot belum diatur."}
@@ -337,17 +342,17 @@ async def send_telegram_photo(
 
     try:
         async with httpx.AsyncClient(timeout=45.0, follow_redirects=True) as client:
-            if isinstance(photo, str) and (photo.startswith("http://") or photo.startswith("https://")):
-                data = {"chat_id": target_chat, "photo": photo}
+            if isinstance(photo_target, str) and (photo_target.startswith("http://") or photo_target.startswith("https://")):
+                data = {"chat_id": target_chat, "photo": photo_target}
                 if caption:
                     data["caption"] = caption[:1024]
                 res = await client.post(url, data=data)
                 if res.status_code == 200 and res.json().get("ok"):
                     return {"status": "ok", "message_id": res.json()["result"]["message_id"]}
-            elif isinstance(photo, str) and os.path.isfile(photo):
-                with open(photo, "rb") as f:
+            elif isinstance(photo_target, str) and os.path.isfile(photo_target):
+                with open(photo_target, "rb") as f:
                     file_bytes = f.read()
-                files = {"photo": (os.path.basename(photo), file_bytes)}
+                files = {"photo": (os.path.basename(photo_target), file_bytes)}
                 data = {"chat_id": target_chat}
                 if caption:
                     data["caption"] = caption[:1024]

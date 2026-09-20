@@ -22,18 +22,19 @@ RISK_ORDER: Dict[str, int] = {
     "ask": 3,
 }
 
-# Explicit approval keywords (Case-insensitive)
-EXPLICIT_APPROVAL_PATTERNS = [
-    r"\b(?:setujui|setuju|approve|approved)(?:\s+(?:rencana|plan))?\b",
-    r"\b(?:eksekusi|jalankan|laksanakan)(?:\s+(?:rencana|plan|sekarang))?\b",
-    r"\b(?:sikat|gas|gaspol|gasss|hajar|hajar\s*bleh)\b",
-    r"\b(?:lanjutkan|lanjut|proceed|lanjoott)\b",
-    r"\b(?:boleh|yoi|yup|yap|ok|oke|oke\s*gas)\b",
-    r"\b(?:siap\s*(?:laksanakan|jalankan|eksekusi)?)\b",
-    r"\bbuild\s+mode\s*(?:sekarang)?\b",
-    r"\bok(?:e)?\s*,?\s*(?:jalankan|eksekusi|sikat|lakukan)\b",
-    r"\bya\s*,?\s*(?:jalankan|eksekusi|sikat|lakukan)\b",
-]
+# Universal fast approval & rejection tokens (Hermes Parity fast-path)
+UNIVERSAL_APPROVAL_TOKENS = {
+    "ya", "iya", "setuju", "setujui", "yes", "yep", "ok", "oke",
+    "approve", "approved", "confirm", "confirmed", "proceed", "execute",
+    "jalankan", "laksanakan", "sikat", "gas", "siap", "boleh",
+    "lanjut", "lanjutkan", "continue"
+}
+
+UNIVERSAL_REJECTION_TOKENS = {
+    "batal", "batalkan", "tidak", "jangan", "nggak", "gak", "cancel",
+    "stop", "no", "abort", "reject", "rejected", "decline", "deny",
+    "nope", "nah", "halt", "quit"
+}
 
 
 def split_shell_pipeline(cmd: str) -> List[str]:
@@ -376,28 +377,59 @@ def get_highest_risk(tools: List[str]) -> str:
 
 def is_significant_action(request_text: str, tools: List[str]) -> bool:
     """
-    Evaluates if an 'action' tier tool has significant side effects
-    (e.g., messaging multiple recipients, destructive todo clears, production webhooks).
+    Evaluates if an 'action' tier tool has significant external side effects (Hermes Parity).
+    Evaluates tool characteristics rather than arbitrary keyword heuristics.
     """
-    text = (request_text or "").lower()
-    significant_patterns = [
-        r"\b(?:semua|all|broadcast|group|grup|banyak)\b",
-        r"\b(?:penting|urgent|darurat|kritis)\b",
-        r"\b(?:hapus\s+semua|reset|clear)\b",
-    ]
-    return any(re.search(pat, text) for pat in significant_patterns)
+    if not tools:
+        return False
+    significant_tools = {"custom_webhook", "send_document_file"}
+    return any(t in significant_tools for t in tools)
 
 
 def is_explicit_plan_approval(user_text: str) -> bool:
-    """Returns True if the user text explicitly approves a pending plan for execution."""
+    """
+    Fast, deterministic check for universal approval keywords (Hermes Parity).
+    For nuanced, multi-word, slang, or conversational intent, use classify_approval_intent().
+    """
     text = (user_text or "").strip().lower()
     if not text:
         return False
-    # Reject immediately if text contains negative refusal words
-    negatives = ("jangan", "batal", "batalkan", "tidak", "gak", "nggak", "stop", "cancel", "no")
-    if any(neg in text.split() for neg in negatives):
+
+    # Normalize punctuation
+    text_clean = re.sub(r"[^\w\s]", " ", text).strip()
+    words = text_clean.split()
+    if not words:
         return False
-    return any(re.search(pat, text) for pat in EXPLICIT_APPROVAL_PATTERNS)
+
+    # Immediate rejection if explicit negative word exists
+    if any(w in UNIVERSAL_REJECTION_TOKENS for w in words):
+        return False
+
+    # 1. Exact token match (e.g. "ya", "setuju", "oke", "approve", "sikat", "gas")
+    if text_clean in UNIVERSAL_APPROVAL_TOKENS:
+        return True
+
+    # 2. Canonical approval phrases (multilingual parity)
+    canonical_phrases = {
+        "setujui rencana", "setuju rencana", "approve plan", "approved plan",
+        "jalankan rencana", "eksekusi rencana", "execute plan", "proceed plan",
+        "oke jalankan", "ya jalankan", "oke eksekusi", "ya eksekusi",
+        "gas eksekusi", "sikat rencana", "looks good", "go ahead", "go for it",
+        "lanjutkan rencana", "lanjutkan dan jalankan"
+    }
+    if text_clean in canonical_phrases:
+        return True
+
+    # 3. Direct imperative short combinations (<= 4 words) containing approval verbs
+    approval_verbs = {
+        "setuju", "setujui", "approve", "approved", "confirm",
+        "jalankan", "eksekusi", "laksanakan", "lanjutkan", "proceed", "execute"
+    }
+    if len(words) <= 4:
+        if any(w in approval_verbs for w in words):
+            return True
+
+    return False
 
 
 async def classify_approval_intent(user_text: str, pending_action_context: str = "") -> str:
@@ -408,23 +440,29 @@ async def classify_approval_intent(user_text: str, pending_action_context: str =
     - 'reject': user declines, cancels, says no, or rejects the action.
     - 'other': user is asking something else or ignoring the prompt.
     Uses fast auxiliary LLM (< 300ms) with a zero-latency fast-path for simple obvious words.
+    Works multilingually across English, Indonesian, and other languages.
     """
     clean = (user_text or "").strip().lower()
     if not clean:
         return "other"
 
-    # Fast-path for unambiguous 1-word responses (0ms overhead)
+    # Fast-path for unambiguous responses (0ms overhead, multilingual Hermes parity)
     fast_approvals = {
         "ya", "iya", "gas", "lanjut", "lanjutkan", "oke", "ok", "setujui",
-        "setuju", "sikat", "siap", "yes", "yup", "boleh", "hajar", "terobos"
+        "setuju", "sikat", "siap", "yes", "yup", "boleh", "hajar", "terobos",
+        "proceed", "approve", "approved", "confirm", "confirmed", "go", "sure",
+        "yep", "yeah", "absolutely", "definitely", "continue", "execute"
     }
     fast_rejects = {
-        "batal", "batalkan", "tidak", "jangan", "nggak", "gak", "cancel", "stop", "no"
+        "batal", "batalkan", "tidak", "jangan", "nggak", "gak", "cancel", "stop", "no",
+        "abort", "aborted", "reject", "rejected", "decline", "declined", "deny", "denied",
+        "nope", "nah", "halt", "quit"
     }
+    tokens = set(clean.split())
+    if clean in fast_rejects or (tokens & fast_rejects and not (tokens & fast_approvals)):
+        return "reject"
     if clean in fast_approvals:
         return "approve"
-    if clean in fast_rejects:
-        return "reject"
 
     # Semantic LLM-Driven Classification for all informal, compound, or slang expressions
     try:
@@ -452,7 +490,7 @@ async def classify_approval_intent(user_text: str, pending_action_context: str =
                 model_id=model_id,
                 user_prompt=user_p,
                 system_instruction=sys_instruction,
-                max_tokens=10,
+                max_tokens=None,
                 temperature=0.0,
                 read_only=True,
             ),
@@ -467,7 +505,7 @@ async def classify_approval_intent(user_text: str, pending_action_context: str =
     except Exception as e:
         logger.debug(f"[IntentClassifier] LLM semantic pass notice: {e}")
 
-    # Fallback to regex check if offline
+    # Fallback to deterministic check if offline
     if is_explicit_plan_approval(clean):
         return "approve"
     return "other"
@@ -511,7 +549,7 @@ async def smart_evaluate_command_safety(command: str, description: str = "") -> 
                 model_id=model_id,
                 user_prompt=user_p,
                 system_instruction=sys_p,
-                max_tokens=10,
+                max_tokens=None,
                 temperature=0.0,
                 read_only=True,
             ),

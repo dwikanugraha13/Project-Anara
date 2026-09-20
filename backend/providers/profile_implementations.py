@@ -11,6 +11,7 @@ import os
 import re
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
 import httpx
+from config import cfg_get
 
 from .base_profile import BaseProviderProfile
 from .accounts import get_provider_key
@@ -191,7 +192,8 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
                     payload["max_completion_tokens"] = payload.pop("max_tokens")
             endpoint_url = "https://api.openai.com/v1/chat/completions"
 
-        async with httpx.AsyncClient(timeout=45.0) as client:
+        gen_timeout = float(cfg_get("agent.generation.timeout", 45.0))
+        async with httpx.AsyncClient(timeout=gen_timeout) as client:
             async with client.stream("POST", endpoint_url, headers=headers, json=payload) as response:
                 if response.status_code == 401 and is_oauth_jwt:
                     new_tok = await refresh_codex_oauth_token_if_needed(acc_id)
@@ -301,7 +303,8 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
                     if max_tokens is not None and max_tokens > 0:
                         payload["max_tokens"] = max_tokens
 
-                    async with httpx.AsyncClient(timeout=45.0) as client:
+                    gen_timeout = float(cfg_get("agent.generation.timeout", 45.0))
+                    async with httpx.AsyncClient(timeout=gen_timeout) as client:
                         resp = await client.post(endpoint_url, headers=headers, json=payload)
                         if resp.status_code == 200:
                             chunks = []
@@ -345,7 +348,8 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
                     if max_tokens is not None and max_tokens > 0:
                         payload["max_tokens"] = max_tokens
 
-                    async with httpx.AsyncClient(timeout=45.0) as client:
+                    gen_timeout = float(cfg_get("agent.generation.timeout", 45.0))
+                    async with httpx.AsyncClient(timeout=gen_timeout) as client:
                         async with client.stream("POST", endpoint_url, headers=headers, json=payload) as resp:
                             if resp.status_code == 200:
                                 chunks = []
@@ -465,8 +469,9 @@ class AnthropicProviderProfile(BaseProviderProfile):
                     "max_tokens": anthropic_max,
                     "temperature": temperature,
                 }
+                gen_timeout = float(cfg_get("agent.generation.timeout", 30.0))
                 try:
-                    async with httpx.AsyncClient(timeout=30.0) as client:
+                    async with httpx.AsyncClient(timeout=gen_timeout) as client:
                         res = await client.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload)
                         if res.status_code == 200:
                             data = res.json()
@@ -595,8 +600,9 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                     if max_tokens is not None and max_tokens > 0:
                         payload["max_tokens"] = max_tokens
                     endpoint = f"{base_url}/chat/completions"
+                    custom_timeout = float(cfg_get("agent.generation.custom_timeout", 120.0))
 
-                    async with httpx.AsyncClient(timeout=120.0) as client:
+                    async with httpx.AsyncClient(timeout=custom_timeout) as client:
                         async with client.stream("POST", endpoint, headers=headers, json=payload) as resp:
                             if resp.status_code != 200:
                                 err_body = await resp.aread()
@@ -668,8 +674,9 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                     if max_tokens is not None and max_tokens > 0:
                         payload["max_tokens"] = max_tokens
                     endpoint = f"{base_url}/chat/completions"
+                    custom_timeout = float(cfg_get("agent.generation.custom_timeout", 120.0))
 
-                    async with httpx.AsyncClient(timeout=120.0) as client:
+                    async with httpx.AsyncClient(timeout=custom_timeout) as client:
                         async with client.stream("POST", endpoint, headers=headers, json=payload) as resp:
                             if resp.status_code != 200:
                                 err_body = await resp.aread()

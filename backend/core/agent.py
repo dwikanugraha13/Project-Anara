@@ -524,38 +524,22 @@ class AnaraAgent:
 
     async def reflect_and_learn_skill(self, user_mission: str, executed_steps: List[str], final_result: str):
         """
-        Anara Post-Mission Reflection Loop.
-        Automatically evaluates if the executed mission can be distilled into a reusable procedural skill.
+        Anara Post-Mission Reflection Loop (Hermes Parity).
+        Uses SkillExtractor LLM to autonomously evaluate if the executed mission
+        can be distilled into a reusable procedural skill without static keyword filters.
         """
-        from memory import memory_engine
         if not executed_steps or len(executed_steps) < 2:
             return
 
         try:
-            # Check if this mission contains unique procedural knowledge
-            m_lower = user_mission.lower()
-            if any(w in m_lower for w in ["analisis", "ekstrak", "hitung", "scrape", "buatkan", "otomasi", "format"]):
-                # Create a concise skill name and description
-                words = [w for w in re.sub(r"[^\w\s]", "", user_mission).split() if len(w) > 3][:4]
-                skill_name = "Prosedur: " + " ".join(words).title()
-                
-                skill = memory_engine.add_agent_skill(
-                    name=skill_name,
-                    category="learned",
-                    description=f"Keahlian prosedural yang dipelajari otomatis dari misi: '{user_mission[:80]}'",
-                    trigger_keywords=words,
-                    procedure_steps=executed_steps[:5],
-                    learned_from_experience=True
-                )
-                if skill:
-                    logger.info(f"[AnaraAgent] 🧠 Auto-Learned Skill: '{skill_name}' from mission")
-                    _emit_agent_event("agent_skill_learned", {
-                        "skill_name": skill_name,
-                        "description": skill["description"],
-                        "steps": executed_steps[:5]
-                    })
+            from core.skill_extractor import SkillExtractor
+            await SkillExtractor.extract_and_save_skill_async(
+                user_prompt=user_mission,
+                tools_used=executed_steps,
+                final_summary=final_result,
+            )
         except Exception as e:
-            logger.debug(f"[AnaraAgent] Reflection error: {e}")
+            logger.debug(f"[AnaraAgent] Skill reflection notice: {e}")
 
 
 # Global singleton instance

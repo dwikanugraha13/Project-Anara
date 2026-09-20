@@ -24,8 +24,11 @@ from core.skill_library import skill_library
 from core.security import check_prompt_injection
 from core.session_manager import session_state_manager, PendingAction
 from providers import call_universal_chat_model, get_active_model_id
+from integrations.dedup import MessageDeduplicator
 
 logger = logging.getLogger(__name__)
+
+_channel_message_dedup = MessageDeduplicator(max_size=500, ttl_seconds=4.0)
 
 # Active channel execution context (channel, channel_id, user_id, sender_name)
 _ACTIVE_CHANNEL_CONTEXT: contextvars.ContextVar[Optional[Dict[str, Any]]] = contextvars.ContextVar(
@@ -67,18 +70,42 @@ def _format_tool_progress_message(evt: Dict[str, Any]) -> str:
     return f"{prefix}: {status}...{step_str}"
 
 
-def split_message_chunks(text: str, max_chars: int = 3000, add_part_headers: bool = True) -> List[str]:
+PLATFORM_MESSAGE_LIMITS = {
+    "discord": 1950,
+    "telegram": 2200,
+    "whatsapp": 3500,
+    "slack": 3500,
+    "cli": 32000,
+    "web_studio": 64000,
+    "web": 64000,
+}
+
+
+def split_message_chunks(
+    text: str,
+    max_chars: Optional[int] = None,
+    add_part_headers: bool = True,
+    platform: Optional[str] = None
+) -> List[str]:
     """
-    Semantic code-block-aware message chunker for remote chat platforms (Anara Standard).
+    Omnichannel fence-aware message chunker (Hermes Parity).
     Splits long messages along paragraph and newline boundaries without breaking markdown code blocks.
-    Guarantees unlimited parts and adds header badges [Bagian X/N] when message exceeds threshold.
+    Balances code fences across chunk boundaries so syntax highlighting never breaks.
     """
-    if not text or len(text) <= max_chars:
-        return [text] if text else []
+    if not text:
+        return []
+
+    limit = max_chars
+    if limit is None:
+        p_norm = (platform or "telegram").strip().lower()
+        limit = PLATFORM_MESSAGE_LIMITS.get(p_norm, 2200)
+
+    if len(text) <= limit:
+        return [text]
 
     raw_chunks: List[str] = []
     current_text = text
-    effective_limit = max_chars - 40 if add_part_headers else max_chars
+    effective_limit = limit - 40 if add_part_headers else limit
 
     while len(current_text) > effective_limit:
         candidate = current_text[:effective_limit]
@@ -119,8 +146,12 @@ def split_message_chunks(text: str, max_chars: int = 3000, add_part_headers: boo
         return raw_chunks
 
     final_chunks: List[str] = []
+    is_discord = (platform == "discord")
     for idx, chunk in enumerate(raw_chunks, start=1):
-        header = f"📄 <b>[Bagian {idx}/{total_parts}]</b>\n\n"
+        if is_discord:
+            header = f"📄 **[Part {idx}/{total_parts}]**\n\n"
+        else:
+            header = f"📄 <b>[Bagian {idx}/{total_parts}]</b>\n\n"
         final_chunks.append(header + chunk)
 
     return final_chunks
@@ -133,198 +164,44 @@ class BaseChannelPresenter(ABC):
         """Renders platform-specific approval payload with decoupled UI elements."""
         pass
 
-    @abstractmethod
-    def render_message(self, narration: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Renders standard conversational message."""
+class UniversalChannelAdapter:
+    """
+    Unified channel adapter facade delegating to central PlatformRegistry (Hermes Parity).
+    Single Source of Truth: All platforms, media dispatchers, and presenters live in integrations/platform_registry.py.
+    """
+
+    @classmethod
+    def register(cls, channel: str, presenter: Any):
+        """Backward-compatible registration hook delegating to central registry."""
         pass
 
-
-class TelegramChannelPresenter(BaseChannelPresenter):
-    def render_approval(self, narration: str, action: PendingAction) -> Dict[str, Any]:
-        """
-        Telegram: pure natural narration + technical command preview (if shell) + inline keyboard.
-        Zero canned phrases.
-        """
-        text_parts = [narration.strip()]
-        cmd = action.tool_args.get("command") or (action.pending_tool_call or {}).get("arguments", {}).get("command")
-        if cmd:
-            text_parts.append(f"\n```shell\n{cmd}\n```")
-        elif action.tool_args.get("file_path"):
-            fp = action.tool_args.get("file_path")
-            text_parts.append(f"\n`Target: {fp}`")
-
-        full_text = "\n".join(text_parts)
-        keyboard = {
-            "inline_keyboard": [
-                [
-                    {"text": "✅ Setujui & Jalankan", "callback_data": f"approve:{action.action_id}"},
-                    {"text": "❌ Batalkan", "callback_data": f"reject:{action.action_id}"}
-                ]
-            ]
-        }
-        return {
-            "text": full_text,
-            "parse_mode": "HTML",
-            "reply_markup": keyboard,
-        }
-
-    def render_message(self, narration: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        return {
-            "text": narration,
-            "parse_mode": "HTML",
-            "reply_markup": None,
-        }
-
-
-class WebStudioChannelPresenter(BaseChannelPresenter):
-    def render_approval(self, narration: str, action: PendingAction) -> Dict[str, Any]:
-        """
-        Web HUD / Studio: emits decoupled WebSocket event with metadata for UI drawer.
-        """
-        return {
-            "type": "agent_response",
-            "narration": narration,
-            "has_pending_action": True,
-            "action_metadata": {
-                "id": action.action_id,
-                "tool": action.tool_name,
-                "args": action.tool_args,
-                "risk": action.risk_level,
-                "created_at": action.created_at,
-            },
-            "text": narration,
-            "reply_markup": None,
-        }
-
-    def render_message(self, narration: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        return {
-            "type": "agent_response",
-            "narration": narration,
-            "has_pending_action": False,
-            "action_metadata": None,
-            "text": narration,
-            "reply_markup": None,
-        }
-
-
-class WhatsAppChannelPresenter(BaseChannelPresenter):
-    def render_approval(self, narration: str, action: PendingAction) -> Dict[str, Any]:
-        cmd_hint = ""
-        cmd = action.tool_args.get("command") or (action.pending_tool_call or {}).get("arguments", {}).get("command")
-        if cmd:
-            cmd_hint = f"\nPerintah: {cmd}"
-
-        text = (
-            f"{narration}{cmd_hint}\n\n"
-            f"Balas *setujui* untuk menjalankan tindakan ini, atau *batal* untuk membatalkannya."
-        )
-        return {
-            "text": text,
-            "reply_markup": None,
-        }
-
-    def render_message(self, narration: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        return {
-            "text": narration,
-            "reply_markup": None,
-        }
-
-
-class CliChannelPresenter(BaseChannelPresenter):
-    def render_approval(self, narration: str, action: PendingAction) -> Dict[str, Any]:
-        cmd_hint = ""
-        cmd = action.tool_args.get("command") or (action.pending_tool_call or {}).get("arguments", {}).get("command")
-        if cmd:
-            cmd_hint = f"\n  Command: {cmd}"
-        elif action.tool_args.get("file_path"):
-            cmd_hint = f"\n  File: {action.tool_args.get('file_path')}"
-
-        prompt = f"\n[Konfirmasi Persetujuan: {action.tool_name}]{cmd_hint}\nSetujui dan jalankan? [y/N]: "
-        return {
-            "text": f"{narration}\n{prompt}",
-            "narration": narration,
-            "prompt": prompt,
-            "reply_markup": None,
-        }
-
-    def render_message(self, narration: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        return {
-            "text": narration,
-            "reply_markup": None,
-        }
-
-
-class VoiceChannelPresenter(BaseChannelPresenter):
-    def render_approval(self, narration: str, action: PendingAction) -> Dict[str, Any]:
-        """
-        Voice / Audio: strips technical shell syntax, code blocks, and paths so TTS speaks clean,
-        pure Indonesian narration and invites natural verbal approval ('gas', 'lanjut', 'oke').
-        """
-        from cognition.audio import filter_tts_speech_text
-        spoken = filter_tts_speech_text(narration)
-        verbal_prompt = f"{spoken} Katakan 'gas' atau 'lanjutkan' jika kamu ingin aku menjalankannya, atau 'batal' untuk membatalkan."
-        return {
-            "text": verbal_prompt,
-            "speech_text": verbal_prompt,
-            "narration": narration,
-            "has_pending_action": True,
-            "action_id": action.action_id,
-            "tool_name": action.tool_name,
-            "tool_args": action.tool_args,
-            "reply_markup": None,
-        }
-
-    def render_message(self, narration: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        from cognition.audio import filter_tts_speech_text
-        spoken = filter_tts_speech_text(narration)
-        return {
-            "text": narration,
-            "speech_text": spoken,
-            "reply_markup": None,
-        }
-
-
-class UniversalChannelAdapter:
-    """Dynamic presenter registry and presentation layer (Hermes Decoupled Architecture)."""
-    _presenters: Dict[str, BaseChannelPresenter] = {}
+    @classmethod
+    def get_presenter(cls, channel: str) -> Any:
+        from integrations.platform_registry import platform_registry
+        return platform_registry.get_or_default(channel)
 
     @classmethod
-    def register(cls, channel: str, presenter: BaseChannelPresenter):
-        cls._presenters[channel.lower().strip()] = presenter
-
-    @classmethod
-    def get_presenter(cls, channel: str) -> BaseChannelPresenter:
-        clean = (channel or "cli").lower().strip()
-        from tools.platform_registry import PLATFORM_ALIASES
-        resolved = PLATFORM_ALIASES.get(clean, clean)
-        return cls._presenters.get(resolved) or cls._presenters.get(clean) or cls._presenters.get("cli", CliChannelPresenter())
-
-    @classmethod
-    def render_approval_payload(cls, channel: str, narration: str, action: PendingAction) -> Dict[str, Any]:
-        presenter = cls.get_presenter(channel)
-        return presenter.render_approval(narration, action)
+    def render_approval_payload(cls, channel: str, narration: str, action: Any) -> Dict[str, Any]:
+        from integrations.platform_registry import platform_registry
+        return platform_registry.render_approval_payload(channel, narration, action)
 
     @classmethod
     def render_message_payload(cls, channel: str, narration: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        presenter = cls.get_presenter(channel)
-        return presenter.render_message(narration, metadata=metadata)
+        from integrations.platform_registry import platform_registry
+        return platform_registry.render_message_payload(channel, narration, metadata=metadata)
 
     @classmethod
-    def render_voice_payload(cls, narration: str, action: Optional[PendingAction] = None) -> Dict[str, Any]:
-        presenter = cls.get_presenter("voice")
+    def render_notice_payload(cls, channel: str, notice_type: str, narration: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        from integrations.platform_registry import platform_registry
+        return platform_registry.render_notice_payload(channel, notice_type, narration, metadata=metadata)
+
+    @classmethod
+    def render_voice_payload(cls, narration: str, action: Optional[Any] = None) -> Dict[str, Any]:
+        from integrations.platform_registry import platform_registry
+        adapter = platform_registry.get_or_default("voice")
         if action:
-            return presenter.render_approval(narration, action)
-        return presenter.render_message(narration)
-
-
-# Register standard platform presenters
-UniversalChannelAdapter.register("telegram", TelegramChannelPresenter())
-UniversalChannelAdapter.register("web_studio", WebStudioChannelPresenter())
-UniversalChannelAdapter.register("whatsapp", WhatsAppChannelPresenter())
-UniversalChannelAdapter.register("cli", CliChannelPresenter())
-UniversalChannelAdapter.register("voice", VoiceChannelPresenter())
-UniversalChannelAdapter.register("voice_hud", VoiceChannelPresenter())
-UniversalChannelAdapter.register("audio", VoiceChannelPresenter())
+            return adapter.render_approval(narration, action)
+        return adapter.render_message(narration)
 
 
 async def synthesize_action_rationale(tool_name: str, tool_args: Dict[str, Any], prompt: str = "") -> str:
@@ -340,8 +217,11 @@ async def synthesize_action_rationale(tool_name: str, tool_args: Dict[str, Any],
     args_summary = ", ".join(f"{k}={v}" for k, v in list(tool_args.items())[:3])
     sys_instruction = (
         "Kamu adalah Anara, asisten AI cerdas dan ramah. "
-        "Tugasmu: berikan 1 kalimat percakapan alami dalam bahasa Indonesia yang santai dan bersahabat kepada pengguna "
-        "menjelaskan mengapa tindakan ini kamu jalankan untuk menyelesaikan tugasnya. Dilarang menggunakan format JSON atau kalimat kaku."
+        "Tugasmu: berikan 1 kalimat percakapan alami yang santai dan bersahabat kepada pengguna "
+        "menjelaskan mengapa tindakan ini kamu jalankan untuk menyelesaikan tugasnya. "
+        "PENTING: Selalu gunakan bahasa yang persis sama dengan bahasa yang digunakan pengguna dalam konteksnya "
+        "(match the user's language: English if user speaks English, Bahasa Indonesia if user speaks Indonesian, etc.). "
+        "Dilarang menggunakan format JSON atau kalimat kaku."
     )
     user_p = (
         f"Konteks permintaan pengguna: \"{prompt or 'Menyelesaikan tugas'}\"\n"
@@ -356,7 +236,7 @@ async def synthesize_action_rationale(tool_name: str, tool_args: Dict[str, Any],
                 model_id=model_id,
                 user_prompt=user_p,
                 system_instruction=sys_instruction,
-                max_tokens=60,
+                max_tokens=None,
                 temperature=0.3,
                 read_only=True,
             ),
@@ -370,44 +250,121 @@ async def synthesize_action_rationale(tool_name: str, tool_args: Dict[str, Any],
     except Exception as e:
         logger.debug(f"[RationaleSynthesis] Fast LLM pass notice: {e}")
 
-    # Fallback to dynamic tool name translation if LLM is unreachable offline
+    # Fallback to dynamic parameter-grounded rationale if LLM is unreachable offline
     return generate_dynamic_action_rationale(tool_name, tool_args, prompt)
 
 
 def generate_dynamic_action_rationale(tool_name: str, tool_args: Dict[str, Any], prompt: str = "") -> str:
     """
-    Introspects tool metadata and runtime parameters dynamically without static rule branches (Hermes Parity).
-    Zero hardcoded strings or rigid keyword mappings.
+    Factual parameter-grounded action summary (Hermes build_tool_preview parity).
+    Clean, direct, and zero robotic canned templates.
     """
-    t_clean = (tool_name or "perangkat sistem").strip().lower()
+    t_clean = (tool_name or "tool").strip().lower()
+    canonical = t_clean.replace("_", " ")
 
     # Dynamic target parameter discovery
-    target_info = tool_args.get("command") or tool_args.get("file_path") or tool_args.get("title") or tool_args.get("query") or tool_args.get("task") or ""
+    target_info = (
+        tool_args.get("command")
+        or tool_args.get("file_path")
+        or tool_args.get("path")
+        or tool_args.get("target")
+        or tool_args.get("title")
+        or tool_args.get("query")
+        or tool_args.get("source_dir")
+        or tool_args.get("task")
+        or ""
+    )
     clean_target = str(target_info).strip()
 
-    # Dynamic tool description introspection from registry
-    desc = ""
-    try:
-        from tools import get_tools_catalog
-        cat = get_tools_catalog()
-        for t in cat:
-            if t.get("name") == t_clean:
-                desc = t.get("description", "")
-                break
-    except Exception:
-        pass
+    # For CLI commands: format clean one-liner target
+    if t_clean == "execute_cli_command":
+        if "\n" in clean_target:
+            clean_target = clean_target.splitlines()[0].strip()
+        clean_target = clean_target.strip("`;| ")
+        if clean_target:
+            return f"Menjalankan perintah: {clean_target[:100]}"
+        clean_p = (prompt or "").strip()
+        if clean_p:
+            return f"Menjalankan perintah terminal: {clean_p[:80]}"
+        return "Menjalankan perintah terminal"
 
-    clean_name = t_clean.replace("_", " ")
+    # For file, media, search, and other tools: clean parameter preview
     if clean_target:
         if "/" in clean_target or "\\" in clean_target:
-            clean_target = clean_target.replace("\\", "/").split("/")[-1]
-        return f"Aku akan menjalankan tindakan {clean_name} pada '{clean_target[:60]}' untuk menyelesaikan tugasmu."
+            clean_display = clean_target.replace("\\", "/").split("/")[-1]
+        else:
+            clean_display = clean_target
+        return f"{canonical.capitalize()}: {clean_display[:80]}"
 
-    if desc:
-        short_desc = desc.split(".")[0].strip()
-        return f"Aku akan {short_desc.lower()} untuk melanjutkan pengerjaan tugas kita."
+    clean_p = (prompt or "").strip()
+    return f"{canonical.capitalize()}: {clean_p[:80]}" if clean_p else canonical.capitalize()
 
-    return f"Aku akan mengeksekusi tindakan {clean_name} untuk melanjutkan proses ini."
+
+async def synthesize_channel_notice(
+    notice_type: str,
+    channel: str = "telegram",
+    task_description: str = "",
+    error_detail: str = "",
+    user_id: str = "",
+) -> str:
+    """
+    Pure Model-Driven Channel Notice Synthesizer (Hermes Parity).
+    Generates contextual, platform-tailored, zero-canned conversational notices
+    (e.g., expiry, rejection, authorization denial, cancellation, or runtime failure)
+    using the fast auxiliary model with graceful dynamic fallbacks.
+    """
+    from providers import call_universal_chat_model
+    from core.capabilities import get_fast_auxiliary_model
+
+    sys_inst = (
+        "Kamu adalah Anara, asisten AI cerdas dan ramah. "
+        "Tugasmu: berikan 1 kalimat pemberitahuan singkat, santai, dan bersahabat kepada pengguna "
+        "sesuai situasi status yang diberikan. "
+        "PENTING: Selalu gunakan bahasa yang persis sama dengan bahasa yang digunakan pengguna dalam konteks tugasnya "
+        "(match the user's language: English if user speaks English, Bahasa Indonesia if user speaks Indonesian, etc.). "
+        "Dilarang menggunakan kalimat kaku buatan programmer atau tag format yang berlebihan."
+    )
+    user_prompt = (
+        f"Kanal: {channel}\n"
+        f"Status: {notice_type}\n"
+        f"Konteks tugas: {task_description or 'Tugas sistem'}\n"
+        f"Detail tambahan: {error_detail or 'Tidak ada'}\n"
+        "Berikan pesan 1 kalimat ramah:"
+    )
+    try:
+        model_id = get_fast_auxiliary_model()
+        res = await asyncio.wait_for(
+            call_universal_chat_model(
+                model_id=model_id,
+                user_prompt=user_prompt,
+                system_instruction=sys_inst,
+                max_tokens=None,
+                temperature=0.3,
+                read_only=True,
+            ),
+            timeout=3.0
+        )
+        if isinstance(res, str) and res.strip():
+            clean = res.strip().strip('"\'`')
+            if "{" not in clean and "<tool" not in clean and len(clean) > 5:
+                return clean
+    except Exception as e:
+        logger.debug(f"[ChannelNotice] Auxiliary synthesis notice: {e}")
+
+    # Fallbacks dynamically formatted based on situation
+    task_info = f" '{task_description}'" if task_description else ""
+    err_info = f": {error_detail}" if error_detail else ""
+    if notice_type == "expired":
+        return f"Rencana tindakan{task_info} telah kedaluwarsa demi keamanan (batas 5 menit). Konteks obrolan tetap aman."
+    elif notice_type == "rejected":
+        return f"Tindakan{task_info} dibatalkan tanpa ada perubahan yang diterapkan."
+    elif notice_type == "unauthorized":
+        return f"Otorisasi diperlukan untuk menyetujui tindakan{task_info}."
+    elif notice_type == "stopped":
+        return f"Eksekusi{task_info} telah dihentikan."
+    elif notice_type == "error":
+        return f"Gagal mengeksekusi{task_info}{err_info}."
+    return f"Status {notice_type}{task_info}."
 
 
 class ChannelRequest(BaseModel):
@@ -465,23 +422,41 @@ def get_or_create_channel_session(req: ChannelRequest) -> int:
 
 
 async def _auto_dispatch_artifacts_to_channel(channel: str, channel_id: str, artifacts: List[Dict[str, Any]]):
-    """Auto-dispatches generated documents (.pdf, .docx, .zip) directly to Telegram or WhatsApp."""
+    """Auto-dispatches generated documents and media directly to target channel via ChannelManager (Hermes Parity)."""
     if not artifacts or not channel_id or channel_id.startswith("default"):
         return
+    from integrations.manager import channel_manager
     for art in artifacts:
         f_path = art.get("path")
         f_name = art.get("filename") or (os.path.basename(f_path) if f_path else "")
         if not f_path or not os.path.isfile(f_path):
             continue
         try:
-            if channel == "telegram":
-                from integrations.telegram import send_telegram_document
-                logger.info(f"[AutoDispatch] Sending document '{f_name}' to Telegram chat {channel_id}")
-                await send_telegram_document(file_path=f_path, chat_id=channel_id, caption=f"?? Berkas: {f_name}")
-            elif channel == "whatsapp":
-                from integrations.whatsapp import send_whatsapp_document
-                logger.info(f"[AutoDispatch] Sending document '{f_name}' to WhatsApp {channel_id}")
-                await send_whatsapp_document(to=channel_id, file_path=f_path, caption=f"?? Berkas: {f_name}")
+            logger.info(f"[AutoDispatch] Dispatching media '{f_name}' to {channel} {channel_id}")
+            ext = os.path.splitext(f_name)[1].lower()
+            if ext in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"):
+                media_type = "photo"
+                caption = f"📸 {f_name}"
+            elif ext in (".mp4", ".mov", ".avi", ".mkv"):
+                media_type = "video"
+                caption = f"🎬 {f_name}"
+            elif ext in (".mp3", ".m4a", ".wav"):
+                media_type = "audio"
+                caption = f"🎵 {f_name}"
+            elif ext in (".ogg", ".opus"):
+                media_type = "voice"
+                caption = ""
+            else:
+                media_type = "document"
+                caption = f"📄 Berkas: {f_name}"
+
+            await channel_manager.send_media(
+                channel=channel,
+                target_id=channel_id,
+                file_path=f_path,
+                caption=caption,
+                media_type=media_type
+            )
         except Exception as e:
             logger.error(f"[AutoDispatch] Failed to dispatch '{f_name}' to {channel}: {e}")
 
@@ -516,6 +491,63 @@ async def process_channel_request(
         _ACTIVE_CHANNEL_CONTEXT.reset(token_ctx)
 
 
+async def _enrich_message_with_vision(user_text: str, attachments: List[Dict[str, Any]]) -> str:
+    """
+    Universal Inbound Vision Enrichment (Hermes Parity: gateway/run_inbound.py lines 1866-1909).
+    Auto-analyzes user-attached images with vision_analyze and prepends descriptions to prompt context.
+    Works dynamically for ALL platforms (Telegram, WhatsApp, Discord, Slack, Web Studio, CLI).
+    """
+    if not attachments:
+        return user_text
+
+    image_paths = []
+    for att in attachments:
+        t = str(att.get("type", "")).lower()
+        p = att.get("local_path") or att.get("path")
+        if p and os.path.isfile(p):
+            ext = os.path.splitext(p)[1].lower()
+            if t in ("photo", "image") or ext in (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"):
+                image_paths.append(p)
+
+    if not image_paths:
+        return user_text
+
+    from tools.vision_tools import _tool_vision_analyze
+    analysis_prompt = (
+        "Concisely and accurately describe the contents of this image. "
+        "Transcribe and identify any visible text, window titles, folder/file names, diagrams, code, error messages, numbers, or UI elements. "
+        "Be factual and objective without decorative filler."
+    )
+    enriched_parts = []
+    for img_path in image_paths:
+        try:
+            logger.info(f"[InboundVision] Auto-analyzing user attached image: {img_path}")
+            res = await _tool_vision_analyze(image_path=img_path, question=analysis_prompt)
+            if res.get("status") == "success" and res.get("analysis"):
+                desc = res["analysis"].strip()
+                note = (
+                    f"[LAMPIRAN VISUAL / GAMBAR YANG DIKIRIM PENGGUNA]:\n"
+                    f"Nama Berkas: {os.path.basename(img_path)}\n"
+                    f"Hasil Pengamatan Visual:\n{desc}\n"
+                    f"[Jika kamu membutuhkan detail visual lebih lanjut, panggil tool 'vision_analyze' dengan image_path: '{img_path}']"
+                )
+            else:
+                note = (
+                    f"[Pengguna melampirkan gambar '{os.path.basename(img_path)}' di path '{img_path}'. "
+                    f"Gunakan tool 'vision_analyze' untuk memeriksanya.]"
+                )
+        except Exception as e:
+            logger.error(f"[InboundVision] Error analyzing image {img_path}: {e}")
+            note = f"[Pengguna melampirkan gambar di path '{img_path}'. Gunakan 'vision_analyze' untuk memeriksanya.]"
+        enriched_parts.append(note)
+
+    if not enriched_parts:
+        return user_text
+
+    prefix = "\n\n".join(enriched_parts)
+    return f"{prefix}\n\n{user_text}" if user_text else prefix
+
+
 async def _process_channel_request_core(
     req: ChannelRequest,
     progress_callback: Optional[Callable[[str], Any]] = None
@@ -529,6 +561,22 @@ async def _process_channel_request_core(
 
     # 2. Content Moderation & Prompt Injection Defense (FR-20)
     clean_text = req.text.strip()
+
+    # Deduplication protection (Hermes Parity: gateway/run_inbound.py)
+    msg_key = f"{req.channel}:{req.channel_id}:{clean_text}"
+    if clean_text and _channel_message_dedup.is_duplicate(msg_key):
+        logger.info(f"[ChannelGateway] Dropping duplicate message on {req.channel}: '{clean_text[:40]}'")
+        return ChannelResponse(
+            text="",
+            session_id=session_id,
+            mode="conversational",
+            status="duplicate_dropped"
+        )
+
+    # 2b. Inbound Vision Auto-Enrichment (Hermes Parity)
+    if req.attachments:
+        clean_text = await _enrich_message_with_vision(clean_text, req.attachments)
+
     is_safe, denial_reason = check_prompt_injection(clean_text)
     if not is_safe:
         denial_msg = denial_reason or "Permintaan ditolak oleh filter keamanan Anara."
@@ -540,16 +588,7 @@ async def _process_channel_request_core(
             error=denial_msg
         )
 
-    # 3. Log User Turn & Trigger Memory Detection
-    memory_engine.log_conversation(
-        user_text=req.text,
-        ai_text="",
-        speaker_name=req.sender_name,
-        session_id=session_id
-    )
-    file_memory.detect_and_record_memory(req.text, speaker_name=req.sender_name)
-
-    # 4. Check for Unified System Commands (/help, /status, /model, /skills, /memory, /workspace, /clear, /stop, /plan)
+    # 3. Check for Unified System Commands (/help, /status, /model, /skills, /memory, /workspace, /clear, /stop, /plan)
     from core.command_hub import handle_channel_command
     cmd_response = await handle_channel_command(req)
     if cmd_response:
@@ -566,7 +605,7 @@ async def _process_channel_request_core(
     # 5. Check for Plan Approval (Semantic Intent Classifier + Session State Machine - Subsystem 3)
     session_plan_key = f"{req.channel}_{req.channel_id}"
     intent_state = session_state_manager.evaluate_intent(clean_text, req.channel, req.channel_id)
-    active_pending = intent_state["pending"] or _PENDING_PLANS.get(session_plan_key)
+    active_pending = intent_state["pending"]
 
     from core.session_manager import ActionState
     from core.plan_detector import classify_approval_intent
@@ -594,34 +633,39 @@ async def _process_channel_request_core(
             had_expired_action = True
 
     recently_expired_act = session_state_manager.pop_recently_expired(req.channel, req.channel_id)
-    if (had_expired_action or recently_expired_act) and len(clean_text.split()) <= 3 and is_explicit_plan_approval(clean_text):
-        expired_notice = (
-            "Rencana aksi sebelumnya telah kedaluwarsa demi keamanan (batas waktu 5 menit). "
-            "Seluruh ingatan dan konteks obrolan kita tetap tersimpan dengan aman. "
-            "Silakan beri tahu apa yang ingin kita kerjakan sekarang!"
-        )
-        memory_engine.log_conversation(
-            user_text=clean_text,
-            ai_text=expired_notice,
-            speaker_name=req.sender_name,
-            session_id=session_id
-        )
-        return ChannelResponse(
-            text=expired_notice,
-            session_id=session_id,
-            mode="conversational",
-            status="expired_notice",
-        )
+    if (had_expired_action or recently_expired_act):
+        semantic_intent = await classify_approval_intent(clean_text, "expired action")
+        if semantic_intent == "approve":
+            expired_notice = await synthesize_channel_notice("expired", channel=req.channel)
+            memory_engine.log_conversation(
+                user_text=clean_text,
+                ai_text=expired_notice,
+                speaker_name=req.sender_name,
+                session_id=session_id
+            )
+            return ChannelResponse(
+                text=expired_notice,
+                session_id=session_id,
+                mode="conversational",
+                status="expired_notice",
+            )
 
     if active_pending:
         semantic_intent = await classify_approval_intent(clean_text, plan_ctx)
 
         # ── CASE A1: User explicitly rejects / cancels the pending action ──
-        if semantic_intent == "reject" or any(clean_text == w or clean_text.startswith(f"{w} ") for w in ("batal", "batalkan", "jangan", "stop", "cancel", "skip", "tidak")):
+        if semantic_intent == "reject":
             logger.info(f"[ChannelGateway] User rejected pending action #{plan_id} via '{clean_text}'. Cancelling...")
             session_state_manager.resolve_action(req.channel, req.channel_id, plan_id, ActionState.REJECTED)
             _PENDING_PLANS.pop(session_plan_key, None)
-            cancel_reply = "Baik, rencana tindakan telah dibatalkan. Tidak ada perubahan yang dilakukan pada sistem."
+
+            cancel_reply = await synthesize_channel_notice(
+                notice_type="rejected",
+                channel=req.channel,
+                task_description=orig_prompt or plan_ctx[:80],
+                user_id=req.user_id,
+            )
+
             memory_engine.log_conversation(
                 user_text=clean_text,
                 ai_text=cancel_reply,
@@ -636,24 +680,28 @@ async def _process_channel_request_core(
             )
 
         # ── CASE A2: User explicitly confirms / approves the pending action ──
-        elif semantic_intent == "approve" or intent_state["is_approval"] or is_explicit_plan_approval(clean_text):
+        elif semantic_intent == "approve":
             logger.info(f"[ChannelGateway] User approved pending action #{plan_id} via '{clean_text}'. Executing BUILD MODE...")
             session_state_manager.resolve_action(req.channel, req.channel_id, plan_id, ActionState.EXECUTING)
             _PENDING_PLANS.pop(session_plan_key, None)
 
-            build_res = await _execute_build_mode(
-                session_id=session_id,
-                user_prompt=f"Eksekusi rencana: {orig_prompt}",
-                req=req,
-                progress_callback=progress_callback,
-                pending_tool_call=pending_tool,
-                plan=plan_dict,
-            )
-            session_state_manager.resolve_action(req.channel, req.channel_id, plan_id, ActionState.EXECUTED)
-            return build_res
+            try:
+                build_res = await _execute_build_mode(
+                    session_id=session_id,
+                    user_prompt=f"Eksekusi rencana: {orig_prompt}",
+                    req=req,
+                    progress_callback=progress_callback,
+                    pending_tool_call=pending_tool,
+                    plan=plan_dict,
+                )
+                session_state_manager.resolve_action(req.channel, req.channel_id, plan_id, ActionState.EXECUTED)
+                return build_res
+            finally:
+                session_state_manager.clear_pending(req.channel, req.channel_id)
+                _PENDING_PLANS.pop(session_plan_key, None)
 
         # ── CASE A3: Topic Shift (User asked an unrelated question while action was pending) ──
-        elif semantic_intent == "other" and len(clean_text.split()) > 2:
+        elif semantic_intent == "other":
             logger.info(f"[ChannelGateway] Topic shift detected while action #{plan_id} pending. Auto-expiring previous action...")
             session_state_manager.resolve_action(req.channel, req.channel_id, plan_id, ActionState.EXPIRED)
             _PENDING_PLANS.pop(session_plan_key, None)
@@ -673,7 +721,8 @@ async def _process_channel_request_core(
             "Tindakan ini memerlukan perubahan sistem/file atau eksekusi terminal. "
             "Kamu beroperasi dalam PLAN MODE (Read-Only). "
             "Susun rencana kerja ringkas dalam 2-4 langkah konkret, jelaskan risiko singkatnya, "
-            "dan minta persetujuan pengguna sebelum mengeksekusi."
+            "dan minta persetujuan pengguna sebelum mengeksekusi. "
+            "PENTING: Selalu sesuaikan bahasa responmu dengan bahasa asli pengguna (match the user's language: English if English, Indonesian if Indonesian, etc.)."
         )
 
         sys_prompt = PromptAssembler.assemble(
@@ -687,7 +736,7 @@ async def _process_channel_request_core(
             model_id=get_active_model_id(),
             user_prompt=plan_prompt,
             system_instruction=sys_prompt,
-            max_tokens=600,
+            max_tokens=None,
             temperature=0.4,
             read_only=True
         )
@@ -712,19 +761,19 @@ async def _process_channel_request_core(
         # Log AI Plan Proposal (natural narrative only, zero UI tags or buttons)
         memory_engine.log_conversation(
             user_text=clean_text,
-            ai_text=plan_text or "Saya telah menyusun rencana kerja ini.",
+            ai_text=plan_text or f"Rencana tindakan untuk: {clean_text}",
             speaker_name=req.sender_name,
             session_id=session_id
         )
 
         rendered = UniversalChannelAdapter.render_approval_payload(
             channel=req.channel,
-            narration=plan_text or "Saya telah menyusun rencana. Silakan setujui untuk mulai eksekusi.",
+            narration=plan_text or f"Rencana tindakan untuk '{clean_text}' telah disusun. Silakan setujui untuk mulai eksekusi.",
             action=pending_act
         )
 
         return ChannelResponse(
-            text=rendered.get("text") or (plan_text or "Saya telah menyusun rencana. Silakan setujui untuk mulai eksekusi."),
+            text=rendered.get("text") or (plan_text or f"Rencana tindakan untuk '{clean_text}' telah disusun. Silakan setujui untuk mulai eksekusi."),
             session_id=session_id,
             mode="plan",
             plan_pending=True,
@@ -746,17 +795,15 @@ async def _process_channel_request_core(
     prior_turns = []
     for h in all_history:
         ai_t = (h.get("ai_text") or "").strip()
-        if not ai_t:
-            continue
         # Hermes parity: close interrupted tool sequence in past transcript to prevent continuation hallucination
-        if ('"action": "tool_call"' in ai_t or '<tool_call>' in ai_t) and not any(w in ai_t.lower() for w in ("selesai", "berhasil", "laporan")):
+        if ('"action": "tool_call"' in ai_t or '<tool_call>' in ai_t) and not any(w in ai_t.lower() for w in ("selesai", "berhasil", "laporan", "done", "completed")):
             h_clean = dict(h)
-            h_clean["ai_text"] = "Tindakan pemeriksaan sistem sebelumnya telah selesai diproses."
+            h_clean["ai_text"] = f"Previous system inspection concluded for '{clean_text}'."
             prior_turns.append(h_clean)
         else:
             prior_turns.append(h)
     dialogue_context = ContextCompactor.compact_history(prior_turns, verbatim_turns=15)
-    full_user_prompt = f"{dialogue_context}Pesan User: {clean_text}" if dialogue_context else clean_text
+    full_user_prompt = f"{dialogue_context}User: {clean_text}" if dialogue_context else clean_text
 
     ws_tree = anara_agent.get_workspace_tree(session_id=session_id)
     sys_prompt = PromptAssembler.assemble(
@@ -771,7 +818,7 @@ async def _process_channel_request_core(
     )
 
     # Autonomous Turn Nudge (Anara Standard: turn % 10 -> memory, turn % 15 -> skill)
-    from cognition.memory_nudge import memory_nudge_manager
+    from memory.memory_nudge import memory_nudge_manager
     nudge_instruction = memory_nudge_manager.increment_and_get_nudge(session_id)
     if nudge_instruction:
         sys_prompt += f"\n\n{nudge_instruction}"
@@ -811,7 +858,7 @@ async def _process_channel_request_core(
             model_id=get_active_model_id(),
             user_prompt=full_user_prompt,
             system_instruction=sys_prompt,
-            max_tokens=4096,
+            max_tokens=None,
             temperature=0.7,
             read_only=False,
             progress_cb=_track_tool,
@@ -893,7 +940,8 @@ async def _process_channel_request_core(
     if isinstance(reply, str) and reply.strip():
         # ── ANTI-LEAK GATE (Hermes Parity) ──
         # Ensure raw tool-call JSON blocks are NEVER presented as chat text to user
-        if '"action": "tool_call"' in reply or '<tool_call>' in reply:
+        from providers.caller import _clean_model_chat_text
+        if '"action": "tool_call"' in reply or '<tool_call>' in reply or not _clean_model_chat_text(reply):
             from providers.caller import _extract_and_parse_tool_call
             leaked_payload, lead, _ = _extract_and_parse_tool_call(reply)
             if leaked_payload:
@@ -906,13 +954,38 @@ async def _process_channel_request_core(
                     pending_tool_call=leaked_payload,
                 )
             else:
-                cleaned = re.sub(r"```(?:json)?\s*\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\}\s*```", "", reply).strip()
-                cleaned = re.sub(r"<tool_call>[\s\S]*?</tool_call>", "", cleaned).strip()
-                final_reply = cleaned if (cleaned and '"action": "tool_call"' not in cleaned) else "Tugas sedang diproses dan dianalisis."
+                cleaned = _clean_model_chat_text(reply)
+                if not cleaned or '"action": "tool_call"' in cleaned or '<tool_call>' in cleaned:
+                    try:
+                        from core.capabilities import get_fast_auxiliary_model
+                        cleaned_raw = await call_universal_chat_model(
+                            model_id=get_fast_auxiliary_model(),
+                            user_prompt=f"Berikan jawaban percakapan ramah dan tuntas untuk: \"{clean_text}\"",
+                            max_tokens=None,
+                            temperature=0.3,
+                            read_only=True
+                        )
+                        cleaned = _clean_model_chat_text(cleaned_raw or "")
+                    except Exception:
+                        cleaned = ""
+                final_reply = (cleaned or "Tugas telah selesai diproses.").strip()
         else:
-            final_reply = reply.strip()
+            final_reply = _clean_model_chat_text(reply) or reply.strip()
     else:
-        final_reply = "Maaf, respon dari model AI tidak menghasilkan teks atau terputus. Silakan coba tanyakan kembali."
+        # Dynamic model fallback instead of static canned apology
+        try:
+            from core.capabilities import get_fast_auxiliary_model
+            final_reply = await call_universal_chat_model(
+                model_id=get_fast_auxiliary_model(),
+                user_prompt=clean_text,
+                max_tokens=None,
+                temperature=0.4,
+                read_only=True
+            )
+        except Exception:
+            final_reply = ""
+        if not final_reply or not final_reply.strip():
+            final_reply = f"Tidak dapat menerima respons dari model untuk permintaan: '{clean_text[:60]}'. Silakan coba kirim ulang."
 
     memory_engine.log_conversation(
         user_text=clean_text,
@@ -993,7 +1066,7 @@ async def _execute_build_mode_core(
 
     if progress_callback:
         try:
-            msg = "🔨 Rencana disetujui! Memulai eksekusi Build Mode..."
+            msg = f"🔨 {resolved_task[:60]}..."
             if asyncio.iscoroutinefunction(progress_callback):
                 await progress_callback(msg)
             else:
@@ -1042,8 +1115,7 @@ async def _execute_build_mode_core(
         speaker_name=req.sender_name,
         session_id=session_id
     )
-    prior_turns = [h for h in all_history if (h.get("ai_text") or "").strip()]
-    dialogue_context = ContextCompactor.compact_history(prior_turns, verbatim_turns=15)
+    dialogue_context = ContextCompactor.compact_history(all_history, verbatim_turns=15)
 
     if pending_tool_call:
         t_name = pending_tool_call.get("tool", "")
@@ -1076,13 +1148,14 @@ async def _execute_build_mode_core(
 
         effective_prompt = (
             f"{dialogue_context}"
-            f"Tindakan '{t_name}' telah dieksekusi di sistem dengan hasil observasi berikut:\n"
+            f"Tool '{t_name}' was executed on the host system with the following observation:\n"
             f"```json\n{json.dumps(tool_res, ensure_ascii=False)}\n```\n\n"
-            f"Permintaan asli pengguna: \"{resolved_task}\"\n"
-            "Berdasarkan hasil observasi alat di atas, jelaskan laporannya kepada pengguna secara cerdas, ramah, dan tuntas dalam teks percakapan biasa (tanpa format JSON pemanggilan alat)."
+            f"Original user request: \"{resolved_task}\"\n"
+            "Based on the tool observation above, provide a clear, helpful, and direct report to the user in natural conversational text (no raw tool JSON). "
+            "IMPORTANT: Always respond in the user's active language."
         )
     elif dialogue_context:
-        effective_prompt = f"{dialogue_context}Pesan User: {resolved_task}"
+        effective_prompt = f"{dialogue_context}User: {resolved_task}"
     else:
         effective_prompt = resolved_task
 
@@ -1090,7 +1163,7 @@ async def _execute_build_mode_core(
         model_id=get_active_model_id(),
         user_prompt=effective_prompt,
         system_instruction=sys_prompt,
-        max_tokens=4096,
+        max_tokens=None,
         temperature=0.6,
         read_only=False,
         progress_cb=_track_tool,
@@ -1098,17 +1171,27 @@ async def _execute_build_mode_core(
     )
 
     if isinstance(reply, str):
-        cleaned = re.sub(r"```(?:json)?\s*\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\}\s*```", "", reply).strip()
-        cleaned = re.sub(r"<tool_call>[\s\S]*?</tool_call>", "", cleaned).strip()
+        from providers.caller import _clean_model_chat_text
+        cleaned = _clean_model_chat_text(reply)
         if not cleaned or '"action": "tool_call"' in cleaned or '<tool_call>' in cleaned:
-            final_reply = "Tindakan telah selesai dieksekusi oleh sistem."
+            try:
+                final_reply = await synthesize_action_rationale(
+                    tool_name=t_name if pending_tool_call else "eksekusi",
+                    tool_args=t_args if pending_tool_call else {},
+                    prompt=resolved_task or clean_text
+                )
+                final_reply = _clean_model_chat_text(final_reply)
+            except Exception:
+                final_reply = ""
+            if not final_reply:
+                final_reply = f"Tindakan '{resolved_task}' selesai diproses."
         else:
             final_reply = cleaned
     else:
-        final_reply = "Eksekusi berhasil diselesaikan."
+        final_reply = str(reply) if reply else f"Tindakan '{resolved_task}' selesai diproses."
 
     memory_engine.log_conversation(
-        user_text="",
+        user_text=resolved_task or clean_text,
         ai_text=final_reply,
         speaker_name=req.sender_name,
         session_id=session_id
@@ -1168,3 +1251,135 @@ def resolve_pending_plan_callback(plan_id: str, action: str, user_id: str) -> Op
         if target_key:
             _PENDING_PLANS.pop(target_key, None)
         return None
+
+
+async def dispatch_channel_approval_resolution(
+    channel: str,
+    channel_id: str,
+    plan_id: str,
+    action: str,  # 'approve' | 'reject'
+    user_id: str,
+    sender_name: str = "Pengguna",
+    message_id: Optional[str] = None,
+    progress_callback: Optional[Callable[[str], Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Unified Omnichannel Approval Dispatcher (Hermes Parity).
+    Centrally validates approver authorization, updates FSM state, executes build mode,
+    dispatches clean responses, and sends generated artifacts.
+    Shared across Telegram, WhatsApp, Discord, Slack, and Web Studio (Zero Code Duplication).
+    """
+    from core.session_manager import ActionState
+    from core.security import is_authorized_approver
+    from integrations.manager import channel_manager
+
+    clean_chan = (channel or "telegram").lower().strip()
+    norm_action = "approve" if (action or "").strip().lower() in ("approve", "yes", "setujui", "gas") else "reject"
+
+    pending_act = session_state_manager.get_pending_by_id(plan_id)
+    plan_dict = pending_act.to_dict() if pending_act else _PENDING_PLANS.get(f"{clean_chan}_{channel_id}")
+
+    if not pending_act and not plan_dict:
+        logger.warning(f"[OmnichannelGateway] Action #{plan_id} on {clean_chan} not found or expired.")
+        exp_text = await synthesize_channel_notice("expired", channel=clean_chan)
+        rendered = UniversalChannelAdapter.render_notice_payload(clean_chan, "expired", exp_text)
+        if clean_chan == "telegram" and message_id:
+            try:
+                from integrations.telegram.client import edit_telegram_message
+                await edit_telegram_message(chat_id=channel_id, message_id=int(message_id), text=rendered.get("text", exp_text), reply_markup=None)
+            except Exception:
+                pass
+        else:
+            await channel_manager.send_message(channel=clean_chan, target_id=channel_id, text=rendered.get("text", exp_text))
+        return {"status": "expired", "message": exp_text}
+
+    target_user = plan_dict.get("user_id") if plan_dict else (pending_act.user_id if pending_act else user_id)
+    session_id = plan_dict.get("session_id", 0) if plan_dict else (pending_act.session_id if pending_act else 0)
+
+    # 1. Reject flow
+    if norm_action != "approve":
+        logger.info(f"[OmnichannelGateway] User rejected action #{plan_id} on {clean_chan}.")
+        session_state_manager.resolve_action(clean_chan, channel_id, plan_id, ActionState.REJECTED)
+        session_state_manager.clear_pending(clean_chan, channel_id)
+        _PENDING_PLANS.pop(f"{clean_chan}_{channel_id}", None)
+
+        task_desc = (plan_dict.get("original_prompt") or plan_dict.get("tool_name") or "") if plan_dict else ""
+        cancel_msg = await synthesize_channel_notice("rejected", channel=clean_chan, task_description=task_desc)
+        rendered = UniversalChannelAdapter.render_notice_payload(clean_chan, "rejected", cancel_msg)
+        if clean_chan == "telegram" and message_id:
+            try:
+                from integrations.telegram.client import edit_telegram_message
+                await edit_telegram_message(chat_id=channel_id, message_id=int(message_id), text=rendered.get("text", cancel_msg), reply_markup=None)
+            except Exception:
+                pass
+        else:
+            await channel_manager.send_message(channel=clean_chan, target_id=channel_id, text=rendered.get("text", cancel_msg))
+        return {"status": "rejected", "message": cancel_msg}
+
+    # 2. Approve flow - Verify authorization
+    if not is_authorized_approver(user_id=user_id, plan_owner_id=target_user or user_id, channel=clean_chan):
+        logger.warning(f"[OmnichannelGateway] User {user_id} unauthorized to approve #{plan_id} on {clean_chan}.")
+        denied_msg = await synthesize_channel_notice("unauthorized", channel=clean_chan, user_id=user_id)
+        rendered = UniversalChannelAdapter.render_notice_payload(clean_chan, "unauthorized", denied_msg)
+        await channel_manager.send_message(channel=clean_chan, target_id=channel_id, text=rendered.get("text", denied_msg))
+        return {"status": "denied", "message": denied_msg}
+
+    # 3. Transition to EXECUTING
+    session_state_manager.resolve_action(clean_chan, channel_id, plan_id, ActionState.EXECUTING)
+    _PENDING_PLANS.pop(f"{clean_chan}_{channel_id}", None)
+
+    if clean_chan == "telegram" and message_id:
+        try:
+            from integrations.telegram.client import edit_telegram_message
+            plan_disp = plan_dict.get("lead_narration") or plan_dict.get("plan_text", "").split("\n<i>Apakah")[0].strip()
+            exec_rendered = UniversalChannelAdapter.render_notice_payload(clean_chan, "executing", f"{plan_disp}\n\n[Sedang dieksekusi di PC...]")
+            await edit_telegram_message(
+                chat_id=channel_id,
+                message_id=int(message_id),
+                text=exec_rendered.get("text", plan_disp),
+                reply_markup=None,
+            )
+        except Exception:
+            pass
+
+    # 4. Execute Build Mode
+    req = ChannelRequest(
+        text=f"Eksekusi: {plan_dict.get('original_prompt') or plan_dict.get('tool_name', 'tindakan')}",
+        channel=clean_chan,
+        channel_id=channel_id,
+        user_id=user_id,
+        sender_name=sender_name,
+    )
+
+    try:
+        build_res = await _execute_build_mode(
+            session_id=session_id,
+            user_prompt=req.text,
+            req=req,
+            progress_callback=progress_callback,
+            pending_tool_call=plan_dict.get("pending_tool_call"),
+            plan=plan_dict,
+        )
+        session_state_manager.resolve_action(clean_chan, channel_id, plan_id, ActionState.EXECUTED)
+        await channel_manager.send_message(channel=clean_chan, target_id=channel_id, text=build_res.text)
+        return {"status": "success", "result": build_res.text}
+
+    except asyncio.CancelledError:
+        session_state_manager.resolve_action(clean_chan, channel_id, plan_id, ActionState.CANCELLED)
+        logger.info(f"[OmnichannelGateway] Action #{plan_id} execution on {clean_chan} was stopped.")
+        stop_msg = await synthesize_channel_notice("stopped", channel=clean_chan)
+        rendered = UniversalChannelAdapter.render_notice_payload(clean_chan, "stopped", stop_msg)
+        await channel_manager.send_message(channel=clean_chan, target_id=channel_id, text=rendered.get("text", stop_msg))
+        return {"status": "cancelled", "message": stop_msg}
+
+    except Exception as exec_err:
+        session_state_manager.resolve_action(clean_chan, channel_id, plan_id, ActionState.FAILED)
+        logger.error(f"[OmnichannelGateway] Action #{plan_id} execution error: {exec_err}", exc_info=True)
+        err_msg = await synthesize_channel_notice("error", channel=clean_chan, error_detail=str(exec_err))
+        rendered = UniversalChannelAdapter.render_notice_payload(clean_chan, "error", err_msg)
+        await channel_manager.send_message(channel=clean_chan, target_id=channel_id, text=rendered.get("text", err_msg))
+        return {"status": "error", "message": err_msg}
+
+    finally:
+        session_state_manager.clear_pending(clean_chan, channel_id)
+

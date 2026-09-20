@@ -87,7 +87,7 @@ async def _tool_image_generate(
                     # Project HUD card
                     _emit_agent_event("hud_project", {
                         "type": "image",
-                        "title": f"Hasil Gambar: {clean_prompt[:40]}",
+                        "title": f"AI Image: {clean_prompt[:40]}",
                         "image_url": img_url,
                         "local_path": local_path if save_to_disk else None,
                         "aspect_ratio": aspect_ratio
@@ -99,7 +99,7 @@ async def _tool_image_generate(
                         "image_url": img_url,
                         "local_file": local_path if save_to_disk else None,
                         "prompt": full_prompt,
-                        "message": "Gambar berhasil dibuat menggunakan DALL-E 3 dan diproyeksikan ke HUD."
+                        "message": "Image generated successfully via DALL-E 3 and projected to HUD."
                     }
         except Exception as e:
             logger.warning(f"[ImageTools] OpenAI DALL-E generation failed, falling back to Pollinations: {e}")
@@ -125,7 +125,7 @@ async def _tool_image_generate(
     # Project HUD visual
     _emit_agent_event("hud_project", {
         "type": "image",
-        "title": f"Hasil Gambar AI: {clean_prompt[:40]}",
+        "title": f"AI Image: {clean_prompt[:40]}",
         "image_url": pollinations_url,
         "local_path": local_path if os.path.isfile(local_path) else None,
         "aspect_ratio": aspect_ratio
@@ -138,5 +138,5 @@ async def _tool_image_generate(
         "local_file": local_path if os.path.isfile(local_path) else None,
         "prompt": full_prompt,
         "aspect_ratio": aspect_ratio,
-        "message": f"Gambar berhasil dibuat dan diproyeksikan ke HUD: {pollinations_url}"
+        "message": f"Image generated successfully via Pollinations Flux and projected to HUD: {pollinations_url}"
     }

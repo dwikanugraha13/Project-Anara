@@ -169,22 +169,11 @@ class AnaraExecutionRunner:
             else:
                 agent_mode = "build"
 
-        # 3. Optimistic Conversation Log
-        try:
-            memory_engine.log_conversation(
-                user_text=clean_text,
-                ai_text="",
-                speaker_name=effective_speaker,
-                session_id=effective_sid,
-            )
-            from memory import file_memory
-            file_memory.detect_and_record_memory(clean_text, speaker_name=effective_speaker)
-        except Exception as e:
-            logger.debug(f"[ExecutionRunner] Optimistic log notice: {e}")
+        # 3. Memory Snapshot is injected into system prompt context; autonomous memory tool handles updates (Hermes Parity)
 
-        # 4. Context Compaction
+        # 4. Context Compaction (Hermes Chronological Alternation)
         try:
-            history_rows = memory_engine.get_conversation_history(limit=30, session_id=effective_sid)
+            history_rows = memory_engine.get_recent_conversations(limit=30, session_id=effective_sid)
             compacted_history = ContextCompactor.compact_history(history_rows, verbatim_turns=12)
         except Exception as e:
             logger.debug(f"[ExecutionRunner] Context compaction notice: {e}")
@@ -212,7 +201,7 @@ class AnaraExecutionRunner:
             session_id=effective_sid,
         )
 
-        from cognition.memory_nudge import memory_nudge_manager
+        from memory.memory_nudge import memory_nudge_manager
         nudge_instruction = memory_nudge_manager.increment_and_get_nudge(effective_sid)
         if nudge_instruction:
             system_instruction += f"\n\n{nudge_instruction}"
@@ -221,10 +210,10 @@ class AnaraExecutionRunner:
         selected_model = model_id or get_active_model_id()
         tools_used: List[str] = []
 
-        # Yield initial thinking / planning status
+        # Yield initial thinking / planning status (Hermes Parity)
         yield TurnEvent(
             type="thought",
-            content="Merumuskan pemikiran dan strategi..." if agent_mode == "plan" else "Mempersiapkan tindakan...",
+            content="Planning strategy / Merumuskan pemikiran..." if agent_mode == "plan" else "Preparing action / Mempersiapkan tindakan...",
             metadata={"mode": agent_mode, "model": selected_model},
         )
 
@@ -297,7 +286,7 @@ class AnaraExecutionRunner:
             logger.error(f"[ExecutionRunner] Model error: {e}", exc_info=True)
             yield TurnEvent(
                 type="error",
-                content=f"Terjadi kesalahan saat memproses permintaan: {e}",
+                content=f"Error processing request: {e}",
                 is_error=True,
             )
             return

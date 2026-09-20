@@ -24,6 +24,12 @@ class EventType(str, Enum):
     ERROR = "error"
     SESSION_FINISH = "session_finish"
 
+    # ── Code Studio & HUD Visual Telemetry (Pilar 2 & Subsystem 5) ──
+    FILE_MODIFIED = "file_modified"              # Live Split-Diff & workspace updates
+    GUARDRAIL_TRIGGERED = "guardrail_triggered"  # Blast radius & protection events
+    GROUND_TRUTH_CHECK = "ground_truth_check"    # Test validation & disk readback
+    ADR_RECORDED = "adr_recorded"                # Episodic architecture decision (Pilar 3)
+
 
 class ActivityProvenance(str, Enum):
     AGENT_ORCHESTRATOR = "agent_orchestrator"
@@ -31,6 +37,7 @@ class ActivityProvenance(str, Enum):
     TOOL_RUNNER = "tool_runner"
     CONTEXT_COMPACTOR = "context_compactor"
     SUBAGENT_WORKER = "subagent_worker"
+    WORKSPACE_SENTINEL = "workspace_sentinel"
 
 
 @dataclass

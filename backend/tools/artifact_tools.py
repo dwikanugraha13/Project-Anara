@@ -243,9 +243,9 @@ async def _tool_generate_file_artifact(
         })
 
         if destination_folder:
-            msg = f"Berkas '{safe_filename}' ({file_size_kb} KB) berhasil dibuat dan disimpan langsung ke '{file_target_path}'."
+            msg = f"File '{safe_filename}' ({file_size_kb} KB) created and saved to '{file_target_path}'."
         else:
-            msg = f"Berkas '{safe_filename}' ({file_size_kb} KB) telah selesai dibuat dan tampil di layar HUD. Pengguna dapat mengunduhnya lewat tombol download."
+            msg = f"File '{safe_filename}' ({file_size_kb} KB) created successfully."
 
         return {
             "status": "success",
@@ -412,7 +412,7 @@ async def _tool_create_zip_archive(
 
         return {
             "status": "success",
-            "message": f"Arsip ZIP '{safe_filename}' ({file_size_kb} KB) telah berhasil dibuat! Berisi {len(packed_files)} berkas: {', '.join(packed_files)}. Kartu unduhan interaktif telah tampil di layar HUD.",
+            "message": f"ZIP archive '{safe_filename}' ({file_size_kb} KB) created successfully with {len(packed_files)} files: {', '.join(packed_files)}.",
             "filename": safe_filename,
             "download_url": download_url,
             "file_path": zip_workspace_path,
@@ -444,15 +444,15 @@ async def _tool_extract_zip_archive(
         if os.path.exists(alt):
             resolved_zip = alt
         else:
-            return {"status": "error", "message": f"Berkas ZIP tidak ditemukan: '{raw_zip}'"}
+            return {"status": "error", "message": f"ZIP file not found: '{raw_zip}'"}
 
     dest_dir = os.path.abspath(destination_folder.strip().strip('"\'')) if destination_folder else active_f
     os.makedirs(dest_dir, exist_ok=True)
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "extract_zip_archive",
-        "action_title": f"Mengekstrak ZIP: {os.path.basename(resolved_zip)}",
-        "detail": f"Tujuan: {dest_dir}",
+        "action_title": f"Extracting ZIP: {os.path.basename(resolved_zip)}",
+        "detail": f"Destination: {dest_dir}",
         "icon": "📦"
     })
 
@@ -470,7 +470,7 @@ async def _tool_extract_zip_archive(
 
     try:
         extracted_files = await asyncio.to_thread(_extract_worker)
-        msg = f"Berhasil mengekstrak {len(extracted_files)} berkas dari '{os.path.basename(resolved_zip)}' ke '{dest_dir}'."
+        msg = f"Extracted {len(extracted_files)} files from '{os.path.basename(resolved_zip)}' to '{dest_dir}'."
         _emit_agent_event("agent_action_complete", {
             "tool_name": "extract_zip_archive",
             "action_title": f"ZIP Terekstrak: {os.path.basename(resolved_zip)}",
@@ -506,7 +506,7 @@ async def _tool_read_zip_contents(zip_path: str) -> Dict[str, Any]:
         if os.path.exists(alt):
             resolved_zip = alt
         else:
-            return {"status": "error", "message": f"Berkas ZIP tidak ditemukan: '{raw_zip}'"}
+            return {"status": "error", "message": f"ZIP file not found: '{raw_zip}'"}
 
     def _read_worker():
         items = []
@@ -552,7 +552,7 @@ async def _tool_send_document_file(
     """Sends a local document file (.pdf, .docx, .zip, etc.) directly to Telegram or WhatsApp chat."""
     raw_path = (file_path or "").strip().strip('"\'')
     if not raw_path:
-        return {"status": "error", "message": "Path berkas tidak boleh kosong."}
+        return {"status": "error", "message": "File path cannot be empty."}
 
     from core import anara_agent
     active_f = anara_agent.get_session_dir()
@@ -562,7 +562,7 @@ async def _tool_send_document_file(
         if os.path.isfile(alt):
             resolved_path = alt
         else:
-            return {"status": "error", "message": f"Berkas tidak ditemukan: '{raw_path}'"}
+            return {"status": "error", "message": f"File not found: '{raw_path}'"}
 
     target_channel = (channel or "telegram").lower().strip()
     filename = os.path.basename(resolved_path)
@@ -600,7 +600,7 @@ async def _tool_rezip_archive(
         if os.path.isfile(alt):
             resolved_zip = alt
         else:
-            return {"status": "error", "message": f"Berkas ZIP asal tidak ditemukan: '{raw_zip}'"}
+            return {"status": "error", "message": f"Source ZIP file not found: '{raw_zip}'"}
 
     target_out = os.path.abspath(output_path.strip().strip('"\'')) if output_path else resolved_zip
     remove_set = {r.strip().lower() for r in (files_to_remove or [])}
@@ -668,7 +668,7 @@ async def _tool_rezip_archive(
 
         return {
             "status": "success",
-            "message": f"Arsip ZIP '{safe_name}' ({file_size_kb} KB) berhasil diperbarui! Kini berisi {len(final_contents)} berkas: {', '.join(final_contents)}.",
+            "message": f"ZIP archive '{safe_name}' ({file_size_kb} KB) updated successfully with {len(final_contents)} files: {', '.join(final_contents)}.",
             "zip_path": target_out,
             "filename": safe_name,
             "download_url": download_url,

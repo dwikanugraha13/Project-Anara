@@ -23,36 +23,53 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-# Strict visual intent trigger keywords
-VISUAL_INTENT_KEYWORDS = [
-    "gambar", "gambarnya", "foto", "fotonya", "tunjukkan", "tunjukan", "tujukin", "tunjukkin",
-    "tampilkan", "tampilin", "lihat", "liat", "gambarin", "mana", "perlihatkan", "kasih liat",
-    "visual", "visualkan", "penampakan", "wujud", "bentuk", "bentuknya", "desain", "lukisan",
-    "wallpaper", "spill", "image", "picture", "photo", "show", "show me", "draw", "generate",
-    "muka", "mukanya", "wajah", "wajahnya", "potret", "seperti apa", "kayak apa", "kaya apa",
-    # Photo switching & multi-image keywords
-    "foto lain", "gambar lain", "foto lainnya", "gambar lainnya", "ganti foto", "foto berikutnya",
-    "gambar berikutnya", "galeri", "multi foto", "beberapa foto", "yang lain", "selain itu",
-    # Weather
-    "cuaca", "suhu", "hujan", "prakiraan", "weather", "temperature", "derajat",
-    # Code & Tech
-    "kode", "coding", "script", "program", "python", "javascript", "typescript", "html", "css",
-    "fungsi", "bikin kode", "buatkan kode", "source code",
-    # Telemetry / Status
-    "status sistem", "status kamu", "telemetri", "diagnostik", "core status", "system status",
-    "kondisi anara", "cek sistem", "kesehatan sistem",
-    # Knowledge / Schematics
-    "spesifikasi", "spek", "struktur", "skema", "bagan", "tata surya", "anatomi", "planet",
-    "mobil", "motor", "mesin", "sejarah", "perbandingan",
-    # Tasks / Todos
-    "to do", "todo", "catatan tugas", "daftar tugas", "list tugas"
-]
-
-
 def could_be_visual_request(text: str) -> bool:
-    """Fast keyword heuristic to quickly identify potential visual queries."""
-    norm = text.lower()
-    return any(k in norm for k in VISUAL_INTENT_KEYWORDS)
+    """
+    Deprecated keyword helper retained for backwards compatibility (Hermes Parity).
+    In Hermes Agent, visual intent is driven strictly by model reasoning.
+    Use asynchronous is_visual_request_semantic instead of static word filtering.
+    """
+    return False
+
+
+async def is_visual_request_semantic(user_text: str) -> bool:
+    """
+    Pure Model-Driven Semantic Visual Intent Classifier (Hermes Parity).
+    Evaluates whether the user asks to see or project a photo, image, weather, chart, or visual card.
+    Operates without hardcoded word sets across any human language.
+    """
+    clean = (user_text or "").strip()
+    if not clean or len(clean) < 2:
+        return False
+
+    try:
+        import asyncio
+        from providers import call_universal_chat_model
+        from core.capabilities import get_fast_auxiliary_model
+
+        sys_p = (
+            "You are an intent classifier for an autonomous multimodal agent. "
+            "Determine if the user's input asks to see, show, display, or project a photo, image, chart, weather, or visual card.\n"
+            "Respond with exactly ONE word: YES or NO."
+        )
+        user_p = f"User input: \"{clean}\"\nRequires visual projection:"
+        res = await asyncio.wait_for(
+            call_universal_chat_model(
+                model_id=get_fast_auxiliary_model(),
+                user_prompt=user_p,
+                system_instruction=sys_p,
+                max_tokens=None,
+                temperature=0.0,
+                read_only=True
+            ),
+            timeout=2.0
+        )
+        if isinstance(res, str) and "YES" in res.strip().upper():
+            return True
+    except Exception as e:
+        logger.debug(f"[VisualClassifier] Semantic check notice: {e}")
+
+    return False
 
 
 async def fetch_real_web_images(query: str, count: int = 6) -> List[Dict[str, str]]:
@@ -175,19 +192,6 @@ async def fetch_real_web_image(query: str) -> Optional[Dict[str, str]]:
 
 # In-memory query cache
 _VISUAL_QUERY_CACHE: Dict[str, Dict[str, Any]] = {}
-_VISUAL_KEYWORDS = {
-    "foto", "gambar", "lihat", "tampilkan", "tunjukkan", "tunjukan", "tujukin", "proyeksi", "visual", "image", "pic",
-    "cuaca", "suhu", "hujan", "derajat", "celcius", "panas", "dingin", "ramalan", "weather",
-    "kode", "skrip", "script", "coding", "program", "fungsi", "function", "python", "javascript", "react", "html", "css",
-    "status sistem", "diagnostik", "telemetri", "system hud", "kondisi sistem", "core status",
-    "spesifikasi", "spek", "planet", "struktur", "anatomi", "knowledge card", "skematik",
-    "to do", "todo", "tugas", "catatan", "jadwal", "daftar to do",
-    # Structured TEXT content (knowledge_card) — previously missing, so "mana resepnya?"
-    # was rejected by the fast-gate before the classifier ever ran.
-    "resep", "resepnya", "masak", "memasak", "bahan", "bahannya",
-    "langkah", "langkahnya", "cara", "caranya", "tips", "panduan", "tutorial",
-    "step", "recipe", "gimana caranya", "bagaimana cara", "daftar",
-}
 
 
 async def generate_visual_projection(
@@ -228,74 +232,37 @@ async def generate_visual_projection(
     if recent_context_lines:
         recent_context_str = "KONTEKS PERCAKAPAN TERAKHIR:\n" + "\n---\n".join(recent_context_lines) + "\n\n"
 
-    # Fast-gate: Allow visual keywords OR short affirmative responses when previous turn offered photos/visuals
-    has_visual_kw = any(k in clean_key for k in _VISUAL_KEYWORDS)
-    AFFIRMATIVE_WORDS = {"ya", "iya", "mau", "boleh", "ok", "oke", "silakan", "coba", "tampilkan", "yup", "yoi", "mau dong", "boleh dong", "siap", "tentu", "boleh carikan", "tolong carikan", "gas", "gasin", "yuk", "ayo", "lanjut", "sok", "yaudah", "sip"}
-    is_affirmative = clean_key in AFFIRMATIVE_WORDS or any(clean_key.startswith(w) for w in AFFIRMATIVE_WORDS)
-
-    last_conv = recent_chat[-1] if recent_chat else {}
-    prev_ai_text = (last_conv.get("ai_text") or "").lower()
-    prev_offered_visual = any(w in prev_ai_text for w in [
-        "foto", "gambar", "lihat", "tampilkan", "carikan", "menu", "lokasi", "visual",
-        "bagaimana", "rekomendasi", "rekomendasikan", "mau aku",
-        "resep", "langkah", "bahan", "cara", "tips", "panduan", "kutampilkan", "kutunjukkan",
-    ])
-
-    if not has_visual_kw and not (is_affirmative and prev_offered_visual):
-        return {"has_visual": False}
-
     prompt = (
         f"{system_prompt}\n\n"
         f"{recent_context_str}"
-        "TUGAS UTAMA ANDA: SISTEM PROYEKSI VISUAL HOLOGRAPHIC J.A.R.V.I.S. (ANARA HUD ENGINE)\n"
-        f"Waktu Sekarang: {time_info['date_full']}, {time_info['time_str']}\n\n"
-        "ATURAN RESOLUSI RUJUKAN & FOLLOW-UP (SANGAT PENTING):\n"
-        "- JIKA PENGGUNA MENYEBUTKAN OBJEK BARU SECARA JELAS (misal: 'coba tunjukin gambar rumput', 'tunjukkan foto kucing', 'foto mobil porsche', 'lihat gambar monas', 'tampilkan foto laut'):\n"
-        "  MAKA visual_type='image' dan search_query HARUS OBJEK BARU TERSEBUT (contoh: 'rumput' / 'kucing' / 'mobil porsche' / 'monas')! JANGAN CAMPURKAN ATAU MENGIKUTI TOPIK LAMA (seperti Panda)!\n"
-        "- HANYA gunakan topik lama dari KONTEKS PERCAKAPAN jika pesan pengguna TIDAK menyebut objek baru dan hanya menggunakan kata rujukan murni (misal: 'tunjukkan fotonya', 'mana gambarnya', 'fotonya mana', 'coba lihat fotonya', 'ya tampilkan', 'ya', 'boleh', 'foto lainnya', 'foto berikutnya').\n"
-        "- JUMLAH FOTO (image_count):\n"
-        "  * Default: image_count = 1 jika pengguna hanya meminta foto biasa (misal: 'tunjukkan foto panda', 'coba tunjukin gambar rumput').\n"
-        "  * Jika pengguna meminta jumlah tertentu, set image_count sesuai angka (misal: 'tunjukkan 3 foto panda' -> image_count = 3, '5 foto rumput' -> image_count = 5, 'tampilkan beberapa foto / galeri' -> image_count = 4 atau 6).\n\n"
-        "Klasifikasikan pesan pengguna dan pilih SATU visual_type yang paling cocok dari kategori berikut:\n\n"
-        "ATURAN PRIORITAS MUTLAK (BACA DULU):\n"
-        "- Jika pengguna meminta RESEP / CARA MEMBUAT / LANGKAH-LANGKAH / TIPS / PANDUAN / TUTORIAL "
-        "(termasuk menjawab 'ya' saat ditawari resep) -> WAJIB 'knowledge_card', BUKAN 'image'! "
-        "Resep masakan = konten TULISAN terstruktur, bukan foto.\n"
-        "- 'image' HANYA jika pengguna secara eksplisit ingin MELIHAT bentuk/penampakan/foto objeknya "
-        "(misal: 'kayak apa sih', 'tunjukkan fotonya', 'lihat penampakannya').\n\n"
-        "1. 'image': Pengguna ingin melihat foto asli/gambar nyata/galeri dari tokoh publik, tempat wisata, kuliner, kendaraan, hewan, objek, tanaman, pemandangan, dll.\n"
-        "   Contoh: 'tunjukkan foto monas', 'lihat mobil lamborghini', 'coba tunjukin gambar rumput', 'gambar candi borobudur', 'foto kucing persia', 'tunjukkan 3 foto panda', 'tunjukkan fotonya', 'ganti foto', 'foto lainnya'\n"
-        "   Data yang diperlukan: search_query (nama objek bersih untuk pencarian foto web), image_title, image_count (1 atau angka sesuai permintaan).\n\n"
-        "2. 'weather': Pengguna menanyakan cuaca, suhu, atau kondisi atmosfer di suatu kota/daerah.\n"
-        "   Contoh: 'bagaimana cuaca di jakarta hari ini', 'apakah bandung hujan', 'cek suhu surabaya'\n"
-        "   Data yang diperlukan: weather_data dengan field: city, temp_c, condition, humidity, wind_kmh, uv_index, forecast (array 2 hari).\n\n"
-        "3. 'code': Pengguna meminta pembuatan kode, skrip program, fungsi, algoritma, atau penjelasan teknis coding.\n"
-        "   Contoh: 'buatkan kode python fastapi server', 'bagaimana script javascript debounce', 'contoh react hook'\n"
-        "   Data yang diperlukan: code_data dengan field: language, title, code (kode program lengkap & rapi), explanation.\n\n"
-        "4. 'system_hud': Pengguna menanyakan status sistem Anara, kondisi AI, diagnostik otak, memori, atau performa.\n"
-        "   Contoh: 'status sistem kamu', 'cek diagnostik anara', 'bagaimana kondisi core sistem'\n"
-        "   Data yang diperlukan: system_hud_data dengan field: core_status, ai_model, active_keys, memory_nodes, latency_ms, uptime.\n\n"
-        "5. 'knowledge_card': Pengguna meminta RESEP MASAKAN, langkah memasak, cara membuat sesuatu, tips, panduan, tutorial, "
-        "penjelasan terstruktur, spesifikasi teknis, anatomi, perbandingan data, planet/astronomi, mobil/motor, sejarah, atau fakta ilmiah.\n"
-        "   Contoh: 'tampilkan resepnya', 'ya mau resepnya', 'cara membuat nasi goreng', 'resep ayam crispy', 'tips diet sehat', "
-        "'bagaimana struktur planet mars', 'spesifikasi motor kawasaki h2', 'perbedaan sel hewan dan tumbuhan'\n"
-        "   Data yang diperlukan: knowledge_card_data dengan field: title (judul bersih profesional), category, badge, summary, "
-        "ingredients (array string bahan-bahan JIKA resep masakan, selain itu []), "
-        "steps (array string langkah-langkah berurutan tanpa nomor, maks 8), "
-        "specs (array berisi objek {label, value} untuk spesifikasi non-langkah).\n"
-        "   PENTING: untuk resep, WAJIB isi ingredients dan steps dengan konten lengkap & akurat dari pengetahuanmu!\n\n"
-        "6. 'todo_list': Pengguna menanyakan atau meminta to-do list / catatan tugas mereka.\n"
-        "   Contoh: 'tampilkan to-do list ku', 'apa daftar tugasku'\n\n"
-        "7. 'none': Obrolan santai biasa tanpa kebutuhan visual (sapaan, percakapan umum pendek).\n\n"
-        f"Pesan Pengguna: \"{user_text}\"\n\n"
-        "KEMBALIKAN HANYA FORMAT JSON VALID BERIKUT (jangan sertakan markdown code block di luar JSON):\n"
+        "ROLE: HOLOGRAPHIC 3D VISUAL PROJECTION CLASSIFIER (ANARA HUD ENGINE)\n"
+        f"Timestamp: {time_info['date_full']}, {time_info['time_str']}\n\n"
+        "CORE TASK:\n"
+        "Classify the user's intent across ANY human language (English, Indonesian, Japanese, Korean, Arabic, Chinese, French, Spanish, German, etc.) "
+        "and select the single most appropriate visual_type for holographic HUD projection.\n\n"
+        "SEMANTIC CATEGORIES:\n"
+        "1. 'image': User explicitly asks to view, see, or display real photos, imagery, galleries, monuments, places, people, vehicles, nature, or objects.\n"
+        "   - Required fields: search_query (clean subject name for web image search), image_title, image_count (default 1 or requested number).\n"
+        "2. 'weather': User inquires about current weather, temperature, or atmospheric forecasts for any city or region.\n"
+        "   - Required fields: weather_data with city, temp_c, condition, humidity, wind_kmh, uv_index, forecast.\n"
+        "3. 'code': User requests code snippets, programming scripts, algorithms, or technical coding functions.\n"
+        "   - Required fields: code_data with language, title, code, explanation.\n"
+        "4. 'system_hud': User inquires about system diagnostics, core health, AI brain status, telemetry, or performance.\n"
+        "   - Required fields: system_hud_data with core_status, ai_model, active_keys, memory_nodes, latency_ms, uptime.\n"
+        "5. 'knowledge_card': User requests recipes, cooking steps, how-to guides, tutorials, technical specs, anatomy, scientific facts, or comparison charts.\n"
+        "   - Required fields: knowledge_card_data with title, category, badge, summary, ingredients, steps, specs.\n"
+        "   - NOTE: Recipes and step-by-step guides MUST be 'knowledge_card' (structured text), NOT 'image'.\n"
+        "6. 'todo_list': User inquires about or requests to display their active to-do list or task checklist.\n"
+        "7. 'none': Conversational chat without visual projection intent (greetings, general Q&A, conceptual discussions).\n\n"
+        f"User Message: \"{user_text}\"\n\n"
+        "RETURN ONLY VALID JSON (no markdown fences outside JSON):\n"
         "{\n"
         '  "has_visual": true,\n'
         '  "visual_type": "image|weather|code|system_hud|knowledge_card|todo_list|none",\n'
         '  "search_query": "...",\n'
         '  "image_title": "...",\n'
         '  "image_count": 1,\n'
-        '  "reply_text": "Kalimat balasan cerdas, ramah, dan ringkas dari Anara (1-2 kalimat).",\n'
+        '  "reply_text": "A direct, helpful, and natural response from Anara matching the user\'s active language (1-2 sentences).",\n'
         '  "weather_data": {\n'
         '    "city": "Jakarta",\n'
         '    "temp_c": 31,\n'
@@ -511,107 +478,8 @@ async def generate_visual_projection(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# AUTO-SMART HUD ENGINE — Automatically enrich natural replies with visuals
+# SEMANTIC HUD ENGINE — Pure Model Reasoning (Zero Hardcoded Keywords)
 # ═══════════════════════════════════════════════════════════════════════════════
-
-# Reply markers that suggest Anara just gave a recommendation / recipe / steps / tips
-_AUTO_HUD_REPLY_MARKERS = [
-    "resep", "bahan", "masak", "olahraga", "tips", "langkah", "cara ",
-    "pilihan", "rekomendasi", "mau coba", "suggest", "recipe", "steps",
-    "olah", "latihan", "workout", "yoga", "meditasi", "manfaat",
-    "tempat wisata", "restoran", "kafe", "menu", "makanan", "minuman",
-    "tutorial", "panduan", "guide", "how to", "cara membuat",
-]
-
-# User markers that hint the user asked something open-ended
-_AUTO_HUD_USER_MARKERS = [
-    "rekomendasikan", "saran", "saranin", "kasih", "mau ", "butuh",
-    "carikan", "cari", "bantu", "ayo", "yuk", "bagaimana", "gimana",
-    "apa yang", "what should", "suggest", "recommend", "give me",
-    "mau resep", "masak apa", "olahraga apa", "tempat",
-    "give me some", "give me a", "show me how", "give me some tips",
-]
-
-# Short affirmative continuations ("ya", "boleh", "mau dong") that accept a
-# visual offer Anara made in the PREVIOUS turn.
-_AFFIRMATION_WORDS = {
-    "ya", "iya", "yaa", "iyaa", "yoi", "yup", "yes", "ok", "oke", "okey", "okay",
-    "boleh", "mau", "maulah", "gas", "gaskeun", "yuk", "ayo", "ayuk", "lanjut",
-    "sip", "siap", "tampilkan", "tampilin", "tunjukkan", "tunjukin", "perlihatkan",
-    "bisa", "silakan", "silahkan", "monggo", "tentu", "pasti", "lanjutkan",
-}
-
-# Phrases in Anara's reply that indicate she OFFERED to show something visually
-_VISUAL_OFFER_MARKERS = [
-    "mau aku tampilkan", "mau kutampilkan", "mau ku tampilkan", "mau ditampilkan",
-    "mau aku tunjukkan", "mau kutunjukkan", "mau ku tunjukkan", "mau ditunjukkan",
-    "aku tampilkan", "aku tunjukkan", "kutampilkan", "kutunjukkan",
-    "mau lihat", "mau liat", "mau melihat", "ingin lihat", "ingin melihat",
-    "tampilkan resep", "tampilkan langkah", "tampilkan detail", "tampilkan di layar",
-    "tunjukkan resep", "tunjukkan langkah", "tunjukkan detail",
-    "di layar", "ke layar", "proyeksikan", "kuproyeksikan",
-    "mau resepnya", "mau detailnya", "mau langkah",
-    "shall i show", "want me to show", "want to see",
-    # Broader natural offers ("mau aku kasih resepnya?", "mau kubacakan?", "mau tahu caranya?")
-    "mau aku kasih", "mau kukasih", "mau ku kasih", "aku kasih resep", "kukasih resep",
-    "mau aku bacakan", "mau kubacakan", "mau ku bacakan", "kubacakan",
-    "mau aku buatkan", "mau kubuatkan", "mau dibuatkan",
-    "mau aku jelaskan", "mau kujelaskan", "mau dijelaskan", "mau aku rincikan",
-    "mau tahu resep", "mau tau resep", "mau tahu cara", "mau tau cara",
-    "mau tahu langkah", "mau tau langkah", "mau tahu detail", "mau tau detail",
-    "mau resep lengkap", "resep lengkapnya", "langkah lengkapnya", "detail lengkapnya",
-    "mau aku beri", "mau kuberi", "mau aku berikan", "mau kuberikan",
-    "aku punya resep", "ada resep",
-]
-
-
-def is_short_affirmation(text: str) -> bool:
-    """
-    Detects short affirmative continuations like "ya", "boleh dong", "iya mau".
-    Zero-token local heuristic: every word must be an affirmation/filler word
-    and the utterance must be short.
-    """
-    norm = _text_lower(text)
-    if not norm or len(norm) > 30:
-        return False
-    fillers = {"dong", "deh", "aja", "saja", "banget", "sekali", "lah", "kak", "bang", "anara", "coba", "dulu"}
-    words = re.findall(r"[a-z]+", norm)
-    if not words:
-        return False
-    has_affirmation = any(w in _AFFIRMATION_WORDS for w in words)
-    all_known = all((w in _AFFIRMATION_WORDS or w in fillers) for w in words)
-    return has_affirmation and all_known
-
-
-def ai_offered_visual(prev_ai_text: str) -> bool:
-    """Detects whether Anara's previous reply offered to project something on the HUD."""
-    a = _text_lower(prev_ai_text)
-    if not a:
-        return False
-    return any(m in a for m in _VISUAL_OFFER_MARKERS)
-
-
-def _text_lower(text: str) -> str:
-    return text.lower().strip() if text else ""
-
-
-def could_auto_hud_enrich(user_text: str, ai_text: str) -> bool:
-    """
-    Ultra-fast zero-token heuristic gate.
-    Returns True ONLY when BOTH conditions are met:
-    1. The AI reply is long enough and contains recommendation-like markers
-    2. The user's question is open-ended / recommendation-seeking
-
-    This avoids wasting tokens on short / chitchat / factual-lookup turns.
-    """
-    u = _text_lower(user_text)
-    a = _text_lower(ai_text)
-    if len(a) < 80:
-        return False
-    reply_hit = any(m in a for m in _AUTO_HUD_REPLY_MARKERS)
-    user_hit = any(m in u for m in _AUTO_HUD_USER_MARKERS)
-    return reply_hit and user_hit
-
 
 _SEMANTIC_HUD_PROMPT = (
     "Kamu adalah Semantic HUD Intelligence untuk asisten suara Anara — engine yang MEMAHAMI "

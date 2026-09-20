@@ -15,20 +15,20 @@ async def _tool_web_search(query: str) -> Dict[str, Any]:
     """Searches the live web via DuckDuckGo HTML index for real-time answers."""
     q = (query or "").strip()
     if not q:
-        return {"status": "error", "message": "Query pencarian kosong"}
+        return {"status": "error", "message": "Search query cannot be empty."}
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "web_search",
-        "action_title": "Pencarian Web Real-time",
-        "detail": f"Mencari: '{q}'",
-        "icon": "🌐"
+        "action_title": "Web Search",
+        "detail": f"Query: '{q}'",
+        "icon": "globe"
     })
 
     url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(q)}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Language": "*",
     }
 
     snippets = []
@@ -51,7 +51,7 @@ async def _tool_web_search(query: str) -> Dict[str, Any]:
 
     if not snippets:
         try:
-            wiki_url = f"https://id.wikipedia.org/w/api.php?action=query&list=search&srsearch={urllib.parse.quote(q)}&format=json&utf8="
+            wiki_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={urllib.parse.quote(q)}&format=json&utf8="
             async with httpx.AsyncClient(timeout=5.0) as client:
                 w_res = await client.get(wiki_url)
                 if w_res.status_code == 200:
@@ -63,14 +63,14 @@ async def _tool_web_search(query: str) -> Dict[str, Any]:
         except Exception:
             pass
 
-    result_text = "\n---\n".join(snippets) if snippets else "Tidak ditemukan hasil spesifik di web."
+    result_text = "\n---\n".join(snippets) if snippets else "No specific web results found."
     
     _emit_agent_event("agent_action_complete", {
         "tool_name": "web_search",
-        "action_title": "Hasil Pencarian Web",
+        "action_title": "Web Search Results",
         "summary": result_text[:200] + "..." if len(result_text) > 200 else result_text,
         "raw_result": result_text,
-        "icon": "🌐"
+        "icon": "globe"
     })
 
     return {
@@ -84,21 +84,21 @@ async def _tool_fetch_webpage(url: str) -> Dict[str, Any]:
     """Fetches and cleans main text content from a web URL."""
     target_url = (url or "").strip()
     if not target_url.startswith("http"):
-        return {"status": "error", "message": "URL harus diawali dengan http:// atau https://"}
+        return {"status": "error", "message": "URL must start with http:// or https://"}
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "fetch_webpage",
-        "action_title": "Membaca Webpage Lengkap",
+        "action_title": "Fetch Webpage",
         "detail": f"URL: {target_url[:50]}...",
-        "icon": "🌐"
+        "icon": "globe"
     })
 
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept-Language": "*"}
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
             res = await client.get(target_url, headers=headers)
             if res.status_code != 200:
-                return {"status": "error", "message": f"Gagal membuka URL: HTTP {res.status_code}"}
+                return {"status": "error", "message": f"Failed to fetch URL: HTTP {res.status_code}"}
             
             html = res.text
             clean = re.sub(r"<script.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
@@ -109,10 +109,10 @@ async def _tool_fetch_webpage(url: str) -> Dict[str, Any]:
             preview = clean[:4000]
             _emit_agent_event("agent_action_complete", {
                 "tool_name": "fetch_webpage",
-                "action_title": "Konten Web Diambil",
-                "summary": f"Berhasil membaca {len(clean)} karakter.",
+                "action_title": "Webpage Content Fetched",
+                "summary": f"Successfully fetched {len(clean)} characters.",
                 "raw_result": preview[:250],
-                "icon": "🌐"
+                "icon": "globe"
             })
 
             return {
@@ -180,15 +180,15 @@ async def _tool_web_search_images(query: str, limit: int = 4) -> Dict[str, Any]:
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "web_search_images",
-        "action_title": "Pencarian Foto & Gambar Web",
-        "detail": f"Mencari foto: '{q}'",
-        "icon": "🖼️"
+        "action_title": "Web Image Search",
+        "detail": f"Search: '{q}'",
+        "icon": "image"
     })
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Language": "*",
     }
 
     images = []

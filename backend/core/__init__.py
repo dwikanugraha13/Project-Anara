@@ -20,6 +20,7 @@ from .channel_adapter import (
     ChannelResponse,
     process_channel_request,
     resolve_pending_plan_callback,
+    dispatch_channel_approval_resolution,
     UniversalChannelAdapter,
     BaseChannelPresenter,
     generate_dynamic_action_rationale,
@@ -47,6 +48,10 @@ from .runner import (
     AnaraExecutionRunner,
     TurnEvent,
     AgentTurnResult,
+)
+from .workspace_sentinel import (
+    WorkspaceSentinel,
+    workspace_sentinel,
 )
 
 __all__ = [
@@ -78,6 +83,7 @@ __all__ = [
     "ChannelResponse",
     "process_channel_request",
     "resolve_pending_plan_callback",
+    "dispatch_channel_approval_resolution",
     "UniversalChannelAdapter",
     "BaseChannelPresenter",
     "generate_dynamic_action_rationale",
@@ -99,4 +105,6 @@ __all__ = [
     "AnaraExecutionRunner",
     "TurnEvent",
     "AgentTurnResult",
+    "WorkspaceSentinel",
+    "workspace_sentinel",
 ]

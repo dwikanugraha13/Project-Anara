@@ -55,10 +55,10 @@ class PromptAssembler:
                     st_lines = raw_st.splitlines()
                     preview_st = "\n    ".join(st_lines[:15])
                     more_cnt = len(st_lines) - 15
-                    more_msg = f"\n    [... {more_cnt} berkas lainnya berubah ...]" if more_cnt > 0 else ""
-                    lines.append(f"- Status Berkas Berubah (Live Ground Truth):\n    {preview_st}{more_msg}")
+                    more_msg = f"\n    [... {more_cnt} additional files modified ...]" if more_cnt > 0 else ""
+                    lines.append(f"- Status Berkas / Changed Files Status (Live Ground Truth):\n    {preview_st}{more_msg}")
                 else:
-                    lines.append("- Status Berkas: Bersih (Clean working tree)")
+                    lines.append("- Status Berkas: Bersih / Clean working tree")
 
             # 3. Recent commits
             log_res = subprocess.run(
@@ -69,7 +69,7 @@ class PromptAssembler:
             )
             if log_res.returncode == 0 and log_res.stdout.strip():
                 log_lines = "\n    ".join(log_res.stdout.strip().splitlines())
-                lines.append(f"- Commit Terakhir:\n    {log_lines}")
+                lines.append(f"- Recent Commits:\n    {log_lines}")
 
             # 4. Project verify commands
             verify_cmds = []
@@ -78,7 +78,7 @@ class PromptAssembler:
             if os.path.isfile(os.path.join(root_path, "test_general_agent.py")):
                 verify_cmds.append("python test_general_agent.py")
             if os.path.isfile(os.path.join(root_path, "pytest.ini")) or os.path.isdir(os.path.join(root_path, "backend", "tests")):
-                verify_cmds.append("pytest")
+                verify_cmds.append("python -m pytest")
             if os.path.isfile(os.path.join(root_path, "package.json")):
                 verify_cmds.append("npm test")
             if verify_cmds:
@@ -143,20 +143,18 @@ You are permitted to make file changes, run shell commands, and utilize your ars
 Execute the approved plan thoroughly, apply necessary modifications, and report the results to the user.
 </system-reminder>"""
 
-        # Slot 3: Tool Guidance & Permission Gate Rules
+        # Slot 3: Tool Guidance & Permission Gate Rules (Hermes Parity)
         slot3_tools = (
-            "[PANDUAN PEMANGGILAN ALAT & PERMISSION GATE]:\n"
-            "- PENALARAN INTENSI PENGGUNA (CONVERSATION VS ACTION — HERMES PARITY): Jika konteks obrolan adalah diskusi konseptual, tanya-jawab arsitektur, atau respons kelanjutan topik (misal 'oke lanjut', 'siap', 'lanjutkan'), jawablah secara MURNI dalam percakapan naratif yang cerdas dan tuntas. Dilarang memanggil alat terminal (seperti pytest, test runner, git) jika pengguna tidak secara eksplisit meminta eksekusi atau pengujian fisik.\n"
-            "- PEMBUKTIAN FAKTA BERBASIS GROUND-TRUTH (HERMES PARITY): Ketika pengguna bertanya apakah suatu implementasi, kode, atau subsistem sudah beres/selesai, DILARANG KERAS berasumsi atau menyimpulkan berdasarkan ingatan percakapan lama. Kamu wajib memverifikasi realitas nyata di repositori saat ini: periksa status berkas Git (terutama berkas baru '??' atau modifikasi 'M' yang tertera di info workspace di bawah), baca berkas implementasi terkini dengan 'read_local_file', dan jalankan perintah verifikasi pengujian proyek ('run_tests.py' / 'pytest') untuk membuktikan kebenaran dengan hasil pengujian nyata.\n"
-            "- INTEGRITAS REPOSITORI & PENGHAPUSAN TERTARGET (HERMES REPO-SAFETY): Workspace aktif adalah repositori kode sumber proyek nyata, BUKAN folder kosong sekali-pakai (disposable scratchpad). DILARANG KERAS menjalankan pembersihan massal sapu-jagat (seperti 'rm -rf *', 'Remove-Item * -Recurse', 'git clean -fdx') atau menimpa arsitektur proyek secara liar. Jika pengguna secara eksplisit meminta menghapus berkas tertentu, gunakan alat 'delete_local_file' secara spesifik dan tertarget pada berkas sasaran tersebut.\n"
-            "- Gunakan tools yang tersedia secara mandiri, akurat, dan tepat guna saat tindakan nyata memang dibutuhkan.\n"
-            "- KOMUNIKASI NATURAL & ZERO-CANNED (ANARA STANDARD): Berbicaralah dengan gaya Anara yang cerdas, hangat, luwes, dan lugas sesuai soul.md. DILARANG KERAS mengeluarkan kalimat kalengan pembuka robotik.\n"
-            "- PRINSIP KECUKUPAN EKSEKUSI (SUFFICIENT FULFILLMENT PRINCIPLE — ANARA STANDARD): Ketika suatu alat visual atau aksi telah berhasil memenuhi maksud esensial pengguna, segera selesaikan giliran tugas dengan respon akhir yang cerdas dan tuntas. Dilarang memicu eksekusi investigasi sekunder berlebihan kecuali diminta secara eksplisit.\n"
-            "- EKSPLORASI BERKAS & FOLDER MANDIRI (AUTONOMI READ-ONLY): Ketika pengguna meminta memeriksa folder, memeriksa berkas yang dipulihkan, atau melihat isi direktori, SELALU UTAMAKAN tools read-only langsung ('list_directory', 'scan_workspace_folder', 'glob_find_files', 'read_local_file') daripada terminal. Tindakan inspeksi atau pembacaan ini sepenuhnya aman dan dapat kamu jalankan langsung secara otonom tanpa meminta persetujuan pengguna.\n"
-            "- PENCARIAN & INSPEKSI KODE EFISIEN: Utamakan 'grep_search_code' dan 'glob_find_files' untuk mencari file atau teks kode. DILARANG KERAS menjalankan pencarian rekursif mentah ke folder 'venv', 'node_modules', '.git', '.next', atau 'cache' tanpa filter pengecualian.\n"
-            "- Di Plan Mode: Hanya gunakan tools read-only untuk membaca, menelusuri, dan merancang rencana kerja.\n"
-            "- Di Build Mode: Seluruh tools konstruksi, modifikasi berkas, dan terminal diizinkan penuh setelah rencana disetujui pengguna.\n"
-            "- Gunakan 'learn_and_save_skill' secara otonom ketika kamu merancang atau menemukan pola arsitektur baru yang bernilai untuk disimpan permanen ke database SQLite."
+            "[TOOL GUIDANCE & PERMISSION GATE RULES]:\n"
+            "- USER INTENT REASONING (CONVERSATION VS ACTION — HERMES PARITY): When the context is conceptual discussion, architectural Q&A, or conversational follow-up (e.g. 'ok proceed', 'yes', 'explain', 'what do you think?'), respond purely in natural conversational prose. Do NOT execute terminal commands or mutating tools unless the user explicitly requests physical execution or testing.\n"
+            "- GROUND-TRUTH FACT VERIFICATION (PEMBUKTIAN FAKTA BERBASIS GROUND-TRUTH — HERMES PARITY): When asked if an implementation, code, or subsystem is complete/fixed, NEVER assume or hallucinate from past conversation memory. Actively verify real workspace ground truth: inspect git status, read current code with 'read_local_file', and run project test verification commands ('run_tests.py' / 'pytest') to prove correctness with physical exit codes.\n"
+            "- REPOSITORY INTEGRITY & TARGETED DELETION (HERMES REPO-SAFETY): The workspace is an active source code repository, not a disposable scratchpad. NEVER execute destructive mass wipes ('rm -rf *', 'Remove-Item * -Recurse', 'git clean -fdx'). If the user explicitly requests deleting a specific file, use 'delete_local_file' targeted specifically at that file.\n"
+            "- AUTONOMOUS MULTI-TOOL EXECUTION: Invoke available tools accurately and proactively when physical actions are required.\n"
+            "- NATURAL COMMUNICATION & ZERO-CANNED RESPONSES: Speak in Anara's warm, direct, and empathetic persona. NEVER output robotic, canned opening formulas.\n"
+            "- SUFFICIENT FULFILLMENT PRINCIPLE: When a tool or visual action has fulfilled the user's essential intent, conclude your turn with a complete and helpful report. Avoid redundant secondary calls unless requested.\n"
+            "- AUTONOMOUS READ-ONLY EXPLORATION: Always prioritize direct read-only tools ('read_local_file', 'glob_find_files', 'grep_search_code', 'list_directory') over raw terminal commands for file inspection. These operations execute autonomously without prompting approval.\n"
+            "- PUSH-BUTTON SAFETY GATES: In Plan Mode, only read-only inspection tools are permitted. In Build Mode, full construction, file modifications, and terminal executions are authorized after user confirmation.\n"
+            "- MULTILINGUAL ADAPTATION (CRITICAL): Always respond in the user's active language (English if English, Bahasa Indonesia if Indonesian, 日本語 if Japanese, 한국어 if Korean, etc.)."
         )
 
         # Slot 4: Memory Snapshot (USER.md + MEMORY.md + SQLite Facts)
@@ -169,7 +167,7 @@ Execute the approved plan thoroughly, apply necessary modifications, and report 
         slot5_scratchpad = ""
         try:
             effective_sid = str(session_id) if session_id is not None else "default"
-            from cognition.memory_nudge import memory_nudge_manager
+            from memory.memory_nudge import memory_nudge_manager
             pad = memory_nudge_manager.get_scratchpad(effective_sid)
             rendered_pad = pad.render_to_prompt().strip()
             if rendered_pad:
@@ -202,19 +200,18 @@ Execute the approved plan thoroughly, apply necessary modifications, and report 
 
         slot7_project = (
             f"[LIVE WORKSPACE & REPOSITORY SNAPSHOT (HERMES GROUND-TRUTH)]:\n"
-            f"- Nama Project: {project_name}\n"
-            f"- Root Path Fisik: {root_path}\n"
+            f"- Project Name: {project_name}\n"
+            f"- Physical Root Path: {root_path}\n"
         )
         if git_snapshot:
             slot7_project += f"{git_snapshot}\n"
         if total_files > 0:
-            files_preview = ', '.join([f['path'] for f in (workspace_tree or {}).get('files', [])[:25]]) or '(Folder siap dibangun)'
-            slot7_project += f"- Berkas Terindeks ({total_files} total): {files_preview}\n"
+            files_preview = ', '.join([f['path'] for f in (workspace_tree or {}).get('files', [])[:25]]) or '(Empty / clean folder)'
+            slot7_project += f"- Indexed Files ({total_files} total): {files_preview}\n"
 
         slot7_project += (
-            "- PANDUAN KERJA WORKSPACE: Seluruh operasi membaca dan memodifikasi berkas "
-            "berada di dalam root proyek ini. Manfaatkan status berkas Git di atas sebagai bukti nyata "
-            "pekerjaan pengguna saat memverifikasi atau melanjutkan tugas."
+            "- WORKSPACE GUIDELINES: All file operations are confined within this project root. "
+            "Use the Git worktree status above as ground truth when verifying or resuming tasks."
         )
 
         # Scan for local AGENTS.md / CLAUDE.md / RULES.md in project root
@@ -230,6 +227,19 @@ Execute the approved plan thoroughly, apply necessary modifications, and report 
                                 break
                     except Exception:
                         pass
+
+        # Inject Episodic Architecture Decision Records (Hermes Parity: Pilar 3)
+        try:
+            from memory.episodic_adr import episodic_adr_manager
+            recent_adrs = episodic_adr_manager.get_recent_project_adrs(limit=4)
+            if recent_adrs:
+                adr_lines = [
+                    f"- [{a['created_at'][:10] if a.get('created_at') else 'ADR'}] {a['architecture_decision']} (Alasan: {a['rationale']})"
+                    for a in recent_adrs
+                ]
+                slot7_project += f"\n\n[REKAMAN KEPUTUSAN ARSITEKTUR TERDAHULU (EPISODIC ADR)]:\n" + "\n".join(adr_lines)
+        except Exception:
+            pass
 
         slots = [slot1_identity, slot2_mode, slot3_tools, slot4_memory]
         if slot5_scratchpad:

@@ -1,5 +1,6 @@
 """
 memory_nudge.py — Anara Autonomous Nudge & Scratchpad Engine.
+Hermes Parity: Subsystem 4 Working Memory & Proactive Consolidation.
 Tracks conversational turns per session and autonomously nudges the model
 to persist user preferences, memories, or newly created skills into SQLite,
 while maintaining a focused working-memory Scratchpad for multi-turn execution.

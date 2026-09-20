@@ -110,7 +110,7 @@ async def test_model_endpoint(req: TestModelRequest):
                 model_id=req.model_id,
                 user_prompt=req.user_prompt or "pong",
                 system_instruction="Reply with 1 short sentence.",
-                max_tokens=50,
+                max_tokens=None,
                 temperature=0.1
             ),
             timeout=12.0

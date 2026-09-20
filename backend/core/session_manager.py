@@ -132,12 +132,16 @@ class SessionStateManager:
     def get_pending(self, channel: str, channel_id: str) -> Optional[PendingAction]:
         key = self._make_key(channel, channel_id)
         action = self._pending.get(key)
-        if action and action.is_expired:
+        if not action:
+            return None
+
+        if action.is_expired:
             logger.info(f"[SessionManager] Pending action #{action.plan_id} has expired.")
             action.state = ActionState.EXPIRED
             self._recently_expired[key] = (action, time.time())
-            del self._pending[key]
+            self._pending.pop(key, None)
             return None
+
         return action
 
     def pop_recently_expired(self, channel: str, channel_id: str, max_age_seconds: float = 300.0) -> Optional[PendingAction]:
@@ -314,9 +318,10 @@ class SessionStateManager:
         """
         Evaluates incoming user message against session state.
         Returns {'has_pending': bool, 'is_approval': bool, 'pending': Optional[PendingAction]}
+        Only intercepts when an action is strictly in PENDING state awaiting user decision.
         """
         pending = self.get_pending(channel, channel_id)
-        if not pending:
+        if not pending or pending.state != ActionState.PENDING:
             return {"has_pending": False, "is_approval": False, "pending": None}
 
         # User sent a message while an action is pending

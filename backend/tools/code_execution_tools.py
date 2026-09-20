@@ -51,7 +51,7 @@ async def _tool_execute_code(
         elif lang in ("javascript", "node", "js"):
             cmd = ["node", temp_file_path]
         else:
-            return {"status": "error", "message": f"Bahasa '{lang}' belum didukung. Gunakan 'python' atau 'javascript'."}
+            return {"status": "error", "message": f"Language '{lang}' is not supported yet. Use 'python' or 'javascript'."}
 
         start_time = time.time()
         from core.sandbox import get_sanitized_environment
@@ -78,7 +78,7 @@ async def _tool_execute_code(
                 "status": "error",
                 "exit_code": -1,
                 "timed_out": True,
-                "message": f"Eksekusi kode melebihi batas waktu ({timeout} detik). Proses dihentikan secara paksa."
+                "message": f"Code execution timed out after safety threshold ({timeout}s)."
             }
 
         elapsed = round(time.time() - start_time, 3)
@@ -93,12 +93,12 @@ async def _tool_execute_code(
             "stdout": stdout_str,
             "stderr": stderr_str,
             "elapsed_seconds": elapsed,
-            "message": f"Eksekusi selesai dalam {elapsed}s dengan kode status {proc.returncode}."
+            "message": f"Execution completed in {elapsed}s with returncode {proc.returncode}."
         }
 
     except Exception as e:
         logger.warning(f"[CodeExecution] Execution error: {e}")
-        return {"status": "error", "message": f"Gagal mengeksekusi kode: {str(e)}"}
+        return {"status": "error", "message": f"Failed to execute code: {str(e)}"}
     finally:
         if os.path.exists(temp_file_path):
             try:

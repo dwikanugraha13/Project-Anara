@@ -14,7 +14,7 @@ async def _tool_gmail_read_inbox(limit: int = 5) -> Dict[str, Any]:
     from integrations import get_unread_emails, get_google_status
     st = await get_google_status()
     if st.get("status") != "connected":
-        return {"status": "error", "message": "Akun Google Workspace belum ditautkan."}
+        return {"status": "error", "message": "Google Workspace account is not connected."}
     emails = await get_unread_emails(limit=limit)
     return {"status": "success", "emails": emails}
 
@@ -23,7 +23,7 @@ async def _tool_calendar_get_schedule(days: int = 3) -> Dict[str, Any]:
     from integrations import get_upcoming_events, get_google_status
     st = await get_google_status()
     if st.get("status") != "connected":
-        return {"status": "error", "message": "Akun Google Workspace belum ditautkan."}
+        return {"status": "error", "message": "Google Workspace account is not connected."}
     events = await get_upcoming_events(days=days)
     return {"status": "success", "events": events}
 

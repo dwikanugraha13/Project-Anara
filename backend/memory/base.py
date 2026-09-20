@@ -6,10 +6,12 @@ import os
 import sqlite3
 from typing import Optional, Dict, Any, List, Tuple, Callable
 
+from constants import get_anara_db_path
+
 logger = logging.getLogger(__name__)
 
-# DB Path resolves to backend/anara_brain.db
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "anara_brain.db")
+# DB Path resolves to canonical ANARA_HOME/anara_brain.db (Hermes Parity)
+DB_PATH = get_anara_db_path()
 
 MAX_VOICE_SAMPLES = 30          # sample counter cap per profile (voiceprint considered mature)
 MATURE_ADAPT_INTERVAL = 600.0   # seconds; mature profiles adapt at most once per 10 minutes

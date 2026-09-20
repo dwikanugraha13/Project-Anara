@@ -80,12 +80,12 @@ def check_command_safety(command: str) -> Tuple[bool, Optional[str]]:
     """
     cmd_lower = (command or "").lower().strip()
     if not cmd_lower:
-        return False, "Perintah kosong"
+        return False, "Command string cannot be empty."
 
     for pattern in HOST_TAKEOVER_PATTERNS:
         if re.search(pattern, cmd_lower):
             logger.warning(f"[SandboxSecurity] Blocked dangerous command pattern: {pattern} in '{command}'")
-            return False, f"DITOLAK SISTEM KEAMANAN (SANDBOX): Perintah '{command}' terdeteksi memicu modifikasi sistem berisiko tinggi."
+            return False, f"SANDBOX SECURITY ERROR: Command '{command}' triggered high-risk host takeover restrictions."
 
     return True, None
 
@@ -142,15 +142,17 @@ class CommandSandbox:
         if env_overrides:
             clean_env.update(env_overrides)
 
-        # 4. Command assembly
+        # 4. Command assembly (Hermes Windows Parity: Base64 UTF-16LE -EncodedCommand)
         if os.name == "nt":
+            import base64
+            ps_script = f"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; {command}"
+            encoded_cmd = base64.b64encode(ps_script.encode("utf-16le")).decode("ascii")
             exec_args = [
                 "powershell.exe",
                 "-NoProfile",
                 "-NonInteractive",
                 "-ExecutionPolicy", "Bypass",
-                "-Command",
-                f"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; {command}"
+                "-EncodedCommand", encoded_cmd
             ]
             use_shell = False
         else:
@@ -205,7 +207,7 @@ class CommandSandbox:
                 raise
             return {
                 "status": "timeout",
-                "output": f"Perintah terputus karena melebihi batas waktu aman ({timeout_seconds} detik).",
+                "output": f"Command execution timed out after safety threshold ({timeout_seconds} seconds).",
                 "exit_code": -1,
                 "sandboxed": True,
                 "timed_out": True,
@@ -217,7 +219,7 @@ class CommandSandbox:
                 cls._kill_process_tree(proc.pid)
             return {
                 "status": "error",
-                "output": f"Kesalahan internal sandbox: {str(e) or type(e).__name__}",
+                "output": f"Internal sandbox error: {str(e) or type(e).__name__}",
                 "exit_code": -1,
                 "sandboxed": True,
                 "timed_out": False,

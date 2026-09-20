@@ -99,12 +99,12 @@ async def _tool_read_local_file(file_path: str, offset: Optional[int] = None, li
     """
     path = (file_path or "").strip().strip('"\'')
     if not path:
-        return {"status": "error", "message": "Path file kosong"}
+        return {"status": "error", "message": "file_path parameter cannot be empty."}
 
     action_detail = f"{os.path.basename(path)}" + (f" offset={offset} limit={limit}" if offset else "")
     _emit_agent_event("agent_action_start", {
         "tool_name": "read_local_file",
-        "action_title": "Baca",
+        "action_title": "Read File",
         "detail": action_detail,
         "filename": os.path.basename(path),
         "icon": "file"
@@ -113,7 +113,7 @@ async def _tool_read_local_file(file_path: str, offset: Optional[int] = None, li
     try:
         target_file = _resolve_local_file_path(path)
         if not target_file:
-            res_msg = f"File '{os.path.basename(path)}' tidak ditemukan di path komputer. Periksa path berkas atau gunakan 'glob_find_files' / 'list_directory' untuk mencarinya."
+            res_msg = f"File '{os.path.basename(path)}' not found in workspace / tidak ditemukan di path komputer. Verify path or use 'glob_find_files' / 'list_directory' to locate it."
             return {
                 "status": "not_found",
                 "is_error": False,
@@ -186,20 +186,25 @@ async def _tool_edit_file(
     """Selectively edits an existing code or document file in-place by exact string replacement."""
     path = (file_path or "").strip().strip('"\'')
     if not path:
-        return {"status": "error", "message": "file_path tidak boleh kosong."}
+        return {"status": "error", "message": "file_path parameter cannot be empty."}
     if not old_string:
-        return {"status": "error", "message": "old_string tidak boleh kosong."}
+        return {"status": "error", "message": "old_string parameter cannot be empty."}
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "edit_file",
-        "action_title": "Menyunting Berkas",
+        "action_title": "Edit File",
         "detail": f"File: {os.path.basename(path)}",
         "icon": "edit"
     })
 
     target_file = _resolve_local_file_path(path)
     if not target_file:
-        return {"status": "error", "message": f"Berkas '{path}' tidak ditemukan. Pastikan berkas sudah ada sebelum disunting."}
+        return {"status": "error", "message": f"File '{path}' not found / tidak ditemukan. Ensure the file exists before editing."}
+
+    from core.workspace_sentinel import workspace_sentinel
+    is_safe, denial_msg = workspace_sentinel.validate_file_access(target_file, action="edit")
+    if not is_safe:
+        return {"status": "error", "message": denial_msg or "File edit access restricted by Workspace Sentinel."}
 
     try:
         from core import anara_agent
@@ -212,8 +217,8 @@ async def _tool_edit_file(
             return {
                 "status": "error",
                 "message": (
-                    f"old_string tidak ditemukan di dalam berkas '{os.path.basename(target_file)}'. "
-                    "Pastikan teks yang ingin diganti cocok persis dengan isi berkas saat dibaca."
+                    f"old_string not found in file '{os.path.basename(target_file)}'. "
+                    "Ensure the text to replace matches exactly including indentation and whitespace."
                 )
             }
 
@@ -222,8 +227,8 @@ async def _tool_edit_file(
             return {
                 "status": "error",
                 "message": (
-                    f"Ditemukan {count} kecocokan untuk old_string. "
-                    "Sertakan beberapa baris kode di sekitarnya agar unik, atau setel replace_all=True."
+                    f"Found {count} matches for old_string in '{os.path.basename(target_file)}'. "
+                    "Provide more surrounding lines to uniquely identify the block, or set replace_all=True."
                 )
             }
 
@@ -234,6 +239,11 @@ async def _tool_edit_file(
 
         with open(target_file, "w", encoding="utf-8") as f:
             f.write(new_content)
+
+        # Ground-Truth Read-Back Verification (Hermes Parity)
+        read_back = workspace_sentinel.verify_read_back(target_file, expected_snippet=new_string[:80] if len(new_string) > 5 else new_string)
+        if not read_back.get("verified"):
+            logger.warning(f"[WorkspaceSentinel] Post-edit read-back warning for '{target_file}': {read_back.get('error')}")
 
         old_lines = old_string.splitlines()
         new_lines = new_string.splitlines()
@@ -281,6 +291,31 @@ async def _tool_edit_file(
             "size_kb": size_kb,
         })
 
+        # Emit real-time telemetry event for Code Studio Live Split-Diff (Pilar 2)
+        try:
+            from telemetry.event_bus import telemetry_bus, EventType, ActivityProvenance
+            loop = asyncio.get_running_loop()
+            loop.create_task(
+                telemetry_bus.emit(
+                    event_type=EventType.FILE_MODIFIED,
+                    provenance=ActivityProvenance.TOOL_RUNNER,
+                    session_id=str(anara_agent.get_active_session_id() or "default"),
+                    trace_id=f"tr_{filename}",
+                    payload={
+                        "action": "edit",
+                        "file_path": target_file,
+                        "filename": filename,
+                        "diff": diff_str[:5000],
+                        "added_lines": added,
+                        "deleted_lines": deleted,
+                        "size_kb": size_kb,
+                        "git_commit": git_commit_sha,
+                    }
+                )
+            )
+        except (RuntimeError, Exception):
+            pass
+
         return {
             "status": "success",
             "file_path": target_file,
@@ -289,19 +324,19 @@ async def _tool_edit_file(
             "deleted_lines": deleted,
             "checkpoint_id": checkpoint_id,
             "git_commit": git_commit_sha,
-            "message": f"Berkas '{filename}' berhasil diperbarui (+{added} -{deleted} baris)" + (f" [commit {git_commit_sha}]." if git_commit_sha else "."),
+            "message": f"File '{filename}' updated successfully (+{added} -{deleted} lines)" + (f" [commit {git_commit_sha}]." if git_commit_sha else "."),
             "diff": diff_str[:1000]
         }
     except Exception as e:
         logger.warning(f"[AgentTools] Edit file error: {e}")
-        return {"status": "error", "message": f"Gagal menyunting berkas: {e}"}
+        return {"status": "error", "message": f"Failed to edit file: {e}"}
 
 
 async def _tool_write_local_file(file_path: str, content: str) -> Dict[str, Any]:
     """Creates or updates a file locally on the computer (Desktop or workspace)."""
     raw_path = (file_path or "").strip().strip('"\'')
     if not raw_path:
-        return {"status": "error", "message": "Path file kosong"}
+        return {"status": "error", "message": "file_path parameter cannot be empty."}
 
     if raw_path.lower().endswith(".pdf") or raw_path.lower().endswith(".docx"):
         from .artifact_tools import _tool_generate_file_artifact
@@ -320,13 +355,19 @@ async def _tool_write_local_file(file_path: str, content: str) -> Dict[str, Any]
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "write_local_file",
-        "action_title": "Menulis File",
+        "action_title": "Write File",
         "detail": f"File: {os.path.basename(raw_path)}",
-        "icon": "file"
+        "icon": "file-plus"
     })
 
     try:
         from core import anara_agent
+        from core.workspace_sentinel import workspace_sentinel
+
+        is_safe, denial_msg = workspace_sentinel.validate_file_access(raw_path, action="write")
+        if not is_safe:
+            return {"status": "error", "message": denial_msg or "Akses penulisan berkas ditolak oleh Workspace Sentinel."}
+
         active_f = anara_agent.get_session_dir()
         has_custom = anara_agent.has_active_custom_workspace()
         checkpoint_id = anara_agent.create_checkpoint(None)
@@ -354,6 +395,11 @@ async def _tool_write_local_file(file_path: str, content: str) -> Dict[str, Any]
         anara_agent.ensure_git_repo(None)
         with open(target_path, "w", encoding="utf-8") as f:
             f.write(content)
+
+        # Ground-Truth Read-Back Verification (Hermes Parity)
+        read_back = workspace_sentinel.verify_read_back(target_path, expected_snippet=content[:80] if len(content) > 5 else content)
+        if not read_back.get("verified"):
+            logger.warning(f"[WorkspaceSentinel] Post-write read-back warning for '{target_path}': {read_back.get('error')}")
 
         file_ext = os.path.splitext(target_path)[1]
         filename = os.path.basename(target_path)
@@ -387,9 +433,31 @@ async def _tool_write_local_file(file_path: str, content: str) -> Dict[str, Any]
             "size_kb": size_kb,
         })
 
+        # Emit real-time telemetry event for Code Studio Live Split-Diff (Pilar 2)
+        try:
+            from telemetry.event_bus import telemetry_bus, EventType, ActivityProvenance
+            loop = asyncio.get_running_loop()
+            loop.create_task(
+                telemetry_bus.emit(
+                    event_type=EventType.FILE_MODIFIED,
+                    provenance=ActivityProvenance.TOOL_RUNNER,
+                    session_id=str(anara_agent.get_active_session_id() or "default"),
+                    trace_id=f"tr_{filename}",
+                    payload={
+                        "action": "write",
+                        "file_path": target_path,
+                        "filename": filename,
+                        "size_kb": size_kb,
+                        "git_commit": git_commit_sha,
+                    }
+                )
+            )
+        except (RuntimeError, Exception):
+            pass
+
         return {
             "status": "success",
-            "message": f"File berhasil ditulis ke '{target_path}'" + (f" [commit {git_commit_sha}]." if git_commit_sha else "."),
+            "message": f"File written successfully to '{target_path}'" + (f" [commit {git_commit_sha}]." if git_commit_sha else "."),
             "file_path": target_path,
             "checkpoint_id": checkpoint_id,
             "git_commit": git_commit_sha,
@@ -397,7 +465,7 @@ async def _tool_write_local_file(file_path: str, content: str) -> Dict[str, Any]
         }
     except Exception as e:
         logger.warning(f"[AgentTools] Write file error: {e}")
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": f"Failed to write file: {e}"}
 
 
 async def _tool_delete_local_file(file_path: str) -> Dict[str, Any]:
@@ -407,28 +475,27 @@ async def _tool_delete_local_file(file_path: str) -> Dict[str, Any]:
     """
     raw_path = (file_path or "").strip().strip('"\'')
     if not raw_path:
-        return {"status": "error", "message": "Path berkas yang akan dihapus tidak boleh kosong."}
+        return {"status": "error", "message": "file_path parameter cannot be empty."}
 
     # 1. Blind wildcard & path traversal guard
     if any(wc in raw_path for wc in ("*", "?", "..")):
         return {
             "status": "error",
-            "message": f"Ditolak: Karakter wildcard atau path traversal ('{raw_path}') tidak diizinkan untuk penghapusan."
+            "message": f"Rejected: Wildcard characters or directory traversal ('{raw_path}') are forbidden for deletion."
         }
 
-    # 2. Critical file immunity
+    # 2. Critical file immunity via WorkspaceSentinel
+    from core.workspace_sentinel import workspace_sentinel
+    is_safe, denial_msg = workspace_sentinel.validate_file_access(raw_path, action="delete")
+    if not is_safe:
+        return {"status": "error", "message": denial_msg or f"Ditolak: Akses penghapusan '{raw_path}' diblokir oleh Workspace Sentinel."}
+
     norm_path = raw_path.replace("\\", "/").lower()
-    protected_basenames = {".git", "anara_brain.db", ".env"}
     target_base = os.path.basename(norm_path)
-    if target_base in protected_basenames or "/.git" in norm_path:
-        return {
-            "status": "error",
-            "message": f"Ditolak: Berkas vital sistem '{target_base}' dilindungi dan tidak dapat dihapus."
-        }
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "delete_local_file",
-        "action_title": "Menghapus Berkas",
+        "action_title": "Delete File",
         "detail": f"File: {target_base}",
         "icon": "trash"
     })
@@ -437,10 +504,10 @@ async def _tool_delete_local_file(file_path: str) -> Dict[str, Any]:
         from core import anara_agent
         resolved = _resolve_local_file_path(raw_path)
         if not resolved or not os.path.exists(resolved):
-            return {"status": "error", "message": f"Berkas '{raw_path}' tidak ditemukan di komputer."}
+            return {"status": "error", "message": f"File '{raw_path}' not found / tidak ditemukan."}
 
         if os.path.isdir(resolved):
-            return {"status": "error", "message": f"'{raw_path}' adalah direktori, bukan berkas. Alat ini hanya menghapus berkas tunggal."}
+            return {"status": "error", "message": f"'{raw_path}' is a directory, not a file. This tool only deletes individual files."}
 
         # Create checkpoint before deletion
         checkpoint_id = anara_agent.create_checkpoint(None)
@@ -453,8 +520,8 @@ async def _tool_delete_local_file(file_path: str) -> Dict[str, Any]:
 
         _emit_agent_event("agent_action_complete", {
             "tool_name": "delete_local_file",
-            "action_title": "Berkas Dihapus",
-            "summary": f"Berkas '{target_base}' berhasil dihapus.",
+            "action_title": "File Deleted",
+            "summary": f"File '{target_base}' deleted successfully.",
             "file_path": resolved,
             "filename": target_base,
             "checkpoint_id": checkpoint_id,
@@ -469,7 +536,7 @@ async def _tool_delete_local_file(file_path: str) -> Dict[str, Any]:
 
         return {
             "status": "success",
-            "message": f"Berkas '{target_base}' berhasil dihapus." + (f" [commit {git_commit_sha}]." if git_commit_sha else "."),
+            "message": f"File '{target_base}' deleted successfully." + (f" [commit {git_commit_sha}]." if git_commit_sha else "."),
             "file_path": resolved,
             "filename": target_base,
             "checkpoint_id": checkpoint_id,
@@ -477,7 +544,7 @@ async def _tool_delete_local_file(file_path: str) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.warning(f"[AgentTools] Delete file error: {e}")
-        return {"status": "error", "message": f"Gagal menghapus berkas: {e}"}
+        return {"status": "error", "message": f"Failed to delete file: {e}"}
 
 
 async def _tool_list_directory(directory_path: Optional[str] = None) -> Dict[str, Any]:
@@ -490,14 +557,14 @@ async def _tool_list_directory(directory_path: Optional[str] = None) -> Dict[str
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "list_directory",
-        "action_title": "Menjelajah Direktori",
+        "action_title": "List Directory",
         "detail": f"Folder: {os.path.basename(target_dir) or target_dir}",
-        "icon": "📂"
+        "icon": "folder"
     })
 
     try:
         if not os.path.exists(target_dir):
-            return {"status": "error", "message": f"Direktori '{target_dir}' tidak ditemukan"}
+            return {"status": "error", "message": f"Directory '{target_dir}' was not found."}
 
         entries = []
         for name in os.listdir(target_dir)[:40]:
@@ -512,9 +579,9 @@ async def _tool_list_directory(directory_path: Optional[str] = None) -> Dict[str
 
         _emit_agent_event("agent_action_complete", {
             "tool_name": "list_directory",
-            "action_title": "Isi Direktori Terbaca",
-            "summary": f"Ditemukan {len(entries)} file & folder.",
-            "icon": "📂"
+            "action_title": "Directory Listed",
+            "summary": f"Found {len(entries)} files & folders.",
+            "icon": "folder"
         })
 
         return {
@@ -525,6 +592,7 @@ async def _tool_list_directory(directory_path: Optional[str] = None) -> Dict[str
         }
     except Exception as e:
         logger.warning(f"[AgentTools] List dir error: {e}")
+        return {"status": "error", "message": f"Failed to list directory: {e}"}
         return {"status": "error", "message": str(e)}
 
 
@@ -535,9 +603,9 @@ async def _tool_scan_workspace_folder(folder_path: str) -> Dict[str, Any]:
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "scan_workspace_folder",
-        "action_title": "Memindai Pohon Proyek",
+        "action_title": "Scan Workspace Folder",
         "detail": f"Folder: {os.path.basename(target_dir)}",
-        "icon": "📁"
+        "icon": "folder"
     })
 
     IGNORED_DIRS = {".git", "node_modules", "venv", "__pycache__", ".next", "dist", "build", ".vscode"}
@@ -546,7 +614,7 @@ async def _tool_scan_workspace_folder(folder_path: str) -> Dict[str, Any]:
 
     try:
         if not os.path.exists(target_dir):
-            return {"status": "error", "message": f"Folder '{target_dir}' tidak ditemukan"}
+            return {"status": "error", "message": f"Folder '{target_dir}' was not found."}
 
         for root, dirs, files in os.walk(target_dir):
             dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]

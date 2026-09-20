@@ -77,7 +77,7 @@ KEMBALIKAN HANYA JSON VALID:
                 call_universal_chat_model(
                     model_id=aux_model,
                     user_prompt=prompt,
-                    max_tokens=350,
+                    max_tokens=None,
                     temperature=0.2,
                     read_only=True
                 ),
@@ -88,12 +88,21 @@ KEMBALIKAN HANYA JSON VALID:
                 return None
 
             raw_str = raw.strip()
-            json_match = re.search(r"\{.*\}", raw_str, re.DOTALL)
-            if not json_match:
-                return None
+            from providers.caller import _extract_json_balanced, _robust_parse_json
 
-            data = json.loads(json_match.group(0))
-            if not data.get("is_reusable") or not data.get("name"):
+            data = None
+            for candidate, _, _ in _extract_json_balanced(raw_str):
+                parsed = _robust_parse_json(candidate)
+                if isinstance(parsed, dict) and "is_reusable" in parsed:
+                    data = parsed
+                    break
+
+            if not data:
+                parsed = _robust_parse_json(raw_str)
+                if isinstance(parsed, dict) and "is_reusable" in parsed:
+                    data = parsed
+
+            if not data or not data.get("is_reusable") or not data.get("name"):
                 return None
 
             skill_name = data["name"].strip()

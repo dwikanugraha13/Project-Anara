@@ -129,6 +129,25 @@ def get_active_model_id() -> str:
     return "gemini-2.5-flash"
 
 
+def get_fallback_model_id() -> str:
+    """
+    Returns the fallback model ID dynamically configured in config or settings.
+    Hermes Parity: Model fallback ladder is opt-in and dynamic.
+    """
+    from memory import memory_engine
+    saved = memory_engine.get_app_setting("fallback_ai_model")
+    if saved and saved.strip():
+        return saved.strip()
+    try:
+        from config import cfg_get
+        conf = cfg_get("model.fallback") or cfg_get("model.default")
+        if conf and str(conf).strip():
+            return str(conf).strip()
+    except Exception:
+        pass
+    return get_active_model_id()
+
+
 def set_active_model_id(model_id: str) -> bool:
     """Sets and persists the active model ID."""
     from memory import memory_engine

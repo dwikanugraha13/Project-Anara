@@ -86,7 +86,7 @@ async def _tool_video_generate(
 
                         _emit_agent_event("hud_project", {
                             "type": "video",
-                            "title": f"Video AI: {clean_prompt[:40]}",
+                            "title": f"AI Video: {clean_prompt[:40]}",
                             "video_url": video_url,
                             "local_path": local_path if os.path.isfile(local_path) else None,
                             "aspect_ratio": aspect_ratio
@@ -97,7 +97,7 @@ async def _tool_video_generate(
                             "provider": "fal-ai",
                             "video_url": video_url,
                             "local_file": local_path if os.path.isfile(local_path) else None,
-                            "message": f"Video berhasil dibuat dan diproyeksikan ke HUD: {video_url}"
+                            "message": f"Video generated successfully via Fal.ai and projected to HUD: {video_url}"
                         }
         except Exception as e:
             logger.warning(f"[VideoTools] Fal.ai generation failed: {e}")
@@ -122,7 +122,7 @@ async def _tool_video_generate(
 
     _emit_agent_event("hud_project", {
         "type": "video",
-        "title": f"Video AI: {clean_prompt[:40]}",
+        "title": f"AI Video: {clean_prompt[:40]}",
         "video_url": pollinations_video_url,
         "local_path": local_path if os.path.isfile(local_path) else None,
         "aspect_ratio": aspect_ratio
@@ -135,5 +135,5 @@ async def _tool_video_generate(
         "local_file": local_path if os.path.isfile(local_path) else None,
         "aspect_ratio": aspect_ratio,
         "duration": duration,
-        "message": f"Video AI berhasil dibuat dan diproyeksikan ke HUD: {pollinations_video_url}"
+        "message": f"AI Video generated successfully via CogVideoX and projected to HUD: {pollinations_video_url}"
     }

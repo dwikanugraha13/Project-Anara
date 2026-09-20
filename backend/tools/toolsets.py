@@ -5,6 +5,7 @@ Groups Anara's tools into 24 cohesive, togglable toolsets with persistent status
 
 import json
 import logging
+import re
 from typing import Dict, List, Any, Optional, Set
 
 logger = logging.getLogger(__name__)
@@ -85,8 +86,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
         "default_enabled": True,
         "tools": [
             "learn_and_save_skill",
-            "skill_view",
-            "skills_hub_manage"
+            "skill_view"
         ]
     },
     "task_delegation": {
@@ -342,12 +342,20 @@ def get_toolsets_status() -> List[Dict[str, Any]]:
         except Exception:
             saved_map = {}
 
+    try:
+        from tools.registry import registry
+        mapping = registry.get_toolsets_mapping()
+    except Exception:
+        mapping = {}
+
     result = []
     for ts_id, ts in ANARA_TOOLSETS.items():
         is_enabled = saved_map.get(ts_id, ts.get("default_enabled", True))
         item = dict(ts)
+        dyn_tools = mapping.get(ts_id) or ts.get("tools", [])
+        item["tools"] = dyn_tools
         item["enabled"] = bool(is_enabled)
-        item["tool_count"] = len(ts.get("tools", []))
+        item["tool_count"] = len(dyn_tools)
         result.append(item)
 
     return result
@@ -379,7 +387,7 @@ def toggle_toolset(toolset_id: str, enabled: Optional[bool] = None) -> bool:
 
 
 def get_enabled_tool_names() -> Set[str]:
-    """Returns the set of tool names whose toolsets are currently enabled."""
+    """Returns the set of tool names whose toolsets are currently enabled (Hermes Parity)."""
     from memory import memory_engine
 
     setting_val = memory_engine.get_app_setting("toolsets_enabled_map")
@@ -390,11 +398,136 @@ def get_enabled_tool_names() -> Set[str]:
         except Exception:
             saved_map = {}
 
+    try:
+        from tools.registry import registry
+        mapping = registry.get_toolsets_mapping()
+    except Exception:
+        mapping = {}
+
     enabled_tools: Set[str] = set()
     for ts_id, ts in ANARA_TOOLSETS.items():
         is_enabled = saved_map.get(ts_id, ts.get("default_enabled", True))
         if is_enabled:
-            for t in ts.get("tools", []):
+            dyn_tools = mapping.get(ts_id) or ts.get("tools", [])
+            for t in dyn_tools:
                 enabled_tools.add(t)
 
     return enabled_tools
+
+
+# ── Surface-specific toolset filtering (Hermes Parity: _HERMES_CORE_TOOLS) ──
+CORE_TOOLS: List[str] = [
+    "read_local_file",
+    "edit_file",
+    "write_local_file",
+    "delete_local_file",
+    "glob_find_files",
+    "grep_search_code",
+    "list_directory",
+    "execute_cli_command",
+    "process_manage",
+    "computer_use",
+    "take_screenshot",
+    "vision_analyze",
+    "system_control",
+    "web_search",
+    "web_search_images",
+    "fetch_webpage",
+    "send_document_file",
+    "generate_file_artifact",
+    "create_zip_archive",
+    "memory",
+    "manage_memory_and_todos",
+    "skill_view",
+    "learn_and_save_skill",
+    "interactive_question",
+    "session_search",
+    "delegate_subagent",
+    "manage_scratchpad",
+]
+
+PLATFORM_ALIASES: Dict[str, str] = {
+    "terminal": "cli",
+    "bash": "cli",
+    "powershell": "cli",
+    "web": "web_studio",
+    "code": "web_studio",
+    "studio": "web_studio",
+    "voice": "voice_hud",
+    "hud": "voice_hud",
+    "avatar": "voice_hud",
+    "tele": "telegram",
+    "wa": "whatsapp",
+}
+
+
+class PlatformToolRegistry:
+    """Dynamic tool resolution (Hermes Parity: all platforms share the universal core tool bundle)."""
+
+    @classmethod
+    def resolve_platform_key(cls, platform: Optional[str]) -> str:
+        clean = (platform or "cli").strip().lower()
+        return PLATFORM_ALIASES.get(clean, clean)
+
+    @classmethod
+    def get_tools_for_platform(
+        cls,
+        platform: Optional[str] = None,
+        user_task: Optional[str] = None,
+        extra_tools: Optional[List[str]] = None,
+    ) -> Set[str]:
+        """
+        Resolves active tool names for a specific platform surface and user context.
+        All messaging platforms and CLI share the unified core tool suite.
+        Specialized developer affordances (Kanban, HUD) and smart-home controls expand on-demand.
+        """
+        p_key = cls.resolve_platform_key(platform)
+
+        # Hermes Parity: Base shared suite across all platforms
+        active_tools: Set[str] = set(CORE_TOOLS)
+
+        # Web Studio / Code Station: Developer workspace affordances
+        if p_key in ("web_studio", "code", "studio"):
+            active_tools.update([
+                "scan_workspace_folder",
+                "project_hud",
+                "kanban_create_task",
+                "kanban_list_tasks",
+                "kanban_update_task",
+                "kanban_request_review",
+            ])
+
+        # Voice HUD / 3D Avatar: Voice-first media controls
+        if p_key in ("voice_hud", "voice", "audio"):
+            active_tools.update([
+                "spotify_playback",
+                "spotify_search",
+                "ha_list_entities",
+                "ha_call_service",
+                "ha_get_state",
+                "trigger_avatar_animation",
+                "project_hud",
+            ])
+
+        # Dynamic On-Demand Tool Expansion (Hermes Parity: zero static keyword regexes)
+        if user_task:
+            try:
+                from tools.registry import registry
+                task_tokens = set(re.findall(r"\w+", str(user_task).lower()))
+                for name, tool_def in registry._tools.items():
+                    name_segments = set(name.lower().split("_"))
+                    cat_segments = set(tool_def.category.lower().split("_")) if getattr(tool_def, "category", None) else set()
+                    ts_segments = set(tool_def.toolset.lower().split("_")) if getattr(tool_def, "toolset", None) else set()
+                    if (name_segments | cat_segments | ts_segments) & task_tokens:
+                        active_tools.add(name)
+            except Exception:
+                pass
+
+        if extra_tools:
+            active_tools.update(extra_tools)
+
+        return active_tools
+
+
+# Alias for backward compatibility
+PlatformToolFilter = PlatformToolRegistry

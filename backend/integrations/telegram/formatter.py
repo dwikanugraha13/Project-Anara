@@ -172,7 +172,7 @@ def has_rich_telegram_constructs(text: str) -> bool:
     return False
 
 
-def split_message_chunks(text: str, max_chars: int = 3000, add_part_headers: bool = True) -> List[str]:
+def split_message_chunks(text: str, max_chars: int = 2200, add_part_headers: bool = True) -> List[str]:
     """
     Semantic code-block-aware message chunker for Telegram (Anara Standard).
     Splits long messages along paragraph and newline boundaries without breaking markdown code blocks.
