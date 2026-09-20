@@ -16,6 +16,8 @@ from .accounts import (
     delete_provider_account,
     save_provider_api_key,
     get_providers_status_list_async,
+    has_any_active_provider,
+    sync_env_to_accounts,
 )
 from .discovery import (
     fetch_gemini_models,
@@ -51,6 +53,8 @@ __all__ = [
     "delete_provider_account",
     "save_provider_api_key",
     "get_providers_status_list_async",
+    "has_any_active_provider",
+    "sync_env_to_accounts",
     "fetch_gemini_models",
     "fetch_codex_models",
     "refresh_codex_oauth_token_if_needed",

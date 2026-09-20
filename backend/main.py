@@ -43,7 +43,8 @@ from websocket.handler import router as websocket_router
 
 from core.logger import setup_anara_logging
 
-load_dotenv()
+from constants import load_universal_env
+load_universal_env()
 
 # Initialize enterprise rotating file & console logger (Hermes Parity)
 setup_anara_logging()
@@ -74,6 +75,13 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(ModelCapabilityRegistry.refresh())
     except Exception as e:
         logger.warning(f"[Startup] Capability warmup skipped: {e}")
+
+    # Universal .env to SQLite accounts synchronization (Hermes Parity)
+    try:
+        from providers.accounts import sync_env_to_accounts
+        sync_env_to_accounts()
+    except Exception as e:
+        logger.warning(f"[Startup] Env-to-accounts synchronization error: {e}")
 
     # Seed 9Router Proxy automatically if not configured
     try:

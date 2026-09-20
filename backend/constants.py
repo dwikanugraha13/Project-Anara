@@ -143,3 +143,49 @@ def prune_stale_staging_files(max_age_days: int = 7) -> int:
                 pass
 
     return pruned_count
+
+
+def get_anara_env_file() -> Optional[Path]:
+    """
+    Universal .env discovery (Hermes Parity):
+    1. User Runtime .env: %LOCALAPPDATA%/anara/.env (or ~/.anara/.env)
+    2. In-tree backend/.env
+    3. Workspace root .env
+    Returns the first existing path, or None.
+    """
+    candidates = [
+        get_anara_home() / ".env",
+        Path(__file__).resolve().parent / ".env",
+        Path(__file__).resolve().parent.parent / ".env",
+    ]
+    for c in candidates:
+        if c.is_file():
+            return c
+    return None
+
+
+def load_universal_env() -> None:
+    """
+    Loads environment variables from discovered .env locations.
+    Loads project default .env first, then overlays with user runtime .env (%LOCALAPPDATA%/anara/.env)
+    so user-level overrides always take precedence cleanly and safely.
+    """
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+
+    # 1. Project level base (backend/.env)
+    project_env = Path(__file__).resolve().parent / ".env"
+    if project_env.is_file():
+        load_dotenv(project_env, override=False)
+
+    # 2. Workspace root level (.env)
+    root_env = Path(__file__).resolve().parent.parent / ".env"
+    if root_env.is_file():
+        load_dotenv(root_env, override=False)
+
+    # 3. User runtime level (%LOCALAPPDATA%/anara/.env or ~/.anara/.env) — highest precedence
+    user_env = get_anara_home() / ".env"
+    if user_env.is_file():
+        load_dotenv(user_env, override=True)

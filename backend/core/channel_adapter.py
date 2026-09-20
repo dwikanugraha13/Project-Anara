@@ -599,6 +599,50 @@ async def _process_channel_request_core(
             )
         return cmd_response
 
+    # 4. First-Run Onboarding Guard (Hermes Multi-User Parity):
+    # If the user or fresh installer has not yet configured ANY provider or key,
+    # warmly guide them with multilingual options rather than failing or crashing.
+    from providers import has_any_active_provider
+    if not has_any_active_provider():
+        logger.warning("[ChannelGateway] No active AI model provider configured. Triggering First-Run Onboarding Guide.")
+        clean_lower = clean_text.lower()
+        en_words = ("what", "how", "why", "where", "when", "can", "please", "check", "does", "is", "hi", "hello", "setup", "start")
+        id_words = ("apakah", "bagaimana", "kenapa", "mengapa", "tolong", "bisa", "halo", "hai", "mulai")
+        is_en = sum(1 for w in en_words if re.search(r'\b' + w + r'\b', clean_lower)) > sum(1 for w in id_words if re.search(r'\b' + w + r'\b', clean_lower))
+
+        sender = req.sender_name or "Pengguna"
+        if is_en:
+            onboarding_msg = (
+                f"👋 **Welcome to Project Anara, {sender}!**\n\n"
+                "To start using your autonomous AI agent, please connect your preferred model provider:\n\n"
+                "• **Option 1 (Web / Desktop UI):** Open the **Providers** tab in Anara Brain Console and add your API key (OpenAI, Gemini, Claude, Groq, DeepSeek, 9Router, or OpenRouter).\n"
+                "• **Option 2 (.env file):** Copy `backend/.env.example` to `.env` (or `%LOCALAPPDATA%\\anara\\.env`) and specify your provider and keys.\n"
+                "• **Option 3 (Local Ollama):** Run Ollama locally and set `OLLAMA_BASE_URL=http://localhost:11434/v1` in your `.env`.\n\n"
+                "Once configured, Anara will be fully activated and ready to assist you!"
+            )
+        else:
+            onboarding_msg = (
+                f"👋 **Selamat datang di Project Anara, {sender}!**\n\n"
+                "Untuk mulai mengaktifkan asisten AI otonom ini, silakan hubungkan provider model AI pilihan Anda:\n\n"
+                "• **Pilihan 1 (Tampilan Web / Desktop):** Buka tab **Providers** di Anara Brain Console, lalu masukkan API Key Anda (OpenAI, Gemini, Claude, Groq, DeepSeek, atau 9Router/OpenRouter).\n"
+                "• **Pilihan 2 (Berkas .env):** Duplikat `backend/.env.example` menjadi `.env` (atau di `%LOCALAPPDATA%\\anara\\.env`) dan isi kuncinya.\n"
+                "• **Pilihan 3 (Model Lokal Ollama):** Jalankan Ollama di komputer Anda dan atur `OLLAMA_BASE_URL=http://localhost:11434/v1` di file `.env`.\n\n"
+                "Setelah salah satu terhubung, Anara akan langsung aktif dan siap membantu Anda!"
+            )
+
+        memory_engine.log_conversation(
+            user_text=req.text,
+            ai_text=onboarding_msg,
+            speaker_name=req.sender_name,
+            session_id=session_id
+        )
+        return ChannelResponse(
+            text=onboarding_msg,
+            session_id=session_id,
+            mode="conversational",
+            status="onboarding"
+        )
+
     # 5. Check for Plan Approval (Semantic Intent Classifier + Session State Machine - Subsystem 3)
     session_plan_key = f"{req.channel}_{req.channel_id}"
     intent_state = session_state_manager.evaluate_intent(clean_text, req.channel, req.channel_id)

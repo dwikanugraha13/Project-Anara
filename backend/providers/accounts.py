@@ -113,6 +113,91 @@ def is_provider_configured(provider: str) -> bool:
     return bool(get_provider_key(prov))
 
 
+def has_any_active_provider() -> bool:
+    """Checks whether ANY provider (standard or custom) is configured and ready to use."""
+    from memory import memory_engine
+    for prov in ("gemini", "openai", "codex", "anthropic", "groq", "deepseek"):
+        if is_provider_configured(prov):
+            return True
+    try:
+        custom_nodes = memory_engine.get_custom_providers()
+        if any(c.get("is_active", 1) for c in custom_nodes):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def sync_env_to_accounts() -> None:
+    """
+    Universal .env -> SQLite Account Synchronizer (Hermes Parity):
+    Ensures that any keys or custom providers specified by any user in their .env
+    are automatically discovered, loaded, and registered into SQLite (ai_accounts & custom_providers).
+    Allows ANY user to simply provide a .env and have Anara work immediately out of the box.
+    """
+    from memory import memory_engine
+
+    # 1. Standard provider keys
+    env_keys = {
+        "gemini": os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"),
+        "openai": os.getenv("OPENAI_API_KEY"),
+        "anthropic": os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY"),
+        "groq": os.getenv("GROQ_API_KEY"),
+        "deepseek": os.getenv("DEEPSEEK_API_KEY"),
+    }
+
+    for prov, key_val in env_keys.items():
+        if not key_val or not key_val.strip():
+            continue
+        clean_key = key_val.strip()
+        existing = memory_engine.get_ai_accounts(prov)
+        has_key = any(a.get("api_key") == clean_key for a in existing)
+        if not has_key:
+            add_provider_account(prov, f"{prov.capitalize()} (.env)", clean_key)
+            logger.info(f"[AccountSync] Automatically registered {prov} key from .env into SQLite.")
+
+    # 2. Custom provider (9Router, OpenRouter, etc.)
+    c_url = os.getenv("CUSTOM_PROVIDER_BASE_URL", "").strip()
+    if c_url:
+        c_name = os.getenv("CUSTOM_PROVIDER_NAME", "Custom Router").strip()
+        c_prefix = os.getenv("CUSTOM_PROVIDER_PREFIX", "custom").strip()
+        c_key = os.getenv("CUSTOM_PROVIDER_API_KEY", "").strip()
+
+        existing_custom = memory_engine.get_custom_providers()
+        match = next((cp for cp in existing_custom if cp.get("base_url") == c_url or cp.get("prefix") == c_prefix), None)
+        if not match:
+            memory_engine.add_custom_provider(
+                name=c_name,
+                base_url=c_url,
+                api_key=c_key,
+                prefix=c_prefix,
+                api_type="chat_completions"
+            )
+            logger.info(f"[AccountSync] Automatically registered custom provider '{c_name}' ({c_prefix}) from .env into SQLite.")
+
+    # 3. Local Ollama provider if specified
+    ollama_url = os.getenv("OLLAMA_BASE_URL", "").strip()
+    if ollama_url:
+        existing_custom = memory_engine.get_custom_providers()
+        match = next((cp for cp in existing_custom if "ollama" in cp.get("prefix", "").lower() or cp.get("base_url") == ollama_url), None)
+        if not match:
+            memory_engine.add_custom_provider(
+                name="Ollama Local",
+                base_url=ollama_url,
+                api_key="ollama",
+                prefix="ollama",
+                api_type="chat_completions"
+            )
+            logger.info(f"[AccountSync] Automatically registered Ollama from .env into SQLite.")
+
+    # 4. Default active model override from .env
+    active_env_model = os.getenv("DEFAULT_AI_MODEL") or os.getenv("ACTIVE_MODEL")
+    if active_env_model and active_env_model.strip():
+        curr = get_active_model_id()
+        if not curr or curr == "gemini-2.5-flash" or curr.startswith("models/"):
+            set_active_model_id(active_env_model.strip())
+
+
 def get_active_model_id() -> str:
     """Returns the currently selected model ID."""
     from memory import memory_engine
