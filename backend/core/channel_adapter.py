@@ -965,7 +965,7 @@ async def _process_channel_request_core(
                         cleaned = _clean_model_chat_text(cleaned_raw or "")
                     except Exception:
                         cleaned = ""
-                final_reply = (cleaned or "Tugas telah selesai diproses.").strip()
+                final_reply = (cleaned or "Mohon maaf, model tidak memberikan respons teks untuk permintaan ini. Silakan coba ajukan kembali.").strip()
         else:
             final_reply = _clean_model_chat_text(reply) or reply.strip()
     else:

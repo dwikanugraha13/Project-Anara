@@ -523,6 +523,7 @@ async def _execute_json_agent_loop(
         interactive=True
     )
     last_response = ""
+    empty_turn_retries = 0
     for step in range(25):
         # Soft-cap only very old turns if context history grows exceptionally large (> 24 messages)
         if len(messages) > 24:
@@ -591,17 +592,25 @@ async def _execute_json_agent_loop(
             raw_out = await provider_caller(messages)
 
         if not raw_out or not raw_out.strip():
-            # Hermes conversation_loop.py parity:
-            # _EMPTY_TOOL_RESPONSE_NUDGE = "You just executed tool calls but returned an empty response. Please process the tool results above and continue with the task."
-            if step > 0 and len(messages) >= 2 and "[TOOL RESULT for" in messages[-1].get("content", ""):
-                logger.info("[AgentLoop] Empty response after tool execution detected. Nudging model (Hermes parity)...")
+            # Hermes conversation_loop.py & turn_empty_response.py parity:
+            # Ladder: 1) if empty/reasoning-only, nudge model up to 2 times to produce visible prose
+            if empty_turn_retries < 2:
+                empty_turn_retries += 1
+                logger.info(f"[AgentLoop] Empty or thinking-only response detected (turn {step+1}). Nudging model continuation ({empty_turn_retries}/2)...")
+                nudge_content = (
+                    "You just executed tool calls above but returned an empty response. Please process the tool results above and provide your clear, helpful response naturally matching the user's active language."
+                    if (step > 0 and len(messages) >= 2 and "[TOOL" in messages[-1].get("content", ""))
+                    else "Please provide your complete, helpful response to the user's request in natural conversational prose matching the user's active language."
+                )
                 messages.append({
                     "role": "user",
-                    "content": "You just executed the tool calls above but have not provided a final response. Please process the tool results above and provide your clear, helpful response naturally matching the user's active language."
+                    "content": nudge_content
                 })
                 continue
             break
+
         last_response = raw_out.strip()
+        empty_turn_retries = 0
         
         calls, lead_text, is_malformed = _extract_and_parse_tool_calls(raw_out)
 
@@ -629,7 +638,9 @@ async def _execute_json_agent_loop(
                     cleaned_text = _clean_model_chat_text(synth or "")
                 except Exception:
                     pass
-            final_text = cleaned_text or "Task execution complete."
+            final_text = cleaned_text or (last_response.strip() if '"action": "tool_call"' not in last_response else "")
+            if not final_text:
+                final_text = "Mohon maaf, model tidak memberikan respons teks untuk permintaan ini. Silakan coba kirim ulang pertanyaan Anda."
             if token_cb and not accumulated_narrative and final_text:
                 res = token_cb(final_text)
                 if asyncio.iscoroutine(res):
@@ -897,7 +908,7 @@ async def _execute_json_agent_loop(
                 *messages,
                 {
                     "role": "user",
-                    "content": "Based on all the work and tool observations above, provide a clear, helpful, and complete final response to the user in natural conversational prose (no raw tool call JSON), matching the user's active language."
+                    "content": "Based on all the work, observations, and attachments above, provide a clear, helpful, and complete final response to the user in natural conversational prose (no raw tool call JSON), matching the user's active language."
                 }
             ]
             synth = await provider_caller(closing_prompt)
@@ -905,12 +916,14 @@ async def _execute_json_agent_loop(
                 cleaned_synth = _clean_model_chat_text(synth)
                 if cleaned_synth and '"action": "tool_call"' not in cleaned_synth:
                     return cleaned_synth
+                if synth.strip() and '"action": "tool_call"' not in synth:
+                    return synth.strip()
         except Exception as e_synth:
             logger.warning(f"[AgentLoop] Closing narrative synthesis pass error: {e_synth}")
 
         if cleaned_last:
             return cleaned_last
-        return "Tugas telah selesai diperiksa dan dieksekusi secara tuntas."
+        return "Mohon maaf, model belum memberikan teks respon akhir untuk permintaan ini. Silakan coba ajukan kembali pertanyaan Anda."
 
     return cleaned_last or last_response
 

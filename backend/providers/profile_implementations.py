@@ -625,13 +625,17 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                                             prompt_tokens=usage.get("prompt_tokens", 0),
                                             completion_tokens=usage.get("completion_tokens", 0)
                                         )
-                                    delta = chunk_json.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                                    if delta:
-                                        full_content.append(delta)
-                                        if on_chunk:
-                                            res = on_chunk(delta)
-                                            if asyncio.iscoroutine(res):
-                                                await res
+                                    choices = chunk_json.get("choices") or []
+                                    if choices and isinstance(choices, list):
+                                        choice = choices[0] or {}
+                                        delta_obj = choice.get("delta") or {}
+                                        delta = delta_obj.get("content") or choice.get("message", {}).get("content") or choice.get("text") or ""
+                                        if delta:
+                                            full_content.append(delta)
+                                            if on_chunk:
+                                                res = on_chunk(delta)
+                                                if asyncio.iscoroutine(res):
+                                                    await res
                                 except Exception:
                                     pass
 
@@ -699,13 +703,17 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                                             prompt_tokens=usage.get("prompt_tokens", 0),
                                             completion_tokens=usage.get("completion_tokens", 0)
                                         )
-                                    delta = chunk_json.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                                    if delta:
-                                        full_content.append(delta)
-                                        if on_chunk:
-                                            res = on_chunk(delta)
-                                            if asyncio.iscoroutine(res):
-                                                await res
+                                    choices = chunk_json.get("choices") or []
+                                    if choices and isinstance(choices, list):
+                                        choice = choices[0] or {}
+                                        delta_obj = choice.get("delta") or {}
+                                        delta = delta_obj.get("content") or choice.get("message", {}).get("content") or choice.get("text") or ""
+                                        if delta:
+                                            full_content.append(delta)
+                                            if on_chunk:
+                                                res = on_chunk(delta)
+                                                if asyncio.iscoroutine(res):
+                                                    await res
                                 except Exception:
                                     pass
 
