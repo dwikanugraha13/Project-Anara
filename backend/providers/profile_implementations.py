@@ -352,35 +352,43 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
                     async with httpx.AsyncClient(timeout=gen_timeout) as client:
                         async with client.stream("POST", endpoint_url, headers=headers, json=payload) as resp:
                             if resp.status_code == 200:
-                                chunks = []
-                                async for line in resp.aiter_lines():
-                                    if not line or not line.startswith("data:"):
-                                        continue
-                                    d_str = line[5:].strip()
-                                    if d_str == "[DONE]":
-                                        break
-                                    try:
-                                        o = json.loads(d_str)
-                                        u = o.get("usage")
-                                        if u:
-                                            memory_engine.record_token_usage(
-                                                model_id=model_id,
-                                                provider="codex",
-                                                prompt_tokens=u.get("prompt_tokens", 0),
-                                                completion_tokens=u.get("completion_tokens", 0)
-                                            )
-                                        val = o.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                                        if val:
-                                            chunks.append(val)
-                                            if on_chunk:
-                                                res = on_chunk(val)
-                                                if asyncio.iscoroutine(res):
+                                 chunks = []
+                                 reasoning_chunks = []
+                                 async for line in resp.aiter_lines():
+                                     if not line or not line.startswith("data:"):
+                                         continue
+                                     d_str = line[5:].strip()
+                                     if d_str == "[DONE]":
+                                         break
+                                     try:
+                                         o = json.loads(d_str)
+                                         u = o.get("usage")
+                                         if u:
+                                             memory_engine.record_token_usage(
+                                                 model_id=model_id,
+                                                 provider="codex",
+                                                 prompt_tokens=u.get("prompt_tokens", 0),
+                                                 completion_tokens=u.get("completion_tokens", 0)
+                                             )
+                                         delta_obj = o.get("choices", [{}])[0].get("delta", {}) or {}
+                                         val = delta_obj.get("content", "")
+                                         r_val = delta_obj.get("reasoning_content") or delta_obj.get("thought") or ""
+                                         if val:
+                                             chunks.append(val)
+                                             if on_chunk:
+                                                 res = on_chunk(val)
+                                                 if asyncio.iscoroutine(res):
                                                     await res
-                                    except Exception:
-                                        pass
-                                if idx < len(accounts):
-                                    memory_engine.increment_ai_account_usage(accounts[idx]["id"])
-                                return "".join(chunks)
+                                         elif r_val:
+                                             reasoning_chunks.append(r_val)
+                                     except Exception:
+                                         pass
+                                 if idx < len(accounts):
+                                     memory_engine.increment_ai_account_usage(accounts[idx]["id"])
+                                 res_text = "".join(chunks)
+                                 if not res_text.strip() and reasoning_chunks:
+                                     res_text = "".join(reasoning_chunks)
+                                 return res_text
             return ""
 
         return await _execute_json_agent_loop(
@@ -609,6 +617,7 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                                 raise RuntimeError(f"{prov_name.upper()} error: HTTP {resp.status_code}: {err_body.decode('utf-8', errors='replace')[:200]}")
 
                             full_content = []
+                            full_reasoning = []
                             async for line in resp.aiter_lines():
                                 if not line or not line.startswith("data:"):
                                     continue
@@ -630,16 +639,24 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                                         choice = choices[0] or {}
                                         delta_obj = choice.get("delta") or {}
                                         delta = delta_obj.get("content") or choice.get("message", {}).get("content") or choice.get("text") or ""
+                                        reasoning_piece = delta_obj.get("reasoning_content") or delta_obj.get("thought") or choice.get("message", {}).get("reasoning_content") or ""
                                         if delta:
                                             full_content.append(delta)
                                             if on_chunk:
                                                 res = on_chunk(delta)
                                                 if asyncio.iscoroutine(res):
                                                     await res
+                                        elif reasoning_piece:
+                                            full_reasoning.append(reasoning_piece)
                                 except Exception:
                                     pass
 
-                            return "".join(full_content)
+                            text_out = "".join(full_content)
+                            if not text_out.strip() and full_reasoning:
+                                # Hermes Parity (auxiliary_client.py: order content -> reasoning):
+                                # If model only returned reasoning_content, promote reasoning so turn is never dropped as empty.
+                                text_out = "".join(full_reasoning)
+                            return text_out
 
                 return await _execute_json_agent_loop(
                     _open_call,
@@ -687,6 +704,7 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                                 raise RuntimeError(f"Custom provider error: HTTP {resp.status_code}: {err_body.decode('utf-8', errors='replace')[:200]}")
 
                             full_content = []
+                            full_reasoning = []
                             async for line in resp.aiter_lines():
                                 if not line or not line.startswith("data:"):
                                     continue
@@ -708,16 +726,24 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                                         choice = choices[0] or {}
                                         delta_obj = choice.get("delta") or {}
                                         delta = delta_obj.get("content") or choice.get("message", {}).get("content") or choice.get("text") or ""
+                                        reasoning_piece = delta_obj.get("reasoning_content") or delta_obj.get("thought") or choice.get("message", {}).get("reasoning_content") or ""
                                         if delta:
                                             full_content.append(delta)
                                             if on_chunk:
                                                 res = on_chunk(delta)
                                                 if asyncio.iscoroutine(res):
                                                     await res
+                                        elif reasoning_piece:
+                                            full_reasoning.append(reasoning_piece)
                                 except Exception:
                                     pass
 
-                            return "".join(full_content)
+                            text_out = "".join(full_content)
+                            if not text_out.strip() and full_reasoning:
+                                # Hermes Parity (auxiliary_client.py: order content -> reasoning):
+                                # If model only returned reasoning_content, promote reasoning so turn is never dropped as empty.
+                                text_out = "".join(full_reasoning)
+                            return text_out
 
                 return await _execute_json_agent_loop(
                     _custom_call,

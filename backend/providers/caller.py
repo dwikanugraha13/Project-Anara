@@ -287,6 +287,28 @@ def _sanitize_lead_narration(raw_lead: str) -> str:
     return text
 
 
+def _format_empty_model_notice(prompt: str = "") -> str:
+    """
+    Hermes Dynamic Multilingual Fallback Notice:
+    Detects user's active language and returns culturally appropriate, natural fallback notice
+    (never rigidly hardcoded to a single language).
+    """
+    clean = (prompt or "").lower()
+    en_words = ("what", "how", "why", "where", "when", "can", "please", "check", "does", "is", "folder", "this", "need", "have", "you", "tell", "show")
+    id_words = ("apakah", "bagaimana", "kenapa", "mengapa", "dimana", "tolong", "bisa", "ini", "itu", "punya", "perlu", "ada", "kalau", "isi", "folder", "jelaskan")
+
+    en_score = sum(1 for w in en_words if re.search(r'\b' + w + r'\b', clean))
+    id_score = sum(1 for w in id_words if re.search(r'\b' + w + r'\b', clean))
+
+    if en_score > id_score:
+        return "I apologize, the model did not generate a text response for this request. Please try asking again."
+
+    if any(ord(char) >= 0x3040 and ord(char) <= 0x30FF for char in prompt):
+        return "申し訳ありませんが、モデルから応答が生成されませんでした。もう一度お試しください。"
+
+    return "Mohon maaf, model belum memberikan teks respons untuk permintaan ini. Silakan coba ajukan kembali."
+
+
 def _clean_model_chat_text(raw_text: str) -> str:
     """
     Cleans model chat responses by removing markdown tool-call fences,
@@ -640,7 +662,7 @@ async def _execute_json_agent_loop(
                     pass
             final_text = cleaned_text or (last_response.strip() if '"action": "tool_call"' not in last_response else "")
             if not final_text:
-                final_text = "Mohon maaf, model tidak memberikan respons teks untuk permintaan ini. Silakan coba kirim ulang pertanyaan Anda."
+                final_text = _format_empty_model_notice(user_prompt)
             if token_cb and not accumulated_narrative and final_text:
                 res = token_cb(final_text)
                 if asyncio.iscoroutine(res):
@@ -923,7 +945,7 @@ async def _execute_json_agent_loop(
 
         if cleaned_last:
             return cleaned_last
-        return "Mohon maaf, model belum memberikan teks respon akhir untuk permintaan ini. Silakan coba ajukan kembali pertanyaan Anda."
+        return _format_empty_model_notice(user_prompt)
 
     return cleaned_last or last_response
 

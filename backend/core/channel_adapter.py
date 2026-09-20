@@ -937,7 +937,7 @@ async def _process_channel_request_core(
     if isinstance(reply, str) and reply.strip():
         # ── ANTI-LEAK GATE (Hermes Parity) ──
         # Ensure raw tool-call JSON blocks are NEVER presented as chat text to user
-        from providers.caller import _clean_model_chat_text
+        from providers.caller import _clean_model_chat_text, _format_empty_model_notice
         if '"action": "tool_call"' in reply or '<tool_call>' in reply or not _clean_model_chat_text(reply):
             from providers.caller import _extract_and_parse_tool_call
             leaked_payload, lead, _ = _extract_and_parse_tool_call(reply)
@@ -957,7 +957,7 @@ async def _process_channel_request_core(
                         from core.capabilities import get_fast_auxiliary_model
                         cleaned_raw = await call_universal_chat_model(
                             model_id=get_fast_auxiliary_model(),
-                            user_prompt=f"Berikan jawaban percakapan ramah dan tuntas untuk: \"{clean_text}\"",
+                            user_prompt=f"Provide a clear, direct, and complete response to: \"{clean_text}\" matching the user's active language.",
                             max_tokens=None,
                             temperature=0.3,
                             read_only=True
@@ -965,7 +965,7 @@ async def _process_channel_request_core(
                         cleaned = _clean_model_chat_text(cleaned_raw or "")
                     except Exception:
                         cleaned = ""
-                final_reply = (cleaned or "Mohon maaf, model tidak memberikan respons teks untuk permintaan ini. Silakan coba ajukan kembali.").strip()
+                final_reply = (cleaned or _format_empty_model_notice(clean_text)).strip()
         else:
             final_reply = _clean_model_chat_text(reply) or reply.strip()
     else:
@@ -982,7 +982,7 @@ async def _process_channel_request_core(
         except Exception:
             final_reply = ""
         if not final_reply or not final_reply.strip():
-            final_reply = f"Tidak dapat menerima respons dari model untuk permintaan: '{clean_text[:60]}'. Silakan coba kirim ulang."
+            final_reply = _format_empty_model_notice(clean_text)
 
     memory_engine.log_conversation(
         user_text=clean_text,
