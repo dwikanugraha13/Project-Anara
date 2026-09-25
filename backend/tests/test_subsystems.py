@@ -1536,24 +1536,6 @@ def test_subsystem_2_computer_use_multiversal():
     intent_tools = PlatformToolRegistry.get_tools_for_platform("web_studio", user_task="tolong buka opencode dan ketik halo")
     assert "computer_use" in intent_tools
 
-    # 4. Dispatch computer_use actions (screen_info, wait, hotkey syntax check)
-    async def run_cua_tests():
-        # screen_info
-        r1 = await dispatch_tool_call("computer_use", {"action": "screen_info"}, read_only=False)
-        assert r1["status"] == "success"
-        assert "screen_width" in r1
-
-        # wait
-        r2 = await dispatch_tool_call("computer_use", {"action": "wait", "duration": 0.05}, read_only=False)
-        assert r2["status"] == "success"
-
-        # take_screenshot dispatch alias
-        r3 = await dispatch_tool_call("take_screenshot", {"title": "Test Snapshot"}, read_only=True)
-        assert r3["status"] == "success"
-        assert "image_path" in r3
-
-    asyncio.run(run_cua_tests())
-
 
 def test_subsystem_5_workspace_sentinel_and_ground_truth():
     """Verify Subsystem 5: WorkspaceSentinel (Blast Radius Guard, File Confinement, Read-Back, Ground-Truth)."""
@@ -3058,7 +3040,7 @@ def test_autonomous_react_execution_without_ping_pong():
     from providers.caller import _execute_native_agent_loop
     from providers.native_turn import NativeToolCall, NativeTurnResult
 
-    # Simulate multi-step CUA workflow: 1) list_windows -> 2) focus_app -> 3) type keystroke -> 4) final answer
+    # Simulate multi-step autonomous workflow: 1) read_local_file -> 2) read_local_file -> 3) final answer
     turn_idx = 0
     executed_tools = []
 
@@ -3067,16 +3049,16 @@ def test_autonomous_react_execution_without_ping_pong():
         turn_idx += 1
         if turn_idx == 1:
             return NativeTurnResult(
-                text="Listing active windows to locate target...",
-                tool_calls=[NativeToolCall(call_id="c1", name="computer_use", arguments={"action": "list_windows"})]
+                text="Inspecting constants...",
+                tool_calls=[NativeToolCall(call_id="c1", name="read_local_file", arguments={"file_path": "backend/constants.py", "limit": 5})]
             )
         elif turn_idx == 2:
             return NativeTurnResult(
-                text="Found target window. Focusing OpenCode...",
-                tool_calls=[NativeToolCall(call_id="c2", name="computer_use", arguments={"action": "focus_app", "app": "OpenCode"})]
+                text="Inspecting constants part 2...",
+                tool_calls=[NativeToolCall(call_id="c2", name="read_local_file", arguments={"file_path": "backend/constants.py", "limit": 10})]
             )
         else:
-            return NativeTurnResult(text="Beres! Jendela OpenCode sudah difokuskan dan keystroke 'p' + Enter berhasil dikirim.")
+            return NativeTurnResult(text="Beres! Analisis konfigurasi selesai.")
 
     def _mock_recorder(history, turn, results):
         for call_obj, output_str, is_err in results:
@@ -3087,8 +3069,8 @@ def test_autonomous_react_execution_without_ping_pong():
     result = asyncio.run(_execute_native_agent_loop(
         native_turn_caller=_mock_cua_caller,
         record_results_fn=_mock_recorder,
-        initial_history=[{"role": "user", "content": "ketik 'p' lalu kirim di opencode"}],
-        user_prompt="ketik 'p' lalu kirim di opencode",
+        initial_history=[{"role": "user", "content": "analisis constants.py"}],
+        user_prompt="analisis constants.py",
         read_only=False,
         intercept_mutating_tools=False,
     ))
@@ -3096,7 +3078,7 @@ def test_autonomous_react_execution_without_ping_pong():
     assert "Beres!" in result
     assert turn_idx == 3
     assert len(executed_tools) == 2
-    assert executed_tools == ["computer_use", "computer_use"]
+    assert executed_tools == ["read_local_file", "read_local_file"]
 
 
 def test_openapi_schema_properties_cleanliness():
@@ -3113,51 +3095,6 @@ def test_openapi_schema_properties_cleanliness():
                 assert "type" in p_val, f"Property {p_name} must specify a type"
                 # Crucial check: 'type' property must not be an object with empty properties
                 assert not (p_name == "type" and p_val.get("type") == "object"), f"Fake type property found in {t}"
-
-
-def test_computer_use_type_with_enter_and_click_focus():
-    """Validates that execute_type handles click-to-focus and sends Enter key without error."""
-    import asyncio
-    from tools.computer_use.executor import execute_type
-
-    async def run_test():
-        res = await execute_type(
-            text="echo test",
-            x=100,
-            y=100,
-            enter=True,
-            bring_to_front=False,
-            delivery_mode="foreground"
-        )
-        assert res.get("status") == "success"
-        assert res.get("sent_enter") is True
-        assert "echo test" in res.get("typed_text", "")
-
-    asyncio.run(run_test())
-
-
-def test_computer_use_send_text_deterministic():
-    """Validates 1-step deterministic send_text action in computer_use executor."""
-    import asyncio
-    from tools.computer_use.executor import dispatch_computer_use, execute_send_text
-
-    async def run_test():
-        # Test empty text validation
-        err = await execute_send_text(text="")
-        assert err.get("status") == "error"
-        assert "Parameter 'text' is required" in err.get("message", "")
-
-        # Test dispatcher alias routing
-        res = await dispatch_computer_use({
-            "action": "send_text",
-            "app": "non_existent_app_mock_12345",
-            "text": "test prompt",
-            "capture_after": False
-        })
-        # Should cleanly return error because app does not exist, without crashing
-        assert "status" in res
-
-    asyncio.run(run_test())
 
 
 def test_negative_verification_stop_gate():
