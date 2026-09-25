@@ -539,6 +539,27 @@ async def _execute_native_agent_loop(
     for step in range(max_steps):
         # Token Budget Management (Hermes Parity: Gap 1 in Native Loop)
         token_tracker.record_step(step, history)
+
+        # Mid-Turn In-Loop Context Compaction at 80% pressure (Hermes Parity: conversation_compression.py)
+        if step > 1 and token_tracker.usage_ratio(history) >= 0.80 and not getattr(token_tracker, "_compacted_in_loop", False):
+            logger.info(f"[NativeAgentLoop] Token pressure at 80% ({token_tracker.usage_ratio(history):.0%}). Triggering in-loop context compaction...")
+            token_tracker._compacted_in_loop = True
+            if len(history) > 6:
+                head = history[0]
+                tail = history[-4:]
+                middle = history[1:-4]
+                summary_lines = []
+                for m in middle:
+                    role = m.get("role", "assistant")
+                    content = str(m.get("content", ""))[:120].replace("\n", " ")
+                    summary_lines.append(f"- [{role}]: {content}...")
+                compact_msg = {
+                    "role": "user",
+                    "content": f"[SYSTEM CONTEXT COMPACTION]: Earlier intermediate execution steps ({len(middle)} turns) were summarized to preserve context budget:\n" + "\n".join(summary_lines)
+                }
+                history = [head, compact_msg, *tail]
+                logger.info(f"[NativeAgentLoop] In-loop compaction successfully compressed history to {len(history)} turns.")
+
         if step > 0 and token_tracker.is_budget_critical(history):
             logger.warning(
                 f"[NativeAgentLoop] Token budget critical at step {step+1}: "
@@ -580,8 +601,15 @@ async def _execute_native_agent_loop(
 
         last_text = turn.clean_text
 
-        # If turn has NO tool calls, it's a final conversational narrative response
+        # If turn has NO tool calls, check Negative Verification Stop-Gate (Hermes Parity: turn_stop_gates.py & Claude Code)
         if not turn.has_tool_calls:
+            stop_gate_nudge = convergence_detector.evaluate_final_stop_gate(agent_mode="plan" if read_only else "build")
+            if stop_gate_nudge and step < max_steps - 1:
+                logger.info(f"[NativeAgentLoop] Stop-gate intercepted turn: verification tests required before reporting completion.")
+                history.append({"role": "assistant", "content": turn.clean_text})
+                history.append({"role": "user", "content": stop_gate_nudge})
+                continue
+
             final_text = _clean_model_chat_text(last_text) or last_text
             if not final_text:
                 final_text = _format_empty_model_notice(user_prompt)
@@ -949,6 +977,26 @@ async def _execute_json_agent_loop(
         # Record step for diagnostics
         token_tracker.record_step(step, messages)
 
+        # Mid-Turn In-Loop Context Compaction at 80% pressure (Hermes Parity: conversation_compression.py)
+        if step > 1 and token_tracker.usage_ratio(messages) >= 0.80 and not getattr(token_tracker, "_compacted_in_loop", False):
+            logger.info(f"[AgentLoop] Token pressure at 80% ({token_tracker.usage_ratio(messages):.0%}). Triggering in-loop context compaction...")
+            token_tracker._compacted_in_loop = True
+            if len(messages) > 6:
+                head = messages[0]
+                tail = messages[-4:]
+                middle = messages[1:-4]
+                summary_lines = []
+                for m in middle:
+                    role = m.get("role", "assistant")
+                    content = str(m.get("content", ""))[:120].replace("\n", " ")
+                    summary_lines.append(f"- [{role}]: {content}...")
+                compact_msg = {
+                    "role": "user",
+                    "content": f"[SYSTEM CONTEXT COMPACTION]: Earlier intermediate execution steps ({len(middle)} turns) were summarized to preserve context budget:\n" + "\n".join(summary_lines)
+                }
+                messages = [head, compact_msg, *tail]
+                logger.info(f"[AgentLoop] In-loop compaction successfully compressed messages to {len(messages)} turns.")
+
         buffered_chunks = []
         is_tool_candidate = None  # None: undetermined, True: looks like JSON tool call, False: narrative streaming
         accumulated_narrative = []
@@ -1047,6 +1095,14 @@ async def _execute_json_agent_loop(
             continue
 
         if not calls:
+            # Check Negative Verification Stop-Gate (Hermes Parity: turn_stop_gates.py & Claude Code)
+            stop_gate_nudge = convergence_detector.evaluate_final_stop_gate(agent_mode="plan" if read_only else "build")
+            if stop_gate_nudge and step < max_steps - 1:
+                logger.info(f"[AgentLoop] Stop-gate intercepted turn: verification tests required before reporting completion.")
+                messages.append({"role": "assistant", "content": last_response})
+                messages.append({"role": "user", "content": stop_gate_nudge})
+                continue
+
             # Model responded with actual conversational narrative text!
             # Strip any leaked or orphaned tool tags before presenting to user (Hermes parity)
             cleaned_text = _clean_model_chat_text(last_response)

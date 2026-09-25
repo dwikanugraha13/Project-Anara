@@ -3160,6 +3160,41 @@ def test_computer_use_send_text_deterministic():
     asyncio.run(run_test())
 
 
+def test_negative_verification_stop_gate():
+    """Validates negative verification stop-gate intercepts unverified task conclusions after code edits."""
+    from core.convergence import ConvergenceDetector
+
+    cd = ConvergenceDetector(read_only=False)
+    # Simulate editing a python file
+    cd.record_turn_actions(0, [{
+        "tool_name": "edit_file",
+        "args": {"file_path": "backend/core/sample.py"},
+        "risk": "mutating",
+        "is_error": False,
+        "summary": "Edited sample.py successfully"
+    }])
+
+    # Model attempts to conclude without running tests -> Stop Gate MUST intercept!
+    nudge = cd.evaluate_final_stop_gate(agent_mode="build")
+    assert nudge is not None
+    assert "[VERIFICATION STOP-GATE]" in nudge
+    assert "sample.py" in nudge
+
+    # Now simulate running pytest successfully
+    cd.record_turn_actions(1, [{
+        "tool_name": "execute_cli_command",
+        "args": {"command": "pytest backend/tests/test_sample.py"},
+        "risk": "action",
+        "is_error": False,
+        "summary": "1 passed in 0.05s"
+    }])
+
+    # Stop gate should now permit completion!
+    nudge_after_test = cd.evaluate_final_stop_gate(agent_mode="build")
+    assert nudge_after_test is None
+
+
+
 
 
 

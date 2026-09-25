@@ -299,3 +299,37 @@ class ConvergenceDetector:
             reason="progressing",
             phase=self.phase
         )
+
+    def evaluate_final_stop_gate(self, agent_mode: str = "build") -> Optional[str]:
+        """
+        Negative Verification Stop-Gate (Hermes Parity: turn_stop_gates.py & Claude Code Parity):
+        Intercepts attempts to conclude a task with narrative text if code files were modified
+        but no passing ground-truth verification test evidence was observed in this session.
+        Returns: Synthetic nudge message if verification is missing, else None.
+        """
+        if self.read_only or agent_mode == "plan":
+            return None
+
+        # Check if code files were mutated
+        has_code_mutations = any(
+            t.endswith((".py", ".ts", ".tsx", ".js", ".jsx", ".rs", ".go", ".cpp", ".c", ".java", ".html", ".css"))
+            for t in self.modified_targets
+        )
+
+        # If code was mutated and NO passing verification was run:
+        if has_code_mutations and (self.test_verified_count == 0 or not self.last_test_passed):
+            # Allow maximum 2 stop-gate nudges per turn to avoid indefinite deadlocks
+            nudges = getattr(self, "_stop_gate_nudges", 0)
+            if nudges >= 2:
+                return None
+            self._stop_gate_nudges = nudges + 1
+
+            mutated_list = ", ".join(list(self.modified_targets)[:4])
+            return (
+                f"[VERIFICATION STOP-GATE]: You modified code files ({mutated_list}) during this session, "
+                f"but have not yet executed ground-truth verification tests to confirm they work without regressions. "
+                f"Please run the project's verification command (e.g., 'pytest', 'npm test', or project unit tests) "
+                f"and inspect the real output before delivering your final completion report."
+            )
+
+        return None
