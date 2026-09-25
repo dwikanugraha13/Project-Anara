@@ -9,6 +9,7 @@ _PROPERTIES: Dict[str, Any] = {
         "type": "STRING",
         "enum": [
             "send_text",
+            "launch_app",
             "capture",
             "click",
             "double_click",
@@ -25,10 +26,11 @@ _PROPERTIES: Dict[str, Any] = {
             "focus_app",
         ],
         "description": (
-            "Action to execute. 'send_text' (RECOMMENDED: 1-step focus, dynamic universal input targeting, type text, and submit with Enter in ANY active or specified application). "
+            "Action to execute. 'send_text' (RECOMMENDED: 1-step focus/launch, dynamic universal input targeting, type text, and submit with Enter in ANY active or specified application). "
+            "'launch_app' (launches an unopened desktop application, e.g. OpenCode, Notepad, Chrome, etc., and waits for window). "
             "'capture' takes screenshots / element trees. 'click', 'double_click', 'right_click' clicks elements or coordinates. "
             "'type' inserts text. 'key' presses keys or hotkeys. 'scroll' scrolls content. 'drag' drags from one point to another. "
-            "'focus_app' brings target window to front. 'list_windows' and 'list_apps' inspect open windows on the OS."
+            "'focus_app' brings target window to front (auto-launches if not running). 'list_windows' and 'list_apps' inspect open windows or installed apps on the OS."
         ),
     },
     "mode": {

@@ -222,8 +222,139 @@ _STICKY_WID: Optional[int] = None
 _STICKY_TITLE: Optional[str] = None
 
 
+async def _discover_and_launch_app(app_name: str) -> Optional[Dict[str, Any]]:
+    """
+    Dynamically discovers and launches an unopened Windows desktop, web, or UWP application (Hermes Parity).
+    Tier 1: cua-driver list_apps matching name / bundle_id / launch_path -> launch_app
+    Tier 2: SystemTools executable resolution (Registry App Paths, system PATH, %LOCALAPPDATA%\\Programs)
+    Tier 3: os.startfile / ShellExecute
+    """
+    clean = (app_name or "").strip().lower()
+    if not clean:
+        return None
+
+    # Tier 1: cua-driver list_apps
+    if is_cua_driver_available():
+        try:
+            res = run_cua_call("list_apps", {})
+            apps = res.get("apps", []) if isinstance(res, dict) else []
+            for a in apps:
+                name = str(a.get("name") or "").lower()
+                bundle = str(a.get("bundle_id") or "").lower()
+                lpath = str(a.get("launch_path") or "").lower()
+                if clean == name or clean in name or clean in bundle or clean in os.path.basename(lpath):
+                    target_launch = a.get("launch_path") or a.get("bundle_id") or a.get("name")
+                    if target_launch:
+                        launch_out = run_cua_call("launch_app", {
+                            "launch_path": target_launch,
+                            "name": a.get("name")
+                        })
+                        logger.info(f"[ComputerUse] Launched '{app_name}' via cua-driver (target='{target_launch}')")
+                        return {"method": "cua-driver", "app": a, "result": launch_out}
+        except Exception as e_cua:
+            logger.debug(f"[ComputerUse] cua-driver list_apps/launch_app error: {e_cua}")
+
+    # Tier 2: SystemTools executable resolution (dynamic Registry, PATH, Program directories)
+    try:
+        from tools.system_tools import _resolve_windows_app_executable
+        exe = _resolve_windows_app_executable(app_name)
+        if exe and os.path.isfile(exe):
+            import subprocess
+            subprocess.Popen([exe], shell=False)
+            logger.info(f"[ComputerUse] Launched '{app_name}' via subprocess: '{exe}'")
+            return {"method": "executable", "path": exe}
+    except Exception as e_exe:
+        logger.debug(f"[ComputerUse] _resolve_windows_app_executable error: {e_exe}")
+
+    # Tier 3: os.startfile fallback
+    if hasattr(os, "startfile"):
+        try:
+            os.startfile(app_name)
+            logger.info(f"[ComputerUse] Launched '{app_name}' via os.startfile")
+            return {"method": "startfile", "target": app_name}
+        except Exception:
+            pass
+
+    return None
+
+
+async def _wait_for_window_ready(
+    app_query: str,
+    timeout: float = 6.5,
+    poll_interval: float = 0.25,
+) -> Optional[Dict[str, Any]]:
+    """Polls window list until newly launched application window appears on the desktop."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        win_res = await execute_list_windows(filter_query=app_query)
+        wins = win_res.get("windows", [])
+        if wins:
+            return wins[0]
+        await asyncio.sleep(poll_interval)
+    return None
+
+
+async def execute_launch_app(
+    app: str,
+    args: Optional[List[str]] = None,
+    wait: bool = True,
+    timeout: float = 6.5,
+) -> Dict[str, Any]:
+    """
+    Launches an application and optionally waits for its window to stabilize.
+    Supports desktop executables, UWP apps, and protocol handlers.
+    """
+    clean_target = (app or "").strip()
+    if not clean_target:
+        return {"status": "error", "message": "Parameter 'app' is required for launch_app."}
+
+    # Check if window already exists
+    existing = await execute_list_windows(filter_query=clean_target)
+    if existing.get("windows"):
+        top_w = existing["windows"][0]
+        return {
+            "status": "success",
+            "action": "launch_app",
+            "app": clean_target,
+            "window": top_w,
+            "already_running": True,
+            "message": f"Application '{clean_target}' is already running with window '{top_w.get('title')}'.",
+        }
+
+    launch_data = await _discover_and_launch_app(clean_target)
+    if not launch_data:
+        return {
+            "status": "error",
+            "message": f"Could not find or launch application '{clean_target}' on this system.",
+        }
+
+    if wait:
+        ready_win = await _wait_for_window_ready(clean_target, timeout=timeout)
+        if ready_win:
+            global _STICKY_PID, _STICKY_WID, _STICKY_TITLE
+            _STICKY_PID = ready_win.get("pid")
+            _STICKY_WID = ready_win.get("window_id")
+            _STICKY_TITLE = ready_win.get("title", clean_target)
+            return {
+                "status": "success",
+                "action": "launch_app",
+                "app": clean_target,
+                "window": ready_win,
+                "already_running": False,
+                "message": f"Application '{clean_target}' launched successfully and window '{ready_win.get('title')}' is ready.",
+            }
+
+    return {
+        "status": "success",
+        "action": "launch_app",
+        "app": clean_target,
+        "already_running": False,
+        "message": f"Application '{clean_target}' launch signal dispatched.",
+    }
+
+
 async def execute_focus_app(app: str, raise_window: bool = True) -> Dict[str, Any]:
-    """Brings the target application window to the foreground (Hermes Parity bring_to_front)."""
+    """Brings target application window to foreground, auto-spawning it if not yet running (Hermes Parity)."""
     global _STICKY_PID, _STICKY_WID, _STICKY_TITLE
     clean_target = (app or "").strip()
     if not clean_target:
@@ -231,6 +362,14 @@ async def execute_focus_app(app: str, raise_window: bool = True) -> Dict[str, An
 
     win_res = await execute_list_windows(filter_query=clean_target)
     windows = win_res.get("windows", [])
+    if not windows:
+        # Auto-launch recovery seam for unopened / not-yet-running apps
+        logger.info(f"[ComputerUse] Application '{clean_target}' is not running. Attempting auto-launch...")
+        launch_res = await execute_launch_app(clean_target, wait=True)
+        if launch_res.get("status") == "success":
+            win_res = await execute_list_windows(filter_query=clean_target)
+            windows = win_res.get("windows", [])
+
     if not windows:
         return {"status": "error", "message": f"Window or application matching '{clean_target}' not found."}
 
@@ -909,11 +1048,12 @@ async def dispatch_computer_use(args: Dict[str, Any], **kwargs: Any) -> Dict[str
         "mouse_click": "click", "left_click": "click",
         "activate_window": "focus_app", "bring_to_front": "focus_app",
         "submit_text": "send_text", "send_chat": "send_text", "chat_input": "send_text",
+        "open_app": "launch_app", "start_app": "launch_app", "run_app": "launch_app",
     }
     action = aliases.get(action, action)
 
     # Mutating desktop actions default capture_after=True for closed-loop verification & artifact dispatch
-    default_capture = True if action in ("send_text", "type", "click", "key") else False
+    default_capture = True if action in ("send_text", "type", "click", "key", "launch_app") else False
     capture_after = bool(args.get("capture_after", default_capture))
 
     if action == "capture":
@@ -923,6 +1063,13 @@ async def dispatch_computer_use(args: Dict[str, Any], **kwargs: Any) -> Dict[str
             app=args.get("app"),
             pid=args.get("pid"),
             window_id=args.get("window_id"),
+        )
+
+    elif action == "launch_app":
+        return await execute_launch_app(
+            app=args.get("app") or args.get("text") or "",
+            args=args.get("args") if isinstance(args.get("args"), list) else None,
+            wait=bool(args.get("wait", True)),
         )
 
     elif action == "list_windows":

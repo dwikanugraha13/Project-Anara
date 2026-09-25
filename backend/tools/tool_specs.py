@@ -1211,11 +1211,11 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Computer Use ──
     {
         "name": "computer_use",
-        "description": "OS-level desktop automation (CUA primitives): send_text (RECOMMENDED universal 1-step focus, input targeting, type text, and submit with Enter in ANY app), list_windows, focus_app, type, key, hotkey, click, screenshot.",
+        "description": "OS-level desktop automation (CUA primitives): send_text (RECOMMENDED universal 1-step focus/launch, input targeting, type text, and submit with Enter in ANY app), launch_app (open unopened applications), list_windows, focus_app, type, key, hotkey, click, screenshot.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "action": {"type": "STRING", "description": "OS action: 'send_text' (RECOMMENDED for typing and submitting text/commands to any active or target desktop app), 'list_windows', 'focus_app', 'type', 'key', 'hotkey', 'click', 'double_click', 'right_click', 'scroll', 'screenshot', 'wait', 'screen_info'."},
+                "action": {"type": "STRING", "description": "OS action: 'send_text' (RECOMMENDED for typing and submitting text/commands to any active or target desktop app), 'launch_app' (launch an application by name if not running), 'list_windows', 'focus_app', 'type', 'key', 'hotkey', 'click', 'double_click', 'right_click', 'scroll', 'screenshot', 'wait', 'screen_info'."},
                 "app": {"type": "STRING", "description": "Target window name or application title to focus or interact with (e.g. 'Notepad', 'Chrome', 'Telegram', 'OpenCode', 'Terminal'). If omitted, interacts with the active foreground window."},
                 "text": {"type": "STRING", "description": "Text to type or send into focused window or app."},
                 "enter": {"type": "BOOLEAN", "description": "Whether to press Enter/Return key immediately after typing (default true for send_text, false for type)."},
