@@ -390,5 +390,5 @@ class VoiceBiometricsMixin:
         Semantic naming is preserved directly from model reasoning without rigid word dictionaries.
         """
         k = raw_key.strip().lower().replace("-", "_").replace(" ", "_")
-        k = re.sub(r"_(?:baru|baruku|sekarang|ini|terbaru|new|current|latest|recent)$", "", k)
+        k = re.sub(r"_(?:new|current|latest|recent)$", "", k)
         return k

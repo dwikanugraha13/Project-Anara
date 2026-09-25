@@ -127,7 +127,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
   };
 
   const handleWhatsAppLogout = async () => {
-    if (!confirm("Apakah Anda yakin ingin memutuskan sambungan WhatsApp? Sesi akan dihapus.")) return;
+    if (!confirm("Are you sure you want to disconnect WhatsApp? The session will be deleted.")) return;
     setIsWaLoading(true);
     try {
       const res = await fetch(`${BACKEND_URL}/api/integrations/whatsapp/logout`, { method: "POST" });
@@ -164,7 +164,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
   };
 
   const handleDeleteContact = async (id: number) => {
-    if (!confirm("Hapus kontak ini?")) return;
+    if (!confirm("Delete this contact?")) return;
     try {
       const res = await fetch(`${BACKEND_URL}/api/integrations/contacts/${id}`, { method: "DELETE" });
       if (res.ok) {
@@ -218,11 +218,11 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
           setIsTgModalOpen(false);
           setTgErrorMsg(null);
         } else {
-          setTgErrorMsg(data.message || "Token tidak valid menurut Telegram Bot API.");
+          setTgErrorMsg(data.message || "Token is not valid according to Telegram Bot API.");
         }
       } else {
         const errData = await res.json().catch(() => ({}));
-        setTgErrorMsg(errData.detail || "Gagal menghubungi server backend.");
+        setTgErrorMsg(errData.detail || "Failed to connect to backend server.");
       }
     } catch (err: any) {
       console.error("Save telegram error:", err);
@@ -315,11 +315,11 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
             <div className="flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
               <h3 className="text-xs sm:text-sm font-semibold text-white tracking-wide">
-                Integrasi Layanan &amp; Media
+                Service &amp; Media Integrations
               </h3>
             </div>
             <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-              Hubungkan WhatsApp, Telegram, Google Workspace, atau Spotify untuk sinkronisasi pesan dan kontrol media secara langsung.
+              Connect WhatsApp, Telegram, Google Workspace, or Spotify for direct message sync and media control.
             </p>
           </div>
         </div>
@@ -348,13 +348,13 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                         : "bg-white/[0.04] text-slate-400 border-white/10"
                     }`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${waStatus === "connected" && waUser ? "bg-emerald-400" : waStatus === "connecting" && waUser ? "bg-amber-400" : "bg-slate-500"}`} />
-                      {waStatus === "connected" && waUser ? "Terhubung" : waStatus === "connecting" && waUser ? "Menghubungkan..." : "Belum Aktif"}
+                      {waStatus === "connected" && waUser ? "Connected" : waStatus === "connecting" && waUser ? "Connecting..." : "Not Active"}
                     </span>
                   </div>
                   <p className="text-xs text-slate-400 mt-0.5">
                     {waStatus === "connected" && waUser
                       ? `${waUser.name || "Akun"} (+${waUser.phone})`
-                      : "Scan QR code untuk membaca &amp; mengirim pesan"}
+                      : "Scan QR code to read &amp; send messages"}
                   </p>
                 </div>
               </div>
@@ -386,7 +386,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
                   </svg>
-                  Hubungkan WhatsApp (Scan QR)
+                  Connect WhatsApp (Scan QR)
                 </button>
               )}
             </div>
@@ -395,11 +395,11 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
             <form onSubmit={handleSaveWhatsAppConfig} className="mt-3 pt-3 border-t border-white/10 space-y-1.5">
               <div className="flex items-center justify-between">
                 <label className="text-[11px] font-mono text-slate-300">
-                  Nomor Terotorisasi (Whitelist)
+                  Authorized Numbers (Whitelist)
                 </label>
                 {isWaConfigSaved && (
                   <span className="text-[10px] font-mono text-emerald-300 animate-fade-in">
-                    ✓ Tersimpan
+                    ✓ Saved
                   </span>
                 )}
               </div>
@@ -415,11 +415,11 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                   type="submit"
                   className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 text-xs font-mono font-semibold transition-all cursor-pointer shrink-0"
                 >
-                  Simpan
+                  Save
                 </button>
               </div>
               <p className="text-[10px] text-slate-400 leading-relaxed">
-                Hanya nomor di atas yang direspons Anara (aman dari spam grup/orang asing).
+                Only numbers above will be responded to by Anara (safe from group spam/strangers).
               </p>
             </form>
           </div>
@@ -443,13 +443,13 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                       : "bg-white/[0.04] text-slate-400 border-white/10"
                   }`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${tgStatus === "connected" ? "bg-sky-400" : "bg-slate-500"}`} />
-                    {tgStatus === "connected" ? "Aktif" : "Belum Terhubung"}
+                    {tgStatus === "connected" ? "Active" : "Not Connected"}
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
                   {tgStatus === "connected" && tgBot
                     ? `@${tgBot.username || "Bot"} (${tgBot.first_name || "Anara"})`
-                    : "Tautkan bot token Telegram untuk kirim &amp; baca pesan"}
+                    : "Link Telegram bot token to send &amp; read messages"}
                 </p>
               </div>
             </div>
@@ -458,10 +458,10 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                 onClick={() => setIsTgModalOpen(true)}
                 className="px-3 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 hover:text-white border border-sky-400/30 text-xs font-medium transition-all cursor-pointer"
               >
-                {tgStatus === "connected" ? "Ubah Pengaturan" : "Hubungkan Telegram"}
+                {tgStatus === "connected" ? "Change Settings" : "Connect Telegram"}
               </button>
               {tgStatus === "connected" && (
-                <span className="text-sky-300 text-xs font-mono">Siap Digunakan</span>
+                <span className="text-sky-300 text-xs font-mono">Ready to Use</span>
               )}
             </div>
           </div>
@@ -485,20 +485,20 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                       : "bg-white/[0.04] text-slate-400 border-white/10"
                   }`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${googleStatus === "connected" ? "bg-rose-400" : "bg-slate-500"}`} />
-                    {googleStatus === "connected" ? "Terhubung" : "Belum Ditautkan"}
+                    {googleStatus === "connected" ? "Connected" : "Not Linked"}
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
                   {googleStatus === "connected" && googleEmail
                     ? `${googleEmail} (Gmail &amp; Calendar)`
-                    : "Membaca email Gmail masuk &amp; jadwal Google Calendar"}
+                    : "Reading incoming Gmail emails &amp; Google Calendar schedule"}
                 </p>
               </div>
             </div>
             <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between gap-2">
               {googleStatus === "connected" ? (
                 <>
-                  <span className="text-rose-300 text-xs font-mono">Gmail &amp; Calendar Aktif</span>
+                  <span className="text-rose-300 text-xs font-mono">Gmail &amp; Calendar Active</span>
                   <button
                     onClick={handleGoogleDisconnect}
                     className="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-medium transition-all cursor-pointer"
@@ -511,7 +511,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                   onClick={() => setIsGoogleModalOpen(true)}
                   className="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-200 hover:text-white border border-rose-400/30 text-xs font-medium transition-all cursor-pointer"
                 >
-                  Tautkan Akun Google
+                  Link Google Account
                 </button>
               )}
             </div>
@@ -528,7 +528,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                   <h4 className="text-sm font-bold text-white">Spotify Desktop</h4>
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono font-medium uppercase border bg-emerald-500/10 text-emerald-300 border-emerald-400/30 flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                    Aktif
+                    Active
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
@@ -537,7 +537,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
               </div>
             </div>
             <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-xs text-slate-400">
-              <span>Perintah suara langsung:</span>
+              <span>Direct voice commands:</span>
               <span className="text-emerald-300 font-mono">&quot;Buka Spotify&quot;</span>
             </div>
           </div>
@@ -553,17 +553,17 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                 <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
-                <span>Buku Kontak WhatsApp</span>
+                <span>WhatsApp Contacts Book</span>
               </h4>
               <p className="text-xs text-slate-400 mt-0.5">
-                Daftar nama panggilan dan nomor telepon agar Anara dapat mengirim pesan ke kontak Anda secara langsung.
+                List of nicknames and phone numbers so Anara can send messages to your contacts directly.
               </p>
             </div>
             <button
               onClick={() => setIsAddContactOpen((v) => !v)}
               className="px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-200 hover:text-white border border-emerald-400/30 text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5"
             >
-              <span>+</span> Tambah Kontak
+              <span>+</span> Add Contact
             </button>
           </div>
     
@@ -572,7 +572,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
             <form onSubmit={handleSaveContact} className="p-4 rounded-xl bg-black/40 border border-emerald-400/30 space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[11px] font-mono text-slate-400 block mb-1">Nama Panggilan</label>
+                  <label className="text-[11px] font-mono text-slate-400 block mb-1">Nickname</label>
                   <input
                     type="text"
                     placeholder="misal: Budi / Ibu / Kantor"
@@ -583,10 +583,10 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] font-mono text-slate-400 block mb-1">Nomor WhatsApp</label>
+                  <label className="text-[11px] font-mono text-slate-400 block mb-1">WhatsApp Number</label>
                   <input
                     type="text"
-                    placeholder="misal: 08123456789 atau 628123456789"
+                    placeholder="e.g. 08123456789 or 628123456789"
                     value={newContactPhone}
                     onChange={(e) => setNewContactPhone(e.target.value)}
                     className="w-full px-3 py-1.5 rounded-lg bg-black/50 border border-white/20 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-400"
@@ -606,7 +606,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                   type="submit"
                   className="px-4 py-1.5 rounded-lg bg-emerald-500/30 hover:bg-emerald-500/50 border border-emerald-400 text-xs font-bold text-white shadow-md cursor-pointer"
                 >
-                  Simpan Kontak
+                  Save Contact
                 </button>
               </div>
             </form>
@@ -616,7 +616,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
             {contacts.length === 0 ? (
               <div className="col-span-full py-6 text-center text-xs text-slate-500 italic">
-                Belum ada kontak tersimpan. Tambahkan kontak di atas atau ucapkan: &quot;Anara, catat kontak Budi nomornya 0812...&quot;
+                No contacts saved yet. Add contacts above or say: &quot;Anara, save contact John number 0812...&quot;
               </div>
             ) : (
               contacts.map((c) => (
@@ -628,7 +628,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                   <button
                     onClick={() => handleDeleteContact(c.id)}
                     className="w-6 h-6 rounded flex items-center justify-center text-slate-500 hover:text-rose-300 hover:bg-rose-500/20 transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
-                    title="Hapus kontak"
+                    title="Delete contact"
                   >
                     ✕
                   </button>
@@ -655,10 +655,10 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
           <BrandIcon name="whatsapp" className="w-6 h-6" />
         </div>
         <h3 className="text-sm font-semibold text-white tracking-wide">
-          Hubungkan WhatsApp
+          Connect WhatsApp
         </h3>
         <p className="text-xs text-slate-300 mt-1 mb-4 leading-relaxed">
-          Buka <span className="text-emerald-300 font-semibold">WhatsApp di HP</span> &gt; Perangkat Tertaut &gt; Tautkan Perangkat, lalu scan kode QR di bawah ini:
+          Open <span className="text-emerald-300 font-semibold">WhatsApp on your phone</span> &gt; Linked Devices &gt; Link a Device, then scan the QR code below:
         </p>
     
         {/* QR Code Container */}
@@ -677,14 +677,14 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
             />
           ) : (
             <div className="w-52 h-52 flex flex-col items-center justify-center text-slate-800 font-mono text-xs gap-2 p-2">
-              <span>{waStatus === "connected" ? "Berhasil Terhubung" : "Menunggu QR Code..."}</span>
+              <span>{waStatus === "connected" ? "Successfully Connected" : "Waiting for QR Code..."}</span>
             </div>
           )}
         </div>
     
         <div className="mt-4 flex items-center gap-2 text-[11px] font-mono text-emerald-300">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span>Modal akan tertutup otomatis setelah scan berhasil</span>
+          <span>Modal will close automatically after successful scan</span>
         </div>
       </div>
     </div>
@@ -707,16 +707,16 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
           </div>
           <div>
             <h3 className="text-sm font-semibold text-white tracking-wide">
-              Pengaturan Telegram
+              Telegram Settings
             </h3>
-            <p className="text-[11px] text-slate-400">Hubungkan bot Telegram resmi Anda</p>
+            <p className="text-[11px] text-slate-400">Connect your official Telegram bot</p>
           </div>
         </div>
     
         <form onSubmit={handleSaveTelegramConfig} className="space-y-3 mt-2">
           <div>
             <label className="text-[11px] font-mono text-slate-300 block mb-1">
-              Telegram Bot Token (dari @BotFather)
+              Telegram Bot Token (from @BotFather)
             </label>
             <input
               type="password"
@@ -734,7 +734,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
             </label>
             <input
               type="text"
-              placeholder="misal: 123456789 atau -1001234567"
+              placeholder="e.g. 123456789 or -1001234567"
               value={tgChatIdInput}
               onChange={(e) => setTgChatIdInput(e.target.value)}
               className="w-full px-3 py-2 rounded-xl bg-black/50 border border-white/20 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-400 font-mono"
@@ -747,7 +747,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                 Admin User IDs (Otorisasi Approval)
               </label>
               <span className="text-[9.5px] font-mono text-sky-300">
-                Ketik /status di bot untuk cek ID
+                Ketik /status in bot to check ID
               </span>
             </div>
             <input
@@ -758,7 +758,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
               className="w-full px-3 py-2 rounded-xl bg-black/50 border border-white/20 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-400 font-mono"
             />
             <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
-              Hanya ID pengguna yang terdaftar di sini yang berhak menekan tombol <b>[Setujui Rencana]</b> untuk eksekusi perintah terminal/file di PC.
+              Only user IDs registered here are authorized to press the <b>[Approve Plan]</b> button to execute terminal/file commands on PC.
             </p>
           </div>
 
@@ -781,7 +781,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
               disabled={isTgLoading}
               className="px-4 py-1.5 rounded-xl bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/40 text-xs font-semibold text-white transition-all cursor-pointer"
             >
-              {isTgLoading ? "Memverifikasi..." : "Simpan & Hubungkan"}
+              {isTgLoading ? "Verifying..." : "Save & Connect"}
             </button>
           </div>
         </form>
@@ -840,7 +840,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
               disabled={isGoogleLoading}
               className="px-4 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/40 text-xs font-semibold text-white transition-all cursor-pointer"
             >
-              {isGoogleLoading ? "Menghubungkan..." : "Tautkan Akun"}
+              {isGoogleLoading ? "Connecting..." : "Link Account"}
             </button>
           </div>
         </form>

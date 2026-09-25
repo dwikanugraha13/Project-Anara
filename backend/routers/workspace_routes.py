@@ -71,7 +71,7 @@ async def pick_local_folder_endpoint(req: FolderImportRequest):
             root = tk.Tk()
             root.withdraw()
             root.wm_attributes("-topmost", 1)
-            folder_path = filedialog.askdirectory(title="Pilih Folder Project untuk Anara Agent")
+            folder_path = filedialog.askdirectory(title="Select Project Folder for Anara Agent")
             root.destroy()
         except Exception as e:
             logger.warning(f"[Workspace Folder Picker] Tkinter dialog error: {e}")
@@ -235,7 +235,7 @@ async def save_agent_workspace_file(req: SaveWorkspaceFileRequest):
         "filename": filename,
         "path": clean_p,
         "size_kb": size_kb,
-        "message": f"Berkas '{filename}' berhasil disimpan."
+        "message": f"File '{filename}' saved successfully."
     }
 
 @router.delete("/api/agent/workspace")
@@ -243,7 +243,7 @@ async def clear_agent_workspace(session_id: Optional[int] = None):
     """Resets and clears the active workspace for a specific session."""
     anara_agent.clear_workspace(session_id=session_id)
     broadcast_agent_event({"type": "workspace_updated", "session_id": session_id, "cleared": True})
-    return {"status": "success", "message": "Workspace dibersihkan", "session_id": session_id}
+    return {"status": "success", "message": "Workspace cleared", "session_id": session_id}
 
 # ── Terminal Command Execution ──
 
@@ -298,7 +298,7 @@ async def execute_terminal_command_endpoint(req: TerminalExecRequest):
             "cwd": cwd
         }
     except subprocess.TimeoutExpired:
-        return {"status": "error", "returncode": -1, "stdout": "", "stderr": "Perintah melampaui batas waktu (60s)."}
+        return {"status": "error", "returncode": -1, "stdout": "", "stderr": "Command timed out (60s)."}
     except Exception as e:
         return {"status": "error", "returncode": -1, "stdout": "", "stderr": str(e) or type(e).__name__}
 
@@ -313,7 +313,7 @@ async def stream_terminal_command_endpoint(req: TerminalExecRequest):
     cmd = (req.command or "").strip()
     if not cmd:
         async def empty_stream():
-            yield "data: " + json.dumps({"error": "Perintah kosong"}) + "\n\n"
+            yield "data: " + json.dumps({"error": "Command is empty"}) + "\n\n"
         return StreamingResponse(empty_stream(), media_type="text/event-stream")
 
     async def sse_runner():
@@ -369,9 +369,9 @@ async def revert_checkpoint_endpoint(req: CheckpointRevertRequest):
     """Restores workspace files to a snapshot backup."""
     ok = anara_agent.rollback_checkpoint(req.checkpoint_id, req.session_id)
     if not ok:
-        raise HTTPException(status_code=404, detail="Checkpoint tidak ditemukan atau gagal dipulihkan.")
+        raise HTTPException(status_code=404, detail="Checkpoint not found or failed to restore.")
     broadcast_agent_event({"type": "workspace_updated", "session_id": req.session_id})
-    return {"status": "success", "message": f"Ruang kerja berhasil dipulihkan dari checkpoint {req.checkpoint_id}."}
+    return {"status": "success", "message": f"Workspace restored from checkpoint {req.checkpoint_id}."}
 
 # ── Git Integration ──
 
@@ -432,7 +432,7 @@ async def init_agent_git_repo(session_id: Optional[int] = None):
     """Initializes a git repository strictly within the active workspace folder."""
     ok = anara_agent.ensure_git_repo(session_id)
     if not ok:
-        raise HTTPException(status_code=500, detail="Gagal menginisialisasi Git di folder proyek.")
+        raise HTTPException(status_code=500, detail="Failed to initialize git repository in project directory.")
     status = await get_agent_git_status(session_id)
     return {"status": "success", "git": status}
 
@@ -445,10 +445,10 @@ async def rollback_agent_git_commit(req: GitRollbackRequest):
     """Rolls back or reverts a specific git commit in the project workspace (FR-18)."""
     ok = anara_agent.rollback_git_commit(req.commit_sha, req.session_id)
     if not ok:
-        raise HTTPException(status_code=400, detail=f"Gagal melakukan rollback untuk commit '{req.commit_sha}'.")
+        raise HTTPException(status_code=400, detail=f"Failed to rollback commit '{req.commit_sha}'.")
     broadcast_agent_event({"type": "workspace_updated", "session_id": req.session_id})
     status = await get_agent_git_status(req.session_id)
-    return {"status": "success", "message": f"Rollback commit {req.commit_sha} berhasil.", "git": status}
+    return {"status": "success", "message": f"Rollback commit {req.commit_sha} completed successfully.", "git": status}
 
 @router.get("/api/agent/artifacts/download/{filename}")
 async def download_artifact_endpoint(filename: str):
@@ -492,7 +492,7 @@ async def toggle_skill_endpoint(skill_id: int):
     """Toggles active/inactive status of a skill."""
     ok = memory_engine.toggle_agent_skill(skill_id)
     if not ok:
-        raise HTTPException(status_code=404, detail="Skill tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Skill not found")
     return {"status": "success", "skill_id": skill_id}
 
 @router.delete("/api/agent/skills/{skill_id}")
@@ -500,7 +500,7 @@ async def delete_skill_endpoint(skill_id: int):
     """Deletes a skill from Anara Agent's brain."""
     ok = memory_engine.delete_agent_skill(skill_id)
     if not ok:
-        raise HTTPException(status_code=404, detail="Skill tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Skill not found")
     return {"status": "success", "skill_id": skill_id}
 
 # ── Agent Persona & Soul System (soul.md) ──
@@ -521,11 +521,11 @@ async def get_agent_soul_endpoint():
 async def update_agent_soul_endpoint(req: SoulUpdateRequest):
     """Updates soul.md directly on disk and hot-reloads memory."""
     if not req.content or not req.content.strip():
-        raise HTTPException(status_code=400, detail="Konten soul.md tidak boleh kosong")
+        raise HTTPException(status_code=400, detail="soul.md content cannot be empty")
     ok = save_soul_raw(req.content)
     if not ok:
-        raise HTTPException(status_code=500, detail="Gagal menyimpan soul.md ke disk")
-    return {"status": "success", "message": "Soul of Anara berhasil diperbarui & dimuat ulang."}
+        raise HTTPException(status_code=500, detail="Failed to save soul.md to disk")
+    return {"status": "success", "message": "Soul of Anara updated and reloaded successfully."}
 
 # ── Tools Catalog & Subagent Tasks ──
 

@@ -73,11 +73,11 @@ export default function HudBriefingCard({
         {/* To-dos */}
         <div className="mt-4">
           <p className="text-[10px] font-mono font-bold uppercase tracking-widest text-indigo-300/80 mb-2">
-            Tugas Hari Ini {todos.length > 0 && `(${todos.length})`}
+            Today's Tasks {todos.length > 0 && `(${todos.length})`}
           </p>
           {todos.length === 0 ? (
             <p className="text-xs text-slate-500 italic py-1">
-              Tidak ada tugas tertunda — harimu lapang.
+              No pending tasks — your day is clear.
             </p>
           ) : (
             <div className="space-y-1.5">
@@ -110,7 +110,7 @@ export default function HudBriefingCard({
         {projects.length > 0 && (
           <div className="mt-4">
             <p className="text-[10px] font-mono font-bold uppercase tracking-widest text-cyan-400/80 mb-2">
-              Proyek Aktif
+              Active Projects
             </p>
             <div className="flex flex-wrap gap-1.5">
               {projects.map((p, idx) => (

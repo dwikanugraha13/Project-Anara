@@ -137,7 +137,7 @@ async def websocket_endpoint(websocket: WebSocket):
         )
         try:
             sess = memory_engine.get_session(sid)
-            is_placeholder = not sess or not sess.get("title") or sess["title"] in ("New Chat", "Percakapan Baru", "Sesi Baru", "Obrolan Baru")
+            is_placeholder = not sess or not sess.get("title") or sess["title"] in ("New Chat", "New Session", "New Conversation")
             if sess and is_placeholder and (sess.get("message_count") or 0) >= 1:
                 asyncio.create_task(
                     memory_engine.auto_title_session_async(key_manager.get_client(), sid)
@@ -167,8 +167,8 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.info(f"[Dance] Activating dance 3D animation for: {user_text!r}")
         await websocket.send_json({"type": "emotion_update", "emotion": "dance", "gesture": "joy", "intensity": 1.0})
         speak_cmd = (
-            "[Info Sistem]: Musik dan tarian 3D Anara sedang dimulai di layar. "
-            "Sambut tarian ini dengan ceria, antusias, dan alami dalam satu kalimat singkat!"
+            "[SYSTEM EVENT: 3D avatar dance animation initiated on screen. "
+            "Acknowledge this cheerfully in 1 concise sentence matching the user's active language.]"
         )
         if gemini_service:
             await gemini_service.send_text(speak_cmd)
@@ -338,7 +338,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     return
                 convo = ""
                 if agent_runner.prev_turn_user_text or agent_runner.prev_turn_ai_reply:
-                    convo = f"User sebelumnya: {agent_runner.prev_turn_user_text}\nAnara sebelumnya: {agent_runner.prev_turn_ai_reply}"
+                    convo = f"Previous user: {agent_runner.prev_turn_user_text}\nPrevious Anara: {agent_runner.prev_turn_ai_reply}"
                 u = turn_user or voice_pipeline.current_turn_user_text or ""
                 t_ai = turn_ai
                 await auto_hud_enrichment(u, t_ai or "(Anara menjawab secara lisan)", force=True, conversation_context=convo)
@@ -489,7 +489,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 else:
                                     await websocket.send_json({
                                         "type": "transcript",
-                                        "data": "Provider Google AI Studio belum terhubung. Silakan buka Anara Brain Console (tab Providers) dan tambahkan API key untuk mengaktifkan fitur suara real-time.",
+                                        "data": "Real-time voice provider not connected. Please configure an API key in Anara Console (Providers tab) to activate real-time audio.",
                                         "speaker": "output",
                                         "is_final": True
                                     })
@@ -632,7 +632,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             elif voice_pipeline.user_audio_buffer:
                                 await websocket.send_json({
                                     "type": "transcript",
-                                    "data": "Provider Google AI Studio belum terhubung. Silakan buka Anara Brain Console (tab Providers) dan tambahkan API key untuk mengaktifkan fitur suara real-time.",
+                                    "data": "Real-time voice provider not connected. Please configure an API key in Anara Console (Providers tab) to activate real-time audio.",
                                     "speaker": "output",
                                     "is_final": True
                                 })

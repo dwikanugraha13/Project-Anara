@@ -147,7 +147,7 @@ export function RecursiveTreeNode({
           : "border-transparent hover:bg-white/[0.04] text-slate-300 hover:text-white"
       }`}
       style={{ paddingLeft: `${Math.max(6, depth * 12)}px` }}
-      title={`Buka IDE: ${node.path} (${node.size_kb ?? 0} KB)`}
+      title={`Open IDE: ${node.path} (${node.size_kb ?? 0} KB)`}
       onClick={() => onOpenFileIDE?.(node.path, node.name)}
     >
       <div className="flex items-center gap-1.5 min-w-0 flex-1 pr-1">
@@ -329,7 +329,7 @@ export default function WorkspaceTreeView({
               type="button"
               onClick={() => setIsProjectDropdownOpen((v) => !v)}
               className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/[0.05] hover:bg-white/[0.12] border border-white/10 hover:border-white/20 text-slate-200 hover:text-white transition-all cursor-pointer min-w-0 max-w-[125px] font-bold active:scale-95 shadow-sm"
-              title="Pilih atau beralih proyek"
+              title="Select or switch project"
             >
               <span className={`w-4 h-4 rounded-[4px] font-mono text-[10px] font-bold flex items-center justify-center shrink-0 leading-none shadow-sm ${currentBadge.color}`}>
                 {currentBadge.icon || currentBadge.letter}
@@ -354,7 +354,7 @@ export default function WorkspaceTreeView({
                   ? "bg-cyan-500/15 border border-cyan-400/35 text-cyan-200"
                   : "hover:bg-white/[0.06] text-slate-400 hover:text-slate-200"
               }`}
-              title={gitStatus?.is_git ? `Branch: ${gitStatus.branch || "master"} (Klik untuk beralih mode git/pohon)` : "Pohon Berkas"}
+              title={gitStatus?.is_git ? `Branch: ${gitStatus.branch || "master"} (Click to toggle git/tree mode)` : "File Tree"}
             >
               <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7a3 3 0 100-6 3 3 0 000 6zm0 0v10m0 0a3 3 0 100 6 3 3 0 000-6zm8-4a3 3 0 100-6 3 3 0 000 6zm0 0v3a4 4 0 01-4 4h-4" />
@@ -370,7 +370,7 @@ export default function WorkspaceTreeView({
                 type="button"
                 onClick={handleClearWorkspace}
                 className="p-1 rounded text-slate-400 hover:text-rose-300 transition-colors cursor-pointer"
-                title="Tutup Workspace Folder"
+                title="Close Workspace Folder"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M6 18L18 6M6 6l12 12" />
@@ -395,7 +395,7 @@ export default function WorkspaceTreeView({
                   autoFocus
                   value={projectSearch}
                   onChange={(e) => setProjectSearch(e.target.value)}
-                  placeholder="Cari proyek"
+                  placeholder="Search project"
                   className="w-full py-1.5 pl-7 pr-2 rounded-lg bg-black/40 border border-white/10 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-white/30 font-sans"
                 />
               </div>
@@ -439,7 +439,7 @@ export default function WorkspaceTreeView({
               {/* Divider */}
               <div className="border-t border-white/10 my-1" />
 
-              {/* Action: + Tambah proyek (SVG plus, No emoji) */}
+              {/* Action: + Add project (SVG plus, No emoji) */}
               <button
                 type="button"
                 onClick={() => {
@@ -451,7 +451,7 @@ export default function WorkspaceTreeView({
                 <svg className="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
-                <span>Tambah proyek</span>
+                <span>Add project</span>
               </button>
             </div>
           )}
@@ -460,7 +460,7 @@ export default function WorkspaceTreeView({
         {/* Git Changes Pill Header (+X -Y) */}
         {gitStatus && gitStatus.is_git && gitStatus.changed_count > 0 && (
           <div className="px-2.5 py-1 bg-black/40 border-b border-white/5 flex items-center justify-between text-[10px] font-mono text-slate-300 shrink-0">
-            <span className="text-cyan-300 font-bold truncate">{gitStatus.changed_count} berkas ({gitStatus.branch || "main"})</span>
+            <span className="text-cyan-300 font-bold truncate">{gitStatus.changed_count} files ({gitStatus.branch || "main"})</span>
             <div className="flex items-center gap-1 shrink-0">
               <span className="text-emerald-400 font-bold">+{gitStatus.insertions}</span>
               <span className="text-rose-400 font-bold">-{gitStatus.deletions}</span>
@@ -468,7 +468,7 @@ export default function WorkspaceTreeView({
           </div>
         )}
 
-        {/* Search Saring Berkas */}
+        {/* Filter Files */}
         <div className="p-1.5 border-b border-white/5 bg-black/20 shrink-0">
           <div className="relative flex items-center">
             <svg className="w-3 h-3 text-slate-500 absolute left-2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -483,7 +483,7 @@ export default function WorkspaceTreeView({
                   setExplorerFilter("");
                 }
               }}
-              placeholder="Saring berkas..."
+              placeholder="Filter files..."
               className="w-full py-1 pl-6 pr-6 rounded-lg bg-black/40 border border-white/10 text-[10.5px] text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-white/40 font-mono"
             />
             {explorerFilter && (
@@ -491,7 +491,7 @@ export default function WorkspaceTreeView({
                 type="button"
                 onClick={() => setExplorerFilter("")}
                 className="absolute right-1.5 w-4 h-4 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors text-[10px] cursor-pointer"
-                title="Bersihkan saringan (Escape)"
+                title="Clear filter (Escape)"
               >
                 ✕
               </button>
@@ -531,14 +531,14 @@ export default function WorkspaceTreeView({
               ))
             ) : (
               <div className="py-6 px-3 text-center flex flex-col items-center justify-center text-slate-500 font-mono text-[11px] gap-1">
-                <span>Tidak ada berkas cocok</span>
+                <span>No matching files</span>
                 {explorerFilter && (
                   <button
                     type="button"
                     onClick={() => setExplorerFilter("")}
                     className="text-cyan-400 hover:underline text-[10px] cursor-pointer mt-1"
                   >
-                    Bersihkan saringan
+                    Clear filter
                   </button>
                 )}
               </div>
@@ -557,14 +557,14 @@ export default function WorkspaceTreeView({
               ))
             ) : (
               <div className="py-6 px-3 text-center flex flex-col items-center justify-center text-slate-500 font-mono text-[11px] gap-1">
-                <span>Tidak ada berkas cocok</span>
+                <span>No matching files</span>
                 {explorerFilter && (
                   <button
                     type="button"
                     onClick={() => setExplorerFilter("")}
                     className="text-cyan-400 hover:underline text-[10px] cursor-pointer mt-1"
                   >
-                    Bersihkan saringan
+                    Clear filter
                   </button>
                 )}
               </div>
@@ -579,7 +579,7 @@ export default function WorkspaceTreeView({
                       ? "border-cyan-400 bg-cyan-500/10 text-white font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
                       : "border-transparent hover:bg-white/[0.04] text-slate-300 hover:text-white"
                   }`}
-                  title={`Buka: ${file.path} (${file.size_kb} KB)`}
+                  title={`Open: ${file.path} (${file.size_kb} KB)`}
                   onClick={() => onOpenFileIDE?.(file.path, file.name)}
                 >
                   <div className="flex items-center gap-1.5 min-w-0 flex-1 pr-1">
@@ -595,14 +595,14 @@ export default function WorkspaceTreeView({
               ))
             ) : (
               <div className="py-6 px-3 text-center flex flex-col items-center justify-center text-slate-500 font-mono text-[11px] gap-1">
-                <span>Tidak ada berkas cocok</span>
+                <span>No matching files</span>
                 {explorerFilter && (
                   <button
                     type="button"
                     onClick={() => setExplorerFilter("")}
                     className="text-cyan-400 hover:underline text-[10px] cursor-pointer mt-1"
                   >
-                    Bersihkan saringan
+                    Clear filter
                   </button>
                 )}
               </div>
@@ -616,7 +616,7 @@ export default function WorkspaceTreeView({
         <div
           onMouseDown={startResizingTree}
           className="relative w-px h-full cursor-col-resize shrink-0 select-none bg-white/10 hover:bg-white/20 transition-colors z-20"
-          title="Tarik untuk mengatur lebar pohon berkas"
+          title="Drag to resize file tree width"
         >
           {/* Expanded invisible hit area so mouse can grab easily without adding visual thickness */}
           <div className="absolute inset-y-0 -left-1.5 w-3 cursor-col-resize bg-transparent hover:bg-transparent active:bg-transparent" />

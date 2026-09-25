@@ -32,10 +32,10 @@ export default function BrainAnimationsTab({
     <div className="space-y-5 font-sans select-text">
       <div className="p-5 rounded-2xl liquid-glass-subtle text-xs text-slate-300">
         <span className="text-emerald-300 font-semibold uppercase tracking-wider text-[11px]">
-          Pustaka Gestur 3D &amp; Ekspresi
+          3D Gesture &amp; Expression Library
         </span>
         <p className="mt-1.5 leading-relaxed text-slate-400">
-          Daftar gerakan skeletal dan morph target ekspresi wajah yang terdaftar di database untuk mendukung respons visual interaktif.
+          List of skeletal movements and facial expression morph targets registered in the database to support interactive visual responses.
         </p>
       </div>
 
@@ -56,7 +56,7 @@ export default function BrainAnimationsTab({
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-1.5 leading-relaxed line-clamp-2">
-                {a.description || `Animasi ${a.category} dengan intensitas ${(a.intensity * 100).toFixed(0)}% selama ${a.duration_sec.toFixed(1)} detik`}
+                {a.description || `Animation ${a.category} with intensity ${(a.intensity * 100).toFixed(0)}% for ${a.duration_sec.toFixed(1)} seconds`}
               </p>
               {a.keywords && a.keywords.length > 0 && (
                 <p className="text-[10px] text-slate-500 mt-1.5 truncate">

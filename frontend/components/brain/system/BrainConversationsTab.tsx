@@ -40,7 +40,7 @@ export default function BrainConversationsTab({
   };
 
   const handleClearConversations = async () => {
-    if (!confirm("Hapus seluruh catatan percakapan episodik dari basis data?")) return;
+    if (!confirm("Delete all episodic conversation records from the database?")) return;
     try {
       const res = await fetch(`${BACKEND_URL}/api/brain/conversations`, { method: "DELETE" });
       if (res.ok) {
@@ -65,14 +65,14 @@ export default function BrainConversationsTab({
         <div className="space-y-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[11px] uppercase tracking-wider text-cyan-300 font-bold">
-              Riwayat Percakapan Episodik
+              Episodic Conversation History
             </span>
             <span className="text-[10px] text-slate-400 liquid-glass-subtle px-2 py-0.5 rounded-full border border-white/10 font-mono">
               {filteredConversations.length} / {conversations.length} entri
             </span>
           </div>
           <p className="text-xs text-slate-400">
-            Rekaman log dialog multi-sesi yang tersimpan di basis data SQLite.
+            Multi-session dialog log records stored in SQLite database.
           </p>
         </div>
 
@@ -109,7 +109,7 @@ export default function BrainConversationsTab({
               type="button"
               onClick={handleClearConversations}
               className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/25 border border-rose-400/30 text-rose-300 hover:text-rose-200 text-xs flex items-center gap-1.5 cursor-pointer transition-all font-mono"
-              title="Hapus seluruh log riwayat percakapan"
+              title="Delete all conversation history logs"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -123,7 +123,7 @@ export default function BrainConversationsTab({
       <div className="space-y-2.5">
         {filteredConversations.length === 0 ? (
           <div className="text-center py-16 text-slate-400 text-xs liquid-glass-subtle rounded-2xl p-8">
-            Belum ada riwayat percakapan yang cocok dengan filter.
+            No conversation history matches the current filter.
           </div>
         ) : (
           filteredConversations.map((c) => {
@@ -166,7 +166,7 @@ export default function BrainConversationsTab({
                       type="button"
                       onClick={() => handleDeleteConversation(c.id)}
                       className="text-slate-500 hover:text-rose-400 p-1 rounded-md hover:bg-rose-500/10 transition-colors cursor-pointer"
-                      title="Hapus entri percakapan ini"
+                      title="Delete this conversation entry"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -196,7 +196,7 @@ export default function BrainConversationsTab({
                       }}
                     />
                     <span className="text-[11px] text-cyan-300 font-mono">
-                      {c.visual_data?.image_title || "Gambar Proyeksi Visual"}
+                      {c.visual_data?.image_title || "Visual Projection Image"}
                     </span>
                   </div>
                 )}

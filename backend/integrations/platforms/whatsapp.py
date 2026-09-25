@@ -58,8 +58,8 @@ class WhatsAppPlatformAdapter(BasePlatformAdapter):
         pending_tc = getattr(action, "pending_tool_call", None) or {}
         cmd = args.get("command") or pending_tc.get("arguments", {}).get("command")
 
-        cmd_hint = f"\nPerintah: {cmd}" if cmd else ""
-        instruction = "Balas *setujui* (approve) untuk menjalankan tindakan ini, atau *batal* (cancel) untuk membatalkannya."
+        cmd_hint = f"\n*Command:* `{cmd}`" if cmd else ""
+        instruction = "Reply *approve* to proceed, or *cancel* to abort."
         text = f"{narration}{cmd_hint}\n\n{instruction}"
         return {"text": text, "reply_markup": None}
 

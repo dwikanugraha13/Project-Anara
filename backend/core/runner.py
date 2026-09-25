@@ -134,15 +134,7 @@ class AnaraExecutionRunner:
 
         # 2. Check Pending Actions State Machine (Hermes Model-Driven Parity)
         pending = session_state_manager.get_pending(self.platform, str(effective_sid))
-        norm_text = clean_text.lower()
-
-        is_approved = False
-        if pending:
-            from core.plan_detector import classify_approval_intent
-            semantic_intent = await classify_approval_intent(clean_text, pending.plan_text)
-            is_approved = (semantic_intent == "approve")
-        else:
-            is_approved = is_explicit_plan_approval(norm_text)
+        norm_text = clean_text.lower().strip()
 
         session_obj = memory_engine.get_session(effective_sid)
         session_type = (session_obj.get("session_type") or "chat") if session_obj else "chat"
@@ -150,6 +142,14 @@ class AnaraExecutionRunner:
             session_obj.get("session_mode")
             or ("explicit_plan_build" if session_type == "code" else "conversational")
         ) if session_obj else "conversational"
+
+        is_approved = False
+        if pending:
+            from core.plan_detector import classify_approval_intent
+            semantic_intent = await classify_approval_intent(clean_text, pending.plan_text)
+            is_approved = (semantic_intent == "approve")
+        elif session_mode in ("explicit_plan_build", "plan") and norm_text in ("y", "yes"):
+            is_approved = True
 
         if pending and is_approved:
             session_state_manager.clear_pending(self.platform, str(effective_sid))
@@ -161,7 +161,7 @@ class AnaraExecutionRunner:
             else:
                 agent_mode = requested_mode if requested_mode in ("plan", "build") else "plan"
         else:
-            # Conversational mode
+            # Conversational mode: execute directly, runtime tool interception handles safety
             if is_approved:
                 agent_mode = "build"
             elif needs_plan(clean_text, session_mode="conversational"):
@@ -191,6 +191,7 @@ class AnaraExecutionRunner:
         # 5. Assemble System Prompt with Workspace Tree & Scratchpad
         from core.agent import anara_agent
         ws_tree = anara_agent.get_workspace_tree(session_id=effective_sid)
+        selected_model = model_id or get_active_model_id()
         system_instruction = PromptAssembler.assemble(
             mode=agent_mode,
             speaker_name=effective_speaker,
@@ -199,6 +200,7 @@ class AnaraExecutionRunner:
             session_type=session_type,
             user_task=clean_text,
             session_id=effective_sid,
+            model_id=selected_model,
         )
 
         from memory.memory_nudge import memory_nudge_manager
@@ -207,13 +209,12 @@ class AnaraExecutionRunner:
             system_instruction += f"\n\n{nudge_instruction}"
 
         full_user_input = f"{compacted_history}User: {clean_text}" if compacted_history else clean_text
-        selected_model = model_id or get_active_model_id()
         tools_used: List[str] = []
 
         # Yield initial thinking / planning status (Hermes Parity)
         yield TurnEvent(
             type="thought",
-            content="Planning strategy / Merumuskan pemikiran..." if agent_mode == "plan" else "Preparing action / Mempersiapkan tindakan...",
+            content="Formulating strategy..." if agent_mode == "plan" else "Preparing action execution...",
             metadata={"mode": agent_mode, "model": selected_model},
         )
 
@@ -269,7 +270,7 @@ class AnaraExecutionRunner:
         while not model_task.done() or not event_queue.empty():
             if self.is_interrupted or session_state_manager.is_interrupted(self.platform, str(effective_sid)):
                 model_task.cancel()
-                yield TurnEvent(type="error", content="Tugas dihentikan oleh pengguna.", is_error=True)
+                yield TurnEvent(type="error", content="Task stopped by user.", is_error=True)
                 return
             try:
                 event = await asyncio.wait_for(event_queue.get(), timeout=0.05)
@@ -433,7 +434,7 @@ class AnaraExecutionRunner:
                 plan_pending = True
                 plan_id = event.plan_id
                 pending_tool_call = {"tool": event.tool_name, "arguments": event.tool_args}
-                final_text = event.thought or event.content or "Persetujuan diperlukan."
+                final_text = event.thought or event.content or "Approval required."
             elif event.type == "final_text":
                 final_text = event.content or ""
             elif event.type == "error":

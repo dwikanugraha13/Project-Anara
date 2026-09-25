@@ -7,11 +7,17 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import httpx
 
 from constants import get_anara_staging_dir
-from .formatter import format_telegram_html, _rich_normalize_linebreaks, has_rich_telegram_constructs
+from .formatter import (
+    format_telegram_html,
+    _rich_normalize_linebreaks,
+    has_rich_telegram_constructs,
+    split_html_chunks,
+    split_message_chunks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +73,7 @@ async def get_telegram_status() -> Dict[str, Any]:
             "is_configured": False,
             "bot": None,
             "default_chat_id": None,
-            "message": "Token Telegram Bot belum diatur.",
+            "message": "Telegram Bot token not configured.",
         }
 
     chat_id = get_stored_telegram_chat_id()
@@ -91,27 +97,29 @@ async def get_telegram_status() -> Dict[str, Any]:
                         },
                         "default_chat_id": chat_id,
                         "admin_ids": admin_ids,
-                        "message": f"Terhubung sebagai @{bot_info.get('username')}",
+                        "message": f"Connected as @{bot_info.get('username')}",
                     }
             elif res.status_code in (401, 404):
                 return {
                     "status": "error",
+                    "error_code": "INVALID_BOT_TOKEN",
                     "is_configured": True,
                     "bot": None,
                     "default_chat_id": chat_id,
                     "admin_ids": admin_ids,
-                    "message": "Token Telegram Bot tidak valid (401/404).",
+                    "message": "Invalid Telegram Bot token (401/404).",
                 }
     except Exception as e:
         logger.warning(f"[TelegramService] getMe error: {e}")
 
     return {
         "status": "error",
+        "error_code": "API_CONNECTION_ERROR",
         "is_configured": True,
         "bot": None,
         "default_chat_id": chat_id,
         "admin_ids": admin_ids,
-        "message": "Gagal menghubungi Telegram Bot API (timeout/network error).",
+        "message": "Failed to connect to Telegram Bot API (timeout/network error).",
     }
 
 
@@ -146,12 +154,72 @@ async def execute_remote_telegram_command(command_text: str, chat_id: Optional[s
         channel="telegram",
         channel_id=chat_id or "default",
         user_id="telegram_remote",
-        sender_name="Pengguna",
+        sender_name="User",
     )
     res = await process_channel_request(req)
     if res.text and chat_id:
         await send_telegram_message(text=res.text, chat_id=chat_id, reply_markup=res.reply_markup)
     return {"status": res.status, "result": res.text, "mode": res.mode}
+
+
+async def _telegram_api_post(
+    endpoint: str,
+    payload: Dict[str, Any],
+    token: str,
+    timeout: float = 20.0,
+    max_retries: int = 3,
+) -> Tuple[int, Dict[str, Any]]:
+    """
+    Resilient HTTP POST request to Telegram Bot API with automatic exponential backoff,
+    network timeout shielding, and 429 Too Many Requests (retry_after) rate-limit handling.
+    """
+    url = f"{TELEGRAM_API_BASE}/bot{token}/{endpoint}"
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                res = await client.post(url, json=payload)
+                status_code = res.status_code
+                try:
+                    data = res.json()
+                except Exception:
+                    data = {"ok": False, "description": res.text}
+
+                if status_code == 200 and data.get("ok"):
+                    return status_code, data
+
+                # Handle 429 Rate Limit (Too Many Requests / Flood Control)
+                if status_code == 429:
+                    retry_after = data.get("parameters", {}).get("retry_after", 1.5)
+                    wait_sec = min(max(float(retry_after), 1.0), 5.0)
+                    logger.warning(f"[TelegramClient] Rate limited (429) on {endpoint}. Backing off {wait_sec}s...")
+                    await asyncio.sleep(wait_sec)
+                    continue
+
+                # Don't retry unrecoverable client errors (e.g. 400 Bad Request, 401 Unauthorized, 404 Not Found)
+                if status_code in (400, 401, 403, 404):
+                    return status_code, data
+
+                # Telegram Server Errors (500, 502, 503, 504) - retry with exponential backoff
+                if status_code >= 500 and attempt < max_retries - 1:
+                    wait_sec = 0.5 * (2 ** attempt)
+                    await asyncio.sleep(wait_sec)
+                    continue
+
+                return status_code, data
+
+        except (httpx.TimeoutException, httpx.NetworkError, httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout) as net_err:
+            if attempt < max_retries - 1:
+                wait_sec = 0.5 * (2 ** attempt)
+                logger.warning(f"[TelegramClient] Network glitch on {endpoint} (attempt {attempt+1}/{max_retries}): {net_err or 'timeout'}. Retrying in {wait_sec}s...")
+                await asyncio.sleep(wait_sec)
+            else:
+                logger.error(f"[TelegramClient] Network failure calling {endpoint} after {max_retries} attempts: {net_err or 'timeout'}")
+                return 0, {"ok": False, "error_code": 0, "description": f"Network error: {net_err or 'timeout'}"}
+        except Exception as e:
+            logger.error(f"[TelegramClient] Unexpected error calling {endpoint}: {e}")
+            return 0, {"ok": False, "error_code": 0, "description": str(e)}
+
+    return 0, {"ok": False, "error_code": 0, "description": "Max retries exceeded"}
 
 
 async def send_telegram_message(
@@ -160,90 +228,120 @@ async def send_telegram_message(
     parse_mode: str = "HTML",
     reply_markup: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Sends a text message with semantic chunking, rich constructs, and auto-fallbacks."""
+    """Sends a text message with semantic chunking, rich constructs, tag balancing, and auto-fallbacks."""
     token = get_stored_telegram_token()
     if not token:
-        return {"status": "error", "message": "Token Telegram Bot belum diatur."}
+        return {"status": "error", "error_code": "MISSING_BOT_TOKEN", "message": "Telegram Bot token not configured."}
 
     target_chat = chat_id or get_stored_telegram_chat_id()
     if not target_chat:
-        return {"status": "error", "message": "Chat ID tujuan belum ditentukan."}
+        return {"status": "error", "error_code": "MISSING_CHAT_ID", "message": "Target chat ID not specified."}
 
-    # ── SEMANTIC CHUNKING (Threshold: 2200 chars for safe HTML expansion & unlimited parts) ──
-    CHUNK_LIMIT = 2200
+    # ── 1. SEMANTIC CHUNKING (Threshold: 2000 chars for safe HTML expansion & zero message truncation) ──
+    CHUNK_LIMIT = 2000
     if len(text) > CHUNK_LIMIT:
-        try:
-            from .formatter import split_message_chunks
-            parts = split_message_chunks(text, max_chars=CHUNK_LIMIT, add_part_headers=True)
-            if len(parts) > 1:
-                logger.info(f"[TelegramClient] Splitting message ({len(text)} chars) into {len(parts)} parts for chat {target_chat}")
-                last_res: Dict[str, Any] = {"status": "ok", "chunks_sent": len(parts)}
-                for idx, part in enumerate(parts):
-                    markup = reply_markup if (idx == len(parts) - 1) else None
-                    last_res = await send_telegram_message(part, chat_id=target_chat, parse_mode=parse_mode, reply_markup=markup)
-                    if idx < len(parts) - 1:
-                        await asyncio.sleep(0.35)
-                return last_res
-        except Exception as chunk_err:
-            logger.warning(f"[TelegramClient] Chunking error: {chunk_err}")
+        parts = split_message_chunks(text, max_chars=CHUNK_LIMIT, add_part_headers=True)
+        if len(parts) > 1:
+            logger.info(f"[TelegramClient] Splitting message ({len(text)} chars) into {len(parts)} parts for chat {target_chat}")
+            last_res: Dict[str, Any] = {"status": "ok", "chunks_sent": len(parts)}
+            for idx, part in enumerate(parts):
+                markup = reply_markup if (idx == len(parts) - 1) else None
+                part_res = await send_telegram_message(part, chat_id=target_chat, parse_mode=parse_mode, reply_markup=markup)
+                if part_res.get("status") == "ok":
+                    last_res = part_res
+                else:
+                    logger.warning(f"[TelegramClient] Chunk {idx+1}/{len(parts)} delivery issue: {part_res.get('message')}")
+                # Safe pacing between consecutive messages to respect Telegram chat rate limit (1 msg/sec)
+                if idx < len(parts) - 1:
+                    await asyncio.sleep(0.7)
+            return last_res
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        # 1. Native Bot API 10.1 sendRichMessage
-        if parse_mode == "HTML" and has_rich_telegram_constructs(text):
-            try:
-                rich_url = f"{TELEGRAM_API_BASE}/bot{token}/sendRichMessage"
-                normalized_text = _rich_normalize_linebreaks(text)
-                if len(normalized_text) > 4000:
-                    normalized_text = normalized_text[:3990] + "\n..."
-                rich_payload: Dict[str, Any] = {"chat_id": target_chat, "text": normalized_text}
-                if reply_markup:
-                    rich_payload["reply_markup"] = reply_markup
-                rich_res = await client.post(rich_url, json=rich_payload)
-                if rich_res.status_code == 200 and rich_res.json().get("ok"):
-                    res_json = rich_res.json()
-                    res_data = res_json.get("result", {})
+    # ── 2. Native Bot API 10.1 sendRichMessage ──
+    if parse_mode == "HTML" and has_rich_telegram_constructs(text):
+        normalized_text = _rich_normalize_linebreaks(text)
+        if len(normalized_text) <= 4000:
+            rich_payload: Dict[str, Any] = {"chat_id": target_chat, "text": normalized_text}
+            if reply_markup:
+                rich_payload["reply_markup"] = reply_markup
+            code, data = await _telegram_api_post("sendRichMessage", rich_payload, token, timeout=15.0)
+            if code == 200 and data.get("ok"):
+                res_data = data.get("result", {})
+                msg_id = res_data.get("message_id") if isinstance(res_data, dict) else None
+                return {"status": "ok", "method": "sendRichMessage", "result": res_data, "message_id": msg_id}
+
+    # ── 3. Standard HTML Formatting & Balanced Tag Safety ──
+    formatted = format_telegram_html(text) if parse_mode == "HTML" else text
+
+    # Secondary Safety Splitter: If HTML expansion exceeds 4000 chars, split with tag balancing — NEVER truncate!
+    if parse_mode == "HTML" and len(formatted) > 4000:
+        html_subparts = split_html_chunks(formatted, max_chars=3800)
+        if len(html_subparts) > 1:
+            logger.info(f"[TelegramClient] HTML expansion exceeded limit ({len(formatted)} chars). Split into {len(html_subparts)} balanced sub-chunks.")
+            sub_res: Dict[str, Any] = {"status": "ok", "subchunks_sent": len(html_subparts)}
+            for s_idx, sub_chunk in enumerate(html_subparts):
+                s_markup = reply_markup if (s_idx == len(html_subparts) - 1) else None
+                code, data = await _telegram_api_post("sendMessage", {
+                    "chat_id": target_chat,
+                    "text": sub_chunk,
+                    "parse_mode": "HTML",
+                    **({"reply_markup": s_markup} if s_markup else {})
+                }, token, timeout=15.0)
+                if code == 200 and data.get("ok"):
+                    res_data = data.get("result", {})
                     msg_id = res_data.get("message_id") if isinstance(res_data, dict) else None
-                    return {"status": "ok", "method": "sendRichMessage", "result": res_data, "message_id": msg_id}
-            except Exception:
-                pass
+                    sub_res = {"status": "ok", "method": "sendMessage_HTML_Subchunk", "result": res_data, "message_id": msg_id}
+                if s_idx < len(html_subparts) - 1:
+                    await asyncio.sleep(0.7)
+            return sub_res
 
-        # 2. Standard sendMessage with format_telegram_html
-        formatted = format_telegram_html(text) if parse_mode == "HTML" else text
-        if len(formatted) > 4000:
-            formatted = formatted[:3990] + "\n..."
-        url = f"{TELEGRAM_API_BASE}/bot{token}/sendMessage"
-        payload: Dict[str, Any] = {
-            "chat_id": target_chat,
-            "text": formatted,
-            "parse_mode": parse_mode,
-        }
-        if reply_markup:
-            payload["reply_markup"] = reply_markup
+    # Send HTML message
+    payload: Dict[str, Any] = {
+        "chat_id": target_chat,
+        "text": formatted,
+        "parse_mode": parse_mode,
+    }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
 
-        res = await client.post(url, json=payload)
-        if res.status_code == 200 and res.json().get("ok"):
-            res_json = res.json()
-            res_data = res_json.get("result", {})
-            msg_id = res_data.get("message_id") if isinstance(res_data, dict) else None
-            return {"status": "ok", "method": "sendMessage_HTML", "result": res_data, "message_id": msg_id}
+    code, data = await _telegram_api_post("sendMessage", payload, token, timeout=15.0)
+    if code == 200 and data.get("ok"):
+        res_data = data.get("result", {})
+        msg_id = res_data.get("message_id") if isinstance(res_data, dict) else None
+        return {"status": "ok", "method": "sendMessage_HTML", "result": res_data, "message_id": msg_id}
 
-        logger.warning(f"[TelegramClient] HTML sendMessage returned {res.status_code}: {res.text}. Trying plain text fallback...")
-        # 3. Fallback: plain text (preserves reply_markup so interactive buttons are never lost)
-        clean_plain = text.replace("<details>", "").replace("</details>", "").replace("<summary>", "").replace("</summary>", "")
-        if len(clean_plain) > 4000:
-            clean_plain = clean_plain[:3990] + "\n..."
-        plain_payload: Dict[str, Any] = {"chat_id": target_chat, "text": clean_plain}
-        if reply_markup:
-            plain_payload["reply_markup"] = reply_markup
-        res_plain = await client.post(url, json=plain_payload)
-        if res_plain.status_code == 200 and res_plain.json().get("ok"):
-            res_json = res_plain.json()
-            res_data = res_json.get("result", {})
-            msg_id = res_data.get("message_id") if isinstance(res_data, dict) else None
-            return {"status": "ok", "method": "sendMessage_Plain", "result": res_data, "message_id": msg_id}
+    logger.warning(f"[TelegramClient] HTML sendMessage returned {code}: {data.get('description', '')}. Trying plain text fallback...")
 
-        logger.error(f"[TelegramClient] Plain sendMessage failed {res_plain.status_code}: {res_plain.text}")
-        return {"status": "error", "message": f"Gagal mengirim pesan Telegram: {res_plain.text[:120]}"}
+    # ── 4. Fallback: plain text (preserves reply_markup so interactive buttons are never lost) ──
+    clean_plain = text.replace("<details>", "").replace("</details>", "").replace("<summary>", "").replace("</summary>", "")
+    if len(clean_plain) > 4000:
+        plain_subparts = split_message_chunks(clean_plain, max_chars=3800, add_part_headers=False)
+        sub_res: Dict[str, Any] = {"status": "ok", "plain_subchunks_sent": len(plain_subparts)}
+        for p_idx, p_chunk in enumerate(plain_subparts):
+            p_markup = reply_markup if (p_idx == len(plain_subparts) - 1) else None
+            p_payload: Dict[str, Any] = {"chat_id": target_chat, "text": p_chunk}
+            if p_markup:
+                p_payload["reply_markup"] = p_markup
+            p_code, p_data = await _telegram_api_post("sendMessage", p_payload, token, timeout=15.0)
+            if p_code == 200 and p_data.get("ok"):
+                res_data = p_data.get("result", {})
+                msg_id = res_data.get("message_id") if isinstance(res_data, dict) else None
+                sub_res = {"status": "ok", "method": "sendMessage_Plain_Subchunk", "result": res_data, "message_id": msg_id}
+            if p_idx < len(plain_subparts) - 1:
+                await asyncio.sleep(0.7)
+        return sub_res
+
+    plain_payload: Dict[str, Any] = {"chat_id": target_chat, "text": clean_plain}
+    if reply_markup:
+        plain_payload["reply_markup"] = reply_markup
+
+    p_code, p_data = await _telegram_api_post("sendMessage", plain_payload, token, timeout=15.0)
+    if p_code == 200 and p_data.get("ok"):
+        res_data = p_data.get("result", {})
+        msg_id = res_data.get("message_id") if isinstance(res_data, dict) else None
+        return {"status": "ok", "method": "sendMessage_Plain", "result": res_data, "message_id": msg_id}
+
+    logger.error(f"[TelegramClient] Plain sendMessage failed {p_code}: {p_data.get('description', '')}")
+    return {"status": "error", "error_code": "SEND_MESSAGE_FAILED", "message": f"Failed to send Telegram message: {str(p_data.get('description', ''))[:120]}"}
 
 
 async def send_telegram_document(
@@ -254,15 +352,15 @@ async def send_telegram_document(
     """Sends a native document file to Telegram chat."""
     token = get_stored_telegram_token()
     if not token:
-        return {"status": "error", "message": "Token Telegram Bot belum diatur."}
+        return {"status": "error", "error_code": "MISSING_BOT_TOKEN", "message": "Telegram Bot token not configured."}
 
     target_chat = chat_id or get_stored_telegram_chat_id()
     if not target_chat:
-        return {"status": "error", "message": "Chat ID tujuan belum ditentukan."}
+        return {"status": "error", "error_code": "MISSING_CHAT_ID", "message": "Target chat ID not specified."}
 
     clean_path = os.path.abspath(os.path.expanduser(file_path.strip().strip('"\'')))
     if not os.path.isfile(clean_path):
-        return {"status": "error", "message": f"Berkas tidak ditemukan: {clean_path}"}
+        return {"status": "error", "error_code": "FILE_NOT_FOUND", "message": f"Document file not found: {clean_path}"}
 
     url = f"{TELEGRAM_API_BASE}/bot{token}/sendDocument"
     filename = os.path.basename(clean_path)
@@ -279,9 +377,9 @@ async def send_telegram_document(
             res = await client.post(url, data=data, files=files)
             if res.status_code == 200 and res.json().get("ok"):
                 return {"status": "ok", "message_id": res.json()["result"]["message_id"], "filename": filename}
-            return {"status": "error", "message": res.text[:120]}
+            return {"status": "error", "error_code": "SEND_DOCUMENT_FAILED", "message": res.text[:120]}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "error_code": "SEND_DOCUMENT_EXCEPTION", "message": str(e)}
 
 
 async def send_telegram_voice(
@@ -292,15 +390,15 @@ async def send_telegram_voice(
     """Sends a native voice note bubble (.ogg Opus) to Telegram chat."""
     token = get_stored_telegram_token()
     if not token:
-        return {"status": "error", "message": "Token Telegram Bot belum diatur."}
+        return {"status": "error", "error_code": "MISSING_BOT_TOKEN", "message": "Telegram Bot token not configured."}
 
     target_chat = chat_id or get_stored_telegram_chat_id()
     if not target_chat:
-        return {"status": "error", "message": "Chat ID tujuan belum ditentukan."}
+        return {"status": "error", "error_code": "MISSING_CHAT_ID", "message": "Target chat ID not specified."}
 
     clean_path = os.path.abspath(os.path.expanduser(file_path.strip().strip('"\'')))
     if not os.path.isfile(clean_path):
-        return {"status": "error", "message": f"Berkas suara tidak ditemukan: {clean_path}"}
+        return {"status": "error", "error_code": "FILE_NOT_FOUND", "message": f"Voice file not found: {clean_path}"}
 
     url = f"{TELEGRAM_API_BASE}/bot{token}/sendVoice"
     filename = os.path.basename(clean_path)
@@ -317,9 +415,9 @@ async def send_telegram_voice(
             res = await client.post(url, data=data, files=files)
             if res.status_code == 200 and res.json().get("ok"):
                 return {"status": "ok", "message_id": res.json()["result"]["message_id"], "filename": filename}
-            return {"status": "error", "message": res.text[:120]}
+            return {"status": "error", "error_code": "SEND_VOICE_FAILED", "message": res.text[:120]}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "error_code": "SEND_VOICE_EXCEPTION", "message": str(e)}
 
 
 async def send_telegram_photo(
@@ -332,11 +430,11 @@ async def send_telegram_photo(
     photo_target = photo or file_path
     token = get_stored_telegram_token()
     if not token:
-        return {"status": "error", "message": "Token Telegram Bot belum diatur."}
+        return {"status": "error", "error_code": "MISSING_BOT_TOKEN", "message": "Telegram Bot token not configured."}
 
     target_chat = chat_id or get_stored_telegram_chat_id()
     if not target_chat:
-        return {"status": "error", "message": "Chat ID tujuan belum ditentukan."}
+        return {"status": "error", "error_code": "MISSING_CHAT_ID", "message": "Target chat ID not specified."}
 
     url = f"{TELEGRAM_API_BASE}/bot{token}/sendPhoto"
 
@@ -359,9 +457,9 @@ async def send_telegram_photo(
                 res = await client.post(url, data=data, files=files)
                 if res.status_code == 200 and res.json().get("ok"):
                     return {"status": "ok", "message_id": res.json()["result"]["message_id"]}
-            return {"status": "error", "message": "Gagal mengirim foto."}
+            return {"status": "error", "error_code": "SEND_PHOTO_FAILED", "message": "Failed to send photo: Invalid source or server error."}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "error_code": "SEND_PHOTO_EXCEPTION", "message": str(e)}
 
 
 async def send_telegram_video(
@@ -372,11 +470,11 @@ async def send_telegram_video(
     """Sends a video directly into Telegram chat."""
     token = get_stored_telegram_token()
     if not token:
-        return {"status": "error", "message": "Token Telegram Bot belum diatur."}
+        return {"status": "error", "error_code": "MISSING_BOT_TOKEN", "message": "Telegram Bot token not configured."}
 
     target_chat = chat_id or get_stored_telegram_chat_id()
     if not target_chat:
-        return {"status": "error", "message": "Chat ID tujuan belum ditentukan."}
+        return {"status": "error", "error_code": "MISSING_CHAT_ID", "message": "Target chat ID not specified."}
 
     url = f"{TELEGRAM_API_BASE}/bot{token}/sendVideo"
 
@@ -399,9 +497,9 @@ async def send_telegram_video(
                 res = await client.post(url, data=data, files=files)
                 if res.status_code == 200 and res.json().get("ok"):
                     return {"status": "ok", "message_id": res.json()["result"]["message_id"]}
-            return {"status": "error", "message": "Gagal mengirim video."}
+            return {"status": "error", "error_code": "SEND_VIDEO_FAILED", "message": "Failed to send video: Invalid source or server error."}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "error_code": "SEND_VIDEO_EXCEPTION", "message": str(e)}
 
 
 async def answer_telegram_callback_query(callback_query_id: str, text: Optional[str] = None):
@@ -409,12 +507,13 @@ async def answer_telegram_callback_query(callback_query_id: str, text: Optional[
     token = get_stored_telegram_token()
     if not token or not callback_query_id:
         return
-    url = f"{TELEGRAM_API_BASE}/bot{token}/answerCallbackQuery"
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(url, json={"callback_query_id": callback_query_id, "text": text or ""})
-    except Exception:
-        pass
+    await _telegram_api_post(
+        "answerCallbackQuery",
+        {"callback_query_id": callback_query_id, "text": text or ""},
+        token,
+        timeout=5.0,
+        max_retries=2,
+    )
 
 
 async def edit_telegram_message(chat_id: str, message_id: int, text: str, reply_markup: Optional[Dict[str, Any]] = None):
@@ -422,35 +521,26 @@ async def edit_telegram_message(chat_id: str, message_id: int, text: str, reply_
     token = get_stored_telegram_token()
     if not token:
         return False
-    url = f"{TELEGRAM_API_BASE}/bot{token}/editMessageText"
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            payload: Dict[str, Any] = {
-                "chat_id": chat_id,
-                "message_id": message_id,
-                "text": format_telegram_html(text),
-                "parse_mode": "HTML",
-            }
-            if reply_markup is not None:
-                payload["reply_markup"] = reply_markup
-            res = await client.post(url, json=payload)
-            return res.status_code == 200 and res.json().get("ok")
-    except Exception:
-        return False
+    payload: Dict[str, Any] = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": format_telegram_html(text),
+        "parse_mode": "HTML",
+    }
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
+    code, data = await _telegram_api_post("editMessageText", payload, token, timeout=10.0, max_retries=2)
+    return code == 200 and data.get("ok", False)
 
 
 async def delete_telegram_message(chat_id: str, message_id: int):
-    """Deletes an ephemeral or superseded message."""
+    """Deletes an ephemeral or superseded message with automatic retry."""
     token = get_stored_telegram_token()
     if not token:
         return False
-    url = f"{TELEGRAM_API_BASE}/bot{token}/deleteMessage"
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            res = await client.post(url, json={"chat_id": chat_id, "message_id": message_id})
-            return res.status_code == 200 and res.json().get("ok")
-    except Exception:
-        return False
+    payload = {"chat_id": chat_id, "message_id": message_id}
+    code, data = await _telegram_api_post("deleteMessage", payload, token, timeout=6.0, max_retries=3)
+    return code == 200 and data.get("ok", False)
 
 
 async def send_telegram_chat_action(chat_id: str, action: str = "typing"):
@@ -458,12 +548,13 @@ async def send_telegram_chat_action(chat_id: str, action: str = "typing"):
     token = get_stored_telegram_token()
     if not token or not chat_id:
         return
-    url = f"{TELEGRAM_API_BASE}/bot{token}/sendChatAction"
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(url, json={"chat_id": chat_id, "action": action})
-    except Exception:
-        pass
+    await _telegram_api_post(
+        "sendChatAction",
+        {"chat_id": chat_id, "action": action},
+        token,
+        timeout=5.0,
+        max_retries=1,
+    )
 
 
 async def download_telegram_attachment(file_id: str, destination_filename: str) -> Optional[str]:
@@ -502,15 +593,15 @@ async def setup_telegram_bot_commands() -> bool:
         return False
     url = f"{TELEGRAM_API_BASE}/bot{token}/setMyCommands"
     commands = [
-        {"command": "plan", "description": "Susun rencana kerja arsitektur tanpa eksekusi langsung"},
-        {"command": "stop", "description": "Batalkan rencana kerja yang sedang menunggu persetujuan"},
-        {"command": "model", "description": "Pilih dan ganti model AI aktif (Multi-Provider)"},
-        {"command": "workspace", "description": "Lihat atau kunci bot ke folder project lokal PC"},
-        {"command": "status", "description": "Cek kesehatan sistem Anara & status AI"},
-        {"command": "memory", "description": "Lihat ringkasan memori dan profil tersimpan"},
-        {"command": "skills", "description": "Lihat daftar keahlian aktif (Anara Skill Library)"},
-        {"command": "clear", "description": "Bersihkan riwayat percakapan sesi ini"},
-        {"command": "help", "description": "Panduan lengkap penggunaan bot Anara"},
+        {"command": "plan", "description": "Formulate execution plan without direct mutating actions"},
+        {"command": "stop", "description": "Halt execution or cancel pending action plan"},
+        {"command": "model", "description": "Select or switch active AI model"},
+        {"command": "workspace", "description": "Inspect or lock active workspace directory"},
+        {"command": "status", "description": "Inspect Anara system status and telemetry"},
+        {"command": "memory", "description": "View persistent memory facts and user profile"},
+        {"command": "skills", "description": "View active skills library and capabilities"},
+        {"command": "clear", "description": "Clear dialogue session history"},
+        {"command": "help", "description": "Show universal commands manual and help guide"},
     ]
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:

@@ -53,7 +53,7 @@ async def _tool_ha_list_entities(domain: Optional[str] = None) -> Dict[str, Any]
         return {
             "status": "warning",
             "configured": False,
-            "message": "Home Assistant belum dikonfigurasi. Atur HASS_URL dan HASS_TOKEN di file .env atau Settings untuk mengaktifkan kendali IoT.",
+            "message": "Home Assistant is not configured. Set HASS_URL and HASS_TOKEN in .env file or Settings to enable IoT control.",
             "entities": []
         }
 
@@ -96,7 +96,7 @@ async def _tool_ha_list_entities(domain: Optional[str] = None) -> Dict[str, Any]
         return {
             "status": "error",
             "configured": True,
-            "message": f"Gagal menghubungi Home Assistant di {base_url}: {str(e)}"
+            "message": f"Failed to connect to Home Assistant at {base_url}: {str(e)}"
         }
 
 
@@ -104,14 +104,14 @@ async def _tool_ha_get_state(entity_id: str) -> Dict[str, Any]:
     """Retrieves detailed attributes and state for a specific Home Assistant entity."""
     clean_id = (entity_id or "").strip()
     if not clean_id:
-        return {"status": "error", "message": "Parameter 'entity_id' wajib diisi (misal 'light.living_room')."}
+        return {"status": "error", "message": "Parameter 'entity_id' is required (e.g. 'light.living_room')."}
 
     base_url, token = _get_ha_config()
     if not token:
         return {
             "status": "warning",
             "configured": False,
-            "message": "Home Assistant belum dikonfigurasi (HASS_TOKEN belum diatur)."
+            "message": "Home Assistant is not configured (HASS_TOKEN not set)."
         }
 
     url = f"{base_url}/api/states/{clean_id}"
@@ -130,11 +130,11 @@ async def _tool_ha_get_state(entity_id: str) -> Dict[str, Any]:
                     "last_updated": data.get("last_updated")
                 }
             elif res.status_code == 404:
-                return {"status": "error", "message": f"Entitas '{clean_id}' tidak ditemukan di Home Assistant."}
+                return {"status": "error", "message": f"Entity '{clean_id}' not found in Home Assistant."}
             else:
                 return {"status": "error", "message": f"API error {res.status_code}: {res.text}"}
     except Exception as e:
-        return {"status": "error", "message": f"Gagal membaca entitas {clean_id}: {str(e)}"}
+        return {"status": "error", "message": f"Failed to read entity {clean_id}: {str(e)}"}
 
 
 async def _tool_ha_call_service(
@@ -161,7 +161,7 @@ async def _tool_ha_call_service(
         return {
             "status": "warning",
             "configured": False,
-            "message": "Home Assistant belum dikonfigurasi. Atur HASS_TOKEN untuk mengaktifkan kendali IoT."
+            "message": "Home Assistant is not configured. Set HASS_TOKEN to enable IoT control."
         }
 
     url = f"{base_url}/api/services/{clean_domain}/{clean_service}"
@@ -182,9 +182,9 @@ async def _tool_ha_call_service(
                     "domain": clean_domain,
                     "service": clean_service,
                     "target": entity_id,
-                    "message": f"Perintah IoT '{clean_domain}.{clean_service}' berhasil dikirimkan ke Home Assistant."
+                    "message": f"Service '{clean_domain}.{clean_service}' executed successfully on Home Assistant."
                 }
             else:
-                return {"status": "error", "message": f"Gagal mengeksekusi service: status {res.status_code}: {res.text}"}
+                return {"status": "error", "message": f"Failed to execute service: HTTP {res.status_code}: {res.text}"}
     except Exception as e:
-        return {"status": "error", "message": f"Error koneksi ke Home Assistant: {str(e)}"}
+        return {"status": "error", "message": f"Connection error to Home Assistant: {str(e)}"}

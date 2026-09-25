@@ -101,7 +101,7 @@ class PlatformRegistry:
         """Dispatches text message through the resolved platform adapter."""
         adapter = self.get(platform)
         if not adapter:
-            return {"status": "error", "message": f"Platform '{platform}' tidak didukung."}
+            return {"status": "error", "message": f"Platform '{platform}' not supported."}
         return await adapter.send_message(target_id=target_id, text=text, **kwargs)
 
     async def send_media(
@@ -116,7 +116,7 @@ class PlatformRegistry:
         """Dispatches media through the resolved platform adapter."""
         adapter = self.get(platform)
         if not adapter:
-            return {"status": "error", "message": f"Platform '{platform}' tidak didukung."}
+            return {"status": "error", "message": f"Platform '{platform}' not supported."}
         return await adapter.send_media(target_id=target_id, file_path=file_path, caption=caption, media_type=media_type, **kwargs)
 
     def render_approval_payload(self, platform: str, narration: str, action: Any) -> Dict[str, Any]:

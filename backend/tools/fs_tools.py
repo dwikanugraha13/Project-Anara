@@ -113,7 +113,7 @@ async def _tool_read_local_file(file_path: str, offset: Optional[int] = None, li
     try:
         target_file = _resolve_local_file_path(path)
         if not target_file:
-            res_msg = f"File '{os.path.basename(path)}' not found in workspace / tidak ditemukan di path komputer. Verify path or use 'glob_find_files' / 'list_directory' to locate it."
+            res_msg = f"File '{os.path.basename(path)}' not found in workspace. Verify the file path or use 'glob_find_files' / 'list_directory' to locate it."
             return {
                 "status": "not_found",
                 "is_error": False,
@@ -126,7 +126,7 @@ async def _tool_read_local_file(file_path: str, offset: Optional[int] = None, li
         if ext == ".pdf":
             content = _extract_text_from_pdf(target_file)
         elif ext in [".docx", ".doc"]:
-            content = _extract_text_from_docx(target_file) or "[Dokumen Word: Teks berhasil dipindai]"
+            content = _extract_text_from_docx(target_file) or "[Word Document: Text content extracted]"
         else:
             with open(target_file, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read()
@@ -142,20 +142,20 @@ async def _tool_read_local_file(file_path: str, offset: Optional[int] = None, li
             slice_lines = lines[start_idx:end_idx]
             numbered_content = "".join([f"{start_line + i}: {line}" for i, line in enumerate(slice_lines)])
             display_content = numbered_content
-            summary_msg = f"Membaca baris {start_line}-{end_idx} dari {total_lines} baris."
+            summary_msg = f"Read lines {start_line}-{end_idx} of {total_lines} total lines."
         else:
             if total_lines > 250:
                 numbered_content = "".join([f"{i + 1}: {line}" for i, line in enumerate(lines[:250])])
-                display_content = numbered_content + f"\n\n[... dipotong {total_lines - 250} baris lagi. Gunakan offset={251} untuk membaca lanjutan ...]"
-                summary_msg = f"Membaca 250 baris pertama dari {total_lines} baris."
+                display_content = numbered_content + f"\n\n[... truncated {total_lines - 250} more lines. Use offset={251} to read further ...]"
+                summary_msg = f"Read first 250 lines of {total_lines} total lines."
             else:
                 numbered_content = "".join([f"{i + 1}: {line}" for i, line in enumerate(lines)])
                 display_content = numbered_content
-                summary_msg = f"Berhasil membaca {total_lines} baris."
+                summary_msg = f"Read all {total_lines} lines."
 
         _emit_agent_event("agent_action_complete", {
             "tool_name": "read_local_file",
-            "action_title": "Baca",
+            "action_title": "Read",
             "detail": action_detail,
             "filename": os.path.basename(path),
             "file_path": target_file,
@@ -199,7 +199,7 @@ async def _tool_edit_file(
 
     target_file = _resolve_local_file_path(path)
     if not target_file:
-        return {"status": "error", "message": f"File '{path}' not found / tidak ditemukan. Ensure the file exists before editing."}
+        return {"status": "error", "message": f"File '{path}' not found. Ensure the file exists before editing."}
 
     from core.workspace_sentinel import workspace_sentinel
     is_safe, denial_msg = workspace_sentinel.validate_file_access(target_file, action="edit")
@@ -267,7 +267,7 @@ async def _tool_edit_file(
         rel_dir = os.path.dirname(target_file)
         _emit_agent_event("agent_action_complete", {
             "tool_name": "edit_file",
-            "action_title": f"Sunting {filename} {rel_dir} +{added} -{deleted}",
+            "action_title": f"Edit {filename} (+{added} -{deleted})",
             "detail": f"{filename} {rel_dir}",
             "summary": f"+{added} -{deleted}" + (f" [{git_commit_sha}]" if git_commit_sha else ""),
             "raw_result": diff_str[:3000],
@@ -366,7 +366,7 @@ async def _tool_write_local_file(file_path: str, content: str) -> Dict[str, Any]
 
         is_safe, denial_msg = workspace_sentinel.validate_file_access(raw_path, action="write")
         if not is_safe:
-            return {"status": "error", "message": denial_msg or "Akses penulisan berkas ditolak oleh Workspace Sentinel."}
+            return {"status": "error", "message": denial_msg or "File write access restricted by Workspace Sentinel."}
 
         active_f = anara_agent.get_session_dir()
         has_custom = anara_agent.has_active_custom_workspace()
@@ -412,7 +412,7 @@ async def _tool_write_local_file(file_path: str, content: str) -> Dict[str, Any]
 
         _emit_agent_event("agent_action_complete", {
             "tool_name": "write_local_file",
-            "action_title": "File Disimpan",
+            "action_title": "File Saved",
             "summary": f"{filename} ({size_kb} KB)" + (f" [{git_commit_sha}]" if git_commit_sha else ""),
             "file_path": target_path,
             "filename": filename,
@@ -488,7 +488,7 @@ async def _tool_delete_local_file(file_path: str) -> Dict[str, Any]:
     from core.workspace_sentinel import workspace_sentinel
     is_safe, denial_msg = workspace_sentinel.validate_file_access(raw_path, action="delete")
     if not is_safe:
-        return {"status": "error", "message": denial_msg or f"Ditolak: Akses penghapusan '{raw_path}' diblokir oleh Workspace Sentinel."}
+        return {"status": "error", "message": denial_msg or f"Access denied: Deletion of '{raw_path}' blocked by Workspace Sentinel."}
 
     norm_path = raw_path.replace("\\", "/").lower()
     target_base = os.path.basename(norm_path)
@@ -504,7 +504,7 @@ async def _tool_delete_local_file(file_path: str) -> Dict[str, Any]:
         from core import anara_agent
         resolved = _resolve_local_file_path(raw_path)
         if not resolved or not os.path.exists(resolved):
-            return {"status": "error", "message": f"File '{raw_path}' not found / tidak ditemukan."}
+            return {"status": "error", "message": f"File '{raw_path}' not found."}
 
         if os.path.isdir(resolved):
             return {"status": "error", "message": f"'{raw_path}' is a directory, not a file. This tool only deletes individual files."}
@@ -636,8 +636,8 @@ async def _tool_scan_workspace_folder(folder_path: str) -> Dict[str, Any]:
 
         _emit_agent_event("agent_action_complete", {
             "tool_name": "scan_workspace_folder",
-            "action_title": "Pohon Proyek Terindeks",
-            "summary": f"Berhasil memindai {total_files} file dalam proyek.",
+            "action_title": "Project Tree Indexed",
+            "summary": f"Indexed {total_files} files in project.",
             "icon": "📁"
         })
 
@@ -659,7 +659,7 @@ async def _tool_glob_find_files(pattern: str, path: Optional[str] = None) -> Dic
 
     pat = (pattern or "").strip()
     if not pat:
-        return {"status": "error", "message": "Pola glob pattern tidak boleh kosong."}
+        return {"status": "error", "message": "Pattern cannot be empty."}
 
     active_f = anara_agent.get_session_dir()
     root_dir = os.path.abspath(os.path.expanduser(path)) if path else active_f
@@ -669,8 +669,8 @@ async def _tool_glob_find_files(pattern: str, path: Optional[str] = None) -> Dic
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "glob_find_files",
-        "action_title": "Pencarian Berkas (Glob)",
-        "detail": f"Pola: {pat}",
+        "action_title": "Find Files (Glob)",
+        "detail": f"Pattern: {pat}",
         "icon": "search"
     })
 
@@ -689,7 +689,7 @@ async def _tool_glob_find_files(pattern: str, path: Optional[str] = None) -> Dic
         if len(matches) >= 100:
             break
 
-    summary_msg = f"Ditemukan {len(matches)} berkas cocok dengan pola '{pat}'."
+    summary_msg = f"Found {len(matches)} files matching pattern '{pat}'."
     _emit_agent_event("agent_action_complete", {
         "tool_name": "glob_find_files",
         "action_title": "Glob",
@@ -714,7 +714,7 @@ async def _tool_grep_search_code(pattern: str, path: Optional[str] = None, inclu
 
     pat = (pattern or "").strip()
     if not pat:
-        return {"status": "error", "message": "Pola pencarian regex tidak boleh kosong."}
+        return {"status": "error", "message": "Regex pattern cannot be empty."}
 
     active_f = anara_agent.get_session_dir()
     root_dir = os.path.abspath(os.path.expanduser(path)) if path else active_f
@@ -724,7 +724,7 @@ async def _tool_grep_search_code(pattern: str, path: Optional[str] = None, inclu
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "grep_search_code",
-        "action_title": "Pencarian Kode (Grep)",
+        "action_title": "Search Code (Grep)",
         "detail": f"Regex: {pat}",
         "icon": "search"
     })
@@ -732,7 +732,7 @@ async def _tool_grep_search_code(pattern: str, path: Optional[str] = None, inclu
     try:
         regex = re.compile(pat, re.IGNORECASE)
     except re.error as e:
-        return {"status": "error", "message": f"Pola regex tidak valid: {e}"}
+        return {"status": "error", "message": f"Invalid regex pattern: {e}"}
 
     IGNORED_DIRS = {".git", "node_modules", "venv", "__pycache__", ".next", "dist", "build", ".venv", ".vscode"}
     BINARY_EXTS = {".png", ".jpg", ".jpeg", ".ico", ".pdf", ".zip", ".tar", ".exe", ".dll", ".woff", ".woff2", ".ttf", ".sqlite", ".db"}
@@ -771,7 +771,7 @@ async def _tool_grep_search_code(pattern: str, path: Optional[str] = None, inclu
         "tool_name": "grep_search_code",
         "action_title": "Grep",
         "detail": grep_detail,
-        "summary": f"Ditemukan {len(matches)} baris cocok.",
+        "summary": f"Found {len(matches)} matching lines.",
         "raw_result": summary_str,
         "icon": "search"
     })

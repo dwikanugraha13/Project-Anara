@@ -23,7 +23,7 @@ class VoicePlatformAdapter(BasePlatformAdapter):
     def render_approval(self, narration: str, action: Any) -> Dict[str, Any]:
         from cognition.audio import filter_tts_speech_text
         spoken = filter_tts_speech_text(narration)
-        verbal_prompt = f"{spoken} Katakan 'gas' atau 'lanjutkan' jika kamu ingin aku menjalankannya, atau 'batal' untuk membatalkan."
+        verbal_prompt = spoken
         action_id = getattr(action, "action_id", getattr(action, "plan_id", "act"))
         return {
             "text": verbal_prompt,

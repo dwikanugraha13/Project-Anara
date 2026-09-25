@@ -19,7 +19,7 @@ class TasksProjectsMixin:
             clean_phone = "628" + clean_phone[1:]
 
         if not clean_name or len(clean_phone) < 8:
-            return {"status": "error", "message": "Nama atau nomor telepon tidak valid."}
+            return {"status": "error", "message": "Name or phone number is invalid."}
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -320,7 +320,7 @@ class TasksProjectsMixin:
         """Creates/replaces a playlist and its ordered tracks."""
         clean_name = (name or "").strip().title()[:80]
         if not clean_name or not tracks:
-            return {"status": "error", "message": "Nama playlist atau daftar lagu kosong."}
+            return {"status": "error", "message": "Playlist name or track list is empty."}
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -396,7 +396,7 @@ class TasksProjectsMixin:
         pl = self.get_playlist(name, speaker_name)
         vid = track.get("video_id") or track.get("videoId")
         if not vid:
-            return {"status": "error", "message": "Lagu tidak valid."}
+            return {"status": "error", "message": "Invalid track."}
         if not pl:
             return self.save_playlist(name, [track], speaker_name)
 

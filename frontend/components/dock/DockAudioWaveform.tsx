@@ -40,14 +40,14 @@ export function DockAudioWaveform({
         </div>
         <p className="text-xs font-mono font-medium text-slate-300 truncate" suppressHydrationWarning>
           {status === "speaking"
-            ? "AI Sedang Berbicara..."
+            ? "AI Speaking..."
             : status === "thinking"
-            ? "AI Sedang Berpikir..."
+            ? "AI Thinking..."
             : isMuted
             ? "Mikrofon Dibisukan"
             : isMicActive
             ? "Mendengarkan suara Anda..."
-            : "Mikrofon Siap (Klik Voice untuk Bicara)"}
+            : "Microphone Ready (Click Voice to Speak)"}
         </p>
       </div>
     </div>

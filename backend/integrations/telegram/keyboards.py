@@ -62,9 +62,9 @@ async def send_telegram_provider_selector(chat_id: str, message_id: Optional[int
 
     keyboard = {"inline_keyboard": buttons}
     msg_text = (
-        f"🤖 <b>PILIH PROVIDER MODEL AI (MULTI-PROVIDER)</b>\n\n"
-        f"Model aktif saat ini:\n<code>{active_id}</code>\n\n"
-        f"<i>Pilih provider di bawah untuk melihat daftar model yang tersedia:</i>"
+        f"🤖 <b>AI MODEL PROVIDER SELECTION</b>\n\n"
+        f"Active model:\n<code>{active_id}</code>\n\n"
+        f"<i>Select a provider below to view available models:</i>"
     )
     if message_id:
         return await edit_telegram_message(chat_id=chat_id, message_id=message_id, text=msg_text, reply_markup=keyboard)
@@ -108,14 +108,14 @@ async def send_telegram_models_for_provider(chat_id: str, provider_prefix: str, 
         cb_val = _make_model_callback_data(m_id)
         buttons.append([{"text": btn_text, "callback_data": cb_val}])
 
-    buttons.append([{"text": "⬅️ Kembali ke Pilihan Provider", "callback_data": "prov:menu"}])
+    buttons.append([{"text": "⬅️ Back to Providers", "callback_data": "prov:menu"}])
 
     prov_title = provider_prefix.upper()
     keyboard = {"inline_keyboard": buttons}
     msg_text = (
-        f"💎 <b>DAFTAR MODEL [{prov_title}]</b>\n\n"
-        f"Model aktif saat ini:\n<code>{active_id}</code>\n\n"
-        f"<i>Ketuk model yang diinginkan untuk langsung mengaktifkannya:</i>"
+        f"💎 <b>MODEL CATALOG [{prov_title}]</b>\n\n"
+        f"Active model:\n<code>{active_id}</code>\n\n"
+        f"<i>Tap a model below to activate immediately:</i>"
     )
     if message_id:
         return await edit_telegram_message(chat_id=chat_id, message_id=message_id, text=msg_text, reply_markup=keyboard)
@@ -165,7 +165,7 @@ async def send_telegram_plan_proposal(
     plan_text: str,
     plan_id: str,
 ) -> Dict[str, Any]:
-    """Sends a formatted Plan Proposal with inline Setujui / Batalkan buttons via UniversalChannelAdapter."""
+    """Sends a formatted Plan Proposal with inline Approve / Cancel buttons via UniversalChannelAdapter."""
     from .client import send_telegram_message
     from core.channel_adapter import UniversalChannelAdapter
     from core.session_manager import session_state_manager
@@ -181,8 +181,8 @@ async def send_telegram_plan_proposal(
     keyboard = {
         "inline_keyboard": [
             [
-                {"text": "✅ Setujui & Jalankan", "callback_data": f"approve:{plan_id}"},
-                {"text": "❌ Batalkan", "callback_data": f"reject:{plan_id}"}
+                {"text": "✅ Approve", "callback_data": f"approve:{plan_id}"},
+                {"text": "❌ Deny", "callback_data": f"reject:{plan_id}"}
             ]
         ]
     }
@@ -228,7 +228,7 @@ async def render_telegram_question(q_id: str):
 
     q = questions[idx]
     q_text = q.get("question", "")
-    header = q.get("header", f"Pertanyaan {idx+1}")
+    header = q.get("header", f"Question {idx+1}")
     options = q.get("options") or []
 
     buttons = []

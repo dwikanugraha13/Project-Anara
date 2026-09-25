@@ -291,7 +291,7 @@ export default function ChatSessionSidebar({
   }, [onResetIDE]);
 
   const handleClearWorkspace = async () => {
-    if (!confirm(`Tutup & hapus folder "${workspaceTree?.workspace_name}" dari riwayat obrolan ini?`)) return;
+    if (!confirm(`Close & remove folder "${workspaceTree?.workspace_name}" from this chat history?`)) return;
     try {
       const q = activeSessionId ? `?session_id=${activeSessionId}` : "";
       await fetch(`${BACKEND_URL}/api/agent/workspace${q}`, { method: "DELETE" });
@@ -438,8 +438,8 @@ export default function ChatSessionSidebar({
   }, []);
 
   const deleteSession = async (s: ChatSession) => {
-    const label = s.title || `Percakapan #${s.id}`;
-    if (!confirm(`Hapus "${label}" beserta ${s.message_count} pesan di dalamnya?`)) return;
+    const label = s.title || `Conversation #${s.id}`;
+    if (!confirm(`Delete "${label}" along with ${s.message_count} messages inside?`)) return;
     try {
       const res = await fetch(`${BACKEND_URL}/api/chat/sessions/${s.id}`, { method: "DELETE" });
       if (res.ok) {
@@ -488,7 +488,7 @@ export default function ChatSessionSidebar({
                   ? "bg-amber-400 animate-pulse shadow-[0_0_8px_#fbbf24]"
                   : "bg-rose-500 shadow-[0_0_8px_#f43f5e]"
               }`}
-              title={isConnected ? "Online" : connectionStatus === "connecting" ? "Menghubungkan..." : "Terputus"}
+              title={isConnected ? "Online" : connectionStatus === "connecting" ? "Connecting..." : "Disconnected"}
             />
           </div>
         </div>
@@ -503,12 +503,12 @@ export default function ChatSessionSidebar({
               } catch {}
             }}
             className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer text-xs font-mono"
-            title="Kembali ke Chat Sessions"
+            title="Back to Chat Sessions"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-            <span>{sessionType === "code" ? "Sesi Proyek" : "Chat Sessions"}</span>
+            <span>{sessionType === "code" ? "Project Session" : "Chat Sessions"}</span>
           </button>
 
           <div className="flex items-center gap-2">
@@ -520,7 +520,7 @@ export default function ChatSessionSidebar({
         </div>
       )}
 
-      {/* ── TAB 1: Sesi Percakapan ── */}
+      {/* ── TAB 1: Chat Sessions ── */}
       {activeSidebarTab === "history" && (
         <SessionHistoryList
           sessions={sessions}
@@ -602,7 +602,7 @@ export default function ChatSessionSidebar({
                           if (onAskAnaraIDE) {
                             onAskAnaraIDE(p, n);
                           } else if (onSendText) {
-                            onSendText(`Tolong analisa berkas @${n} (${p})`, agentMode);
+                            onSendText(`Please analyze file @${n} (${p})`, agentMode);
                           }
                         }}
                       />
@@ -613,7 +613,7 @@ export default function ChatSessionSidebar({
                         <div
                           onMouseDown={startResizingTerminal}
                           className="h-1.5 w-full cursor-row-resize shrink-0 select-none bg-transparent border-y border-white/10 hover:border-white/30 hover:bg-white/[0.04] transition-colors"
-                          title="Tarik untuk ubah tinggi terminal"
+                          title="Drag to resize terminal height"
                         />
 
                         <div
@@ -622,10 +622,10 @@ export default function ChatSessionSidebar({
                         >
                           <WorkbenchTerminal
                             logs={[
-                              `[anara-agent] Mode aktif: ${agentMode.toUpperCase()}`,
-                              `[system] Terminal worker ready (Berkas: ${activeIdeFile?.filePath || "workspace"}).`,
+                              `[anara-agent] Active mode: ${agentMode.toUpperCase()}`,
+                              `[system] Terminal worker ready (Files: ${activeIdeFile?.filePath || "workspace"}).`,
                             ]}
-                            activeTask={status === "thinking" ? "Model AI Sedang Berpikir..." : undefined}
+                            activeTask={status === "thinking" ? "AI Model Thinking..." : undefined}
                             onExecuteCommand={() => {}}
                             onClose={() => onToggleTerminal?.(false)}
                           />
@@ -641,7 +641,7 @@ export default function ChatSessionSidebar({
                       </svg>
                     </div>
                     <p className="text-xs text-slate-400 font-mono">
-                      Pilih berkas dari pohon di sebelah kiri untuk melihat &amp; menyunting kode
+                      Select a file from the tree on the left to view &amp; edit code
                     </p>
                   </div>
                 )}
@@ -668,10 +668,10 @@ export default function ChatSessionSidebar({
 
                 {/* Heading & Description */}
                 <h4 className="text-base font-semibold text-white tracking-tight leading-snug">
-                  Hubungkan Direktori Proyek
+                  Connect Project Directory
                 </h4>
                 <p className="text-xs text-slate-400 mt-1 leading-relaxed max-w-xs font-sans">
-                  Buka folder lokal di komputer untuk mengizinkan Anara menelusuri berkas, menyunting kode secara presisi, dan menjalankan terminal shell.
+                  Open a local folder on your computer to let Anara browse files, edit code precisely, and run terminal shell.
                 </p>
 
                 {/* Primary Action Button */}
@@ -683,13 +683,13 @@ export default function ChatSessionSidebar({
                   <svg className="w-4 h-4 text-cyan-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                   </svg>
-                  <span>Buka Folder Proyek</span>
+                   <span>Open Project Folder</span>
                 </button>
 
                 {/* Capabilities Matrix */}
                 <div className="w-full mt-5 pt-4 border-t border-white/10 space-y-2 text-left">
                   <span className="text-[9.5px] font-mono font-bold tracking-widest text-slate-500 uppercase px-0.5">
-                    Kapabilitas Workbench:
+                    Workbench Capabilities:
                   </span>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="p-2.5 rounded-xl bg-white/[0.025] border border-white/8 space-y-1">
@@ -697,10 +697,10 @@ export default function ChatSessionSidebar({
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
                         </svg>
-                        <span>Pohon &amp; Git</span>
+                        <span>Tree &amp; Git</span>
                       </div>
                       <p className="text-[10px] text-slate-400 leading-normal">
-                        Status cabang dan diff berkas
+                        Branch status and file diff
                       </p>
                     </div>
 
@@ -722,10 +722,10 @@ export default function ChatSessionSidebar({
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                       </svg>
-                      <span>Terminal Shell Terintegrasi</span>
+                      <span>Integrated Terminal Shell</span>
                     </div>
                     <p className="text-[10px] text-slate-400 leading-normal">
-                      Eksekusi build, testing, linting, dan skrip otomatis
+                      Execute build, testing, linting, and automated scripts
                     </p>
                   </div>
                 </div>
@@ -740,7 +740,7 @@ export default function ChatSessionSidebar({
         <div
           onMouseDown={startResizing}
           className="absolute top-0 -right-1.5 w-3 h-full cursor-col-resize z-50 select-none bg-transparent hover:bg-transparent active:bg-transparent"
-          title="Tarik untuk mengubah lebar panel"
+          title="Drag to resize panel width"
         />
       )}
     </aside>

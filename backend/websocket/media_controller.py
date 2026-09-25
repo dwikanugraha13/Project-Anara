@@ -89,11 +89,23 @@ class MediaController:
                 tracks = await search_youtube(intent["query"], kind="music", limit=8)
                 if not tracks:
                     if gemini_service:
-                        await gemini_service.send_text(f"Sistem: Beritahu pengguna dengan ramah bahwa lagu untuk playlist '{intent['name']}' tidak ditemukan.")
+                        from core.prompt_loader import load_config_yaml
+                        live_cfg = load_config_yaml("voice/live_directives.yaml", default={})
+                        nf_cmd = live_cfg.get(
+                            "playlist_not_found",
+                            "[SYSTEM NOTIFICATION]: No tracks were found for playlist query '{query}'. Inform the user in their active language."
+                        ).format(query=intent["name"])
+                        await gemini_service.send_text(nf_cmd)
                     return
                 res = memory_engine.save_playlist(intent["name"], tracks, speaker_name)
                 if gemini_service:
-                    await gemini_service.send_text(f"Sistem: Beritahu pengguna dengan ceria bahwa playlist '{res.get('name')}' ({res.get('count')} lagu) siap dan mulai diputar.")
+                    from core.prompt_loader import load_config_yaml
+                    live_cfg = load_config_yaml("voice/live_directives.yaml", default={})
+                    rdy_cmd = live_cfg.get(
+                        "playlist_ready",
+                        "[SYSTEM NOTIFICATION]: Playlist '{name}' with {count} tracks is ready and playing. Inform the user in their active language."
+                    ).format(name=res.get("name"), count=res.get("count"))
+                    await gemini_service.send_text(rdy_cmd)
                 await self.send_media_play(
                     tracks[0], "music", tracks[1:],
                     playlist={"id": res.get("id"), "name": res.get("name"), "tracks": tracks, "index": 0}
@@ -115,7 +127,13 @@ class MediaController:
             elif kind == "playlist_add_current":
                 if not self.now_playing:
                     if gemini_service:
-                        await gemini_service.send_text("Sistem: Beritahu pengguna dengan santai bahwa belum ada lagu yang sedang diputar untuk ditambahkan.")
+                        from core.prompt_loader import load_config_yaml
+                        live_cfg = load_config_yaml("voice/live_directives.yaml", default={})
+                        no_track_cmd = live_cfg.get(
+                            "no_media_playing",
+                            "[SYSTEM NOTIFICATION]: No media track is currently playing to add to a playlist. Inform the user in their active language."
+                        )
+                        await gemini_service.send_text(no_track_cmd)
                     return
                 memory_engine.add_track_to_playlist(intent["name"], self.now_playing, speaker_name)
                 return
@@ -125,12 +143,12 @@ class MediaController:
                 if tracks:
                     await self.websocket.send_json({
                         "type": "hud_visual",
-                        "data": intent.get("reply_text", "Riwayat musik diproyeksikan"),
+                        "data": intent.get("reply_text", "Music history"),
                         "visualType": "knowledge_card",
                         "knowledgeCardData": {
-                            "title": "Lagu Paling Sering Diputar",
-                            "category": "Riwayat Musik",
-                            "badge": f"{len(tracks)} lagu",
+                            "title": "Most Played Tracks",
+                            "category": "Music History",
+                            "badge": f"{len(tracks)} tracks",
                             "summary": "",
                             "steps": [f"{t.get('title')} — {t.get('plays')}x" for t in tracks],
                         },
@@ -143,14 +161,14 @@ class MediaController:
                 if pls:
                     await self.websocket.send_json({
                         "type": "hud_visual",
-                        "data": intent.get("reply_text", "Daftar playlist tersimpan"),
+                        "data": intent.get("reply_text", "Saved playlists"),
                         "visualType": "knowledge_card",
                         "knowledgeCardData": {
-                            "title": "Playlist Tersimpan",
-                            "category": "Koleksi Musik",
-                            "badge": f"{len(pls)} playlist",
+                            "title": "Saved Playlists",
+                            "category": "Music Collection",
+                            "badge": f"{len(pls)} playlists",
                             "summary": "",
-                            "steps": [f"{p.get('name')} — {p.get('track_count', 0)} lagu" for p in pls],
+                            "steps": [f"{p.get('name')} — {p.get('track_count', 0)} tracks" for p in pls],
                         },
                         "mediaType": "hud"
                     })

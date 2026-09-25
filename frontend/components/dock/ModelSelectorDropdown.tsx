@@ -64,7 +64,7 @@ export default function ModelSelectorDropdown({
       <div className="px-1">
         <input
           type="text"
-          placeholder={interactionMode === "voice" ? "Cari model live audio..." : "Cari model AI..."}
+          placeholder={interactionMode === "voice" ? "Search live audio models..." : "Search AI models..."}
           value={modelSearchQuery}
           onChange={(e) => setModelSearchQuery(e.target.value)}
           className="w-full px-2.5 py-1 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-white/30 font-mono"
@@ -75,8 +75,8 @@ export default function ModelSelectorDropdown({
         {modeFilteredModels.length === 0 ? (
           <div className="p-3 text-center text-xs text-slate-400">
             {interactionMode === "voice"
-              ? "Tidak ada model live audio aktif. Konfigurasikan API key Gemini di Anara Brain."
-              : "Tidak ada model teks yang terkonfigurasi."}
+              ? "No active live audio model. Configure Gemini API key in Anara Brain."
+              : "No text models configured."}
           </div>
         ) : (
           modeFilteredModels

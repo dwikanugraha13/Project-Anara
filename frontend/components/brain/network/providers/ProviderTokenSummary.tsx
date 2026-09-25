@@ -37,7 +37,7 @@ export default function ProviderTokenSummary({
       {/* ── Token Usage & Credit Tracking Summary Cards (Compact Liquid Glass) ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="p-3.5 rounded-2xl liquid-glass border border-white/10 space-y-0.5">
-          <span className="text-[10px] font-mono font-bold uppercase text-slate-400">Total Token Terpakai</span>
+          <span className="text-[10px] font-mono font-bold uppercase text-slate-400">Total Tokens Used</span>
           <p className="text-lg font-bold text-white font-mono">
             {(tokenSummary.overall?.total_tokens || 0).toLocaleString()} <span className="text-xs text-cyan-300 font-normal">tokens</span>
           </p>
@@ -47,20 +47,20 @@ export default function ProviderTokenSummary({
         </div>
 
         <div className="p-3.5 rounded-2xl liquid-glass border border-white/10 space-y-0.5">
-          <span className="text-[10px] font-mono font-bold uppercase text-slate-400">Penggunaan Hari Ini</span>
+          <span className="text-[10px] font-mono font-bold uppercase text-slate-400">Today's Usage</span>
           <p className="text-lg font-bold text-slate-200 font-mono">
             {(tokenSummary.today?.today_tokens || 0).toLocaleString()} <span className="text-xs text-slate-400 font-normal">tokens</span>
           </p>
           <p className="text-[10px] text-slate-500 font-mono">
-            {tokenSummary.today?.today_requests || 0} kali permintaan turn
+            {tokenSummary.today?.today_requests || 0} request turns
           </p>
         </div>
 
         <div className="p-3.5 rounded-2xl liquid-glass border border-white/10 flex items-center justify-between">
           <div className="space-y-0.5">
-            <span className="text-[10px] font-mono font-bold uppercase text-slate-400">Riwayat Token</span>
+            <span className="text-[10px] font-mono font-bold uppercase text-slate-400">Token History</span>
             <p className="text-xs text-slate-300 font-mono">
-              {tokenLogs.length} transaksi tercatat
+              {tokenLogs.length} transactions recorded
             </p>
           </div>
           <button
@@ -71,29 +71,29 @@ export default function ProviderTokenSummary({
             <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
-            <span>{showTokenHistory ? "Tutup" : "Lihat Log"}</span>
+            <span>{showTokenHistory ? "Close" : "View Log"}</span>
           </button>
         </div>
       </div>
 
-      {/* ── Tabel Riwayat Token Logs (Accordion) ── */}
+      {/* ── Token History Logs Table (Accordion) ── */}
       {showTokenHistory && (
         <div className="p-4 rounded-2xl bg-black/40 border border-white/15 space-y-3">
           <div className="flex items-center justify-between border-b border-white/10 pb-2">
             <span className="text-xs font-mono font-bold text-white flex items-center gap-1.5">
-              Log Transaksi Pemakaian Token &amp; Kredit
+              Token Usage &amp; Credit Transaction Log
             </span>
-            <span className="text-[10px] font-mono text-slate-400">50 interaksi terakhir</span>
+            <span className="text-[10px] font-mono text-slate-400">Last 50 interactions</span>
           </div>
 
           {tokenLogs.length === 0 ? (
-            <p className="text-xs text-slate-500 font-mono text-center py-4">Belum ada catatan pemakaian token.</p>
+            <p className="text-xs text-slate-500 font-mono text-center py-4">No token usage records yet.</p>
           ) : (
             <div className="max-h-[260px] overflow-y-auto custom-scrollbar pr-1">
               <table className="w-full text-left font-mono text-[11px] border-collapse">
                 <thead>
                   <tr className="border-b border-white/10 text-slate-400 text-[10px] uppercase">
-                    <th className="py-1.5 px-2">Waktu</th>
+                    <th className="py-1.5 px-2">Time</th>
                     <th className="py-1.5 px-2">Model AI</th>
                     <th className="py-1.5 px-2">Provider</th>
                     <th className="py-1.5 px-2 text-right">Prompt</th>

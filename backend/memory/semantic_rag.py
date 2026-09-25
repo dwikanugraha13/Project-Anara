@@ -5,11 +5,98 @@ import time
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List, Tuple
 
+import numpy as np
+
 from .voice_biometrics import canonicalize_speaker_name
 
 logger = logging.getLogger(__name__)
 
 _DYNAMIC_ENTITY_CACHE: Dict[str, Dict[str, Any]] = {}
+_EMBEDDING_CACHE: Dict[str, List[float]] = {}
+
+
+def compute_local_hash_embedding(text: str, dim: int = 512) -> List[float]:
+    """
+    Deterministic Offline Vector Embedding Generator (Hermes Parity).
+    Generates a 512-dimensional normalized dense vector using character n-grams and word tokens.
+    Requires zero network calls, zero external API keys, and runs in sub-millisecond time.
+    """
+    import hashlib
+    clean = (text or "").lower().strip()
+    vec = np.zeros(dim, dtype=np.float32)
+    words = re.findall(r"\w+", clean)
+    for w in words:
+        h = int(hashlib.md5(w.encode("utf-8")).hexdigest()[:8], 16) % dim
+        vec[h] += 1.0
+        if len(w) >= 3:
+            for i in range(len(w) - 2):
+                gram = w[i:i+3]
+                h_g = int(hashlib.sha256(gram.encode("utf-8")).hexdigest()[:8], 16) % dim
+                vec[h_g] += 0.5
+    norm = float(np.linalg.norm(vec))
+    if norm > 0:
+        vec /= norm
+    return vec.tolist()
+
+
+def get_text_embedding(text: str, allow_local_fallback: bool = True) -> Optional[List[float]]:
+    """
+    Hermes & Claude Code Parity: Hybrid Dense Vector Embeddings.
+    Primary: Gemini gemini-embedding-001 (3072-dimensional semantic vectors).
+    Fallback: Local 512-dimensional subword n-gram vector (offline / zero-key resilience).
+    Caches vectors in process RAM to eliminate redundant calculations.
+    """
+    clean = (text or "").strip()
+    if not clean:
+        return None
+
+    if clean in _EMBEDDING_CACHE:
+        return _EMBEDDING_CACHE[clean]
+
+    # 1. Primary: Gemini gemini-embedding-001
+    try:
+        from core.key_manager import key_manager
+        from google import genai
+
+        key = key_manager.get_active_key()
+        if key:
+            client = genai.Client(api_key=key)
+            res = client.models.embed_content(
+                model="gemini-embedding-001",
+                contents=clean[:2000],
+            )
+            if res.embeddings and len(res.embeddings) > 0:
+                vec = list(res.embeddings[0].values)
+                _EMBEDDING_CACHE[clean] = vec
+                if len(_EMBEDDING_CACHE) > 500:
+                    _EMBEDDING_CACHE.pop(next(iter(_EMBEDDING_CACHE)))
+                return vec
+    except Exception as e:
+        logger.debug(f"[SemanticRAG] Gemini embedding calculation skipped/failed: {e}")
+
+    # 2. Local Offline Fallback
+    if allow_local_fallback:
+        vec = compute_local_hash_embedding(clean)
+        _EMBEDDING_CACHE[clean] = vec
+        return vec
+
+    return None
+
+
+def cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:
+    """Computes cosine similarity between two float vectors using numpy with dimension validation."""
+    try:
+        a = np.asarray(vec_a, dtype=np.float32)
+        b = np.asarray(vec_b, dtype=np.float32)
+        if a.shape != b.shape:
+            return 0.0
+        norm_a = np.linalg.norm(a)
+        norm_b = np.linalg.norm(b)
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+        return float(np.dot(a, b) / (norm_a * norm_b))
+    except Exception:
+        return 0.0
 
 
 def get_current_indonesian_time_str(offset_minutes: Optional[int] = None, tz_name: Optional[str] = None) -> Dict[str, str]:
@@ -36,15 +123,10 @@ def get_current_indonesian_time_str(offset_minutes: Optional[int] = None, tz_nam
     }
     short_label = id_labels.get(f"{sign}{hours:02d}:{minutes:02d}", offset_str)
 
-    days_id = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
-    months_id = [
-        "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-        "Juli", "Agustus", "September", "Oktober", "November", "Desember"
-    ]
-
-    day_name = days_id[now.weekday()]
-    month_name = months_id[now.month - 1]
-    date_formatted = f"{day_name}, {now.day} {month_name} {now.year}"
+    # Format time and date cleanly
+    day_name = now.strftime("%A")
+    month_name = now.strftime("%B")
+    date_formatted = now.strftime("%A, %d %B %Y")
     clock_str = now.strftime("%H:%M")
     time_formatted = f"{clock_str} {short_label}"
     if tz_name and tz_name != short_label:
@@ -100,7 +182,7 @@ def _exec_universal_llm(prompt: str, max_tokens: Optional[int] = None) -> Option
         return None
 
 
-def classify_preference_entity_ai(entity: str, speaker_name: str = "Pengguna") -> Dict[str, Any]:
+def classify_preference_entity_ai(entity: str, speaker_name: str = "User") -> Dict[str, Any]:
     """
     Uses Zero-Shot Semantic Classification with the user's active model
     to dynamically recognize ANY entity and generates natural companion commentary without hardcoded dictionaries.
@@ -109,31 +191,14 @@ def classify_preference_entity_ai(entity: str, speaker_name: str = "Pengguna") -
     if cache_key in _DYNAMIC_ENTITY_CACHE:
         return _DYNAMIC_ENTITY_CACHE[cache_key]
 
-    eff_speaker = speaker_name.strip().title() if speaker_name else "Pengguna"
-    prompt = f"""Anda adalah otak semantik Anara (AI Companion 3D & J.A.R.V.I.S.).
-Analisis entitas atau hal yang disukai pengguna berikut: "{entity}"
-
-TUGAS:
-1. Periksa apakah pengguna menyebutkan LEBIH DARI SATU hal (misal: "kucing dan panda", "sate sama rendang", "porsche dan ferrari").
-   - Jika multi-entity (is_multi_entity: true):
-     - entities: array berisi nama-nama entitas yang bersih (contoh: ["Kucing", "Panda"])
-     - Buat confirmation_question: "Kamu menyukai [Entitas 1] dan [Entitas 2] ya! Antara keduanya, mana yang ingin Anara ingat sebagai [category_label] utamamu, atau kamu ingin Anara mengingat keduanya, {eff_speaker}?"
-   - Jika single entity (is_multi_entity: false):
-     - entities: ["{entity.title()}"]
-     - Buat companion_comment: 1 kalimat pujian/komentar hangat & antusias tentang entitas tersebut.
-     - Buat confirmation_question: "Bahwa {entity.title()} adalah [category_label] kamu, Anara boleh mengingatnya, {eff_speaker}?"
-2. Klasifikasikan canonical_key: (contoh: hewan_favorit, makanan_favorit, minuman_favorit, kendaraan_favorit, film_favorit, game_favorit, lagu_favorit, band_favorit, anime_favorit, hobi, dsb).
-3. Tentukan category_label: (contoh: hewan kesukaan, makanan kesukaan, minuman kesukaan, kendaraan kesukaan, film favorit, band favorit, hobi, dsb).
-
-KEMBALIKAN HANYA JSON VALID:
-{{
-  "is_multi_entity": false,
-  "entities": ["Panda"],
-  "canonical_key": "hewan_favorit",
-  "category_label": "hewan kesukaan",
-  "companion_comment": "Wah, Panda itu menggemaskan banget!",
-  "confirmation_question": "Bahwa Panda adalah hewan kesukaan kamu, Anara boleh mengingatnya, {eff_speaker}?"
-}}"""
+    eff_speaker = speaker_name.strip().title() if speaker_name else "User"
+    from core.prompt_loader import load_prompt
+    prompt = load_prompt(
+        "classifiers/entity_memory",
+        entity=entity,
+        entity_title=entity.title(),
+        eff_speaker=eff_speaker
+    )
 
     raw_text = _exec_universal_llm(prompt, max_tokens=None)
     if raw_text:
@@ -150,21 +215,21 @@ KEMBALIKAN HANYA JSON VALID:
     fallback = {
         "is_multi_entity": False,
         "entities": [entity.title()],
-        "canonical_key": "preferensi_kesukaan",
-        "category_label": "preferensi kesukaan",
-        "companion_comment": f"Wah, tentang {entity.title()} itu menarik banget!",
-        "confirmation_question": f"Bahwa {entity.title()} adalah preferensi kesukaan kamu, Anara boleh mengingatnya, {eff_speaker}?"
+        "canonical_key": "favorite_preference",
+        "category_label": "preference",
+        "companion_comment": f"{entity.title()} is a great choice.",
+        "confirmation_question": f"May I remember that you like {entity.title()}, {eff_speaker}?"
     }
     _DYNAMIC_ENTITY_CACHE[cache_key] = fallback
     return fallback
 
 
-def resolve_contextual_memory_command(command: str, recent_chats: List[Dict[str, Any]], speaker_name: str = "Pengguna") -> Optional[Dict[str, Any]]:
+def resolve_contextual_memory_command(command: str, recent_chats: List[Dict[str, Any]], speaker_name: str = "User") -> Optional[Dict[str, Any]]:
     """
-    Resolves memory saving commands that use pronouns (e.g. 'simpan itu ke database sebagai hewan favorit saya')
+    Resolves memory saving commands that use pronouns (e.g. 'save that to database as my favorite animal' or 'save that as my favorite movie')
     by identifying the referenced entity from recent dialogue context and mapping to canonical memory key.
     """
-    eff_speaker = speaker_name.strip().title() if speaker_name else "Pengguna"
+    eff_speaker = speaker_name.strip().title() if speaker_name else "User"
     recent_lines = []
     for c in recent_chats[-3:]:
         u_t = (c.get("user_text") or "").strip()
@@ -173,28 +238,13 @@ def resolve_contextual_memory_command(command: str, recent_chats: List[Dict[str,
             recent_lines.append(f"User: {u_t}\nAnara: {a_t}")
     recent_context = "\n---\n".join(recent_lines)
 
-    prompt = f"""Anda adalah otak semantik Project Anara (AI Memory Reasoner).
-Pengguna memberikan perintah penyimpanan memori yang menggunakan kata ganti / rujukan (seperti 'itu', 'ini', 'tersebut'):
-Perintah Pengguna: "{command}"
-
-KONTEKS PERCAKAPAN TERAKHIR:
-{recent_context}
-
-TUGAS:
-1. Temukan objek/subjek yang dirujuk oleh 'itu'/'ini' dari KONTEKS PERCAKAPAN TERAKHIR (Contoh: jika baru membahas Panda, maka objek adalah "Panda").
-2. Identifikasi kategori memori yang diinginkan (Contoh: hewan favorit, makanan favorit, kendaraan favorit, film favorit, lagu favorit, band favorit, hobi, dsb).
-3. Tentukan canonical_key (contoh: hewan_favorit, makanan_favorit, kendaraan_favorit, film_favorit, lagu_favorit, band_favorit, hobi, dsb).
-4. Tentukan category_label (contoh: hewan kesukaan, makanan kesukaan, kendaraan kesukaan, film favorit, band favorit, dsb).
-5. Buat confirmation_prompt yang ramah dan alami dengan format:
-   "Bahwa [Objek] adalah [category_label] kamu, Anara boleh mengingatnya, {eff_speaker}?"
-
-KEMBALIKAN HANYA JSON VALID:
-{{
-  "resolved_entity": "Panda",
-  "canonical_key": "hewan_favorit",
-  "category_label": "hewan kesukaan",
-  "confirmation_prompt": "Bahwa Panda adalah hewan kesukaan kamu, Anara boleh mengingatnya, {eff_speaker}?"
-}}"""
+    from core.prompt_loader import load_prompt
+    prompt = load_prompt(
+        "classifiers/memory_reasoner",
+        command=command,
+        recent_context=recent_context,
+        eff_speaker=eff_speaker
+    )
 
     raw_text = _exec_universal_llm(prompt, max_tokens=None)
     if raw_text:
@@ -211,23 +261,101 @@ KEMBALIKAN HANYA JSON VALID:
 class SemanticRAGMixin:
     """Semantic brain search, proactive anticipation, facts association, and system prompt generation."""
 
+    def _init_embeddings_table(self) -> None:
+        """Initializes SQLite memory_embeddings table for persistent vector RAG (Hermes Parity)."""
+        try:
+            with self._get_connection() as conn:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS memory_embeddings (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        source_type TEXT NOT NULL,
+                        source_id TEXT NOT NULL,
+                        speaker_name TEXT,
+                        content TEXT NOT NULL,
+                        embedding_json TEXT NOT NULL,
+                        updated_at REAL NOT NULL,
+                        UNIQUE(source_type, source_id) ON CONFLICT REPLACE
+                    );
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_mem_emb_source
+                    ON memory_embeddings(source_type, source_id);
+                """)
+                conn.commit()
+        except Exception as e:
+            logger.debug(f"[SemanticRAG] Embeddings table init error: {e}")
+
+    def index_embedding(self, source_type: str, source_id: str, content: str, speaker_name: Optional[str] = None) -> bool:
+        """Computes and stores a vector embedding for a memory entity in SQLite (Hermes Parity)."""
+        self._init_embeddings_table()
+        vec = get_text_embedding(content)
+        if not vec:
+            return False
+        try:
+            with self._get_connection() as conn:
+                conn.execute("""
+                    INSERT INTO memory_embeddings (source_type, source_id, speaker_name, content, embedding_json, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(source_type, source_id) DO UPDATE SET
+                        content = excluded.content,
+                        embedding_json = excluded.embedding_json,
+                        speaker_name = excluded.speaker_name,
+                        updated_at = excluded.updated_at;
+                """, (source_type, str(source_id), speaker_name, content, json.dumps(vec), time.time()))
+                conn.commit()
+            return True
+        except Exception as e:
+            logger.debug(f"[SemanticRAG] Failed to index embedding for {source_type}/{source_id}: {e}")
+            return False
+
     def semantic_search_brain(self, query: str, speaker_name: Optional[str] = None, top_k: int = 4) -> List[Dict[str, Any]]:
         """
-        JARVIS 2.0 Semantic Memory & Episodic RAG Search:
-        Computes BM25/TF-IDF token and concept similarity across memories, projects, notes, and past conversations.
+        Hermes Parity: Hybrid Dense+Sparse Semantic Memory & Episodic RAG Search.
+        Blends 3072-dimensional vector cosine similarity (dense) with BM25 token matching (sparse)
+        across memories, projects, notes, and past conversations.
         """
         if not query or len(query.strip()) < 2:
             return []
         
         eff_speaker = canonicalize_speaker_name(speaker_name) if speaker_name else None
         
+        # 1. Sparse tokenization (BM25 lexical matching)
         q_tokens = set(re.findall(r"\w+", query.lower()))
-        STOP = {"yang", "dan", "dari", "ke", "di", "ini", "itu", "aku", "kamu", "saya", "apa", "ada", "nih", "ya", "yah", "dong", "deh", "tentang"}
-        q_clean_tokens = [t for t in q_tokens if t not in STOP and len(t) >= 2]
+        q_clean_tokens = [t for t in q_tokens if len(t) >= 2]
         if not q_clean_tokens:
             q_clean_tokens = list(q_tokens)
 
+        # 2. Dense vector embedding calculation (with offline subword fallback)
+        q_vec = get_text_embedding(query)
+        local_q_vec = compute_local_hash_embedding(query)
+        dense_similarities: Dict[Tuple[str, str], float] = {}
+
+        try:
+            self._init_embeddings_table()
+            with self._get_connection() as conn:
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT source_type, source_id, speaker_name, content, embedding_json
+                    FROM memory_embeddings
+                    WHERE (speaker_name = ? OR speaker_name IS NULL OR ? IS NULL)
+                """, (eff_speaker, eff_speaker))
+                for row in cur.fetchall():
+                    try:
+                        emb = json.loads(row["embedding_json"])
+                        sim = 0.0
+                        if q_vec and len(emb) == len(q_vec):
+                            sim = cosine_similarity(q_vec, emb)
+                        elif len(emb) == len(local_q_vec):
+                            sim = cosine_similarity(local_q_vec, emb)
+                        if sim >= 0.35:
+                            dense_similarities[(row["source_type"], row["source_id"])] = sim
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.debug(f"[SemanticRAG] Dense vector candidate scoring: {e}")
+
         scored_items = []
+        matched_keys: Set[Tuple[str, str]] = set()
 
         with self._get_connection() as conn:
             cur = conn.cursor()
@@ -242,14 +370,21 @@ class SemanticRAGMixin:
             cur.execute(m_query, (eff_speaker, eff_speaker))
             for r in cur.fetchall():
                 text = f"{r['key']} {r['value']} {r['category']}".lower()
-                score = sum(2.5 if t in r['key'].lower() else (1.8 if t in r['value'].lower() else 0.5) for t in q_clean_tokens if t in text)
-                if score > 0:
+                lexical_score = sum(2.5 if t in r['key'].lower() else (1.8 if t in r['value'].lower() else 0.5) for t in q_clean_tokens if t in text)
+                source_key = ("memory", r["key"])
+                dense_sim = dense_similarities.get(source_key, 0.0)
+
+                # Hybrid score blending (0.65 dense + 0.35 lexical)
+                if dense_sim > 0.40 or lexical_score > 0:
+                    matched_keys.add(source_key)
+                    final_score = (dense_sim * 10.0 * 0.65) + (lexical_score * 0.35)
                     scored_items.append({
                         "type": "memory",
                         "title": r['key'].replace('_', ' ').title(),
                         "content": r['value'],
                         "category": r['category'],
-                        "score": score
+                        "score": round(final_score, 3),
+                        "semantic_match": dense_sim > 0.45,
                     })
 
             # 2. Search in projects
@@ -262,14 +397,20 @@ class SemanticRAGMixin:
             cur.execute(p_query, (eff_speaker, eff_speaker))
             for r in cur.fetchall():
                 text = f"{r['name']} {r['tech_stack']} {r['goal']} {r['notes']}".lower()
-                score = sum(3.5 if t in r['name'].lower() else (2.2 if t in (r['tech_stack'] or '').lower() else 1.2) for t in q_clean_tokens if t in text)
-                if score > 0:
+                lexical_score = sum(3.5 if t in r['name'].lower() else (2.2 if t in (r['tech_stack'] or '').lower() else 1.2) for t in q_clean_tokens if t in text)
+                source_key = ("project", r["name"])
+                dense_sim = dense_similarities.get(source_key, 0.0)
+
+                if dense_sim > 0.40 or lexical_score > 0:
+                    matched_keys.add(source_key)
+                    final_score = (dense_sim * 10.0 * 0.65) + (lexical_score * 0.35)
                     scored_items.append({
                         "type": "project",
-                        "title": f"Proyek '{r['name']}'",
-                        "content": f"Tech: {r['tech_stack']} | Target: {r['goal']}" + (f" | Catatan: {r['notes']}" if r['notes'] else ""),
+                        "title": f"Project '{r['name']}'",
+                        "content": f"Tech: {r['tech_stack']} | Goal: {r['goal']}" + (f" | Notes: {r['notes']}" if r['notes'] else ""),
                         "category": "project",
-                        "score": score
+                        "score": round(final_score, 3),
+                        "semantic_match": dense_sim > 0.45,
                     })
 
             # 3. Search in notes / todos
@@ -284,10 +425,10 @@ class SemanticRAGMixin:
                 text = f"{r['title']} {r['content']} {r['category']}".lower()
                 score = sum(2.8 if t in r['title'].lower() else 1.2 for t in q_clean_tokens if t in text)
                 if score > 0:
-                    status_lbl = "Selesai" if r['is_completed'] else "Aktif"
+                    status_lbl = "Completed" if r['is_completed'] else "Active"
                     scored_items.append({
                         "type": "todo",
-                        "title": f"Tugas [{r['category'].upper()} - {status_lbl}]: {r['title']}",
+                        "title": f"Task [{r['category'].upper()} - {status_lbl}]: {r['title']}",
                         "content": r['content'] or "",
                         "category": r['category'],
                         "score": score
@@ -302,8 +443,8 @@ class SemanticRAGMixin:
                 if score >= 1.5:
                     scored_items.append({
                         "type": "conversation",
-                        "title": f"Percakapan Sebelumnya: '{r['user_text']}'",
-                        "content": f"Jawaban Anara: {r['ai_text']}",
+                        "title": f"Previous Turn: '{r['user_text']}'",
+                        "content": f"Anara: {r['ai_text']}",
                         "category": "history",
                         "score": score
                     })
@@ -329,7 +470,7 @@ class SemanticRAGMixin:
         snippets = []
         for item in rag_results:
             if item["type"] == "memory":
-                snippets.append(f"- Ingatan: {item['title']} = {item['content']}")
+                snippets.append(f"- Memory: {item['title']} = {item['content']}")
             elif item["type"] == "project":
                 snippets.append(f"- {item['title']}: {item['content']}")
             elif item["type"] == "todo":
@@ -341,7 +482,7 @@ class SemanticRAGMixin:
             return ""
 
         return (
-            f"[INGATAN & KONTEKS PROAKTIF RELEVAN UNTUK {eff_speaker.upper()}]:\n"
+            f"[RELEVANT PERSISTENT CONTEXT FOR {eff_speaker.upper()}]:\n"
             + "\n".join(snippets) + "\n\n"
         )
 
@@ -360,28 +501,28 @@ class SemanticRAGMixin:
             em = acoustic_tone.get("emotion", "neutral")
             pitch = acoustic_tone.get("pitch_hz", 150)
             if em == "sad" or pitch < 110:
-                proactive_notes.append("Analisis Suara: Pengguna terdengar lelah/berat. Tunjukkan empati hangat dan nada menenangkan layaknya JARVIS peduli.")
+                proactive_notes.append("Voice Analysis: User sounds fatigued/weary. Offer calming, warm empathy.")
             elif em == "angry":
-                proactive_notes.append("Analisis Suara: Pengguna terdengar tegang/stres. Berikan respon yang tenang, solutif, dan efisien.")
+                proactive_notes.append("Voice Analysis: User sounds tense/stressed. Keep tone grounded, calm, and solution-focused.")
             elif em == "happy" or pitch > 220:
-                proactive_notes.append("Analisis Suara: Pengguna terdengar ceria/antusias. Balas dengan energi positif dan antusias.")
+                proactive_notes.append("Voice Analysis: User sounds enthusiastic/cheerful. Respond with matching positive energy.")
 
         todos = self.get_notes_and_todos(speaker_name=eff_speaker)
         pending = [t for t in todos if not t["is_completed"]]
         if len(pending) > 0:
             top_task = pending[0]["title"]
-            proactive_notes.append(f"To-Do Utama: Ada {len(pending)} tugas aktif (prioritas: '{top_task}').")
+            proactive_notes.append(f"Active Tasks: {len(pending)} pending items (priority: '{top_task}').")
 
         projs = self.get_projects_for_speaker(speaker_name=eff_speaker)
         if projs:
             active_p = projs[0]
-            proactive_notes.append(f"Proyek Utama: '{active_p['name']}' ({active_p.get('goal', '')}).")
+            proactive_notes.append(f"Active Project: '{active_p['name']}' ({active_p.get('goal', '')}).")
 
         if not proactive_notes:
             return ""
 
         return (
-            f"[MODUL ANTISIPASI PROAKTIF & EMPATI JARVIS 2.0]:\n"
+            f"[PROACTIVE CONTEXT & COGNITIVE EMPATHY]:\n"
             + "\n".join([f"- {n}" for n in proactive_notes]) + "\n"
         )
 
@@ -390,8 +531,7 @@ class SemanticRAGMixin:
         norm_key = self.normalize_memory_key(key)
         val_clean = value.strip().strip(".,!?\"'")
         
-        INVALID_VALS = {"sekarang", "sekarang ini", "saat ini", "jadinya", "menjadi", "jadi", "ku", "saya", "aku", "kamu", "dia", "apa", "siapa", "mana", "kah", "dong", "sih", "nih", "ya", "yah", "ini", "itu", "ubah", "ganti", "mau"}
-        if val_clean.lower() in INVALID_VALS or len(val_clean) < 2:
+        if not val_clean or len(val_clean) < 2:
             logger.warning(f"[AnaraMemory] Rejected storing invalid value '{val_clean}' for key '{norm_key}'")
             return False
 
@@ -424,6 +564,16 @@ class SemanticRAGMixin:
                 "value": val_clean,
                 "category": category
             })
+            # Asynchronously index vector embedding for semantic search (Hermes Parity: Gap 4)
+            try:
+                self.index_embedding(
+                    source_type="memory",
+                    source_id=norm_key,
+                    content=f"{norm_key}: {val_clean} ({category})",
+                    speaker_name=speaker_name.strip().title()
+                )
+            except Exception as e_emb:
+                logger.debug(f"[SemanticRAG] Auto-indexing memory embedding note: {e_emb}")
             return True
 
     def get_memories_for_speaker(self, speaker_name: str) -> List[Dict[str, Any]]:
@@ -492,7 +642,7 @@ class SemanticRAGMixin:
         clean_topic = (topic or "").strip()[:120]
         clean_content = (content or "").strip()
         if not clean_content:
-            return {"status": "error", "message": "Isi catatan kosong."}
+            return {"status": "error", "message": "Note content is empty."}
         if not clean_topic:
             clean_topic = clean_content[:60]
 
@@ -578,7 +728,7 @@ class SemanticRAGMixin:
                 anim_list = [f"- {r['name'].title()} ({r['category']}): {r['description']}" for r in anim_rows]
                 anim_str = "\n".join(anim_list)
         except Exception:
-            anim_str = "- Dance: Tarian Rumba 3D\n- Laughing: Tertawa ceria\n- Angry: Ekspresi marah\n- Crying: Ekspresi sedih"
+            anim_str = "- Dance (dance): 3D Rumba animation\n- Laughing (emotion): Joyful laughter\n- Angry (emotion): Angry expression\n- Crying (emotion): Sad expression"
 
         try:
             with self._get_connection() as conn:
@@ -607,64 +757,56 @@ class SemanticRAGMixin:
                     s_name = s["name"]
                     if s["memories"]:
                         fact_preview = "; ".join(s["memories"])
-                        speaker_profiles_summary.append(f"- {s_name} ({s['sample_count']} sampel suara): {fact_preview}")
+                        speaker_profiles_summary.append(f"- {s_name} ({s['sample_count']} voice samples): {fact_preview}")
                     else:
-                        speaker_profiles_summary.append(f"- {s_name} ({s['sample_count']} sampel suara terdaftar)")
-                profiles_str = "\n".join(speaker_profiles_summary) if speaker_profiles_summary else "- Belum ada profil terdaftar."
+                        speaker_profiles_summary.append(f"- {s_name} ({s['sample_count']} voice samples registered)")
+                profiles_str = "\n".join(speaker_profiles_summary) if speaker_profiles_summary else "- No registered profiles."
         except Exception:
-            profiles_str = "- Belum ada profil terdaftar."
+            profiles_str = "- No registered profiles."
 
         todos = self.get_notes_and_todos(speaker_name=target_speaker)
         active_todos = [t for t in todos if not t["is_completed"]][:5]
-        todo_str = "\n".join([f"- [{t['category'].upper()}] {t['title']}" + (f": {t['content']}" if t['content'] else "") for t in active_todos]) if active_todos else "- Tidak ada tugas pending."
+        todo_str = "\n".join([f"- [{t['category'].upper()}] {t['title']}" + (f": {t['content']}" if t['content'] else "") for t in active_todos]) if active_todos else "- No pending tasks."
 
         projs = self.get_projects_for_speaker(speaker_name=target_speaker)
         active_projs = [p for p in projs if p.get("status") == "active"][:3]
-        proj_str = "\n".join([f"- Proyek '{p['name']}'" + (f" ({p['tech_stack']})" if p.get('tech_stack') else "") + (f": Target '{p['goal']}'" if p.get('goal') else "") for p in active_projs]) if active_projs else ""
-        proj_section = f"[PROYEK AKTIF {target_speaker.upper()}]:\n{proj_str}\n\n" if proj_str else ""
+        proj_str = "\n".join([f"- Project '{p['name']}'" + (f" ({p['tech_stack']})" if p.get('tech_stack') else "") + (f": Goal '{p['goal']}'" if p.get('goal') else "") for p in active_projs]) if active_projs else ""
+        proj_section = f"[ACTIVE PROJECTS FOR {target_speaker.upper()}]:\n{proj_str}\n\n" if proj_str else ""
 
         m_rows = self.get_memories_for_speaker(target_speaker)
-        mem_str = "\n".join([f"- {r['key'].replace('_', ' ').title()} ({r['category']}): {r['value']}" for r in m_rows]) if m_rows else f"- Nama: {target_speaker} (Profil aktif utama di database Anara)."
+        mem_str = "\n".join([f"- {r['key'].replace('_', ' ').title()} ({r['category']}): {r['value']}" for r in m_rows]) if m_rows else f"- Name: {target_speaker} (Active user profile in Anara database)."
 
-        tone_guidance = "Sesuaikan bahasa responmu secara alami dengan bahasa pengguna (match user's language). Jawab secara ramah, hangat, natural, dan ringkas (1-2 kalimat)."
+        tone_guidance = "Adapt your response language naturally to the user's active language. Respond warmly, naturally, and concisely."
 
+        from core.prompt_loader import load_prompt
         if is_chat_mode:
-            active_section = (
-                f"[PROFIL PENGGUNA AKTIF]: {target_speaker}\n\n"
-                f"[FAKTA DAN INGATAN PRIBADI {target_speaker.upper()} DI DATABASE]:\n"
-                f"{mem_str}\n\n"
-                f"{proj_section}"
-                f"[CATATAN & TO-DO {target_speaker.upper()} DI DATABASE]:\n"
-                f"{todo_str}\n\n"
-                f"[PANDUAN INTERAKSI WORKSPACE CHAT]:\n"
-                f"1. Kamu sedang berinteraksi dengan {target_speaker} dalam workspace teks & kodingan.\n"
-                f"2. Sapa dan panggil namanya ({target_speaker}) secara ramah bila relevan.\n"
-                f"3. JANGAN PERNAH menyebutkan hal mikrofon, pendaftaran suara, atau biometrik saat di mode chat."
-            )
+            active_section = load_prompt(
+                "memory_context_chat",
+                target_speaker=target_speaker,
+                target_speaker_upper=target_speaker.upper(),
+                mem_str=mem_str,
+                proj_section=proj_section,
+                todo_str=todo_str,
+            ).strip()
         else:
-            active_section = (
-                f"[PROFIL PENGGUNA AKTIF]: {target_speaker}\n\n"
-                f"[FAKTA DAN INGATAN PRIBADI {target_speaker.upper()} DI DATABASE]:\n"
-                f"{mem_str}\n\n"
-                f"{proj_section}"
-                f"[CATATAN & TO-DO {target_speaker.upper()} DI DATABASE]:\n"
-                f"{todo_str}\n\n"
-                f"[PANDUAN INTERAKSI UTAMA]:\n"
-                f"1. Kamu sedang berinteraksi dengan {target_speaker}. Profil ini aktif di database.\n"
-                f"2. Sapa dan panggil namanya ({target_speaker}) dalam percakapan. {tone_guidance}"
-            )
+            active_section = load_prompt(
+                "memory_context_voice",
+                target_speaker=target_speaker,
+                target_speaker_upper=target_speaker.upper(),
+                mem_str=mem_str,
+                proj_section=proj_section,
+                todo_str=todo_str,
+                tone_guidance=tone_guidance,
+            ).strip()
 
         context_body = (
-            f"[DAFTAR PROFIL TERDAFTAR DI DATABASE SQLITE ANARA]:\n"
+            f"[REGISTERED USER PROFILES]:\n"
             f"{profiles_str}\n\n"
             f"{active_section}\n\n"
-            f"[KAPABILITAS PROYEKSI VISUAL ANARA]:\n"
-            f"- Kamu adalah Anara, asisten AI visual 3D multi-pengguna cerdas dengan visual holographic di layar.\n"
-            f"- Kamu BISA menampilkan: Foto Asli Web, Widget Cuaca Real-time, Terminal Kode Sci-Fi, Telemetri Status Sistem Anara, Skematik Pengetahuan, dan Checklist To-Do di layar.\n\n"
-            f"[ATURAN KOMUNIKASI & ANTI-ROLEPLAY]:\n"
-            f"1. Jawablah pesan pengguna secara langsung, relevan, alami, dan ringkas (1-2 kalimat).\n"
-            f"2. DILARANG KERAS menuliskan teks roleplay dalam tanda bintang seperti *tersenyum*, *menari*, atau *dansa*.\n"
-            f"3. DILARANG mengajak menari atau membicarakan tarian kecuali pengguna secara eksplisit meminta ('Anara, ayo nari!').\n"
+            f"[COMMUNICATION STANDARDS & MULTILINGUAL SOVEREIGNTY]:\n"
+            f"1. Respond directly, naturally, and concisely in the user's active language.\n"
+            f"2. Do not use roleplay action markers in asterisks like *smiles* or *dances*.\n"
+            f"3. LANGUAGE SOVEREIGNTY: Seamlessly adapt and respond in the exact language used by the user (English, Indonesian, Japanese, Spanish, etc.).\n"
         )
 
         self._prompt_context_cache[cache_key] = (now, context_body)

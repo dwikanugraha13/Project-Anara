@@ -84,7 +84,7 @@ export default function BrainToolsTab() {
   };
 
   const handleDeleteAutoTask = async (taskId: string, name: string) => {
-    if (!confirm(`Hapus jadwal tugas '${name}'?`)) return;
+    if (!confirm(`Delete task schedule '${name}'?`)) return;
     try {
       const res = await fetch(`${BACKEND_URL}/api/agent/autonomous/tasks/${taskId}`, {
         method: "DELETE",
@@ -107,14 +107,14 @@ export default function BrainToolsTab() {
         <div className="space-y-0.5">
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-bold text-white font-mono">
-              Katalog Alat, Sub-Agent &amp; Otonom
+              Tools Catalog, Sub-Agent &amp; Autonomous
             </h3>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-400/30 font-semibold">
               {toolsCatalog.length || 24} Tools
             </span>
           </div>
           <p className="text-xs text-slate-400">
-            Instrumen fisik, pekerja latar belakang, dan scheduler otonom (Anara Standard &amp; OpenCode).
+            Physical instruments, background workers, and autonomous scheduler (Anara Standard &amp; OpenCode).
           </p>
         </div>
 
@@ -132,7 +132,7 @@ export default function BrainToolsTab() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
-            <span>Katalog Alat ({toolsCatalog.length || 24})</span>
+            <span>Tools Catalog ({toolsCatalog.length || 24})</span>
           </button>
           <button
             type="button"
@@ -146,7 +146,7 @@ export default function BrainToolsTab() {
             <svg className="w-3.5 h-3.5 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span>Tugas Otonom ({autoTasks.length})</span>
+            <span>Autonomous Tasks ({autoTasks.length})</span>
           </button>
           <button
             type="button"
@@ -172,8 +172,8 @@ export default function BrainToolsTab() {
           <div className="flex items-center gap-1.5 flex-wrap font-mono text-xs">
             {[
               { id: "all", label: "Semua" },
-              { id: "coding", label: "Koding & Berkas" },
-              { id: "exploration", label: "Pencarian & Eksplorasi" },
+              { id: "coding", label: "Coding & Files" },
+              { id: "exploration", label: "Search & Exploration" },
               { id: "system", label: "Terminal & Sistem" },
               { id: "intelligence", label: "Intelijen & Riset" },
               { id: "connectivity", label: "Konektivitas" },
@@ -227,7 +227,7 @@ export default function BrainToolsTab() {
                       onClick={() => setExpandedToolSchema(isExpanded ? null : tool.name)}
                       className="text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer"
                     >
-                      {isExpanded ? "Tutup Skema ▲" : "Lihat Parameter ▼"}
+                      {isExpanded ? "Close Schema ▲" : "View Parameters ▼"}
                     </button>
                   </div>
 
@@ -252,10 +252,10 @@ export default function BrainToolsTab() {
           <div className="flex items-center justify-between p-3.5 rounded-2xl liquid-glass border border-white/10">
             <div>
               <h4 className="text-xs font-bold text-white font-mono uppercase tracking-wider">
-                Penjadwal Tugas Otonom (Autonomous Engine)
+                Autonomous Task Scheduler (Autonomous Engine)
               </h4>
               <p className="text-xs text-slate-400 mt-0.5">
-                Tugas background terjadwal dengan penegakan kebijakan Trust-Level (FR-21 s/d FR-24).
+                Scheduled background tasks with Trust-Level policy enforcement (FR-21 s/d FR-24).
               </p>
             </div>
             <button
@@ -263,7 +263,7 @@ export default function BrainToolsTab() {
               onClick={() => setIsAddTaskOpen((v) => !v)}
               className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/40 text-amber-200 text-xs font-semibold font-mono transition-all cursor-pointer flex items-center gap-1.5"
             >
-              <span>+ Tambah Tugas</span>
+              <span>+ Add Task</span>
             </button>
           </div>
 
@@ -271,13 +271,13 @@ export default function BrainToolsTab() {
           {isAddTaskOpen && (
             <form onSubmit={handleCreateAutoTask} className="p-4 rounded-2xl liquid-glass border border-white/20 space-y-3 animate-scale-up font-mono text-xs">
               <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <span className="font-bold text-amber-300">Daftarkan Tugas Otonom Baru</span>
+                <span className="font-bold text-amber-300">Register New Autonomous Task</span>
                 <button type="button" onClick={() => setIsAddTaskOpen(false)} className="text-slate-400 hover:text-white">✕</button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[11px] text-slate-400">Nama Tugas</label>
+                  <label className="text-[11px] text-slate-400">Task Name</label>
                   <input
                     type="text"
                     placeholder="Contoh: Audit Keamanan Dependensi Harian"
@@ -302,10 +302,10 @@ export default function BrainToolsTab() {
               </div>
 
               <div className="space-y-1">
-                <label className="text-[11px] text-slate-400">Instruksi Prompt Otonom</label>
+                  <label className="text-[11px] text-slate-400">Autonomous Prompt Instructions</label>
                 <textarea
                   rows={2}
-                  placeholder="Contoh: Periksa dependensi proyek via terminal dan laporkan ke Telegram..."
+                  placeholder="Example: Check project dependencies via terminal and report to Telegram..."
                   value={taskPrompt}
                   onChange={(e) => setTaskPrompt(e.target.value)}
                   className="w-full px-3 py-1.5 rounded-xl bg-black/60 border border-white/15 text-white"
@@ -315,7 +315,7 @@ export default function BrainToolsTab() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[11px] text-slate-400">Interval Eksekusi</label>
+                  <label className="text-[11px] text-slate-400">Execution Interval</label>
                   <select
                     value={taskInterval}
                     onChange={(e) => setTaskInterval(Number(e.target.value))}
@@ -343,7 +343,7 @@ export default function BrainToolsTab() {
 
               <div className="flex justify-end gap-2 pt-1">
                 <button type="button" onClick={() => setIsAddTaskOpen(false)} className="px-3 py-1 text-slate-400 hover:text-white">Batal</button>
-                <button type="submit" className="px-4 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/40 text-amber-200 font-bold cursor-pointer">Simpan Jadwal</button>
+                <button type="submit" className="px-4 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/40 text-amber-200 font-bold cursor-pointer">Save Schedule</button>
               </div>
             </form>
           )}
@@ -351,7 +351,7 @@ export default function BrainToolsTab() {
           {/* List of Autonomous Tasks */}
           {autoTasks.length === 0 ? (
             <div className="p-8 text-center rounded-2xl liquid-glass border border-white/10 text-slate-400 text-xs font-mono">
-              Belum ada tugas otonom terjadwal. Klik &quot;Tambah Tugas&quot; di atas untuk menjadwalkan pekerjaan background.
+              No autonomous tasks scheduled yet. Click &quot;Add Task&quot; above to schedule background jobs.
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
@@ -408,14 +408,14 @@ export default function BrainToolsTab() {
                         disabled={isRunning}
                         className="px-3 py-1 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-400/30 text-cyan-200 text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50"
                       >
-                        {isRunning ? "⚡ Mengeksekusi..." : "⚡ Jalankan Sekarang"}
+                        {isRunning ? "⚡ Executing..." : "⚡ Run Now"}
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDeleteAutoTask(t.id, t.name)}
                         className="text-[11px] text-slate-500 hover:text-rose-400 transition-colors cursor-pointer"
                       >
-                        Hapus
+                        Delete
                       </button>
                     </div>
                   </div>
@@ -430,12 +430,12 @@ export default function BrainToolsTab() {
       {toolsSubTab === "subagents" && (
         <div className="space-y-3">
           <div className="p-3 rounded-xl bg-black/40 border border-white/10 text-xs text-slate-400 font-mono">
-            Daftar tugas subagent otonom yang didelegasikan untuk berjalan di latar belakang.
+            List of autonomous subagent tasks delegated to run in the background.
           </div>
 
           {subagentTasks.length === 0 ? (
             <div className="p-8 text-center rounded-2xl liquid-glass border border-white/10 text-slate-400 text-xs font-mono">
-              Belum ada subagent task yang aktif saat ini.
+              No active subagent tasks at this time.
             </div>
           ) : (
             <div className="space-y-2.5">

@@ -256,7 +256,7 @@ export default function AnaraCodeIDE({
 
   // File path segmentation for breadcrumb
   const normPath = (filePath || fileName || "").replace(/\\/g, "/");
-  const cleanName = normPath.split("/").pop() || fileName || "berkas";
+  const cleanName = normPath.split("/").pop() || fileName || "file";
   const dirPath = normPath.includes("/") ? normPath.substring(0, normPath.lastIndexOf("/") + 1) : "";
 
   const handleCopy = () => {
@@ -563,10 +563,10 @@ export default function AnaraCodeIDE({
               </span>
               <div className="space-y-1 min-w-0">
                 <h4 className="text-xs font-semibold text-white leading-snug">
-                  Ingin menyimpan perubahan pada <span className="font-mono text-white font-bold">{unsavedCloseTab.fileName}</span>?
+                  Save changes to <span className="font-mono text-white font-bold">{unsavedCloseTab.fileName}</span>?
                 </h4>
                 <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
-                  Perubahan Anda akan hilang jika Anda tidak menyimpannya.
+                  Your changes will be lost if you don't save them.
                 </p>
               </div>
             </div>
@@ -577,21 +577,21 @@ export default function AnaraCodeIDE({
                 onClick={handleConfirmSaveAndClose}
                 className="px-3 py-1.5 rounded-xl bg-cyan-500/25 hover:bg-cyan-500/40 border border-cyan-400/50 text-cyan-100 font-semibold cursor-pointer transition-all active:scale-95"
               >
-                Simpan
+                Save
               </button>
               <button
                 type="button"
                 onClick={handleConfirmDiscardAndClose}
                 className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 cursor-pointer transition-all active:scale-95"
               >
-                Jangan Simpan
+                Don't Save
               </button>
               <button
                 type="button"
                 onClick={() => setUnsavedCloseTab(null)}
                 className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-400 hover:text-white transition-all cursor-pointer"
               >
-                Batal
+                Cancel
               </button>
             </div>
           </div>
@@ -628,7 +628,7 @@ export default function AnaraCodeIDE({
                     type="button"
                     onClick={(e) => handleTabCloseClick(e, tab)}
                     className="w-4 h-4 rounded flex items-center justify-center hover:bg-white/20 transition-colors cursor-pointer text-[10px] group/tabbtn ml-0.5"
-                    title={tabIsDirty ? "Ada perubahan belum disimpan (Klik untuk tutup)" : "Tutup tab"}
+                    title={tabIsDirty ? "Unsaved changes (Click to close)" : "Close tab"}
                   >
                     {tabIsDirty ? (
                       <>
@@ -686,10 +686,10 @@ export default function AnaraCodeIDE({
           {/* Save Status Notification */}
           {saveSuccess ? (
             <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-400/30 shrink-0 ml-1">
-              ✓ Tersimpan
+              ✓ Saved
             </span>
           ) : isDirty ? (
-            <span className="w-1.5 h-1.5 rounded-full bg-slate-300 shadow-sm shrink-0 ml-1" title="Perubahan belum disimpan (Ctrl+S untuk simpan)" />
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-300 shadow-sm shrink-0 ml-1" title="Unsaved changes (Ctrl+S to save)" />
           ) : null}
         </div>
 
@@ -703,21 +703,21 @@ export default function AnaraCodeIDE({
                 ? "bg-white/15 border-white/30 text-white shadow-[0_0_12px_rgba(255,255,255,0.1)]"
                 : "bg-white/[0.04] hover:bg-white/10 border-white/10 text-slate-400 hover:text-white"
             }`}
-            title="Cari kata / Cari & Ganti (Ctrl + F)"
+            title="Find / Find & Replace (Ctrl + F)"
           >
             <svg className="w-3 h-3 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
-            <span className="text-[10px]">Cari</span>
+            <span className="text-[10px]">Find</span>
           </button>
 
           <button
             type="button"
             onClick={handleCopy}
             className="px-2 py-0.5 rounded-lg bg-white/[0.04] hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-xs font-medium font-mono cursor-pointer transition-all"
-            title="Salin isi berkas"
+            title="Copy file content"
           >
-            {copied ? "✓ Tersalin" : "Salin"}
+            {copied ? "✓ Copied" : "Copy"}
           </button>
 
           {!embedded && (
@@ -725,7 +725,7 @@ export default function AnaraCodeIDE({
               type="button"
               onClick={onClose}
               className="p-1 rounded-xl bg-white/10 hover:bg-rose-500/30 hover:text-rose-200 text-slate-400 border border-white/10 transition-all cursor-pointer ml-1"
-              title="Tutup IDE Inspector"
+              title="Close IDE Inspector"
             >
               ✕
             </button>
@@ -745,7 +745,7 @@ export default function AnaraCodeIDE({
                 type="button"
                 onClick={() => setIsReplaceOpen((prev) => !prev)}
                 className="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer text-xs shrink-0"
-                title={isReplaceOpen ? "Sembunyikan baris Ganti (Replace)" : "Tampilkan baris Ganti (Replace)"}
+                title={isReplaceOpen ? "Hide Replace row" : "Show Replace row"}
               >
                 <span className={`transform transition-transform text-[10px] ${isReplaceOpen ? "rotate-90" : ""}`}>▶</span>
               </button>
@@ -767,7 +767,7 @@ export default function AnaraCodeIDE({
                       handleCloseSearch();
                     }
                   }}
-                  placeholder="Cari kata..."
+                  placeholder="Find text..."
                   className="bg-transparent text-slate-100 text-xs outline-none w-36 sm:w-44 pr-16 placeholder:text-slate-500 font-mono"
                 />
 
@@ -779,7 +779,7 @@ export default function AnaraCodeIDE({
                     className={`px-1 py-0.2 rounded text-[10px] font-bold transition-all cursor-pointer ${
                       caseSensitive ? "bg-white/20 text-white border border-white/40" : "text-slate-500 hover:text-slate-300"
                     }`}
-                    title="Cocokkan Huruf Besar/Kecil (Match Case - Aa)"
+                    title="Match Case (Aa)"
                   >
                     Aa
                   </button>
@@ -789,7 +789,7 @@ export default function AnaraCodeIDE({
                     className={`px-1 py-0.2 rounded text-[10px] font-bold transition-all cursor-pointer ${
                       wholeWord ? "bg-white/20 text-white border border-white/40" : "text-slate-500 hover:text-slate-300"
                     }`}
-                    title="Cocokkan Seluruh Kata (Whole Word - \\b)"
+                    title="Match Whole Word (\\b)"
                   >
                     \b
                   </button>
@@ -799,7 +799,7 @@ export default function AnaraCodeIDE({
                     className={`px-1 py-0.2 rounded text-[10px] font-bold transition-all cursor-pointer ${
                       useRegex ? "bg-white/20 text-white border border-white/40" : "text-slate-500 hover:text-slate-300"
                     }`}
-                    title="Gunakan Regular Expression (.*)"
+                    title="Use Regular Expression (.*)"
                   >
                     .*
                   </button>
@@ -816,7 +816,7 @@ export default function AnaraCodeIDE({
                 type="button"
                 onClick={handleFindPrevious}
                 className="w-6 h-6 flex items-center justify-center rounded-lg bg-white/[0.05] hover:bg-white/15 text-slate-300 hover:text-white border border-white/10 transition-colors cursor-pointer text-xs shrink-0"
-                title="Sebelumnya (Shift + Enter)"
+                title="Previous (Shift + Enter)"
               >
                 ↑
               </button>
@@ -826,7 +826,7 @@ export default function AnaraCodeIDE({
                 type="button"
                 onClick={handleFindNext}
                 className="w-6 h-6 flex items-center justify-center rounded-lg bg-white/[0.05] hover:bg-white/15 text-slate-300 hover:text-white border border-white/10 transition-colors cursor-pointer text-xs shrink-0"
-                title="Berikutnya (Enter)"
+                title="Next (Enter)"
               >
                 ↓
               </button>
@@ -836,7 +836,7 @@ export default function AnaraCodeIDE({
                 type="button"
                 onClick={handleCloseSearch}
                 className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-rose-500/25 hover:text-rose-200 text-slate-400 transition-colors cursor-pointer text-xs shrink-0 ml-0.5"
-                title="Tutup (Escape)"
+                title="Close (Escape)"
               >
                 ✕
               </button>
@@ -858,7 +858,7 @@ export default function AnaraCodeIDE({
                       handleCloseSearch();
                     }
                   }}
-                  placeholder="Ganti dengan..."
+                  placeholder="Replace with..."
                   className="bg-[#030712] border border-white/20 focus:border-white/50 focus:ring-1 focus:ring-white/20 rounded-lg px-2 py-1 text-slate-100 text-xs outline-none w-36 sm:w-44 placeholder:text-slate-500 font-mono"
                 />
 
@@ -866,18 +866,18 @@ export default function AnaraCodeIDE({
                   type="button"
                   onClick={handleReplaceNext}
                   className="px-2 py-1 rounded-lg bg-white/[0.06] hover:bg-white/15 text-slate-300 hover:text-white border border-white/10 text-[11px] font-medium transition-colors cursor-pointer"
-                  title="Ganti satu kecocokan aktif"
+                  title="Replace current match"
                 >
-                  Ganti
+                  Replace
                 </button>
 
                 <button
                   type="button"
                   onClick={handleReplaceAll}
                   className="px-2 py-1 rounded-lg bg-white/[0.06] hover:bg-white/15 text-slate-300 hover:text-white border border-white/10 text-[11px] font-medium transition-colors cursor-pointer"
-                  title="Ganti semua kecocokan di berkas"
+                  title="Replace all matches in file"
                 >
-                  Semua
+                  All
                 </button>
               </div>
             )}

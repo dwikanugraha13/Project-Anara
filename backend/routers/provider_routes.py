@@ -166,7 +166,7 @@ async def add_provider_account_endpoint(provider_name: str, req: ProviderAccount
     """Adds a new account with custom label into the multi-account pool."""
     acc = add_provider_account(provider_name, req.account_label, req.api_key)
     if not acc:
-        raise HTTPException(status_code=400, detail="Gagal menambahkan akun API key")
+        raise HTTPException(status_code=400, detail="Failed to add API key account")
     providers = await get_providers_status_list_async(force_refresh=True)
     return {
         "status": "success",
@@ -179,7 +179,7 @@ async def toggle_provider_account_endpoint(provider_name: str, account_id: int):
     """Toggles active/disabled state of an account in the pool."""
     new_state = toggle_provider_account(provider_name, account_id)
     if new_state is None:
-        raise HTTPException(status_code=404, detail="Akun tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Account not found")
     providers = await get_providers_status_list_async(force_refresh=True)
     return {
         "status": "success",
@@ -193,7 +193,7 @@ async def delete_provider_account_endpoint(provider_name: str, account_id: int):
     """Deletes a specific account from the pool."""
     ok = delete_provider_account(provider_name, account_id)
     if not ok:
-        raise HTTPException(status_code=404, detail="Akun tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Account not found")
     providers = await get_providers_status_list_async(force_refresh=True)
     return {
         "status": "success",
@@ -225,7 +225,7 @@ async def disconnect_provider_endpoint(provider_name: str):
     """Explicitly disconnects a provider, deleting all its accounts."""
     ok = disconnect_provider_api_key(provider_name)
     if not ok:
-        raise HTTPException(status_code=400, detail=f"Provider '{provider_name}' tidak dikenali")
+        raise HTTPException(status_code=400, detail=f"Provider '{provider_name}' not recognized")
     providers = await get_providers_status_list_async(force_refresh=True)
     return {"status": "success", "provider": provider_name, "providers": providers}
 
@@ -258,7 +258,7 @@ async def delete_custom_provider_endpoint(provider_id: int):
     """Deletes a custom provider and cleans its models."""
     ok = memory_engine.delete_custom_provider(provider_id)
     if not ok:
-        raise HTTPException(status_code=404, detail="Custom provider tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Custom provider not found")
     _DYNAMIC_CACHE.pop("custom_providers", None)
     providers = await get_providers_status_list_async(force_refresh=True)
     return {"status": "success", "deleted_id": provider_id, "providers": providers}
@@ -268,7 +268,7 @@ async def toggle_custom_provider_endpoint(provider_id: int):
     """Toggles a custom provider on/off directly."""
     new_state = memory_engine.toggle_custom_provider(provider_id)
     if new_state is None:
-        raise HTTPException(status_code=404, detail="Custom provider tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Custom provider not found")
     _DYNAMIC_CACHE.pop("custom_providers", None)
     providers = await get_providers_status_list_async(force_refresh=True)
     return {"status": "success", "provider_id": provider_id, "is_active": new_state, "providers": providers}
@@ -286,14 +286,14 @@ async def check_custom_provider_endpoint(req: CustomProviderCheckRequest):
             m_list = data.get("data", []) or data.get("models", [])
             return {
                 "status": "ok",
-                "message": f"Koneksi sukses! Ditemukan {len(m_list)} model di endpoint /models.",
+                "message": f"Connection successful! Found {len(m_list)} model(s) at /models endpoint.",
                 "models_count": len(m_list),
                 "sample_models": [m.get("id", "") for m in m_list[:10]],
             }
         else:
-            return {"status": "error", "message": f"Server merespon HTTP {r.status_code}: {r.text[:100]}"}
+            return {"status": "error", "message": f"Server responded with HTTP {r.status_code}: {r.text[:100]}"}
     except Exception as e:
-        return {"status": "error", "message": f"Gagal terhubung: {str(e)}"}
+        return {"status": "error", "message": f"Connection failed: {str(e)}"}
 
 # ── Hidden Models Management ──
 
@@ -344,7 +344,7 @@ async def set_active_model_endpoint(req: ModelActiveRequest):
     """Switches the active model ID."""
     ok = set_active_model_id(req.model_id)
     if not ok:
-        raise HTTPException(status_code=400, detail=f"Model '{req.model_id}' tidak valid")
+        raise HTTPException(status_code=400, detail=f"Model '{req.model_id}' is not valid")
     return {"status": "success", "active_model_id": req.model_id}
 
 @router.post("/api/models/keys")
@@ -352,7 +352,7 @@ async def save_model_key_endpoint(req: ProviderKeyRequest):
     """Saves an API key for a specific AI provider."""
     ok = save_provider_api_key(req.provider, req.api_key)
     if not ok:
-        raise HTTPException(status_code=400, detail=f"Provider '{req.provider}' tidak dikenali")
+        raise HTTPException(status_code=400, detail=f"Provider '{req.provider}' not recognized")
     return {"status": "success", "provider": req.provider}
 
 # ── OpenAI Codex CLI OAuth PKCE Engine ──
@@ -436,10 +436,10 @@ class CodexOAuthPort1455Server:
                     if state in _CODEX_OAUTH_SESSIONS:
                         _CODEX_OAUTH_SESSIONS[state]["status"] = "error"
                         _CODEX_OAUTH_SESSIONS[state]["error"] = error_desc
-                    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Login Gagal</title></head>
+                    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Login Failed</title></head>
                     <body style="font-family:system-ui,sans-serif;background:#090d16;color:#f87171;text-align:center;padding:50px;">
-                      <h2>Otorisasi Ditolak</h2><p>{error_desc}</p>
-                      <button onclick="window.close()" style="margin-top:20px;padding:10px 24px;border-radius:8px;background:#1e293b;color:white;border:1px solid #334155;cursor:pointer;">Tutup</button>
+                      <h2>Authorization Denied</h2><p>{error_desc}</p>
+                      <button onclick="window.close()" style="margin-top:20px;padding:10px 24px;border-radius:8px;background:#1e293b;color:white;border:1px solid #334155;cursor:pointer;">Close</button>
                     </body></html>"""
                 elif code and state in _CODEX_OAUTH_SESSIONS:
                     session = _CODEX_OAUTH_SESSIONS[state]
@@ -448,26 +448,26 @@ class CodexOAuthPort1455Server:
                     if success:
                         session["status"] = "success"
                         session["account"] = acc_or_err
-                        html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Login Berhasil</title>
+                        html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Login Successful</title>
                         <script>
                           if(window.opener){{try{{window.opener.postMessage({{type:'CODEX_OAUTH_SUCCESS',state:'{state}'}},'*');}}catch(e){{}}}}
                           setTimeout(function(){{window.close();}}, 1500);
                         </script></head>
                         <body style="font-family:system-ui,sans-serif;background:#090d16;color:#34d399;text-align:center;padding:50px;">
                           <div style="font-size:48px;margin-bottom:12px;">✓</div>
-                          <h2 style="color:#ffffff;margin:0 0 10px 0;">Login OpenAI Codex Berhasil!</h2>
-                          <p style="color:#94a3b8;font-size:14px;">Akun telah terhubung ke Anara. Jendela ini akan tertutup otomatis...</p>
+                          <h2 style="color:#ffffff;margin:0 0 10px 0;">OpenAI Codex Login Successful!</h2>
+                          <p style="color:#94a3b8;font-size:14px;">Account connected to Anara. This window will close automatically...</p>
                         </body></html>"""
                     else:
                         session["status"] = "error"
                         session["error"] = acc_or_err
-                        html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Pertukaran Token Gagal</title></head>
+                        html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Token Exchange Failed</title></head>
                         <body style="font-family:system-ui,sans-serif;background:#090d16;color:#f87171;text-align:center;padding:50px;">
-                          <h2>Pertukaran Token Gagal</h2><p>{acc_or_err}</p>
-                          <button onclick="window.close()" style="margin-top:20px;padding:10px 24px;border-radius:8px;background:#1e293b;color:white;border:1px solid #334155;cursor:pointer;">Tutup</button>
+                          <h2>Token Exchange Failed</h2><p>{acc_or_err}</p>
+                          <button onclick="window.close()" style="margin-top:20px;padding:10px 24px;border-radius:8px;background:#1e293b;color:white;border:1px solid #334155;cursor:pointer;">Close</button>
                         </body></html>"""
                 else:
-                    html = """<!DOCTYPE html><html><body><h3>Parameter callback tidak lengkap.</h3></body></html>"""
+                    html = """<!DOCTYPE html><html><body><h3>Incomplete callback parameters.</h3></body></html>"""
 
                 resp_bytes = html.encode("utf-8")
                 writer.write(f"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {len(resp_bytes)}\r\nConnection: close\r\n\r\n".encode("ascii") + resp_bytes)
@@ -565,7 +565,7 @@ async def oauth_authorize_url_endpoint(provider: str):
             "code_verifier": verifier,
             "redirect_uri": OPENAI_CODEX_REDIRECT_URI,
             "oauth_flow": "pkce_codex_cli",
-            "message": "Login langsung menggunakan akun OpenAI Anda via OAuth resmi Codex CLI."
+            "message": "Direct login using your OpenAI account via official Codex CLI OAuth."
         }
     elif prov == "anthropic":
         return {
@@ -573,9 +573,9 @@ async def oauth_authorize_url_endpoint(provider: str):
             "provider": "anthropic",
             "authorize_url": "https://console.anthropic.com/",
             "oauth_flow": "google_login",
-            "message": "Buka Anthropic Console untuk login via akun Google."
+            "message": "Open Anthropic Console to login via Google account."
         }
-    raise HTTPException(status_code=400, detail=f"OAuth authorize URL tidak didukung untuk '{prov}'")
+    raise HTTPException(status_code=400, detail=f"OAuth authorize URL not supported for '{prov}'")
 
 @router.get("/api/auth/{provider}/status")
 async def oauth_status_endpoint(provider: str, state: str):
@@ -630,11 +630,11 @@ async def oauth_exchange_endpoint(provider: str, req: OAuthExchangeRequest):
             verifier = _CODEX_OAUTH_SESSIONS[latest_state].get("code_verifier", "")
 
         if not verifier:
-            raise HTTPException(status_code=400, detail="code_verifier tidak ditemukan. Silakan ulangi klik Login OAuth.")
+            raise HTTPException(status_code=400, detail="code_verifier not found. Please re-initiate OAuth login.")
 
         success, acc_or_err = await CodexOAuthPort1455Server._exchange_tokens(clean_code, verifier, state)
         if not success:
-            raise HTTPException(status_code=400, detail=f"Pertukaran token gagal: {acc_or_err}")
+            raise HTTPException(status_code=400, detail=f"Token exchange failed: {acc_or_err}")
 
         if state and state in _CODEX_OAUTH_SESSIONS:
             _CODEX_OAUTH_SESSIONS[state]["status"] = "success"
@@ -646,4 +646,4 @@ async def oauth_exchange_endpoint(provider: str, req: OAuthExchangeRequest):
     elif prov == "google":
         memory_engine.set_app_setting("google_oauth_token", req.code)
         return {"status": "success", "provider": "google"}
-    raise HTTPException(status_code=400, detail=f"OAuth tidak didukung untuk '{prov}'")
+    raise HTTPException(status_code=400, detail=f"OAuth not supported for '{prov}'")

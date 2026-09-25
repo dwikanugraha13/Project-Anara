@@ -1,0 +1,1 @@
+[SYSTEM REFLECTION: LOOP DETECTED]: You have called tool '{tool_name}' {max_identical} consecutive times with identical parameters without progress. Stop repeating this call immediately! Evaluate previously obtained outputs, pivot to an alternative tool or strategy, or conclude your final response to the user.

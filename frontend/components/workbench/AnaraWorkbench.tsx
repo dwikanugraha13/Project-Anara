@@ -394,7 +394,7 @@ export default function AnaraWorkbench({
         filePath: "workspace/terminal.sh",
         fileExt: "sh",
         fileSizeKb: 0,
-        content: "# Terminal Workspace\n# Siap menerima perintah atau eksekusi kode dari agen.\n",
+        content: "# Terminal Workspace\n# Ready to receive commands or execute code from the agent.\n",
       });
     }
   };
@@ -675,7 +675,7 @@ export default function AnaraWorkbench({
           >
             <div className="flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-cyan-950 via-slate-900 to-indigo-950 border-b border-cyan-400/30">
               <h3 className="text-xs sm:text-sm font-bold text-white tracking-wider font-mono uppercase truncate">
-                {selectedPreviewImage.title || "FOTO ASLI PENCARIAN WEB"}
+                {selectedPreviewImage.title || "ORIGINAL WEB SEARCH PHOTOS"}
               </h3>
               <button
                 onClick={() => setSelectedPreviewImage(null)}

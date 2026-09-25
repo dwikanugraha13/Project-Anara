@@ -46,12 +46,9 @@ async def is_visual_request_semantic(user_text: str) -> bool:
         import asyncio
         from providers import call_universal_chat_model
         from core.capabilities import get_fast_auxiliary_model
+        from core.prompt_loader import load_prompt
 
-        sys_p = (
-            "You are an intent classifier for an autonomous multimodal agent. "
-            "Determine if the user's input asks to see, show, display, or project a photo, image, chart, weather, or visual card.\n"
-            "Respond with exactly ONE word: YES or NO."
-        )
+        sys_p = load_prompt("visual_intent").strip()
         user_p = f"User input: \"{clean}\"\nRequires visual projection:"
         res = await asyncio.wait_for(
             call_universal_chat_model(
@@ -83,10 +80,12 @@ async def fetch_real_web_images(query: str, count: int = 6) -> List[Dict[str, st
         "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
     }
 
-    BLOCKED_DOMAINS = {
+    from core.prompt_loader import load_config_yaml
+    cfg_domains = load_config_yaml("config/blocked_domains.yaml", default={})
+    BLOCKED_DOMAINS = set(cfg_domains.get("blocked_domains") or {
         "istockphoto.com", "gettyimages.com", "alamy.com", "shutterstock.com",
         "dreamstime.com", "123rf.com", "stock.adobe.com", "depositphotos.com"
-    }
+    })
 
     results: List[Dict[str, str]] = []
     seen_urls = set()
@@ -218,7 +217,7 @@ async def generate_visual_projection(
     time_info = get_current_indonesian_time_str()
     stats = memory_engine.get_brain_stats()
 
-    # Retrieve recent conversation context so pronouns/follow-ups (e.g. 'tunjukkan fotonya', 'mana gambarnya', 'ya tampilkan', 'ya', 'boleh') resolve to the discussed subject
+    # Retrieve recent conversation context so pronouns/follow-ups (e.g. 'show the photo', 'where is the image', 'yes show it', 'yes', 'sure') resolve to the discussed subject
     recent_chat = memory_engine.get_recent_conversations(limit=4)
     recent_context_lines = []
     if recent_chat:
@@ -230,77 +229,17 @@ async def generate_visual_projection(
 
     recent_context_str = ""
     if recent_context_lines:
-        recent_context_str = "KONTEKS PERCAKAPAN TERAKHIR:\n" + "\n---\n".join(recent_context_lines) + "\n\n"
+        recent_context_str = "## Recent Conversation Context:\n" + "\n---\n".join(recent_context_lines) + "\n\n"
 
-    prompt = (
-        f"{system_prompt}\n\n"
-        f"{recent_context_str}"
-        "ROLE: HOLOGRAPHIC 3D VISUAL PROJECTION CLASSIFIER (ANARA HUD ENGINE)\n"
-        f"Timestamp: {time_info['date_full']}, {time_info['time_str']}\n\n"
-        "CORE TASK:\n"
-        "Classify the user's intent across ANY human language (English, Indonesian, Japanese, Korean, Arabic, Chinese, French, Spanish, German, etc.) "
-        "and select the single most appropriate visual_type for holographic HUD projection.\n\n"
-        "SEMANTIC CATEGORIES:\n"
-        "1. 'image': User explicitly asks to view, see, or display real photos, imagery, galleries, monuments, places, people, vehicles, nature, or objects.\n"
-        "   - Required fields: search_query (clean subject name for web image search), image_title, image_count (default 1 or requested number).\n"
-        "2. 'weather': User inquires about current weather, temperature, or atmospheric forecasts for any city or region.\n"
-        "   - Required fields: weather_data with city, temp_c, condition, humidity, wind_kmh, uv_index, forecast.\n"
-        "3. 'code': User requests code snippets, programming scripts, algorithms, or technical coding functions.\n"
-        "   - Required fields: code_data with language, title, code, explanation.\n"
-        "4. 'system_hud': User inquires about system diagnostics, core health, AI brain status, telemetry, or performance.\n"
-        "   - Required fields: system_hud_data with core_status, ai_model, active_keys, memory_nodes, latency_ms, uptime.\n"
-        "5. 'knowledge_card': User requests recipes, cooking steps, how-to guides, tutorials, technical specs, anatomy, scientific facts, or comparison charts.\n"
-        "   - Required fields: knowledge_card_data with title, category, badge, summary, ingredients, steps, specs.\n"
-        "   - NOTE: Recipes and step-by-step guides MUST be 'knowledge_card' (structured text), NOT 'image'.\n"
-        "6. 'todo_list': User inquires about or requests to display their active to-do list or task checklist.\n"
-        "7. 'none': Conversational chat without visual projection intent (greetings, general Q&A, conceptual discussions).\n\n"
-        f"User Message: \"{user_text}\"\n\n"
-        "RETURN ONLY VALID JSON (no markdown fences outside JSON):\n"
-        "{\n"
-        '  "has_visual": true,\n'
-        '  "visual_type": "image|weather|code|system_hud|knowledge_card|todo_list|none",\n'
-        '  "search_query": "...",\n'
-        '  "image_title": "...",\n'
-        '  "image_count": 1,\n'
-        '  "reply_text": "A direct, helpful, and natural response from Anara matching the user\'s active language (1-2 sentences).",\n'
-        '  "weather_data": {\n'
-        '    "city": "Jakarta",\n'
-        '    "temp_c": 31,\n'
-        '    "condition": "Cerah Berawan",\n'
-        '    "humidity": 72,\n'
-        '    "wind_kmh": 14,\n'
-        '    "uv_index": 8,\n'
-        '    "forecast": [\n'
-        '      {"day": "Besok", "temp_c": 32, "condition": "Hujan Ringan"},\n'
-        '      {"day": "Lusa", "temp_c": 30, "condition": "Cerah"}\n'
-        '    ]\n'
-        '  },\n'
-        '  "code_data": {\n'
-        '    "language": "python",\n'
-        '    "title": "...",\n'
-        '    "code": "...",\n'
-        '    "explanation": "..."\n'
-        '  },\n'
-        '  "system_hud_data": {\n'
-        '    "core_status": "OPTIMAL",\n'
-        '    "ai_model": "Gemini Live 3.1",\n'
-        f'    "active_keys": 26,\n'
-        f'    "memory_nodes": {stats["memories_count"]},\n'
-        '    "latency_ms": 24,\n'
-        '    "uptime": "99.98%"\n'
-        '  },\n'
-        '  "knowledge_card_data": {\n'
-        '    "title": "...",\n'
-        '    "category": "...",\n'
-        '    "badge": "...",\n'
-        '    "summary": "...",\n'
-        '    "ingredients": ["bahan 1", "bahan 2"],\n'
-        '    "steps": ["langkah pertama", "langkah kedua"],\n'
-        '    "specs": [\n'
-        '      {"label": "...", "value": "..."}\n'
-        '    ]\n'
-        '  }\n'
-        "}"
+    from core.prompt_loader import load_prompt
+    prompt = load_prompt(
+        "classifiers/visual_projection",
+        system_prompt=system_prompt,
+        recent_context_str=recent_context_str,
+        date_full=time_info["date_full"],
+        time_str=time_info["time_str"],
+        user_text=user_text,
+        memories_count=stats["memories_count"]
     )
 
     try:
@@ -350,10 +289,10 @@ async def generate_visual_projection(
                         "visual_type": "image",
                         "image_url": primary["image_url"],
                         "image_title": primary["title"] or data.get("image_title") or query.title(),
-                        "source_domain": primary.get("source_domain", "Google Search"),
+                        "source_domain": primary.get("source_domain", "Web Search"),
                         "source_url": primary.get("source_url", ""),
                         "images": img_list if img_count > 1 else [primary],
-                        "reply_text": reply_text or f"Proyeksi visual untuk {query} sudah siap di layar!"
+                        "reply_text": reply_text or ""
                     }
                     _VISUAL_QUERY_CACHE[clean_key] = res_obj
                     return res_obj
@@ -361,15 +300,15 @@ async def generate_visual_projection(
             # 2. Holographic Weather HUD
             elif v_type == "weather":
                 w_data = data.get("weather_data") or {
-                    "city": "Jakarta",
+                    "city": "Current Location",
                     "temp_c": 31,
-                    "condition": "Cerah Berawan",
+                    "condition": "Partly Cloudy",
                     "humidity": 70,
                     "wind_kmh": 12,
                     "uv_index": 7,
                     "forecast": [
-                        {"day": "Besok", "temp_c": 32, "condition": "Hujan Ringan"},
-                        {"day": "Lusa", "temp_c": 30, "condition": "Cerah"}
+                        {"day": "Tomorrow", "temp_c": 32, "condition": "Light Rain"},
+                        {"day": "Day After", "temp_c": 30, "condition": "Clear"}
                     ]
                 }
                 res_obj = {
@@ -377,7 +316,7 @@ async def generate_visual_projection(
                     "wants_image": False,
                     "visual_type": "weather",
                     "weather_data": w_data,
-                    "reply_text": reply_text or f"Berikut proyeksi laporan cuaca real-time untuk wilayah {w_data.get('city', 'Jakarta')}."
+                    "reply_text": reply_text or ""
                 }
                 _VISUAL_QUERY_CACHE[clean_key] = res_obj
                 return res_obj
@@ -386,7 +325,7 @@ async def generate_visual_projection(
             elif v_type == "code":
                 c_data = data.get("code_data") or {
                     "language": "python",
-                    "title": "Sci-Fi Script",
+                    "title": "Script",
                     "code": "# Code generated by Anara",
                     "explanation": ""
                 }
@@ -395,7 +334,7 @@ async def generate_visual_projection(
                     "wants_image": False,
                     "visual_type": "code",
                     "code_data": c_data,
-                    "reply_text": reply_text or "Protokol kode telah diproyeksikan ke terminal visual layar."
+                    "reply_text": reply_text or ""
                 }
                 _VISUAL_QUERY_CACHE[clean_key] = res_obj
                 return res_obj
@@ -404,7 +343,7 @@ async def generate_visual_projection(
             elif v_type == "system_hud":
                 hud_data = data.get("system_hud_data") or {
                     "core_status": "ONLINE / OPTIMAL",
-                    "ai_model": "Gemini Live 3.1",
+                    "ai_model": "Universal Model",
                     "active_keys": 26,
                     "memory_nodes": stats["memories_count"],
                     "latency_ms": 22,
@@ -415,7 +354,7 @@ async def generate_visual_projection(
                     "wants_image": False,
                     "visual_type": "system_hud",
                     "system_hud_data": hud_data,
-                    "reply_text": reply_text or "Semua sistem Anara berfungsi optimal tanpa anomali."
+                    "reply_text": reply_text or ""
                 }
                 _VISUAL_QUERY_CACHE[clean_key] = res_obj
                 return res_obj
@@ -424,9 +363,9 @@ async def generate_visual_projection(
             elif v_type == "knowledge_card":
                 k_data = data.get("knowledge_card_data") or {
                     "title": user_text.title(),
-                    "category": "Pengetahuan Terstruktur",
+                    "category": "Knowledge",
                     "badge": "Schematic",
-                    "summary": "Data skematik holographic",
+                    "summary": "Schematic HUD data",
                     "specs": []
                 }
                 # Normalize structured recipe/step fields (frontend renders these natively)
@@ -439,7 +378,7 @@ async def generate_visual_projection(
                     "wants_image": False,
                     "visual_type": "knowledge_card",
                     "knowledge_card_data": k_data,
-                    "reply_text": reply_text or "Skematik informasi telah diproyeksikan ke layar HUD."
+                    "reply_text": reply_text or ""
                 }
                 _VISUAL_QUERY_CACHE[clean_key] = res_obj
                 return res_obj
@@ -452,7 +391,7 @@ async def generate_visual_projection(
                     "wants_image": False,
                     "visual_type": "todo_list",
                     "todo_data": {"items": todos},
-                    "reply_text": reply_text or "Berikut daftar catatan tugas to-do aktif kamu dari database."
+                    "reply_text": reply_text or ""
                 }
                 _VISUAL_QUERY_CACHE[clean_key] = res_obj
                 return res_obj
@@ -462,7 +401,7 @@ async def generate_visual_projection(
                 "has_visual": False,
                 "wants_image": False,
                 "visual_type": "none",
-                "reply_text": reply_text or "Ada yang bisa Anara bantu lagi, Bos?"
+                "reply_text": reply_text or ""
             }
             return res_obj
 
@@ -473,7 +412,7 @@ async def generate_visual_projection(
         "has_visual": False,
         "wants_image": False,
         "visual_type": "none",
-        "reply_text": "Ada yang bisa Anara bantu lagi?"
+        "reply_text": ""
     }
 
 
@@ -481,43 +420,15 @@ async def generate_visual_projection(
 # SEMANTIC HUD ENGINE — Pure Model Reasoning (Zero Hardcoded Keywords)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-_SEMANTIC_HUD_PROMPT = (
-    "Kamu adalah Semantic HUD Intelligence untuk asisten suara Anara — engine yang MEMAHAMI "
-    "alur percakapan secara semantik (bukan keyword) dan memutuskan apakah layar HUD perlu "
-    "menampilkan sesuatu setelah giliran terakhir Anara.\n\n"
-    "ANALISIS PERCAKAPAN DI BAWAH DAN PUTUSKAN:\n"
-    "- knowledge_card: user meminta/menerima tawaran konten terstruktur — resep masakan, "
-    "langkah-langkah, tips, panduan, perbandingan, spesifikasi, daftar rekomendasi, prosedur, "
-    "jadwal, manfaat. TERMASUK saat user menjawab afirmatif ('ya', 'boleh', 'gasin', 'yaudah sok', "
-    "gaya bahasa APAPUN) terhadap tawaran Anara di giliran sebelumnya, ATAU meminta ulang "
-    "('gimana tadi langkahnya?'), ATAU meminta variasi ('yang versi pedas dong').\n"
-    "- image: HANYA saat user secara eksplisit ingin MELIHAT penampakan/bentuk/foto objek nyata "
-    "('kayak apa sih', 'tunjukkan fotonya', 'lihat penampakannya'). "
-    "PERHATIAN: resep/cara membuat/langkah/tips TENTANG makanan = knowledge_card, BUKAN image! "
-    "Konten tulisan terstruktur selalu menang atas foto.\n"
-    "- none: obrolan biasa, basa-basi, pertanyaan singkat, atau tidak ada konten yang layak "
-    "diproyeksikan. JANGAN memproyeksikan kartu untuk small-talk.\n\n"
-    "PENTING — UCAPAN ANARA SERING TIDAK TERSEDIA atau pendek (mis. 'Ini dia resepnya!' / "
-    "'(Anara menjawab secara lisan)'). Itu NORMAL: putuskan berdasarkan PERMINTAAN USER saja.\n"
-    "Kamu WAJIB menyusun sendiri isi kartu yang lengkap dan akurat dari pengetahuanmu, "
-    "berdasarkan topik yang diminta user. Contoh: user minta resep ayam crispy -> susun bahan & "
-    "langkah resep ayam crispy yang benar. JANGAN menolak hanya karena ucapan Anara tidak terlihat.\n\n"
-    "Jika knowledge_card, susun:\n"
-    "- title: judul profesional singkat & bersih (mis. 'Resep Nasi Goreng Kampung'), BUKAN kalimat percakapan.\n"
-    "- category: satu kata kategori (Resep / Tips / Panduan / Rekomendasi / Perbandingan / Spesifikasi).\n"
-    "- ingredients: daftar bahan PENDEK jika ini resep masakan (array string), selain resep: [].\n"
-    "- steps: daftar langkah/poin utama ringkas & jelas berurutan (array string, maks 8, tanpa nomor).\n"
-    "- reason: alasan keputusanmu dalam <= 8 kata.\n\n"
-    "KEMBALIKAN HANYA JSON VALID (tanpa markdown fence):\n"
-    '{"visual_type": "knowledge_card|image|none", "reason": "...", '
-    '"query": "jika image: kata kunci pencarian foto singkat", '
-    '"title": "...", "category": "...", "ingredients": [], "steps": []}\n\n'
-    "PERCAKAPAN (urutan lama -> baru):\n{conversation}\n\n"
-    "UCAPAN TERAKHIR ANARA (giliran yang baru selesai):\n{ai_text}"
-)
+def _get_semantic_hud_prompt() -> str:
+    """Loads semantic HUD prompt dynamically from backend/prompts/classifiers/semantic_hud.md."""
+    from core.prompt_loader import load_prompt
+    return load_prompt("classifiers/semantic_hud").strip()
 
-# Legacy alias kept for backwards compatibility
-_AUTO_HUD_CLASSIFY_PROMPT = _SEMANTIC_HUD_PROMPT
+
+# Legacy aliases kept for backwards compatibility
+_SEMANTIC_HUD_PROMPT = ""
+_AUTO_HUD_CLASSIFY_PROMPT = ""
 
 
 def _parse_classifier_json(raw: str) -> Optional[Dict[str, Any]]:
@@ -578,12 +489,13 @@ async def generate_smart_hud_card(
                 convo_lines.append(f"{spk}: {txt[:300]}")
     if not convo_lines and user_text:
         convo_lines.append(f"User: {user_text[:300]}")
-    conversation_str = "\n".join(convo_lines) if convo_lines else "(tidak ada konteks)"
+    conversation_str = "\n".join(convo_lines) if convo_lines else "(no prior context)"
 
     # NOTE: use .replace() — NOT .format() — because the template contains literal
     # JSON braces ({"visual_type": ...}) which .format() misreads as placeholders (KeyError).
+    hud_prompt = _get_semantic_hud_prompt()
     prompt = (
-        _SEMANTIC_HUD_PROMPT
+        hud_prompt
         .replace("{conversation}", conversation_str)
         .replace("{ai_text}", ai_text[:900])
     )
@@ -668,19 +580,15 @@ async def generate_smart_hud_card(
             if len(title) > 70:
                 title = title[:67] + "..."
         if not category:
-            category = "Rekomendasi"
+            category = "Guide"
 
-        # 4. Summary must NOT duplicate step 1, leak internal placeholders, or echo
-        #    Anara's conversational filler ("Ini dia resepnya!") — omit when unusable.
+        # 4. Summary must NOT duplicate step 1 or echo metadata wrappers
         summary = ""
         first_line = ai_text.split("\n")[0].strip()
-        _placeholder_markers = (
-            "(anara menjawab", "menjawab secara lisan", "transkrip tidak tertangkap",
-            "user menjawab singkat", "ini dia resep", "berikut resep",
-        )
         _is_placeholder = (
             first_line.startswith("(")
-            or any(m in first_line.lower() for m in _placeholder_markers)
+            or first_line.startswith("[")
+            or len(first_line) < 4
         )
         if steps and first_line and not _is_placeholder and first_line.rstrip(".") != steps[0].rstrip("."):
             summary = first_line if len(first_line) <= 140 else first_line[:137] + "..."
@@ -691,8 +599,8 @@ async def generate_smart_hud_card(
         if not steps and not ingredients:
             return {"has_visual": False}
 
-        # Legacy specs kept for backwards compatibility with older HUD clients
-        specs = [{"label": f"Langkah {i+1}", "value": s} for i, s in enumerate(steps)]
+        # Specs dynamically formatted
+        specs = [{"label": f"Step {i+1}", "value": s} for i, s in enumerate(steps)]
 
         return {
             "has_visual": True,

@@ -26,11 +26,11 @@ async def _tool_spotify_search(query: str, search_type: str = "track", limit: in
     """Searches Spotify for tracks, artists, albums, or playlists."""
     q = (query or "").strip()
     if not q:
-        return {"status": "error", "message": "Query pencarian musik tidak boleh kosong."}
+        return {"status": "error", "message": "Search query cannot be empty."}
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "spotify_search",
-        "action_title": "Mencari Lagu",
+        "action_title": "Search Music",
         "detail": f"Spotify: '{q}'",
         "icon": "music"
     })
@@ -56,7 +56,7 @@ async def _tool_spotify_search(query: str, search_type: str = "track", limit: in
         "source": "local_uri",
         "query": q,
         "spotify_uri": f"spotify:search:{encoded}",
-        "message": f"Hasil pencarian untuk '{q}' siap dibuka di Spotify."
+        "message": f"Search URI for '{q}' ready on Spotify."
     }
 
 
@@ -95,7 +95,7 @@ async def _tool_spotify_playback(
             async with httpx.AsyncClient(timeout=10.0) as client:
                 res = await client.put(url, headers=headers) if act in ["play", "resume", "pause"] else await client.post(url, headers=headers)
                 if res.status_code in [200, 204]:
-                    return {"status": "success", "action": act, "message": f"Playback Spotify '{act}' berhasil dikirim via Web API."}
+                    return {"status": "success", "action": act, "message": f"Spotify playback command '{act}' sent via Web API."}
         except Exception as e:
             logger.warning(f"[SpotifyTools] Web API playback error: {e}")
 
@@ -118,7 +118,7 @@ async def _tool_spotify_playback(
             "status": "success",
             "action": act,
             "transport": "os_protocol",
-            "message": f"Berhasil membuka Spotify untuk '{q or act}' di desktop."
+            "message": f"Opened Spotify for '{q or act}' on desktop."
         }
     except Exception as e:
-        return {"status": "error", "message": f"Gagal membuka Spotify: {e}"}
+        return {"status": "error", "message": f"Failed to open Spotify: {e}"}

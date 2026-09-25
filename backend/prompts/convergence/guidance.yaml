@@ -1,0 +1,16 @@
+# ── Convergence & Stagnation Guidance Configuration (Hermes & Claude Code Parity) ──
+# Adaptive guidance messages injected during ReAct agent loops to steer agent convergence.
+
+goal_satisfaction: "[MISSION CONVERGED]: You have applied the required modifications and verified correctness with physical tests. Do not run further exploration tools. Deliver your complete, helpful report to the user now."
+
+stagnation_notice: "[STAGNATION NOTICE]: A repeating {cycle_len}-step cycle was detected without progress. Stop calling inspection tools and conclude your task with your best assessment or report."
+
+cycle_warning: "[CYCLE WARNING]: You appear to be repeating a {cycle_len}-step sequence ({tool_seq}). Shift your approach or synthesize your conclusions instead of repeating actions."
+
+information_saturation: "[INFORMATION SATURATION]: You have repeatedly examined the same workspace targets without uncovering new data. Conclude your turn now and deliver your complete findings or solution to the user."
+
+saturation_notice: "[SATURATION NOTICE]: You are inspecting files or targets you have already reviewed. Proceed to implement your changes or synthesize your response."
+
+inspection_budget_exhaustion: "[INSPECTION BUDGET EXHAUSTION]: You have conducted extensive exploration across 8+ steps. Synthesize all gathered context and formulate your complete plan or response now."
+
+exploration_guidance: "[EXPLORATION GUIDANCE]: You have inspected multiple targets. Ensure you are ready to synthesize your conclusions rather than continuing open-ended searches."

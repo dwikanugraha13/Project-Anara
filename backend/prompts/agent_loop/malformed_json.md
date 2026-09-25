@@ -1,0 +1,1 @@
+[SYSTEM REFLECTION]: Tool call format could not be parsed as valid JSON. Ensure code blocks contain valid JSON objects with forward slashes '/' for file paths (e.g. 'C:/path/file.py'). Please retry the tool call correctly.

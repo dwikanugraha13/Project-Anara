@@ -111,7 +111,8 @@ export interface AgentSkillV2 {
   category: string;
   description: string;
   trigger_keywords: string[];
-  status: "active" | "pending" | "rejected";
+  status: "active" | "disabled" | "pending" | "rejected";
+  enabled?: boolean;
   learned_from_experience: boolean;
   created_at?: string;
   body?: string;
@@ -298,15 +299,15 @@ export interface AnaraBrainProps {
 }
 
 export const FALLBACK_ANIMATIONS: AnimationProfile[] = [
-  { id: -1, name: "dance", category: "dance", emotion: "dance", gesture: "dance", intensity: 1.0, duration_sec: 9.0, keywords: ["nari"], description: "Animasi tarian penuh ritme Latin dengan sinkronisasi musik beat" },
-  { id: -2, name: "salute", category: "gesture", emotion: "happy", gesture: "salute", intensity: 0.85, duration_sec: 3.0, keywords: ["hormat"], description: "Gestur memberi hormat tegak ala asisten profesional" },
-  { id: -3, name: "greeting", category: "gesture", emotion: "happy", gesture: "wave", intensity: 0.8, duration_sec: 3.0, keywords: ["hai"], description: "Melambaikan tangan kanan dengan senyuman ramah" },
+  { id: -1, name: "dance", category: "dance", emotion: "dance", gesture: "dance", intensity: 1.0, duration_sec: 9.0, keywords: ["nari"], description: "Full rhythm Latin dance animation with beat music sync" },
+  { id: -2, name: "salute", category: "gesture", emotion: "happy", gesture: "salute", intensity: 0.85, duration_sec: 3.0, keywords: ["hormat"], description: "Professional assistant standing salute gesture" },
+  { id: -3, name: "greeting", category: "gesture", emotion: "happy", gesture: "wave", intensity: 0.8, duration_sec: 3.0, keywords: ["hai"], description: "Waving right hand with friendly smile" },
   { id: -4, name: "laughing", category: "emotion", emotion: "happy", gesture: "joy", intensity: 0.9, duration_sec: 3.5, keywords: ["tertawa"], description: "Ekspresi tertawa riang dan gestur gembira" },
-  { id: -5, name: "shy", category: "emotion", emotion: "shy", gesture: "shy_movement", intensity: 0.7, duration_sec: 3.0, keywords: ["malu"], description: "Gestur tersipu manis saat menerima pujian" },
-  { id: -6, name: "thinking", category: "emotion", emotion: "thinking", gesture: "think", intensity: 0.75, duration_sec: 4.0, keywords: ["berpikir"], description: "Tangan di dagu dan mata menganalisis konteks" },
-  { id: -7, name: "angry", category: "emotion", emotion: "angry", gesture: "angry_pointing", intensity: 0.9, duration_sec: 3.5, keywords: ["marah"], description: "Menunjuk tegas dengan alis menekuk" },
-  { id: -8, name: "crying", category: "emotion", emotion: "sad", gesture: "sad", intensity: 0.8, duration_sec: 4.0, keywords: ["sedih"], description: "Menunduk dengan mata berkaca-kaca" },
-  { id: -9, name: "explaining", category: "gesture", emotion: "curious", gesture: "explaining", intensity: 0.75, duration_sec: 4.0, keywords: ["jelaskan"], description: "Gestur tangan terbuka saat memaparkan data" },
+  { id: -5, name: "shy", category: "emotion", emotion: "shy", gesture: "shy_movement", intensity: 0.7, duration_sec: 3.0, keywords: ["malu"], description: "Sweet blushing gesture when receiving compliments" },
+  { id: -6, name: "thinking", category: "emotion", emotion: "thinking", gesture: "think", intensity: 0.75, duration_sec: 4.0, keywords: ["thinking"], description: "Hand on chin analyzing context" },
+  { id: -7, name: "angry", category: "emotion", emotion: "angry", gesture: "angry_pointing", intensity: 0.9, duration_sec: 3.5, keywords: ["angry"], description: "Pointing firmly with furrowed brows" },
+  { id: -8, name: "crying", category: "emotion", emotion: "sad", gesture: "sad", intensity: 0.8, duration_sec: 4.0, keywords: ["sad"], description: "Head down with teary eyes" },
+  { id: -9, name: "explaining", category: "gesture", emotion: "curious", gesture: "explaining", intensity: 0.75, duration_sec: 4.0, keywords: ["explain"], description: "Open hand gesture when presenting data" },
 ];
 
 export const ANIMATION_LABELS: Record<string, string> = {
@@ -323,11 +324,11 @@ export const ANIMATION_LABELS: Record<string, string> = {
   crying: "Ekspresi Simpati / Sedih",
   sad: "Ekspresi Simpati / Sedih",
   explaining: "Penjelasan Terbuka",
-  talking: "Berbicara Natural",
+  talking: "Natural Talking",
   question: "Sikap Penasaran",
-  nod: "Mengangguk Setuju",
-  empathy: "Gestur Empati & Penghiburan",
-  agree: "Mengangguk Setuju",
+  nod: "Nodding in Agreement",
+  empathy: "Empathy & Comfort Gesture",
+  agree: "Nodding in Agreement",
   disagree: "Menggeleng Tenang",
 };
 

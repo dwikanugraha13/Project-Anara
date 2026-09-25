@@ -123,7 +123,7 @@ async function startSock() {
 
         const userJid = sock.user?.id || "";
         const cleanPhone = userJid.split(":")[0].replace("@s.whatsapp.net", "");
-        const userName = sock.user?.name || "Pengguna";
+        const userName = sock.user?.name || "User";
 
         userAccountInfo = {
           jid: userJid,
@@ -244,7 +244,7 @@ async function startSock() {
               }
 
               const qParticipant = contextInfo.participant || "";
-              quotedSender = qParticipant.split("@")[0] || "Pengguna";
+              quotedSender = qParticipant.split("@")[0] || "User";
 
               // Attempt downloading quoted media attachment if present
               if (qMediaNode) {
@@ -277,7 +277,7 @@ async function startSock() {
                 phone: senderPhone,
                 jid: senderJid,
                 isGroup,
-                text: text || `[${(mediaType || "berkas").toUpperCase()} DILAMPIRKAN]`,
+                text: text || `[${(mediaType || "file").toUpperCase()} ATTACHED]`,
                 localPath: localPath || undefined,
                 fileName: fileName || undefined,
                 mediaType: mediaType || undefined,
@@ -357,7 +357,7 @@ app.get("/status", (req, res) => {
 // QR Code endpoint
 app.get("/qr", (req, res) => {
   if (connectionStatus === "connected" && userAccountInfo) {
-    return res.json({ status: "connected", qr_data_url: null, user: userAccountInfo, message: "WhatsApp sudah terhubung." });
+    return res.json({ status: "connected", qr_data_url: null, user: userAccountInfo, message: "WhatsApp is already connected." });
   }
   res.json({
     status: userAccountInfo ? connectionStatus : "disconnected",
@@ -386,7 +386,7 @@ app.post("/logout", async (req, res) => {
     }
 
     setTimeout(startSock, 1000);
-    res.json({ status: "ok", message: "Sesi WhatsApp berhasil dihapus." });
+    res.json({ status: "ok", message: "WhatsApp session cleared successfully." });
   } catch (err) {
     res.status(500).json({ status: "error", message: err.message });
   }
@@ -420,12 +420,12 @@ app.get("/messages", (req, res) => {
 // Send message
 app.post("/send", async (req, res) => {
   if (connectionStatus !== "connected" || !sock) {
-    return res.status(400).json({ status: "error", message: "WhatsApp belum terhubung. Silakan scan QR code terlebih dahulu." });
+    return res.status(400).json({ status: "error", message: "WhatsApp is not connected. Please scan QR code first." });
   }
 
   const { to, message } = req.body;
   if (!to || !message) {
-    return res.status(400).json({ status: "error", message: "Parameter 'to' dan 'message' wajib diisi." });
+    return res.status(400).json({ status: "error", message: "Parameters 'to' and 'message' are required." });
   }
 
   let cleanTo = String(to).replace(/[^0-9]/g, "");
@@ -456,17 +456,17 @@ app.post("/send", async (req, res) => {
 // Send document file (PDF, DOCX, ZIP, etc.)
 app.post("/send-document", async (req, res) => {
   if (connectionStatus !== "connected" || !sock) {
-    return res.status(400).json({ status: "error", message: "WhatsApp belum terhubung. Silakan scan QR code terlebih dahulu." });
+    return res.status(400).json({ status: "error", message: "WhatsApp is not connected. Please scan QR code first." });
   }
 
   const { to, file_path, caption, filename } = req.body;
   if (!to || !file_path) {
-    return res.status(400).json({ status: "error", message: "Parameter 'to' dan 'file_path' wajib diisi." });
+    return res.status(400).json({ status: "error", message: "Parameters 'to' and 'file_path' are required." });
   }
 
   const resolvedPath = path.resolve(file_path);
   if (!fs.existsSync(resolvedPath)) {
-    return res.status(404).json({ status: "error", message: `Berkas tidak ditemukan: ${resolvedPath}` });
+    return res.status(404).json({ status: "error", message: `File not found: ${resolvedPath}` });
   }
 
   let cleanTo = String(to).replace(/[^0-9]/g, "");

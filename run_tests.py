@@ -66,6 +66,7 @@ tests = [
     ("Omnichannel Approval Dispatcher", ts.test_subsystem_3_universal_channel_approval_dispatch),
     ("Live Telemetry & Visual HUD Events", ts.test_pillar_2_telemetry_hud_visual_events),
     ("Episodic ADR Project Memory", ts.test_pillar_3_episodic_adr_project_memory),
+    ("Telegram Semantic Chunking & Tag Balance", ts.test_telegram_semantic_chunking_and_tag_balancing),
 ]
 
 passed = 0

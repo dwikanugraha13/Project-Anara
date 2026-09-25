@@ -113,7 +113,7 @@ export default function BrainTodosTab({
   );
 
   const noteCategoryOptions: SelectOption[] = [
-    { value: "todo", label: "Tugas (To-Do)" },
+    { value: "todo", label: "Tasks (To-Do)" },
     { value: "reminder", label: "Pengingat" },
     { value: "idea", label: "Ide" },
     { value: "general", label: "Umum" },
@@ -129,10 +129,10 @@ export default function BrainTodosTab({
             </svg>
           </div>
           <h4 className="text-sm sm:text-base font-bold text-white uppercase tracking-wider">
-            Menunggu Identifikasi Pengguna
+            Awaiting User Identification
           </h4>
           <p className="text-xs sm:text-sm text-slate-300 max-w-lg leading-relaxed">
-            Daftar to-do dan catatan personal disimpan berdasarkan profil pengguna. Silakan bicara atau perkenalkan diri agar Anara memuat tugas Anda.
+            To-do list and personal notes saved based on user profile. Please speak or introduce yourself so Anara can load your tasks.
           </p>
         </div>
       ) : (
@@ -141,10 +141,10 @@ export default function BrainTodosTab({
           <div className="p-5 rounded-2xl liquid-glass-subtle flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
               <span className="text-[10px] uppercase tracking-wider text-cyan-300 font-semibold">
-                Penyelesaian Tugas • {activeSpeaker}
+                Task Completion • {activeSpeaker}
               </span>
               <h3 className="text-base font-bold text-white mt-0.5">
-                {completedNotesCount} dari {currentSpeakerNotes.length} Tugas Selesai ({progressPercent}%)
+                {completedNotesCount} of {currentSpeakerNotes.length} Tasks Completed ({progressPercent}%)
               </h3>
             </div>
             <div className="w-full sm:w-48 h-2 rounded-full bg-black/40 overflow-hidden border border-white/10">
@@ -160,8 +160,8 @@ export default function BrainTodosTab({
             <div className="flex items-center gap-1 p-1 rounded-full liquid-glass-subtle">
               {[
                 { id: "all", label: "Semua" },
-                { id: "active", label: "Aktif" },
-                { id: "completed", label: "Selesai" },
+                { id: "active", label: "Active" },
+                { id: "completed", label: "Completed" },
               ].map((f) => (
                 <button
                   key={f.id}
@@ -184,19 +184,19 @@ export default function BrainTodosTab({
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
-              Tugas Baru
+              New Task
             </button>
           </div>
 
           {isAddNoteOpen && (
             <form onSubmit={handleSaveNote} className="relative z-30 p-5 rounded-2xl liquid-glass space-y-3.5 animate-fade-in">
-              <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wider">Tambah Tugas / Catatan</h4>
+              <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wider">Add Task / Note</h4>
               <div className="relative z-40 grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <input
                   type="text"
                   value={newNoteTitle}
                   onChange={(e) => setNewNoteTitle(e.target.value)}
-                  placeholder="Judul Tugas (cth: Evaluasi Laporan)"
+                  placeholder="Task Title (e.g. Report Evaluation)"
                   className="liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none sm:col-span-2"
                   required
                 />
@@ -210,7 +210,7 @@ export default function BrainTodosTab({
                 type="text"
                 value={newNoteContent}
                 onChange={(e) => setNewNoteContent(e.target.value)}
-                placeholder="Deskripsi detail tugas (opsional)"
+                placeholder="Detailed task description (optional)"
                 className="w-full liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
               />
               <div className="flex justify-end gap-2.5 pt-1">
@@ -225,7 +225,7 @@ export default function BrainTodosTab({
                   type="submit"
                   className="px-5 py-2 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-semibold text-xs cursor-pointer shadow-[0_4px_16px_rgba(168,85,247,0.3)] transition-all hover:opacity-90"
                 >
-                  Simpan
+                   Save
                 </button>
               </div>
             </form>
@@ -233,7 +233,7 @@ export default function BrainTodosTab({
 
           <div className="space-y-2.5">
             {filteredNotes.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-16 rounded-2xl liquid-glass-subtle">Belum ada tugas atau catatan untuk {activeSpeaker}.</p>
+              <p className="text-xs text-slate-400 text-center py-16 rounded-2xl liquid-glass-subtle">No tasks or notes for {activeSpeaker} yet.</p>
             ) : (
               filteredNotes.map((n) => (
                 <div
@@ -272,7 +272,7 @@ export default function BrainTodosTab({
                     <button
                       onClick={() => handleDeleteNote(n.id)}
                       className="text-slate-500 hover:text-rose-400 p-1.5 text-xs cursor-pointer transition-colors"
-                      title="Hapus tugas"
+                      title="Delete task"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

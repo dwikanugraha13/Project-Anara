@@ -87,7 +87,7 @@ export default function CodexOAuthModal({
         onClose();
       } else {
         const err = await res.json();
-        alert(err.detail || "Gagal memverifikasi callback URL");
+        alert(err.detail || "Failed to verify callback URL");
       }
     } catch (e: any) {
       alert(`Error: ${e.message}`);
@@ -125,10 +125,10 @@ export default function CodexOAuthModal({
           <div className="w-4 h-4 mt-0.5 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin shrink-0" />
           <div className="space-y-1">
             <p className="text-xs font-semibold text-emerald-200">
-              Menunggu otorisasi akun OpenAI di jendela browser...
+              Waiting for OpenAI account authorization in browser window...
             </p>
             <p className="text-[11px] text-slate-300 leading-relaxed">
-              Masuk dengan akun ChatGPT/OpenAI Anda di jendela yang terbuka. Sistem akan menangkap otorisasi secara otomatis via port 1455.
+              Sign in with your ChatGPT/OpenAI account in the opened window. The system will capture authorization automatically via port 1455.
             </p>
           </div>
         </div>
@@ -143,7 +143,7 @@ export default function CodexOAuthModal({
             }}
             className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-mono text-slate-200 transition-all cursor-pointer flex items-center gap-1.5"
           >
-            <span>↗ Buka Ulang Jendela Login</span>
+            <span>↗ Reopen Login Window</span>
           </button>
         </div>
 
@@ -151,16 +151,16 @@ export default function CodexOAuthModal({
         <div className="space-y-2 pt-2 border-t border-white/10">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-mono uppercase text-slate-400 font-bold">
-              Opsi Cadangan (Jika redirect terblokir browser):
+              Fallback Option (If redirect is blocked by browser):
             </span>
           </div>
           <p className="text-[11px] text-slate-400 leading-relaxed">
-            Jika browser dialihkan ke <code className="text-cyan-300 font-mono text-[10px]">localhost:1455/auth/callback?code=...</code> namun tidak menutup otomatis, salin seluruh URL dari address bar dan tempelkan di bawah:
+            If your browser was redirected to <code className="text-cyan-300 font-mono text-[10px]">localhost:1455/auth/callback?code=...</code> but didn't close automatically, copy the entire URL from the address bar and paste it below:
           </p>
           <div className="flex gap-2">
             <input
               type="text"
-              placeholder="Tempel callback URL (http://localhost:1455/auth/callback?code=...) atau code..."
+              placeholder="Paste callback URL (http://localhost:1455/auth/callback?code=...) or code..."
               value={manualCallbackInput}
               onChange={(e) => setManualCallbackInput(e.target.value)}
               className="flex-1 px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-400 font-mono"
@@ -171,7 +171,7 @@ export default function CodexOAuthModal({
               disabled={isVerifyingManualCallback || !manualCallbackInput.trim()}
               className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs font-mono transition-all cursor-pointer disabled:opacity-40"
             >
-              {isVerifyingManualCallback ? "Verifikasi..." : "Verifikasi"}
+              {isVerifyingManualCallback ? "Verifying..." : "Verify"}
             </button>
           </div>
         </div>
@@ -182,7 +182,7 @@ export default function CodexOAuthModal({
             onClick={onClose}
             className="px-4 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-xs font-mono transition-all cursor-pointer border border-white/10"
           >
-            Tutup
+            Close
           </button>
         </div>
       </div>

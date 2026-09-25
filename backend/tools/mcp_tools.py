@@ -30,7 +30,7 @@ async def _tool_mcp_manage(
 
     elif act == "add":
         if not server_name:
-            return {"status": "error", "message": "Parameter 'server_name' wajib diisi."}
+            return {"status": "error", "message": "Parameter 'server_name' is required."}
         return mcp_client.add_server(
             name=server_name,
             command=command,
@@ -40,11 +40,11 @@ async def _tool_mcp_manage(
 
     elif act in ("remove", "delete"):
         if not server_name:
-            return {"status": "error", "message": "Parameter 'server_name' wajib diisi."}
+            return {"status": "error", "message": "Parameter 'server_name' is required."}
         ok = mcp_client.remove_server(server_name)
         return {
             "status": "success" if ok else "error",
-            "message": f"Server '{server_name}' {'berhasil dihapus.' if ok else 'tidak ditemukan.'}"
+            "message": f"Server '{server_name}' {'removed successfully.' if ok else 'not found.'}"
         }
 
-    return {"status": "error", "message": f"Aksi '{act}' tidak dikenal. Pilih: 'list', 'add', 'remove'."}
+    return {"status": "error", "message": f"Unknown action '{act}'. Supported: 'list', 'add', 'remove'."}

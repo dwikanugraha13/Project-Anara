@@ -228,7 +228,7 @@ class AutonomousEngine:
                     logger.info(f"[AutonomousEngine] Plan #{res.plan_id} auto-approved by trust policy ({trust_level}). Executing...")
                     build_res = await _execute_build_mode(
                         session_id=res.session_id,
-                        user_prompt=f"Eksekusi rencana: {prompt}",
+                        user_prompt=prompt,
                         req=req
                     )
                     self._update_task_status(task_id, "idle", last_run=True)

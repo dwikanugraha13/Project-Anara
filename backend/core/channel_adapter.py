@@ -19,7 +19,8 @@ from pydantic import BaseModel, Field
 
 from memory import memory_engine, file_memory
 from core.context_compactor import ContextCompactor
-from core.plan_detector import needs_plan, is_explicit_plan_approval
+# NOTE: classify_approval_intent is imported lazily at line ~636 when needed
+# needs_plan and is_explicit_plan_approval were removed (dead imports — never called in this file)
 from core.prompt_assembler import PromptAssembler
 from core.skill_library import skill_library
 from core.security import check_prompt_injection
@@ -51,12 +52,12 @@ def _format_tool_progress_message(evt: Dict[str, Any]) -> str:
     summary = evt.get("summary", "")
     step = evt.get("step")
 
-    step_str = f" [Langkah {step}]" if step else ""
+    step_str = f" [Step {step}]" if step else ""
 
     if t_name == "agent" and status == "thinking":
-        return f"⚙️ Sedang bernalar & merumuskan langkah...{step_str}"
+        return f"⚙️ Reasoning & planning steps...{step_str}"
 
-    clean_name = t_name.replace("_", " ").title() if t_name else "Operasi"
+    clean_name = t_name.replace("_", " ").title() if t_name else "Action"
     prefix = f"⚡ {clean_name}" if "terminal" in t_name or "command" in t_name or "cli" in t_name else f"⚙️ {clean_name}"
 
     if detail:
@@ -73,7 +74,7 @@ def _format_tool_progress_message(evt: Dict[str, Any]) -> str:
 
 PLATFORM_MESSAGE_LIMITS = {
     "discord": 1950,
-    "telegram": 2200,
+    "telegram": 2000,
     "whatsapp": 3500,
     "slack": 3500,
     "cli": 32000,
@@ -152,7 +153,7 @@ def split_message_chunks(
         if is_discord:
             header = f"📄 **[Part {idx}/{total_parts}]**\n\n"
         else:
-            header = f"📄 <b>[Bagian {idx}/{total_parts}]</b>\n\n"
+            header = f"📄 <b>[Part {idx}/{total_parts}]</b>\n\n"
         final_chunks.append(header + chunk)
 
     return final_chunks
@@ -214,20 +215,14 @@ async def synthesize_action_rationale(tool_name: str, tool_args: Dict[str, Any],
     """
     from providers import call_universal_chat_model
     from core.capabilities import get_fast_auxiliary_model
+    from core.prompt_loader import load_prompt
 
     args_summary = ", ".join(f"{k}={v}" for k, v in list(tool_args.items())[:3])
-    sys_instruction = (
-        "Kamu adalah Anara, asisten AI cerdas dan ramah. "
-        "Tugasmu: berikan 1 kalimat percakapan alami yang santai dan bersahabat kepada pengguna "
-        "menjelaskan mengapa tindakan ini kamu jalankan untuk menyelesaikan tugasnya. "
-        "PENTING: Selalu gunakan bahasa yang persis sama dengan bahasa yang digunakan pengguna dalam konteksnya "
-        "(match the user's language: English if user speaks English, Bahasa Indonesia if user speaks Indonesian, etc.). "
-        "Dilarang menggunakan format JSON atau kalimat kaku."
-    )
+    sys_instruction = load_prompt("channel/action_rationale")
     user_p = (
-        f"Konteks permintaan pengguna: \"{prompt or 'Menyelesaikan tugas'}\"\n"
-        f"Tindakan alat yang dipanggil: '{tool_name}' ({args_summary})\n"
-        "Alasan naratif singkat (1 kalimat ramah):"
+        f"User request context: \"{prompt or 'Fulfill user task'}\"\n"
+        f"Tool action being invoked: '{tool_name}' ({args_summary})\n"
+        "Brief conversational rationale (1 friendly sentence):"
     )
 
     try:
@@ -278,16 +273,16 @@ def generate_dynamic_action_rationale(tool_name: str, tool_args: Dict[str, Any],
     clean_target = str(target_info).strip()
 
     # For CLI commands: format clean one-liner target
-    if t_clean == "execute_cli_command":
+    if t_clean in ("execute_cli_command", "terminal", "run_terminal_command"):
         if "\n" in clean_target:
             clean_target = clean_target.splitlines()[0].strip()
         clean_target = clean_target.strip("`;| ")
         if clean_target:
-            return f"Menjalankan perintah: {clean_target[:100]}"
+            return f"Run: {clean_target[:100]}"
         clean_p = (prompt or "").strip()
         if clean_p:
-            return f"Menjalankan perintah terminal: {clean_p[:80]}"
-        return "Menjalankan perintah terminal"
+            return f"Run terminal command: {clean_p[:80]}"
+        return "Run terminal command"
 
     # For file, media, search, and other tools: clean parameter preview
     if clean_target:
@@ -316,21 +311,15 @@ async def synthesize_channel_notice(
     """
     from providers import call_universal_chat_model
     from core.capabilities import get_fast_auxiliary_model
+    from core.prompt_loader import load_prompt
 
-    sys_inst = (
-        "Kamu adalah Anara, asisten AI cerdas dan ramah. "
-        "Tugasmu: berikan 1 kalimat pemberitahuan singkat, santai, dan bersahabat kepada pengguna "
-        "sesuai situasi status yang diberikan. "
-        "PENTING: Selalu gunakan bahasa yang persis sama dengan bahasa yang digunakan pengguna dalam konteks tugasnya "
-        "(match the user's language: English if user speaks English, Bahasa Indonesia if user speaks Indonesian, etc.). "
-        "Dilarang menggunakan kalimat kaku buatan programmer atau tag format yang berlebihan."
-    )
+    sys_inst = load_prompt("channel/channel_notice")
     user_prompt = (
-        f"Kanal: {channel}\n"
+        f"Channel: {channel}\n"
         f"Status: {notice_type}\n"
-        f"Konteks tugas: {task_description or 'Tugas sistem'}\n"
-        f"Detail tambahan: {error_detail or 'Tidak ada'}\n"
-        "Berikan pesan 1 kalimat ramah:"
+        f"Task context: {task_description or 'System task'}\n"
+        f"Additional detail: {error_detail or 'None'}\n"
+        "Brief friendly notice (1 sentence):"
     )
     try:
         model_id = get_fast_auxiliary_model()
@@ -352,20 +341,20 @@ async def synthesize_channel_notice(
     except Exception as e:
         logger.debug(f"[ChannelNotice] Auxiliary synthesis notice: {e}")
 
-    # Fallbacks dynamically formatted based on situation
+    # Universal fallbacks formatted dynamically based on situation (Hermes Parity)
     task_info = f" '{task_description}'" if task_description else ""
     err_info = f": {error_detail}" if error_detail else ""
     if notice_type == "expired":
-        return f"Rencana tindakan{task_info} telah kedaluwarsa demi keamanan (batas 5 menit). Konteks obrolan tetap aman."
+        return f"Action plan{task_info} expired."
     elif notice_type == "rejected":
-        return f"Tindakan{task_info} dibatalkan tanpa ada perubahan yang diterapkan."
+        return f"Action{task_info} was cancelled."
     elif notice_type == "unauthorized":
-        return f"Otorisasi diperlukan untuk menyetujui tindakan{task_info}."
+        return f"Authorization required for action{task_info}."
     elif notice_type == "stopped":
-        return f"Eksekusi{task_info} telah dihentikan."
+        return f"Execution{task_info} has been stopped."
     elif notice_type == "error":
-        return f"Gagal mengeksekusi{task_info}{err_info}."
-    return f"Status {notice_type}{task_info}."
+        return f"Execution failed{task_info}{err_info}."
+    return f"Status: {notice_type}{task_info}."
 
 
 class ChannelRequest(BaseModel):
@@ -374,7 +363,7 @@ class ChannelRequest(BaseModel):
     channel: str = "web"  # 'telegram', 'cli', 'whatsapp', 'web', 'scheduler'
     channel_id: str = "default"  # Chat ID or Terminal ID
     user_id: str = "default_user"
-    sender_name: Optional[str] = "Pengguna"
+    sender_name: Optional[str] = "User"
     trigger_type: str = "interactive"  # 'interactive' or 'autonomous'
     attachments: List[Dict[str, Any]] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -400,7 +389,7 @@ class ChannelResponse(BaseModel):
 
 def get_or_create_channel_session(req: ChannelRequest) -> int:
     """Binds an incoming channel request to an isolated persistent chat session."""
-    speaker = req.sender_name or "Pengguna"
+    speaker = req.sender_name or "User"
     clean_title = f"{req.channel.title()} Chat ({speaker})"
 
     # Find existing open session for this specific channel & channel_id
@@ -437,7 +426,7 @@ async def _auto_dispatch_artifacts_to_channel(channel: str, channel_id: str, art
             ext = os.path.splitext(f_name)[1].lower()
             if ext in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"):
                 media_type = "photo"
-                caption = f"📸 {f_name}"
+                caption = f"📸 Bukti Tangkapan Layar: {f_name}" if "screen" in f_name.lower() or "verify" in f_name.lower() else f"📸 {f_name}"
             elif ext in (".mp4", ".mov", ".avi", ".mkv"):
                 media_type = "video"
                 caption = f"🎬 {f_name}"
@@ -449,7 +438,7 @@ async def _auto_dispatch_artifacts_to_channel(channel: str, channel_id: str, art
                 caption = ""
             else:
                 media_type = "document"
-                caption = f"📄 Berkas: {f_name}"
+                caption = f"📄 File: {f_name}"
 
             await channel_manager.send_media(
                 channel=channel,
@@ -480,7 +469,7 @@ async def process_channel_request(
         "sender_name": req.sender_name
     })
     current_task = asyncio.current_task()
-    is_stop_req = req.text.strip().lower().startswith(("/stop", "/cancel", "/abort", "/batal"))
+    is_stop_req = req.text.strip().lower().startswith(("/stop", "/cancel", "/abort"))
     if current_task and not is_stop_req:
         session_state_manager.register_active_task(req.channel, req.channel_id, current_task)
 
@@ -514,11 +503,8 @@ async def _enrich_message_with_vision(user_text: str, attachments: List[Dict[str
         return user_text
 
     from tools.vision_tools import _tool_vision_analyze
-    analysis_prompt = (
-        "Concisely and accurately describe the contents of this image. "
-        "Transcribe and identify any visible text, window titles, folder/file names, diagrams, code, error messages, numbers, or UI elements. "
-        "Be factual and objective without decorative filler."
-    )
+    from core.prompt_loader import load_prompt
+    analysis_prompt = load_prompt("channel/vision_enrichment").strip()
     enriched_parts = []
     for img_path in image_paths:
         try:
@@ -576,7 +562,7 @@ async def _process_channel_request_core(
 
     is_safe, denial_reason = check_prompt_injection(clean_text)
     if not is_safe:
-        denial_msg = denial_reason or "Permintaan ditolak oleh filter keamanan Anara."
+        denial_msg = denial_reason or "Request denied by Anara security filter."
         return ChannelResponse(
             text=denial_msg,
             session_id=session_id,
@@ -601,34 +587,13 @@ async def _process_channel_request_core(
 
     # 4. First-Run Onboarding Guard (Hermes Multi-User Parity):
     # If the user or fresh installer has not yet configured ANY provider or key,
-    # warmly guide them with multilingual options rather than failing or crashing.
+    # guide them with clean universal onboarding instructions.
     from providers import has_any_active_provider
     if not has_any_active_provider():
         logger.warning("[ChannelGateway] No active AI model provider configured. Triggering First-Run Onboarding Guide.")
-        clean_lower = clean_text.lower()
-        en_words = ("what", "how", "why", "where", "when", "can", "please", "check", "does", "is", "hi", "hello", "setup", "start")
-        id_words = ("apakah", "bagaimana", "kenapa", "mengapa", "tolong", "bisa", "halo", "hai", "mulai")
-        is_en = sum(1 for w in en_words if re.search(r'\b' + w + r'\b', clean_lower)) > sum(1 for w in id_words if re.search(r'\b' + w + r'\b', clean_lower))
-
-        sender = req.sender_name or "Pengguna"
-        if is_en:
-            onboarding_msg = (
-                f"👋 **Welcome to Project Anara, {sender}!**\n\n"
-                "To start using your autonomous AI agent, please connect your preferred model provider:\n\n"
-                "• **Option 1 (Web / Desktop UI):** Open the **Providers** tab in Anara Brain Console and add your API key (OpenAI, Gemini, Claude, Groq, DeepSeek, 9Router, or OpenRouter).\n"
-                "• **Option 2 (.env file):** Copy `backend/.env.example` to `.env` (or `%LOCALAPPDATA%\\anara\\.env`) and specify your provider and keys.\n"
-                "• **Option 3 (Local Ollama):** Run Ollama locally and set `OLLAMA_BASE_URL=http://localhost:11434/v1` in your `.env`.\n\n"
-                "Once configured, Anara will be fully activated and ready to assist you!"
-            )
-        else:
-            onboarding_msg = (
-                f"👋 **Selamat datang di Project Anara, {sender}!**\n\n"
-                "Untuk mulai mengaktifkan asisten AI otonom ini, silakan hubungkan provider model AI pilihan Anda:\n\n"
-                "• **Pilihan 1 (Tampilan Web / Desktop):** Buka tab **Providers** di Anara Brain Console, lalu masukkan API Key Anda (OpenAI, Gemini, Claude, Groq, DeepSeek, atau 9Router/OpenRouter).\n"
-                "• **Pilihan 2 (Berkas .env):** Duplikat `backend/.env.example` menjadi `.env` (atau di `%LOCALAPPDATA%\\anara\\.env`) dan isi kuncinya.\n"
-                "• **Pilihan 3 (Model Lokal Ollama):** Jalankan Ollama di komputer Anda dan atur `OLLAMA_BASE_URL=http://localhost:11434/v1` di file `.env`.\n\n"
-                "Setelah salah satu terhubung, Anara akan langsung aktif dan siap membantu Anda!"
-            )
+        sender = req.sender_name or "User"
+        from core.prompt_loader import load_prompt
+        onboarding_msg = load_prompt("channel/onboarding", sender=sender)
 
         memory_engine.log_conversation(
             user_text=req.text,
@@ -729,7 +694,7 @@ async def _process_channel_request_core(
             try:
                 build_res = await _execute_build_mode(
                     session_id=session_id,
-                    user_prompt=f"Eksekusi rencana: {orig_prompt}",
+                    user_prompt=orig_prompt,
                     req=req,
                     progress_callback=progress_callback,
                     pending_tool_call=pending_tool,
@@ -748,23 +713,20 @@ async def _process_channel_request_core(
             _PENDING_PLANS.pop(session_plan_key, None)
             active_pending = None
 
-    # 5. Check if this request needs a plan
-    requires_plan = needs_plan(clean_text, session_mode="conversational")
+    # 5. Check session mode (Hermes Model-Driven Parity: 0 regex guessing on user text)
+    # In conversational mode, user turns execute directly with runtime tool interception.
+    # Plan proposal gate is triggered only when the session is explicitly configured for Plan Mode.
+    session_obj = memory_engine.get_session(session_id)
+    actual_session_mode = (session_obj.get("session_mode") or "conversational") if session_obj else "conversational"
+    requires_plan = (actual_session_mode in ("explicit_plan_build", "plan"))
 
     # ── CASE B: Request entails high-risk/mutating action -> Auto PLAN MODE ──
     if requires_plan:
         logger.info(f"[ChannelGateway] Request triggers Plan Gate -> Composing structured plan...")
         plan_id = str(uuid.uuid4())[:8]
 
-        plan_prompt = (
-            f"[INSTRUKSI SISTEM: PLAN GATE DIAKTIFKAN OTOMATIS]\n"
-            f"Pengguna meminta: \"{clean_text}\"\n"
-            "Tindakan ini memerlukan perubahan sistem/file atau eksekusi terminal. "
-            "Kamu beroperasi dalam PLAN MODE (Read-Only). "
-            "Susun rencana kerja ringkas dalam 2-4 langkah konkret, jelaskan risiko singkatnya, "
-            "dan minta persetujuan pengguna sebelum mengeksekusi. "
-            "PENTING: Selalu sesuaikan bahasa responmu dengan bahasa asli pengguna (match the user's language: English if English, Indonesian if Indonesian, etc.)."
-        )
+        from core.prompt_loader import load_prompt
+        plan_prompt = load_prompt("channel/plan_gate", clean_text=clean_text)
 
         sys_prompt = PromptAssembler.assemble(
             mode="plan",
@@ -799,22 +761,46 @@ async def _process_channel_request_core(
         session_state_manager.store_pending(pending_act)
         _PENDING_PLANS[session_plan_key] = pending_act.to_dict()
 
+        # Fallback narration formulation matching Hermes Parity
+        narration_text = plan_text
+        if not narration_text:
+            try:
+                from core.capabilities import get_fast_auxiliary_model
+                from core.prompt_loader import load_prompt
+                aux_model = get_fast_auxiliary_model()
+                narration_sys = load_prompt("channel/fallback_narration").strip()
+                narration_text = await asyncio.wait_for(
+                    call_universal_chat_model(
+                        model_id=aux_model,
+                        user_prompt=f"Formulate a brief 1-sentence action plan proposal for user request: \"{clean_text}\". Respond in the exact language of the request.",
+                        system_instruction=narration_sys,
+                        max_tokens=None,
+                        temperature=0.3,
+                        read_only=True
+                    ),
+                    timeout=2.5
+                )
+            except Exception:
+                pass
+        if not narration_text:
+            narration_text = f"Action plan prepared for '{clean_text}'. Please confirm to begin execution."
+
         # Log AI Plan Proposal (natural narrative only, zero UI tags or buttons)
         memory_engine.log_conversation(
             user_text=clean_text,
-            ai_text=plan_text or f"Rencana tindakan untuk: {clean_text}",
+            ai_text=narration_text,
             speaker_name=req.sender_name,
             session_id=session_id
         )
 
         rendered = UniversalChannelAdapter.render_approval_payload(
             channel=req.channel,
-            narration=plan_text or f"Rencana tindakan untuk '{clean_text}' telah disusun. Silakan setujui untuk mulai eksekusi.",
+            narration=narration_text,
             action=pending_act
         )
 
         return ChannelResponse(
-            text=rendered.get("text") or (plan_text or f"Rencana tindakan untuk '{clean_text}' telah disusun. Silakan setujui untuk mulai eksekusi."),
+            text=rendered.get("text") or narration_text,
             session_id=session_id,
             mode="plan",
             plan_pending=True,
@@ -836,14 +822,18 @@ async def _process_channel_request_core(
     prior_turns = []
     for h in all_history:
         ai_t = (h.get("ai_text") or "").strip()
-        # Hermes parity: close interrupted tool sequence in past transcript to prevent continuation hallucination
-        if ('"action": "tool_call"' in ai_t or '<tool_call>' in ai_t) and not any(w in ai_t.lower() for w in ("selesai", "berhasil", "laporan", "done", "completed")):
+        # Hermes parity: close interrupted/unclosed tool sequence in past transcript to prevent continuation hallucination
+        is_tool_invocation = '"action": "tool_call"' in ai_t or '<tool_call>' in ai_t
+        is_unclosed = ('<tool_call>' in ai_t and '</tool_call>' not in ai_t) or (
+            '"action": "tool_call"' in ai_t and not ai_t.rstrip().endswith(('}', '```', '</tool_call>'))
+        )
+        if is_tool_invocation and is_unclosed:
             h_clean = dict(h)
-            h_clean["ai_text"] = f"Previous system inspection concluded for '{clean_text}'."
+            h_clean["ai_text"] = f"Previous inspection sequence concluded for '{clean_text}'."
             prior_turns.append(h_clean)
         else:
             prior_turns.append(h)
-    dialogue_context = ContextCompactor.compact_history(prior_turns, verbatim_turns=15)
+    dialogue_context = ContextCompactor.compact_history(prior_turns, verbatim_turns=5)
     full_user_prompt = f"{dialogue_context}User: {clean_text}" if dialogue_context else clean_text
 
     ws_tree = anara_agent.get_workspace_tree(session_id=session_id)
@@ -903,7 +893,8 @@ async def _process_channel_request_core(
             temperature=0.7,
             read_only=False,
             progress_cb=_track_tool,
-            intercept_mutating_tools=True,
+            intercept_mutating_tools=requires_plan,
+            platform=req.channel,
         )
         if isinstance(reply, dict) and reply.get("intercepted"):
             break
@@ -918,7 +909,7 @@ async def _process_channel_request_core(
     # intercept the execution in real-time, generate the dynamic rationale, and request user approval.
     if isinstance(reply, dict) and reply.get("intercepted"):
         plan_id = str(uuid.uuid4())[:8]
-        tool_name = reply.get("tool_name", "perintah sistem")
+        tool_name = reply.get("tool_name", "system command")
         cmd_preview = reply.get("cmd_preview", "")
         lead_text = (reply.get("lead_text") or "").strip()
         raw_call = reply.get("raw_call")
@@ -926,6 +917,19 @@ async def _process_channel_request_core(
 
         # Model-Driven Contextual Rationale (Zero Canned Templates)
         lead_narration = lead_text
+        # Discard stale lead_text if it is an echo of a prior conversation turn
+        if lead_narration and prior_turns:
+            is_stale_echo = any(
+                len(h.get("ai_text", "")) > 15 and (
+                    lead_narration.lower() in h.get("ai_text", "").lower()
+                    or h.get("ai_text", "").lower() in lead_narration.lower()
+                )
+                for h in prior_turns
+            )
+            if is_stale_echo:
+                logger.info(f"[ChannelAdapter] Discarded stale lead_text echoing past turn: {lead_narration[:60]!r}")
+                lead_narration = ""
+
         if not lead_narration:
             lead_narration = await synthesize_action_rationale(
                 tool_name=tool_name,
@@ -1115,14 +1119,6 @@ async def _execute_build_mode_core(
         except Exception:
             pass
 
-    system_reminder = (
-        "\n\n<system-reminder>\n"
-        "Your operational mode has changed from plan to build.\n"
-        "You are no longer in read-only mode.\n"
-        "You are permitted to make file changes, run shell commands, and utilize your arsenal of tools as needed.\n"
-        "</system-reminder>\n"
-    )
-
     ws_tree = anara_agent.get_workspace_tree(session_id=session_id)
     sys_prompt = PromptAssembler.assemble(
         mode="build",
@@ -1133,7 +1129,7 @@ async def _execute_build_mode_core(
         user_task=resolved_task,
         channel=req.channel,
         session_id=session_id,
-    ) + system_reminder
+    )
 
     tools_used: List[str] = []
 
@@ -1156,7 +1152,7 @@ async def _execute_build_mode_core(
         speaker_name=req.sender_name,
         session_id=session_id
     )
-    dialogue_context = ContextCompactor.compact_history(all_history, verbatim_turns=15)
+    dialogue_context = ContextCompactor.compact_history(all_history, verbatim_turns=5)
 
     if pending_tool_call:
         t_name = pending_tool_call.get("tool", "")
@@ -1187,13 +1183,14 @@ async def _execute_build_mode_core(
             except Exception:
                 pass
 
+        from core.prompt_loader import load_prompt
+        tool_instruction = load_prompt("channel/tool_summary").strip()
         effective_prompt = (
             f"{dialogue_context}"
             f"Tool '{t_name}' was executed on the host system with the following observation:\n"
             f"```json\n{json.dumps(tool_res, ensure_ascii=False)}\n```\n\n"
-            f"Original user request: \"{resolved_task}\"\n"
-            "Based on the tool observation above, provide a clear, helpful, and direct report to the user in natural conversational text (no raw tool JSON). "
-            "IMPORTANT: Always respond in the user's active language."
+            f"User request: \"{resolved_task}\"\n\n"
+            f"{tool_instruction}"
         )
     elif dialogue_context:
         effective_prompt = f"{dialogue_context}User: {resolved_task}"
@@ -1209,6 +1206,7 @@ async def _execute_build_mode_core(
         read_only=False,
         progress_cb=_track_tool,
         intercept_mutating_tools=False,
+        platform=req.channel,
     )
 
     if isinstance(reply, str):
@@ -1217,7 +1215,7 @@ async def _execute_build_mode_core(
         if not cleaned or '"action": "tool_call"' in cleaned or '<tool_call>' in cleaned:
             try:
                 final_reply = await synthesize_action_rationale(
-                    tool_name=t_name if pending_tool_call else "eksekusi",
+                    tool_name=t_name if pending_tool_call else "execution",
                     tool_args=t_args if pending_tool_call else {},
                     prompt=resolved_task or clean_text
                 )
@@ -1225,11 +1223,11 @@ async def _execute_build_mode_core(
             except Exception:
                 final_reply = ""
             if not final_reply:
-                final_reply = f"Tindakan '{resolved_task}' selesai diproses."
+                final_reply = f"Completed action '{resolved_task}'."
         else:
             final_reply = cleaned
     else:
-        final_reply = str(reply) if reply else f"Tindakan '{resolved_task}' selesai diproses."
+        final_reply = str(reply) if reply else f"Completed action '{resolved_task}'."
 
     memory_engine.log_conversation(
         user_text=resolved_task or clean_text,
@@ -1300,7 +1298,7 @@ async def dispatch_channel_approval_resolution(
     plan_id: str,
     action: str,  # 'approve' | 'reject'
     user_id: str,
-    sender_name: str = "Pengguna",
+    sender_name: str = "User",
     message_id: Optional[str] = None,
     progress_callback: Optional[Callable[[str], Any]] = None,
 ) -> Dict[str, Any]:
@@ -1315,7 +1313,7 @@ async def dispatch_channel_approval_resolution(
     from integrations.manager import channel_manager
 
     clean_chan = (channel or "telegram").lower().strip()
-    norm_action = "approve" if (action or "").strip().lower() in ("approve", "yes", "setujui", "gas") else "reject"
+    norm_action = "approve" if (action or "").strip().lower() in ("approve", "yes") else "reject"
 
     pending_act = session_state_manager.get_pending_by_id(plan_id)
     plan_dict = pending_act.to_dict() if pending_act else _PENDING_PLANS.get(f"{clean_chan}_{channel_id}")
@@ -1372,8 +1370,9 @@ async def dispatch_channel_approval_resolution(
     if clean_chan == "telegram" and message_id:
         try:
             from integrations.telegram.client import edit_telegram_message
-            plan_disp = plan_dict.get("lead_narration") or plan_dict.get("plan_text", "").split("\n<i>Apakah")[0].strip()
-            exec_rendered = UniversalChannelAdapter.render_notice_payload(clean_chan, "executing", f"{plan_disp}\n\n[Sedang dieksekusi di PC...]")
+            raw_plan = plan_dict.get("lead_narration") or plan_dict.get("plan_text", "")
+            plan_disp = re.sub(r"\n\s*<i>[^<]+</i>\s*$", "", raw_plan).strip() or raw_plan.strip()
+            exec_rendered = UniversalChannelAdapter.render_notice_payload(clean_chan, "executing", f"{plan_disp}\n\n[Executing on host...]")
             await edit_telegram_message(
                 chat_id=channel_id,
                 message_id=int(message_id),
@@ -1384,8 +1383,9 @@ async def dispatch_channel_approval_resolution(
             pass
 
     # 4. Execute Build Mode
+    target_action = plan_dict.get('original_prompt') or plan_dict.get('tool_name', 'action')
     req = ChannelRequest(
-        text=f"Eksekusi: {plan_dict.get('original_prompt') or plan_dict.get('tool_name', 'tindakan')}",
+        text=target_action,
         channel=clean_chan,
         channel_id=channel_id,
         user_id=user_id,

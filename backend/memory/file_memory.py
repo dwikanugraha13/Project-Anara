@@ -92,13 +92,13 @@ class FileMemoryManager:
     @classmethod
     def get_user_profile(cls) -> str:
         """Returns USER.md content (User Preferences & Profile)."""
-        default = "# Profil Pengguna (USER.md)\n- Nama Panggilan: Agnan\n- Bahasa Utama: Bahasa Indonesia & English\n- Preferensi: Solutif, efisien, kode rapi & modular."
+        default = "# User Profile (USER.md)\n- Preferred Name: User\n- Primary Language: Multilingual\n- Preferences: Efficient, clean, and modular code."
         return cls._read_file_safe(USER_FILE_PATH, default=default)
 
     @classmethod
     def get_memory_facts(cls) -> str:
         """Returns MEMORY.md content (Persistent Facts & Learned Knowledge)."""
-        default = "# Memori Jangka Panjang (MEMORY.md)\n- [2026-09-15] Anara General Agent diinisialisasi dengan arsitektur memori 4-file & Anara skill library."
+        default = "# Persistent Memory (MEMORY.md)\n- Anara General Agent initialized with 4-file persistent memory and skill library."
         return cls._read_file_safe(MEMORY_FILE_PATH, default=default)
 
     @classmethod
@@ -112,7 +112,7 @@ class FileMemoryManager:
             if os.path.isfile(p):
                 content = cls._read_file_safe(p)
                 if content:
-                    return f"# Aturan Proyek ({c})\n{content}"
+                    return f"# Project Rules ({c})\n{content}"
         return None
 
     @classmethod

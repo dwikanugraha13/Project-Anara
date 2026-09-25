@@ -26,7 +26,7 @@ logger = logging.getLogger("anara.core.workspace_sentinel")
 
 
 class WorkspaceSentinel:
-    """Melindungi integritas file system repositori dan memvalidasi kebenaran eksekusi runtime."""
+    """Protects repository filesystem integrity and validates runtime execution correctness."""
 
     # 1. High-blast-radius destructive shell command patterns
     DESTRUCTIVE_SHELL_PATTERNS: List[str] = [
@@ -136,19 +136,46 @@ class WorkspaceSentinel:
         except Exception as e:
             return False, f"Invalid path: {e}"
 
-        # 1. Confinement check: prevent directory traversal outside workspace
-        try:
-            if not resolved.is_relative_to(root):
-                # Allow user home project subdirectories if explicitly targeted
-                pass
-        except AttributeError:
-            # Python < 3.9 compatibility
+        # 1. Confinement check: prevent directory traversal outside workspace for mutating operations
+        authorized_roots = [root]
+        if not workspace_root and not self._workspace_root_str:
             try:
-                resolved.relative_to(root)
-            except ValueError:
+                from core.agent import anara_agent
+                sess_dir = anara_agent.get_session_dir()
+                if sess_dir and os.path.isdir(sess_dir):
+                    authorized_roots.append(Path(sess_dir).resolve())
+                repo_root = anara_agent.get_project_repo_root()
+                if repo_root and os.path.isdir(repo_root):
+                    authorized_roots.append(Path(repo_root).resolve())
+            except Exception:
+                pass
+            try:
+                import tempfile
+                authorized_roots.append(Path(tempfile.gettempdir()).resolve())
+            except Exception:
                 pass
 
-        # 2. Sacred infrastructure protection (.git objects, database)
+        is_confined = False
+        for auth_root in authorized_roots:
+            try:
+                if resolved.is_relative_to(auth_root):
+                    is_confined = True
+                    break
+            except AttributeError:
+                try:
+                    resolved.relative_to(auth_root)
+                    is_confined = True
+                    break
+                except ValueError:
+                    pass
+
+        if not is_confined and action in ("write", "edit", "delete"):
+            return False, (
+                f"SECURITY RESTRICTION: Path '{clean_p}' resolves outside authorized workspace boundaries "
+                f"({root}). Mutating operations outside the project root are forbidden (Hermes Repo-Safety)."
+            )
+
+        # 2. Sacred infrastructure protection (.git objects, credentials, database)
         parts = [p.lower() for p in resolved.parts]
         target_base = resolved.name.lower()
 
@@ -156,9 +183,13 @@ class WorkspaceSentinel:
         if ".git" in parts and action in ("write", "edit", "delete"):
             return False, "SECURITY ERROR: Direct modification of internal '.git' directory is blocked to preserve repository integrity."
 
+        # Prevent access to sensitive user credentials directories
+        if any(d in parts for d in (".ssh", ".aws", ".gnupg")):
+            return False, "SECURITY ERROR: Access to sensitive credentials directory is blocked."
+
         # Prevent deletion of sensitive credentials or active SQLite database
         if target_base in self.PROTECTED_FILES_DELETE and action == "delete":
-            return False, f"SECURITY ERROR: Deletion of protected file '{target_base}' is restricted (berkas dilindungi)."
+            return False, f"SECURITY ERROR: Deletion of protected file '{target_base}' is restricted (file protected)."
 
         return True, None
 
@@ -236,7 +267,7 @@ class WorkspaceSentinel:
         eff_sid = self._resolve_session_id(session_id)
 
         if is_passed:
-            guidance = "Verifikasi fisik PASS (exit_code=0). Klaim penyelesaian tugas terbukti valid berdasarkan pengujian nyata."
+            guidance = "Physical verification PASS (exit_code=0). Task completion claim proven valid through actual testing."
             if task_description:
                 try:
                     from memory.episodic_adr import episodic_adr_manager
@@ -257,8 +288,9 @@ class WorkspaceSentinel:
             err_type, detail = ErrorClassifier.classify(out_clean)
             cat = err_type or "execution_failure"
             guidance = (
-                f"Verifikasi fisik GAGAL (exit_code={exit_code}, kategori={cat})! Dilarang mengklaim bahwa tugas telah selesai.\n"
-                f"Detail: {detail or 'Tinjau traceback di atas, perbaiki kodenya, dan uji ulang.'}"
+                f"[GROUND-TRUTH VERIFICATION FAILED: exit_code={exit_code}, category={cat}]\n"
+                "Physical workspace verification failed. Do not claim the task is complete until tests succeed with exit code 0.\n"
+                f"Detail: {detail or 'Inspect the failure traceback above, apply targeted fixes, and re-verify.'}"
             )
 
         try:

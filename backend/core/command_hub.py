@@ -40,7 +40,7 @@ class UniversalCommandContext:
     channel: str = "cli"
     channel_id: str = "default"
     user_id: str = "default_user"
-    sender_name: str = "Pengguna"
+    sender_name: str = "User"
     raw_text: str = ""
     command: str = ""
     args: str = ""
@@ -150,7 +150,7 @@ class UnifiedCommandHub:
             channel=getattr(ctx_or_req, "channel", "cli") or "cli",
             channel_id=str(getattr(ctx_or_req, "channel_id", "default") or "default"),
             user_id=str(getattr(ctx_or_req, "user_id", "default_user") or "default_user"),
-            sender_name=getattr(ctx_or_req, "sender_name", "Pengguna") or "Pengguna",
+            sender_name=getattr(ctx_or_req, "sender_name", "User") or "User",
             raw_text=raw_text,
             command=cmd,
             args=args,
@@ -163,78 +163,37 @@ class UnifiedCommandHub:
 command_hub = UnifiedCommandHub()
 
 
-def is_indonesian_context(ctx: UniversalCommandContext) -> bool:
-    """
-    Detects whether command context is Indonesian vs English/International (Hermes Parity).
-    Checks explicit metadata lang, language arguments, or sender profile preferences.
-    """
-    meta_lang = str(ctx.metadata.get("lang") or ctx.metadata.get("language") or "").lower()
-    if meta_lang.startswith("en"):
-        return False
-    if meta_lang.startswith("id"):
-        return True
-
-    # Check if user passed explicit language flag
-    arg_clean = ctx.args.strip().lower()
-    if arg_clean in ("en", "english", "--en", "-en"):
-        return False
-    if arg_clean in ("id", "indonesia", "--id", "-id"):
-        return True
-
-    return True  # Native default for Project Anara
-
-
 # ── COMMAND HANDLERS (Registered via Decorators) ──
 
 @command_hub.register(
     name="help",
-    aliases=["bantuan", "start"],
-    description="Tampilkan panduan bantuan universal ini",
+    aliases=["start"],
+    description="Show agent command directory",
     usage="/help"
 )
 async def _handle_cmd_help(ctx: UniversalCommandContext) -> UniversalCommandResponse:
-    sender = ctx.sender_name or "Pengguna"
-    is_id = is_indonesian_context(ctx)
-
-    if not is_id:
-        lines = [
-            f"👋 <b>Hello {sender}! I am Anara — your General AI Agent.</b>\n",
-            "Connected to your host computer and workspace, ready for deep research, "
-            "conversations, and autonomous coding with Plan/Build Gate protection.\n",
-            "📌 <b>Universal Command List (Daftar Perintah Universal):</b>"
-        ]
-        for cmd in command_hub.list_commands():
-            if cmd.name in ("start", "bantuan"):
-                continue
-            lines.append(f"• <b>{cmd.usage}</b> — {cmd.description}")
-
-        lines.append(
-            "\n🛡️ <b>Anara Standard Guard:</b> Inspection and read commands execute autonomously. "
-            "Approval confirmation only appears for high-risk system operations."
-        )
-        return UniversalCommandResponse(text="\n".join(lines))
-
+    sender = ctx.sender_name or "User"
     lines = [
-        f"👋 <b>Halo {sender}! Saya Anara — General AI Agent Anda.</b>\n",
-        "Saya terhubung dengan komputer host dan ruang kerja lokal Anda, siap membantu percakapan, riset mendalam, "
-        "maupun otomasi koding dengan perlindungan Plan/Build Gate otomatis.\n",
-        "📌 <b>Daftar Perintah Universal:</b>"
+        f"👋 <b>Hello {sender}!</b> I am Anara — your General AI Agent.\n",
+        "Connected to your host computer and workspace, ready for deep research, "
+        "conversations, and autonomous coding with Plan/Build Gate protection.\n",
+        "📌 <b>Universal Commands Directory:</b>"
     ]
     for cmd in command_hub.list_commands():
-        if cmd.name in ("start", "bantuan"):
+        if cmd.name in ("start",):
             continue
         lines.append(f"• <b>{cmd.usage}</b> — {cmd.description}")
 
     lines.append(
-        "\n🛡️ <b>Anara Standard Guard:</b> Seluruh perintah inspeksi dan bacaan dieksekusi secara otonom tanpa hambatan. "
-        "Konfirmasi persetujuan hanya muncul jika perintah berisiko tinggi terhadap sistem."
+        "\n🛡️ <b>Anara Guard:</b> Safe inspection commands execute autonomously. "
+        "Approval confirmation only appears for high-risk system operations."
     )
     return UniversalCommandResponse(text="\n".join(lines))
 
 
 @command_hub.register(
     name="status",
-    description="Periksa status bot, model aktif, dan statistik memori sistem",
+    description="Inspect system status, active model, and memory telemetry",
     usage="/status"
 )
 async def _handle_cmd_status(ctx: UniversalCommandContext) -> UniversalCommandResponse:
@@ -242,28 +201,27 @@ async def _handle_cmd_status(ctx: UniversalCommandContext) -> UniversalCommandRe
     stats = memory_engine.get_brain_stats()
     sess_id = ctx.session_id or 0
     channel = ctx.channel or "web"
-    is_id = is_indonesian_context(ctx)
 
-    header = "📊 <b>STATUS SISTEM ANARA (SYSTEM STATUS)</b>" if not is_id else "📊 <b>STATUS SISTEM ANARA</b>"
+    header = "📊 <b>ANARA SYSTEM STATUS</b>"
     text = (
         f"{header}\n\n"
         f"• <b>Channel</b>: <code>{channel.upper()}</code>\n"
-        f"• <b>Sesi Aktif / Active Session</b>: #{sess_id}\n"
-        f"• <b>Model AI Aktif / Active Model</b>: <code>{active_m}</code>\n"
-        f"• <b>Total Percakapan / Conversations</b>: {stats.get('conversations_count', 0):,} turns\n"
-        f"• <b>Memori Fakta / Memories</b>: {stats.get('memories_count', 0)} nodes\n"
-        f"• <b>Catatan / To-Do</b>: {stats.get('notes_count', 0)} items\n"
-        f"• <b>Keahlian Agen / Skills</b>: {stats.get('skills_count', 0)} skills\n"
-        f"• <b>Ukuran Database / DB Size</b>: {stats.get('db_size_formatted', 'N/A')}\n"
-        f"• <b>Status Core</b>: 🟢 <b>ONLINE</b>"
+        f"• <b>Active Session</b>: #{sess_id}\n"
+        f"• <b>Active Model</b>: <code>{active_m}</code>\n"
+        f"• <b>Conversations</b>: {stats.get('conversations_count', 0):,} turns\n"
+        f"• <b>Memories</b>: {stats.get('memories_count', 0)} nodes\n"
+        f"• <b>To-Do Items</b>: {stats.get('notes_count', 0)} items\n"
+        f"• <b>Skills</b>: {stats.get('skills_count', 0)} skills\n"
+        f"• <b>DB Size</b>: {stats.get('db_size_formatted', 'N/A')}\n"
+        f"• <b>Core Status</b>: 🟢 <b>ONLINE</b>"
     )
     return UniversalCommandResponse(text=text)
 
 
 @command_hub.register(
     name="voice",
-    aliases=["suara", "tts"],
-    description="Atur mode balasan suara / audio lintas media (WA, Telegram, dll.)",
+    aliases=["tts"],
+    description="Configure voice reply mode across media channels",
     usage="/voice [text|only|both|auto]"
 )
 async def _handle_cmd_voice(ctx: UniversalCommandContext) -> UniversalCommandResponse:
@@ -272,75 +230,43 @@ async def _handle_cmd_voice(ctx: UniversalCommandContext) -> UniversalCommandRes
     clean_arg = ctx.args.strip().lower()
 
     mode_aliases = {
-        "text": "text", "teks": "text",
-        "only": "only", "voice": "only", "suara": "only",
-        "both": "both", "all": "both", "semua": "both",
-        "auto": "auto", "adaptive": "auto", "adaptif": "auto",
+        "text": "text",
+        "only": "only", "voice": "only",
+        "both": "both", "all": "both",
+        "auto": "auto", "adaptive": "auto",
     }
 
-    is_id = is_indonesian_context(ctx)
     if clean_arg in mode_aliases:
         new_mode = set_chat_voice_mode(channel, channel_id, mode_aliases[clean_arg])
         lbl = VOICE_MODE_LABELS.get(new_mode, new_mode)
-        if not is_id:
-            text = (
-                f"✅ <b>Voice Mode Successfully Updated! (Mode Suara Berhasil Diperbarui)</b>\n\n"
-                f"Current mode for this chat:\n<b>{lbl}</b>\n\n"
-                f"<i>Anara will reply according to this voice setting.</i>"
-            )
-        else:
-            text = (
-                f"✅ <b>Mode Suara Berhasil Diperbarui!</b>\n\n"
-                f"Mode saat ini untuk chat ini:\n<b>{lbl}</b>\n\n"
-                f"<i>Anara akan membalas pesan sesuai pengaturan mode suara ini.</i>"
-            )
+        text = (
+            f"✅ <b>Voice Mode Updated!</b>\n\n"
+            f"Current mode: <b>{lbl}</b>\n\n"
+            f"<i>Anara will reply according to this voice setting.</i>"
+        )
         return UniversalCommandResponse(text=text)
 
     cur_mode = get_chat_voice_mode(channel, channel_id)
     cur_lbl = VOICE_MODE_LABELS.get(cur_mode, cur_mode)
 
-    if not is_id:
-        text = (
-            f"🎙️ <b>ANARA VOICE MODE SETTINGS ({channel.upper()})</b>\n\n"
-            f"Current status: <b>{cur_lbl}</b>\n\n"
-            "Choose how Anara replies to conversations in this chat:\n"
-            "• <b>text</b>: Reply text only (voice input still replied in text)\n"
-            "• <b>only</b>: Reply in pure voice audio without long text\n"
-            "• <b>both</b>: Reply with BOTH voice audio AND full text\n"
-            "• <b>auto</b>: Adaptive mirror (send voice ➔ reply voice, send text ➔ reply text)\n\n"
-            "<i>Type <code>/voice [text|only|both|auto]</code> or tap buttons below:</i>"
-        )
-        buttons = [
-            [
-                CommandButton(text="📝 Text Only", callback_data="vmode:text"),
-                CommandButton(text="🎙️ Voice Only", callback_data="vmode:only")
-            ],
-            [
-                CommandButton(text="🎧 Voice + Text", callback_data="vmode:both"),
-                CommandButton(text="🔄 Adaptive", callback_data="vmode:auto")
-            ]
-        ]
-        return UniversalCommandResponse(text=text, buttons=buttons)
-
     text = (
-        f"🎙️ <b>PENGATURAN MODE SUARA ANARA ({channel.upper()})</b>\n\n"
-        f"Status saat ini: <b>{cur_lbl}</b>\n\n"
-        "Pilih bagaimana Anara membalas obrolan di chat ini:\n"
-        "• <b>text</b>: Balas teks saja (bicara suara tetap dibalas teks)\n"
-        "• <b>only</b>: Balas pesan suara murni tanpa teks panjang\n"
-        "• <b>both</b>: Balas pesan suara DAN teks lengkap sekaligus\n"
-        "• <b>auto</b>: Cermin adaptif (kirim suara ➔ balas suara, kirim teks ➔ balas teks)\n\n"
-        "<i>Ketik <code>/voice [text|only|both|auto]</code> atau gunakan tombol di bawah:</i>"
+        f"🎙️ <b>VOICE MODE SETTINGS — {channel.upper()}</b>\n\n"
+        f"Status: <b>{cur_lbl}</b>\n\n"
+        "Choose how Anara replies in this chat:\n"
+        "• <b>text</b>: Reply text only\n"
+        "• <b>only</b>: Voice audio only without long text\n"
+        "• <b>both</b>: Voice audio AND full text\n"
+        "• <b>auto</b>: Adaptive mirror (voice ➔ voice, text ➔ text)\n\n"
+        "<i>Type <code>/voice [text|only|both|auto]</code> or tap buttons below:</i>"
     )
-
     buttons = [
         [
-            CommandButton(text="📝 Teks Saja", callback_data="vmode:text"),
-            CommandButton(text="🎙️ Suara Murni", callback_data="vmode:only")
+            CommandButton(text="📝 Text Only", callback_data="vmode:text"),
+            CommandButton(text="🎙️ Voice Only", callback_data="vmode:only")
         ],
         [
-            CommandButton(text="🎧 Suara + Teks", callback_data="vmode:both"),
-            CommandButton(text="🔄 Adaptif", callback_data="vmode:auto")
+            CommandButton(text="🎧 Voice + Text", callback_data="vmode:both"),
+            CommandButton(text="🔄 Adaptive", callback_data="vmode:auto")
         ]
     ]
 
@@ -350,14 +276,13 @@ async def _handle_cmd_voice(ctx: UniversalCommandContext) -> UniversalCommandRes
 @command_hub.register(
     name="model",
     aliases=["models"],
-    description="Pilih provider & ganti model AI aktif secara interaktif",
-    usage="/model [nomor|id]"
+    description="Select provider & switch active AI model",
+    usage="/model [number|id]"
 )
 async def _handle_cmd_model(ctx: UniversalCommandContext) -> UniversalCommandResponse:
     clean_arg = ctx.args.strip()
     all_models = await get_all_dynamic_models()
     configured = [m for m in all_models if m.get("is_configured")] or all_models[:10]
-    is_id = is_indonesian_context(ctx)
 
     if clean_arg:
         target_m = None
@@ -371,9 +296,7 @@ async def _handle_cmd_model(ctx: UniversalCommandContext) -> UniversalCommandRes
             target_m = matched[0] if matched else clean_arg
 
         set_active_model_id(target_m)
-        if not is_id:
-            return UniversalCommandResponse(text=f"✅ <b>Active AI model changed successfully!</b>\n\nNow using: <code>{target_m}</code>")
-        return UniversalCommandResponse(text=f"✅ <b>Model AI aktif berhasil diubah!</b>\n\nSekarang menggunakan: <code>{target_m}</code>")
+        return UniversalCommandResponse(text=f"✅ <b>Active model updated!</b>\n\nNow using: <code>{target_m}</code>")
 
     cur_m = get_active_model_id()
     if ctx.channel == "telegram":
@@ -381,56 +304,53 @@ async def _handle_cmd_model(ctx: UniversalCommandContext) -> UniversalCommandRes
         await send_telegram_provider_selector(chat_id=ctx.channel_id)
         return UniversalCommandResponse(text="", handled_silently=True)
 
-    lines = [f"🤖 <b>PILIH MODEL AI (Saat Ini: <code>{cur_m}</code>)</b>:\n"]
+    lines = [f"🤖 <b>SELECT AI MODEL (Current: <code>{cur_m}</code>)</b>:\n"]
     for idx, m in enumerate(configured[:12], 1):
-        ind = "● (Aktif)" if m["id"] == cur_m else "○"
+        ind = "● (Active)" if m["id"] == cur_m else "○"
         lines.append(f"{idx}. {ind} <b>{m.get('name', m['id'])}</b> [{m.get('provider', '').upper()}]\n   ID: <code>{m['id']}</code>")
 
-    lines.append("\n<i>Ketik <code>/model &lt;nomor atau ID&gt;</code> untuk mengganti model.</i>")
+    lines.append("\n<i>Type <code>/model &lt;number or ID&gt;</code> to switch.</i>")
     return UniversalCommandResponse(text="\n".join(lines))
 
 
 @command_hub.register(
     name="skills",
-    aliases=["keahlian"],
-    description="Lihat daftar keahlian aktif (agentskills.io)",
+    aliases=[],
+    description="View active agent skills catalog",
     usage="/skills"
 )
 async def _handle_cmd_skills(ctx: UniversalCommandContext) -> UniversalCommandResponse:
-    is_id = is_indonesian_context(ctx)
     skills = skill_library.list_skills(status_filter="active")
     if not skills:
-        return UniversalCommandResponse(text="📚 No active skills registered in Skill Library." if not is_id else "📚 Belum ada keahlian aktif yang terdaftar di Skill Library.")
+        return UniversalCommandResponse(text="📚 <b>SKILL LIBRARY ANARA</b>: <i>No active skills registered.</i>")
 
-    header = f"📚 <b>SKILL LIBRARY ANARA ({len(skills)} {'Active Skills' if not is_id else 'Keahlian Aktif'})</b>:\n"
+    header = f"📚 <b>SKILL LIBRARY ANARA ({len(skills)} Active Skills)</b>:\n"
     lines = [header]
     for s in skills[:20]:
         cat = s.get("category", "coding").upper()
         lines.append(f"• <b>{s['name']}</b> [{cat}]: {s.get('description', '')[:70]}...")
 
     if len(skills) > 20:
-        more_notice = f"\n<i>... and {len(skills) - 20} more skills. Use Web Studio to view full catalog.</i>" if not is_id else f"\n<i>... dan {len(skills) - 20} keahlian lainnya. Gunakan Web Studio untuk melihat katalog lengkap.</i>"
-        lines.append(more_notice)
+        lines.append(f"\n<i>... and {len(skills) - 20} more skills. Use Web Studio to view full catalog.</i>")
 
     return UniversalCommandResponse(text="\n".join(lines))
 
 
 @command_hub.register(
     name="memory",
-    aliases=["memori"],
-    description="Lihat ringkasan profil USER.md & fakta MEMORY.md",
+    aliases=["mem"],
+    description="View USER.md profile & MEMORY.md facts summary",
     usage="/memory"
 )
 async def _handle_cmd_memory(ctx: UniversalCommandContext) -> UniversalCommandResponse:
-    is_id = is_indonesian_context(ctx)
     user_p = file_memory.get_user_profile()
     mem_f = file_memory.get_memory_facts()
-    header = "🧠 <b>ANARA PERSISTENT MEMORY / MEMORI PERSISTEN ANARA</b>"
+    header = "🧠 <b>ANARA PERSISTENT MEMORY</b>"
     text = (
         f"{header}\n\n"
-        f"<b>1. {'User Profile / Profil Pengguna' if not is_id else 'Profil Pengguna'} (USER.md):</b>\n"
+        f"<b>1. User Profile (USER.md):</b>\n"
         f"<blockquote>{user_p[:600]}</blockquote>\n\n"
-        f"<b>2. {'Persistent Facts / Fakta Jangka Panjang' if not is_id else 'Fakta Jangka Panjang'} (MEMORY.md):</b>\n"
+        f"<b>2. Long-Term Facts (MEMORY.md):</b>\n"
         f"<blockquote>{mem_f[:900]}</blockquote>"
     )
     return UniversalCommandResponse(text=text)
@@ -438,12 +358,11 @@ async def _handle_cmd_memory(ctx: UniversalCommandContext) -> UniversalCommandRe
 
 @command_hub.register(
     name="workspace",
-    description="Lihat atau kunci agen ke folder proyek lokal PC",
+    description="Inspect or lock workspace root directory",
     usage="/workspace [path]"
 )
 async def _handle_cmd_workspace(ctx: UniversalCommandContext) -> UniversalCommandResponse:
     from core.agent import anara_agent
-    is_id = is_indonesian_context(ctx)
     clean_arg = ctx.args.strip().strip('"\'')
 
     if not clean_arg:
@@ -451,86 +370,57 @@ async def _handle_cmd_workspace(ctx: UniversalCommandContext) -> UniversalComman
         name = ws.get("workspace_name", "Default Workspace")
         root_p = ws.get("root_path", "(Unset)")
         total_f = ws.get("total_files", 0)
-        if not is_id:
-            text = (
-                f"📁 <b>PROJECT WORKSPACE STATUS:</b>\n\n"
-                f"• <b>Project Name</b>: <code>{name}</code>\n"
-                f"• <b>Physical Path</b>: <code>{root_p}</code>\n"
-                f"• <b>Indexed Files</b>: {total_f} files\n\n"
-                "<i>To bind the agent to a specific local project directory, use:</i>\n"
-                "<code>/workspace C:\\Path\\To\\Project\\Folder</code>"
-            )
-        else:
-            text = (
-                f"📁 <b>STATUS WORKSPACE PROYEK:</b>\n\n"
-                f"• <b>Nama Proyek</b>: <code>{name}</code>\n"
-                f"• <b>Lokasi Fisik</b>: <code>{root_p}</code>\n"
-                f"• <b>Total Berkas</b>: {total_f} berkas\n\n"
-                "<i>Untuk mengunci agen ke folder proyek lokal tertentu, gunakan:</i>\n"
-                "<code>/workspace C:\\Path\\Ke\\Folder\\Proyek</code>"
-            )
+        text = (
+            f"📁 <b>WORKSPACE STATUS:</b>\n\n"
+            f"• <b>Project Name</b>: <code>{name}</code>\n"
+            f"• <b>Physical Path</b>: <code>{root_p}</code>\n"
+            f"• <b>Indexed Files</b>: {total_f} files\n\n"
+            "<i>To link agent to a specific project directory, use:</i>\n"
+            "<code>/workspace C:\\Path\\To\\Folder</code>"
+        )
         return UniversalCommandResponse(text=text)
 
     if not os.path.exists(clean_arg) or not os.path.isdir(clean_arg):
-        err = f"❌ <b>Folder not found</b>:\nPath <code>{clean_arg}</code> is invalid or not a directory." if not is_id else f"❌ <b>Folder tidak ditemukan</b>:\nPath <code>{clean_arg}</code> tidak valid atau bukan sebuah direktori."
-        return UniversalCommandResponse(text=err)
+        return UniversalCommandResponse(text=f"❌ <b>Folder Not Found</b>:\nPath <code>{clean_arg}</code> is not a valid directory.")
 
     res = anara_agent.attach_local_folder(clean_arg)
     name = res.get("name", os.path.basename(clean_arg))
     count = res.get("files_count", 0)
-    if not is_id:
-        text = (
-            f"✅ <b>Workspace Successfully Linked!</b>\n\n"
-            f"• <b>Project</b>: <code>{name}</code>\n"
-            f"• <b>Path</b>: <code>{clean_arg}</code>\n"
-            f"• <b>Indexed Files</b>: {count} files\n\n"
-            "Agent is now operating within this project directory."
-        )
-    else:
-        text = (
-            f"✅ <b>Workspace Berhasil Ditautkan!</b>\n\n"
-            f"• <b>Proyek</b>: <code>{name}</code>\n"
-            f"• <b>Path</b>: <code>{clean_arg}</code>\n"
-            f"• <b>Berkas Terindeks</b>: {count} berkas\n\n"
-            "Agen sekarang beroperasi terfokus di dalam folder proyek ini."
-        )
+    text = (
+        f"✅ <b>Workspace Linked!</b>\n\n"
+        f"• <b>Project</b>: <code>{name}</code>\n"
+        f"• <b>Path</b>: <code>{clean_arg}</code>\n"
+        f"• <b>Indexed Files</b>: {count} files\n\n"
+        "Agent is now operating within this project directory."
+    )
     return UniversalCommandResponse(text=text)
 
 
 @command_hub.register(
     name="clear",
     aliases=["reset"],
-    description="Bersihkan konteks giliran aktif dan mulai percakapan baru",
+    description="Clear active turn context and reset conversation session",
     usage="/clear"
 )
 async def _handle_cmd_clear(ctx: UniversalCommandContext) -> UniversalCommandResponse:
     from core.session_manager import session_state_manager
-    is_id = is_indonesian_context(ctx)
     session_state_manager.clear_pending(ctx.channel, ctx.channel_id)
-    if not is_id:
-        text = (
-            "🧹 <b>Session Context Cleared!</b>\n\n"
-            "Active turn history has been reset and pending plans cleared. "
-            "Anara is ready for a fresh topic."
-        )
-    else:
-        text = (
-            "🧹 <b>Konteks Sesi Dibersihkan!</b>\n\n"
-            "Riwayat aktif giliran telah di-reset dan rencana tertahan telah dibersihkan. "
-            "Anara siap memulai topik baru yang segar."
-        )
+    text = (
+        "🧹 <b>Session Cleared!</b>\n\n"
+        "Active turn history has been reset and pending plans cleared. "
+        "Anara is ready for a fresh topic."
+    )
     return UniversalCommandResponse(text=text)
 
 
 @command_hub.register(
     name="stop",
-    aliases=["cancel", "abort", "batal"],
-    description="Hentikan tugas agen, peramban browser otomatis, atau rencana yang sedang berjalan",
+    aliases=["cancel", "abort"],
+    description="Halt active agent tasks, browser automations, or running plans",
     usage="/stop"
 )
 async def _handle_cmd_stop(ctx: UniversalCommandContext) -> UniversalCommandResponse:
     from core.session_manager import session_state_manager
-    is_id = is_indonesian_context(ctx)
     interrupt_info = await session_state_manager.request_hard_interrupt(
         channel=ctx.channel,
         channel_id=ctx.channel_id,
@@ -543,58 +433,37 @@ async def _handle_cmd_stop(ctx: UniversalCommandContext) -> UniversalCommandResp
     except Exception:
         pass
 
-    if not is_id:
-        details = []
-        if interrupt_info.get("task_cancelled"):
-            details.append("task cancelled")
-        if interrupt_info.get("processes_killed", 0) > 0:
-            details.append(f"{interrupt_info['processes_killed']} sub-processes killed")
-        if interrupt_info.get("pending_cleared"):
-            details.append("pending plans cleared")
-        detail_str = f" ({', '.join(details)})" if details else ""
-        text = (
-            f"🛑 <b>TASK STOPPED SUCCESSFULLY!</b>{detail_str}\n\n"
-            "All running agent tasks, browser automations, terminal sub-processes, and pending plans have been safely cancelled.\n\n"
-            "<i>Anara is ready for your next command.</i>"
-        )
-    else:
-        details = []
-        if interrupt_info.get("task_cancelled"):
-            details.append("eksekusi tugas dibatalkan")
-        if interrupt_info.get("processes_killed", 0) > 0:
-            details.append(f"{interrupt_info['processes_killed']} subproses OS dihentikan")
-        if interrupt_info.get("pending_cleared"):
-            details.append("rencana tertahan dibersihkan")
-        detail_str = f" ({', '.join(details)})" if details else ""
-        text = (
-            f"🛑 <b>TUGAS BERHASIL DIHENTIKAN!</b>{detail_str}\n\n"
-            "Seluruh proses kerja agen, peramban browser otomatis, subproses terminal, dan rencana yang tertahan telah dibatalkan dengan aman.\n\n"
-            "<i>Anara siap menerima perintah baru Anda.</i>"
-        )
+    details = []
+    if interrupt_info.get("task_cancelled"):
+        details.append("task cancelled")
+    if interrupt_info.get("processes_killed", 0) > 0:
+        details.append(f"{interrupt_info['processes_killed']} sub-processes killed")
+    if interrupt_info.get("pending_cleared"):
+        details.append("pending plans cleared")
+    detail_str = f" ({', '.join(details)})" if details else ""
+    text = (
+        f"🛑 <b>TASK STOPPED</b>{detail_str}\n\n"
+        "All running agent tasks, browser automations, terminal sub-processes, and pending plans have been cancelled.\n\n"
+        "<i>Anara is ready for your next command.</i>"
+    )
     return UniversalCommandResponse(text=text)
 
 
 @command_hub.register(
     name="plan",
-    description="Tulis rencana implementasi arsitektur terstruktur tanpa eksekusi langsung",
-    usage="/plan [tugas]"
+    description="Draft a structured architectural action plan without direct execution",
+    usage="/plan [task]"
 )
 async def _handle_cmd_plan(ctx: UniversalCommandContext) -> UniversalCommandResponse:
-    is_id = is_indonesian_context(ctx)
     clean_arg = ctx.args.strip()
     if not clean_arg:
-        err = "⚠️ Please provide a task description for the plan.\nExample: <code>/plan refactor JWT auth module</code>" if not is_id else "⚠️ Mohon sertakan deskripsi tugas untuk rencana kerja.\nContoh: <code>/plan refactor modul autentikasi JWT</code>"
-        return UniversalCommandResponse(text=err)
+        return UniversalCommandResponse(text="⚠️ <b>Please provide a task description for the plan:</b>\nExample: <code>/plan refactor JWT auth module</code>")
 
     from core.prompt_assembler import PromptAssembler
+    from core.prompt_loader import load_prompt
     from providers.caller import call_universal_chat_model
 
-    plan_prompt = (
-        f"[INSTRUKSI SISTEM: EKSPLORASI PLAN MODE]\n"
-        f"Pengguna meminta rencana kerja: \"{clean_arg}\"\n"
-        "Susun rencana kerja arsitektur yang ringkas, terstruktur dalam 3-5 langkah konkret, "
-        "jelaskan dependensi dan risikonya, lalu minta persetujuan pengguna untuk mengeksekusinya."
-    )
+    plan_prompt = load_prompt("channel/plan_command", clean_arg=clean_arg)
 
     sys_prompt = PromptAssembler.assemble(
         mode="plan",
@@ -628,13 +497,13 @@ async def _handle_cmd_plan(ctx: UniversalCommandContext) -> UniversalCommandResp
 
     buttons = [
         [
-            CommandButton(text="✅ Setujui & Jalankan", callback_data=f"approve:{plan_id}"),
-            CommandButton(text="❌ Batalkan", callback_data=f"reject:{plan_id}")
+            CommandButton(text="✅ Approve", callback_data=f"approve:{plan_id}"),
+            CommandButton(text="❌ Cancel", callback_data=f"reject:{plan_id}")
         ]
     ]
 
     return UniversalCommandResponse(
-        text=plan_text or "Rencana kerja berhasil disusun.",
+        text=plan_text or "Action plan successfully drafted.",
         buttons=buttons,
         plan_pending=True,
         plan_id=plan_id,
@@ -644,10 +513,10 @@ async def _handle_cmd_plan(ctx: UniversalCommandContext) -> UniversalCommandResp
 # ── VOICE HELPERS & PERSISTENCE ──
 
 VOICE_MODE_LABELS = {
-    "text": "📝 Teks Saja (Suara/Teks ➔ Dibalas Teks)",
-    "only": "🎙️ Suara Murni (Voice Note Saja)",
-    "both": "🎧 Suara + Teks (Keduanya)",
-    "auto": "🔄 Adaptif (Suara ➔ Suara, Teks ➔ Teks)",
+    "text": "📝 Text Only (Voice/Text → Replied as Text)",
+    "only": "🎙️ Voice Only (Voice Note Only)",
+    "both": "🎧 Voice + Text (Both)",
+    "auto": "🔄 Adaptive (Voice → Voice, Text → Text)",
 }
 
 

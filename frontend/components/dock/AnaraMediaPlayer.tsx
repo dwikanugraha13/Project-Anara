@@ -196,7 +196,7 @@ export default function AnaraMediaPlayer({
 
       if (!window.YT?.Player) {
         console.warn("[Media] YouTube IFrame API unavailable");
-        setLoadError("API YouTube tidak dapat dimuat");
+        setLoadError("YouTube API could not be loaded");
         return;
       }
 
@@ -310,7 +310,7 @@ export default function AnaraMediaPlayer({
         }, 5000);
       } catch (err) {
         console.error("[Media] Failed to create YT player:", err);
-        setLoadError("Gagal membuat pemutar YouTube");
+        setLoadError("Failed to create YouTube player");
       }
     });
 
@@ -480,8 +480,8 @@ export default function AnaraMediaPlayer({
             <button
               type="button"
               onClick={() => setShowPlaylist((v) => !v)}
-              title={showPlaylist ? "Sembunyikan daftar lagu" : "Lihat daftar lagu"}
-              aria-label="Daftar lagu"
+              title={showPlaylist ? "Hide tracklist" : "View tracklist"}
+              aria-label="Tracklist"
               className={`w-7 h-7 rounded-full border flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
                 showPlaylist
                   ? "bg-cyan-500/30 border-cyan-400/60 text-cyan-100"
@@ -500,8 +500,8 @@ export default function AnaraMediaPlayer({
           )}
           <button
             type="button"
-            aria-label="Tutup pemutar"
-            title="Tutup (Esc)"
+            aria-label="Close player"
+            title="Close (Esc)"
             onClick={onClose}
             className="w-7 h-7 rounded-full bg-black/60 hover:bg-rose-500/70 border border-white/20 hover:border-rose-300 text-slate-300 hover:text-white flex items-center justify-center backdrop-blur-md transition-all shadow-lg active:scale-90 cursor-pointer"
           >
@@ -530,7 +530,7 @@ export default function AnaraMediaPlayer({
           {/* Hint, fades out once the user hovers (i.e. once controls are visible) */}
           <div className="pointer-events-none absolute bottom-2 right-3 opacity-90 group-hover/video:opacity-0 transition-opacity duration-200">
             <span className="px-2 py-1 rounded-md bg-black/70 border border-white/15 text-[10px] font-mono text-slate-300 backdrop-blur-sm">
-              arahkan kursor untuk kontrol &amp; kualitas
+              hover for controls &amp; quality
             </span>
           </div>
         </div>
@@ -567,7 +567,7 @@ export default function AnaraMediaPlayer({
           )}
           {needsGesture && !loadError && (
             <p className="text-[11px] text-amber-300 mt-1">
-              Browser memblokir putar otomatis — tekan tombol putar.
+              Browser blocked autoplay — press the play button.
             </p>
           )}
 

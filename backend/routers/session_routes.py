@@ -56,7 +56,7 @@ async def get_session_endpoint(session_id: int):
     """Returns one thread plus all of its messages."""
     session = memory_engine.get_session(session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Sesi percakapan tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Chat session not found")
     messages = memory_engine.get_session_messages(session_id)
     return {"status": "success", "session": session, "messages": messages}
 
@@ -65,7 +65,7 @@ async def patch_session_endpoint(session_id: int, req: SessionPatchRequest):
     """Renames, pins or archives a thread."""
     ok = memory_engine.patch_session(session_id, title=req.title, is_pinned=req.is_pinned, is_archived=req.is_archived)
     if not ok:
-        raise HTTPException(status_code=400, detail="Sesi tidak ditemukan atau tidak ada perubahan")
+        raise HTTPException(status_code=400, detail="Session not found or no changes applied")
     return {"status": "success", "session": memory_engine.get_session(session_id)}
 
 @router.delete("/api/chat/sessions/{session_id}")
@@ -74,7 +74,7 @@ async def delete_session_endpoint(session_id: int):
     anara_agent.clear_workspace(session_id=session_id)
     ok = memory_engine.delete_session(session_id)
     if not ok:
-        raise HTTPException(status_code=404, detail="Sesi tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Session not found")
     return {"status": "success", "session_id": session_id}
 
 @router.delete("/api/chat/sessions/{session_id}/messages")
@@ -124,7 +124,7 @@ async def save_session_plan_endpoint(session_id: int, req: PlanProposalRequest):
     }
     ok = memory_engine.set_session_pending_plan(session_id, plan_dict)
     if not ok:
-        raise HTTPException(status_code=400, detail="Gagal menyimpan rencana")
+        raise HTTPException(status_code=400, detail="Failed to save pending plan")
     broadcast_agent_event({
         "type": "agent_hud_project",
         "visual_type": "plan_card",

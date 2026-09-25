@@ -81,7 +81,7 @@ export default function HudImageGallery({
         <div className="flex items-center gap-2 truncate max-w-[70%]">
           <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_6px_#22d3ee] shrink-0" />
           <span className="font-bold tracking-widest uppercase truncate">
-            Proyeksi Visual • {currentImg.sourceDomain || "Web Search"}
+            Visual Projection • {currentImg.sourceDomain || "Web Search"}
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">

@@ -89,16 +89,26 @@ class ModelCapabilityRegistry:
 
     @classmethod
     def supports_vision(cls, model_id: str) -> bool:
-        """Returns True if the model accepts image input."""
-        info = cls._cache.get(model_id)
+        """
+        Returns True if the model accepts image input (Hermes Parity).
+        Evaluates registered capability metadata, input_modalities, and verified multimodal family identifiers.
+        """
+        if not model_id:
+            return False
+
+        norm_id = cls.normalize_id(model_id)
+        info = cls._cache.get(norm_id) or cls._cache.get(model_id)
         if info is not None:
-            return bool(info.get("supports_vision", False))
-        mid = (model_id or "").lower()
-        vision_keywords = [
-            "vision", "flash", "gpt-4o", "4o", "claude-3", "claude-3-5", "claude-3-7",
-            "gemini", "qwen-vl", "pixtral", "llava", "omni", "multimodal"
-        ]
-        return any(kw in mid for kw in vision_keywords)
+            input_mods = set(info.get("input_modalities") or [])
+            return bool(info.get("supports_vision") or "image" in input_mods or "vision" in input_mods)
+
+        # Hermes Parity: evaluate verified multimodal model identifiers when unindexed
+        mid = norm_id.lower()
+        verified_vision_families = (
+            "vision", "-vl", "llava", "pixtral", "multimodal",
+            "gpt-4o", "gpt-4-turbo", "claude-3", "gemini-", "qwen-vl"
+        )
+        return any(tag in mid for tag in verified_vision_families)
 
     @classmethod
     def find_models(cls, capability: str = "text", provider: Optional[str] = None) -> List[str]:
@@ -183,12 +193,13 @@ class ModelCapabilityRegistry:
                     "bidiGenerateContent" in methods
                     or mid in NATIVE_VOICE_MODEL_IDS
                 )
+                input_mods = _gemini_input_modalities(mid)
                 cls._cache[mid] = {
                     "name": getattr(m, "display_name", mid) or mid,
-                    "input_modalities": _gemini_input_modalities(mid),
+                    "input_modalities": input_mods,
                     "output_modalities": ["text"],  # All current Gemini chat models emit text
                     "supports_voice": supports_voice,
-                    "supports_vision": "vision" in mid.lower() or "flash" in mid.lower(),
+                    "supports_vision": "image" in input_mods or "vision" in input_mods,
                     "provider": "google",
                 }
         except Exception as e:

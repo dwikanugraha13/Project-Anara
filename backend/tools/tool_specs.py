@@ -101,7 +101,7 @@ async def _tool_gmail_read_inbox(limit: int = 5) -> Dict[str, Any]:
     from integrations import get_unread_emails, get_google_status
     st = await get_google_status()
     if st.get("status") != "connected":
-        return {"status": "error", "message": "Akun Google Workspace belum ditautkan."}
+        return {"status": "error", "message": "Google Workspace account not linked."}
     emails = await get_unread_emails(limit=limit)
     return {"status": "success", "emails": emails}
 
@@ -110,7 +110,7 @@ async def _tool_calendar_get_schedule(days: int = 3) -> Dict[str, Any]:
     from integrations import get_upcoming_events, get_google_status
     st = await get_google_status()
     if st.get("status") != "connected":
-        return {"status": "error", "message": "Akun Google Workspace belum ditautkan."}
+        return {"status": "error", "message": "Google Workspace account not linked."}
     events = await get_upcoming_events(days=days)
     return {"status": "success", "events": events}
 
@@ -124,14 +124,14 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Digital Artifacts ──
     {
         "name": "generate_file_artifact",
-        "description": "Membuat dokumen berkas digital baru dalam berbagai format resmi (DOCX, PDF, CSV, Excel, TXT, MD, Python, JS, JSON).",
+        "description": "Generates a digital document artifact in official formats (DOCX, PDF, CSV, Excel, TXT, MD, Python, JS, JSON).",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "filename": {"type": "STRING", "description": "Nama file lengkap dengan ekstensi, misal 'proposal.docx', 'laporan.pdf'."},
-                "content": {"type": "STRING", "description": "Isi teks lengkap dokumen atau kode yang dibuat."},
-                "title": {"type": "STRING", "description": "Judul dokumen resmi untuk header."},
-                "destination_folder": {"type": "STRING", "description": "Path folder tujuan fisik lokal (opsional)."}
+                "filename": {"type": "STRING", "description": "Full filename with extension, e.g. 'proposal.docx', 'report.pdf'."},
+                "content": {"type": "STRING", "description": "Complete text or code content for the document."},
+                "title": {"type": "STRING", "description": "Official document title header."},
+                "destination_folder": {"type": "STRING", "description": "Local destination folder path (optional)."}
             },
             "required": ["filename", "content"]
         },
@@ -143,13 +143,13 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "create_zip_archive",
-        "description": "Mengompresi dan membuat berkas arsip ZIP dari seluruh proyek di workspace atau daftar berkas tertentu.",
+        "description": "Compresses files or directories into a ZIP archive.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "archive_name": {"type": "STRING", "description": "Nama berkas zip tujuan, misalnya 'dashboard-project.zip'."},
-                "folder_path": {"type": "STRING", "description": "Folder proyek yang ingin dikompresi."},
-                "files": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Daftar berkas tertentu yang ingin dimasukkan ke dalam zip."}
+                "archive_name": {"type": "STRING", "description": "Target zip archive name, e.g. 'project.zip'."},
+                "folder_path": {"type": "STRING", "description": "Project folder path to compress."},
+                "files": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "List of specific files to include in zip."}
             }
         },
         "handler": _tool_create_zip_archive,
@@ -160,12 +160,12 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "extract_zip_archive",
-        "description": "Mengekstrak (unzip) seluruh berkas dari file arsip ZIP ke folder tujuan secara instan.",
+        "description": "Extracts files from a ZIP archive to a destination directory.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "zip_path": {"type": "STRING", "description": "Nama atau path berkas ZIP yang ingin diekstrak."},
-                "destination_folder": {"type": "STRING", "description": "Folder tujuan ekstraksi."}
+                "zip_path": {"type": "STRING", "description": "Path to the ZIP file to extract."},
+                "destination_folder": {"type": "STRING", "description": "Destination directory for extracted files."}
             },
             "required": ["zip_path"]
         },
@@ -177,14 +177,14 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "rezip_archive",
-        "description": "Menambah, menimpa, atau memperbarui berkas di dalam arsip ZIP tanpa mengekstrak seluruh isi arsip.",
+        "description": "Adds, overwrites, or removes files in an existing ZIP archive without fully unpacking.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "zip_path": {"type": "STRING", "description": "Nama atau path berkas ZIP yang ingin diperbarui."},
-                "files_to_add": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Daftar path berkas lokal yang ingin ditambahkan."},
-                "files_to_remove": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Daftar nama berkas di dalam ZIP yang ingin dihapus."},
-                "output_path": {"type": "STRING", "description": "Path keluaran berkas ZIP baru."}
+                "zip_path": {"type": "STRING", "description": "Target ZIP file path to update."},
+                "files_to_add": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "List of local file paths to add or overwrite."},
+                "files_to_remove": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "List of file names inside the ZIP to remove."},
+                "output_path": {"type": "STRING", "description": "Output path for the updated ZIP file."}
             },
             "required": ["zip_path", "files_to_add"]
         },
@@ -196,11 +196,11 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "read_zip_contents",
-        "description": "Membaca dan memeriksa daftar berkas di dalam file ZIP beserta ukuran asli dan kompresinya secara read-only.",
+        "description": "Inspects and lists files inside a ZIP archive with compressed/uncompressed sizes (read-only).",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "zip_path": {"type": "STRING", "description": "Nama atau path berkas ZIP yang ingin diperiksa."}
+                "zip_path": {"type": "STRING", "description": "Path to the ZIP file to inspect."}
             },
             "required": ["zip_path"]
         },
@@ -212,14 +212,14 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "send_document_file",
-        "description": "Mengirimkan berkas dokumen, foto, video, atau berkas lokal langsung ke obrolan Telegram atau WhatsApp.",
+        "description": "Dispatches a local document, photo, video, or file directly to Telegram or WhatsApp chat.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "file_path": {"type": "STRING", "description": "Path atau nama file lokal / URL yang ingin dikirimkan."},
-                "channel": {"type": "STRING", "description": "Channel tujuan ('telegram' atau 'whatsapp')."},
-                "recipient": {"type": "STRING", "description": "Target ID penerima atau nomor telepon."},
-                "caption": {"type": "STRING", "description": "Teks pengantar atau judul dokumen."}
+                "file_path": {"type": "STRING", "description": "Local file path or URL to send."},
+                "channel": {"type": "STRING", "description": "Target channel ('telegram' or 'whatsapp')."},
+                "recipient": {"type": "STRING", "description": "Target chat ID or phone number."},
+                "caption": {"type": "STRING", "description": "Optional message caption."}
             },
             "required": ["file_path"]
         },
@@ -233,10 +233,10 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Web Search & Scraping ──
     {
         "name": "web_search",
-        "description": "Mencari informasi real-time dan peristiwa terkini di internet (berita, fakta, skor, cuaca).",
+        "description": "Searches the live web for real-time information, documentation, news, and facts.",
         "parameters": {
             "type": "OBJECT",
-            "properties": {"query": {"type": "STRING", "description": "Kata kunci pencarian spesifik."}},
+            "properties": {"query": {"type": "STRING", "description": "Specific search query."}},
             "required": ["query"]
         },
         "handler": _tool_web_search,
@@ -247,12 +247,12 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "web_search_images",
-        "description": "Mencari foto, gambar berita nyata, atau dokumentasi visual terkini di internet dan langsung mengirimkannya ke pengguna.",
+        "description": "Searches the web for relevant images and photos.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "query": {"type": "STRING", "description": "Kata kunci pencarian foto/gambar."},
-                "limit": {"type": "INTEGER", "description": "Jumlah maksimal foto yang dicari (default 4)."}
+                "query": {"type": "STRING", "description": "Image search keywords."},
+                "limit": {"type": "INTEGER", "description": "Maximum number of images (default 4)."}
             },
             "required": ["query"]
         },
@@ -264,10 +264,10 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "fetch_webpage",
-        "description": "Membaca dan menganalisis isi artikel atau halaman website lengkap dari URL.",
+        "description": "Fetches and parses readable Markdown content from a web URL.",
         "parameters": {
             "type": "OBJECT",
-            "properties": {"url": {"type": "STRING", "description": "Tautan URL web yang ingin dibaca."}},
+            "properties": {"url": {"type": "STRING", "description": "Web URL to fetch."}},
             "required": ["url"]
         },
         "handler": _tool_fetch_webpage,
@@ -280,13 +280,13 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── File Operations ──
     {
         "name": "read_local_file",
-        "description": "Membaca isi file dokumen atau kode lokal dengan nomor baris dan opsi paginasi offset/limit.",
+        "description": "Reads file content from workspace with line numbers and pagination offset/limit.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "file_path": {"type": "STRING", "description": "Path atau nama file lokal."},
-                "offset": {"type": "INTEGER", "description": "Nomor baris awal (1-indexed)."},
-                "limit": {"type": "INTEGER", "description": "Jumlah baris maksimal yang ingin dibaca."}
+                "file_path": {"type": "STRING", "description": "Workspace file path."},
+                "offset": {"type": "INTEGER", "description": "Starting line number (1-indexed)."},
+                "limit": {"type": "INTEGER", "description": "Maximum lines to read."}
             },
             "required": ["file_path"]
         },
@@ -298,14 +298,14 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "edit_file",
-        "description": "Menyunting berkas kode atau dokumen teks secara in-place dengan mengganti blok old_string menjadi new_string.",
+        "description": "Performs exact string replacements in workspace files.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "file_path": {"type": "STRING", "description": "Path relatif atau nama berkas yang ingin disunting."},
-                "old_string": {"type": "STRING", "description": "Teks atau blok kode lama yang ingin diganti."},
-                "new_string": {"type": "STRING", "description": "Teks atau blok kode baru penggantinya."},
-                "replace_all": {"type": "BOOLEAN", "description": "Setel true jika ingin mengganti seluruh kemunculan old_string."}
+                "file_path": {"type": "STRING", "description": "Relative file path to edit."},
+                "old_string": {"type": "STRING", "description": "Exact text to replace."},
+                "new_string": {"type": "STRING", "description": "New replacement text."},
+                "replace_all": {"type": "BOOLEAN", "description": "Replace all occurrences if true."}
             },
             "required": ["file_path", "old_string", "new_string"]
         },
@@ -317,12 +317,12 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "glob_find_files",
-        "description": "Mencari berkas dengan cepat di proyek berdasarkan pola glob pattern nama berkas (misal '**/*.tsx').",
+        "description": "Fast file pattern matching across project files (e.g. '**/*.tsx').",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "pattern": {"type": "STRING", "description": "Pola pencarian glob."},
-                "path": {"type": "STRING", "description": "Direktori awal pencarian."}
+                "pattern": {"type": "STRING", "description": "Glob pattern to match."},
+                "path": {"type": "STRING", "description": "Starting search directory."}
             },
             "required": ["pattern"]
         },
@@ -334,13 +334,13 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "grep_search_code",
-        "description": "Mencari teks atau ekspresi reguler (regex) secara cepat di seluruh isi file kode dalam proyek.",
+        "description": "Fast regex content search across project source files.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "pattern": {"type": "STRING", "description": "Regex atau kata kunci yang dicari."},
-                "path": {"type": "STRING", "description": "Direktori awal pencarian."},
-                "include": {"type": "STRING", "description": "Filter pola berkas (misal '*.ts')."}
+                "pattern": {"type": "STRING", "description": "Regex pattern or keywords."},
+                "path": {"type": "STRING", "description": "Starting directory."},
+                "include": {"type": "STRING", "description": "File pattern to include (e.g. '*.ts')."}
             },
             "required": ["pattern"]
         },
@@ -352,12 +352,12 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "write_local_file",
-        "description": "Menulis atau membuat berkas baru secara langsung di dalam workspace proyek pengguna.",
+        "description": "Writes or overwrites a file in the workspace.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "file_path": {"type": "STRING", "description": "Path relatif dan nama file yang ingin ditulis."},
-                "content": {"type": "STRING", "description": "Isi lengkap berkas yang ingin ditulis."}
+                "file_path": {"type": "STRING", "description": "Relative path and file name to write."},
+                "content": {"type": "STRING", "description": "Complete file content to write."}
             },
             "required": ["file_path", "content"]
         },
@@ -369,11 +369,11 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "delete_local_file",
-        "description": "Menghapus berkas spesifik di komputer pengguna secara aman dan tertarget atas perintah pengguna. Dilarang menggunakan wildcard (*) atau menghapus direktori.",
+        "description": "Deletes a targeted individual file in the workspace. Mass wildcards (*) and directory deletions are restricted.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "file_path": {"type": "STRING", "description": "Path berkas spesifik yang ingin dihapus (misal 'temp.txt' atau 'src/old.py')."}
+                "file_path": {"type": "STRING", "description": "Specific file path to delete (e.g. 'temp.txt' or 'src/old.py')."}
             },
             "required": ["file_path"]
         },
@@ -385,10 +385,10 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "list_directory",
-        "description": "Melihat daftar berkas dan subfolder dalam sebuah direktori lokal (100% read-only).",
+        "description": "Lists files and subdirectories in a directory path (read-only).",
         "parameters": {
             "type": "OBJECT",
-            "properties": {"directory_path": {"type": "STRING", "description": "Path direktori (opsional)."}}
+            "properties": {"directory_path": {"type": "STRING", "description": "Directory path (optional)."}}
         },
         "handler": _tool_list_directory,
         "risk": "read_only",
@@ -398,10 +398,10 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "scan_workspace_folder",
-        "description": "Memindai dan mengindeks struktur hierarki seluruh folder proyek lokal (file tree).",
+        "description": "Scans and indexes the hierarchy of a workspace folder (file tree).",
         "parameters": {
             "type": "OBJECT",
-            "properties": {"folder_path": {"type": "STRING", "description": "Path direktori folder proyek."}},
+            "properties": {"folder_path": {"type": "STRING", "description": "Project folder path."}},
             "required": ["folder_path"]
         },
         "handler": _tool_scan_workspace_folder,
@@ -414,10 +414,10 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Terminal & Processes ──
     {
         "name": "execute_cli_command",
-        "description": "Menjalankan perintah CLI terminal lokal aman (git, npm, dir, python, curl).",
+        "description": "Executes shell commands in the host workspace terminal (git, npm, dir, python, curl).",
         "parameters": {
             "type": "OBJECT",
-            "properties": {"command": {"type": "STRING", "description": "Perintah terminal shell yang ingin dijalankan."}},
+            "properties": {"command": {"type": "STRING", "description": "Terminal command to execute."}},
             "required": ["command"]
         },
         "handler": _tool_execute_cli_command,
@@ -428,15 +428,15 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "process_manage",
-        "description": "Mengelola proses latar belakang persisten/daemon (server dev, watcher, daemon script) dengan log streaming real-time.",
+        "description": "Supervises background processes and daemons with real-time log tailing.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "action": {"type": "STRING", "description": "Aksi: 'start', 'list', 'logs', 'stop'."},
-                "command": {"type": "STRING", "description": "Perintah CLI untuk dijalankan di background."},
-                "process_id": {"type": "STRING", "description": "ID pengenal proses."},
-                "cwd": {"type": "STRING", "description": "Folder kerja eksekusi proses."},
-                "lines": {"type": "INTEGER", "description": "Jumlah baris log terbaru yang diambil."}
+                "action": {"type": "STRING", "description": "Action: 'start', 'list', 'logs', 'stop'."},
+                "command": {"type": "STRING", "description": "CLI command to run in background."},
+                "process_id": {"type": "STRING", "description": "Process identifier."},
+                "cwd": {"type": "STRING", "description": "Working directory."},
+                "lines": {"type": "INTEGER", "description": "Number of recent log lines to tail."}
             },
             "required": ["action"]
         },
@@ -450,15 +450,15 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Memory & Context ──
     {
         "name": "manage_memory_and_todos",
-        "description": "Mengelola catatan to-do list harian personal (tambah, lihat, centang, hapus).",
+        "description": "Manages personal to-do list items and working tasks (add, list, toggle, delete).",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "action": {"type": "STRING", "description": "Aksi: 'add', 'list', 'toggle', 'delete'."},
-                "title": {"type": "STRING", "description": "Judul catatan atau to-do."},
-                "content": {"type": "STRING", "description": "Deskripsi catatan."},
-                "category": {"type": "STRING", "description": "Kategori ('todo', 'note', 'reminder')."},
-                "item_id": {"type": "INTEGER", "description": "ID catatan untuk toggle/delete."}
+                "action": {"type": "STRING", "description": "Action: 'add', 'list', 'toggle', 'delete'."},
+                "title": {"type": "STRING", "description": "Task or note title."},
+                "content": {"type": "STRING", "description": "Task or note description."},
+                "category": {"type": "STRING", "description": "Category ('todo', 'note', 'reminder')."},
+                "item_id": {"type": "INTEGER", "description": "Item ID for toggle/delete."}
             },
             "required": ["action"]
         },
@@ -470,14 +470,14 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "memory",
-        "description": "Anara Persistent Memory Manager: Menambah, mengganti, atau menghapus catatan pribadi dan preferensi.",
+        "description": "Curated persistent memory manager: Adds, replaces, or removes entries in MEMORY.md and USER.md.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "action": {"type": "STRING", "description": "Aksi memori: 'add', 'replace', 'remove'."},
-                "target": {"type": "STRING", "description": "Target memori: 'memory' (catatan agen) atau 'user' (profil pengguna)."},
-                "content": {"type": "STRING", "description": "Teks memori baru."},
-                "old_text": {"type": "STRING", "description": "Substring teks lama yang ingin diganti atau dihapus."}
+                "action": {"type": "STRING", "description": "Action: 'add', 'replace', 'remove'."},
+                "target": {"type": "STRING", "description": "Target: 'memory' (agent notes) or 'user' (user profile)."},
+                "content": {"type": "STRING", "description": "New memory content."},
+                "old_text": {"type": "STRING", "description": "Old text substring to replace or remove."}
             },
             "required": ["action"]
         },
@@ -489,12 +489,12 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "session_search",
-        "description": "Mencari riwayat obrolan dan sesi lampau di basis data SQLite.",
+        "description": "Full-text search across past conversations and sessions stored in SQLite database.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "query": {"type": "STRING", "description": "Kata kunci topik percakapan lampau."},
-                "limit": {"type": "INTEGER", "description": "Jumlah maksimal sesi yang dicari."}
+                "query": {"type": "STRING", "description": "Keywords or search topic."},
+                "limit": {"type": "INTEGER", "description": "Maximum sessions to return."}
             },
             "required": ["query"]
         },
@@ -508,14 +508,14 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── System Control & Desktop ──
     {
         "name": "system_control",
-        "description": "Membuka aplikasi komputer lokal Windows (Spotify, VS Code, Browser, Notepad, Calculator) atau URL web.",
+        "description": "Launches local desktop applications (Spotify, VS Code, Browser, Notepad, Calculator) or web URLs.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "action": {"type": "STRING", "description": "Aksi ('open')."},
-                "target": {"type": "STRING", "description": "Nama aplikasi atau target yang ingin dibuka."},
-                "arguments": {"type": "STRING", "description": "Argumen atau URL web opsional."},
-                "url": {"type": "STRING", "description": "URL tujuan."}
+                "action": {"type": "STRING", "description": "Action ('open')."},
+                "target": {"type": "STRING", "description": "Application name or executable path to launch."},
+                "arguments": {"type": "STRING", "description": "Optional CLI arguments or web URL."},
+                "url": {"type": "STRING", "description": "Destination URL."}
             },
             "required": ["action"]
         },
@@ -527,13 +527,13 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "custom_webhook",
-        "description": "Mengirimkan data HTTP request otomatis ke endpoint webhook luar (Discord, Zapier, n8n, Slack).",
+        "description": "Dispatches automated HTTP request payloads to external webhook endpoints (Discord, Zapier, n8n, Slack).",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "url": {"type": "STRING", "description": "URL tujuan webhook."},
+                "url": {"type": "STRING", "description": "Target webhook URL."},
                 "method": {"type": "STRING", "description": "HTTP method ('POST', 'GET', 'PUT')."},
-                "payload_json": {"type": "STRING", "description": "Payload JSON string."}
+                "payload_json": {"type": "STRING", "description": "JSON payload string."}
             },
             "required": ["url"]
         },
@@ -545,14 +545,14 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "project_hud",
-        "description": "Memproyeksikan visualisasi, kartu pengetahuan, dan terminal kode ke layar HUD pengguna.",
+        "description": "Projects interactive visualizations, knowledge cards, and code terminals to user HUD.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "visual_type": {"type": "STRING", "description": "Tipe visual ('knowledge_card', 'code_box', 'system_hud')."},
-                "title": {"type": "STRING", "description": "Judul visual."},
-                "summary": {"type": "STRING", "description": "Ringkasan penjelasan visual."},
-                "specs_json": {"type": "STRING", "description": "Spesifikasi data JSON pelengkap."}
+                "visual_type": {"type": "STRING", "description": "Visual card type ('knowledge_card', 'code_box', 'system_hud')."},
+                "title": {"type": "STRING", "description": "Visual title."},
+                "summary": {"type": "STRING", "description": "Visual summary text."},
+                "specs_json": {"type": "STRING", "description": "Supplementary JSON specs data."}
             },
             "required": ["visual_type", "title", "summary"]
         },
@@ -566,10 +566,10 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Messaging Platforms ──
     {
         "name": "whatsapp_read_messages",
-        "description": "Membaca daftar pesan chat masuk yang belum dibaca dari akun WhatsApp Web pengguna.",
+        "description": "Reads incoming chat messages from the connected WhatsApp Web bridge.",
         "parameters": {
             "type": "OBJECT",
-            "properties": {"unread_only": {"type": "BOOLEAN", "description": "Hanya ambil pesan belum dibaca."}}
+            "properties": {"unread_only": {"type": "BOOLEAN", "description": "Fetch unread messages only."}}
         },
         "handler": _tool_whatsapp_read_messages,
         "risk": "read_only",
@@ -579,12 +579,12 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "whatsapp_send_message",
-        "description": "Mengirimkan pesan chat ke kontak atau nomor telepon tertentu melalui WhatsApp Web.",
+        "description": "Sends a chat message to a specific contact or phone number via WhatsApp Web.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "recipient": {"type": "STRING", "description": "Nama kontak atau nomor telepon tujuan."},
-                "message": {"type": "STRING", "description": "Isi pesan teks yang ingin dikirimkan."}
+                "recipient": {"type": "STRING", "description": "Target contact name or phone number."},
+                "message": {"type": "STRING", "description": "Text message content to send."}
             },
             "required": ["recipient", "message"]
         },
@@ -596,10 +596,10 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "telegram_read_messages",
-        "description": "Membaca pesan masuk terbaru dari Bot Telegram Anara.",
+        "description": "Reads recent incoming messages from Telegram bot channel.",
         "parameters": {
             "type": "OBJECT",
-            "properties": {"limit": {"type": "INTEGER", "description": "Jumlah pesan maksimal."}}
+            "properties": {"limit": {"type": "INTEGER", "description": "Maximum number of messages."}}
         },
         "handler": _tool_telegram_read_messages,
         "risk": "read_only",
@@ -609,12 +609,12 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "telegram_send_message",
-        "description": "Mengirimkan pesan ke chat pengguna atau grup Telegram.",
+        "description": "Sends a message to user or group via Telegram bot.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "message": {"type": "STRING", "description": "Isi pesan teks yang ingin dikirimkan."},
-                "chat_id": {"type": "STRING", "description": "ID chat/grup tujuan (opsional)."}
+                "message": {"type": "STRING", "description": "Text message content to send."},
+                "chat_id": {"type": "STRING", "description": "Target chat/group ID (optional)."}
             },
             "required": ["message"]
         },
@@ -626,12 +626,12 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "discord_read_messages",
-        "description": "Membaca pesan masuk terbaru dari channel Discord tertentu.",
+        "description": "Reads recent incoming messages from a Discord channel.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "channel_id": {"type": "STRING", "description": "ID channel Discord."},
-                "limit": {"type": "INTEGER", "description": "Jumlah pesan maksimal (default 10)."}
+                "channel_id": {"type": "STRING", "description": "Discord channel ID."},
+                "limit": {"type": "INTEGER", "description": "Maximum messages to retrieve (default 10)."}
             }
         },
         "handler": _tool_discord_read_messages,
@@ -642,12 +642,12 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "discord_send_message",
-        "description": "Mengirimkan pesan teks ke channel Discord.",
+        "description": "Sends a text message to a Discord channel.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "text": {"type": "STRING", "description": "Isi pesan teks yang ingin dikirimkan."},
-                "channel_id": {"type": "STRING", "description": "ID channel Discord tujuan."}
+                "text": {"type": "STRING", "description": "Text message content to send."},
+                "channel_id": {"type": "STRING", "description": "Target Discord channel ID."}
             },
             "required": ["text"]
         },
@@ -659,12 +659,12 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "slack_read_messages",
-        "description": "Membaca riwayat pesan terbaru dari channel Slack.",
+        "description": "Reads recent message history from a Slack channel.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "channel": {"type": "STRING", "description": "ID channel Slack."},
-                "limit": {"type": "INTEGER", "description": "Jumlah pesan maksimal (default 10)."}
+                "channel": {"type": "STRING", "description": "Slack channel ID."},
+                "limit": {"type": "INTEGER", "description": "Maximum messages to retrieve (default 10)."}
             }
         },
         "handler": _tool_slack_read_messages,
@@ -675,12 +675,12 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "slack_send_message",
-        "description": "Mengirimkan pesan teks ke channel Slack.",
+        "description": "Sends a text message to a Slack channel.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "text": {"type": "STRING", "description": "Isi pesan teks yang ingin dikirimkan."},
-                "channel": {"type": "STRING", "description": "ID channel Slack tujuan."}
+                "text": {"type": "STRING", "description": "Text message content to send."},
+                "channel": {"type": "STRING", "description": "Target Slack channel ID."}
             },
             "required": ["text"]
         },
@@ -694,10 +694,10 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Google Workspace ──
     {
         "name": "gmail_read_inbox",
-        "description": "Membaca daftar email masuk terbaru dari kotak masuk Gmail pengguna.",
+        "description": "Reads recent emails from user's Gmail inbox.",
         "parameters": {
             "type": "OBJECT",
-            "properties": {"limit": {"type": "INTEGER", "description": "Jumlah maksimal email yang dibaca."}}
+            "properties": {"limit": {"type": "INTEGER", "description": "Maximum number of emails to retrieve."}}
         },
         "handler": _tool_gmail_read_inbox,
         "risk": "read_only",
@@ -707,10 +707,10 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "calendar_get_schedule",
-        "description": "Melihat jadwal janji temu dan acara mendatang di Google Calendar.",
+        "description": "Retrieves upcoming events and schedule from Google Calendar.",
         "parameters": {
             "type": "OBJECT",
-            "properties": {"days": {"type": "INTEGER", "description": "Jumlah hari ke depan (default 3 hari)."}}
+            "properties": {"days": {"type": "INTEGER", "description": "Number of upcoming days to inspect (default 3)."}}
         },
         "handler": _tool_calendar_get_schedule,
         "risk": "read_only",
@@ -722,12 +722,12 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Avatar & Gestures ──
     {
         "name": "trigger_avatar_animation",
-        "description": "Mengendalikan gestur fisik, ekspresi wajah, atau tarian avatar 3D Anara di layar.",
+        "description": "Controls physical gestures, facial expressions, or 3D avatar animations on screen.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "animation_name": {"type": "STRING", "description": "Nama animasi/gestur ('dance', 'greeting', 'salute', 'thinking', 'laughing')."},
-                "emotion": {"type": "STRING", "description": "Ekspresi emosi pelengkap ('happy', 'curious', 'joy', 'neutral', 'empathy')."}
+                "animation_name": {"type": "STRING", "description": "Name of animation/gesture ('dance', 'greeting', 'salute', 'thinking', 'laughing')."},
+                "emotion": {"type": "STRING", "description": "Supplementary emotional expression ('happy', 'curious', 'joy', 'neutral', 'empathy')."}
             },
             "required": ["animation_name"]
         },
@@ -741,15 +741,15 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Skills Engine ──
     {
         "name": "learn_and_save_skill",
-        "description": "Anara Lifelong Learning Engine: Mengingat dan menyimpan prosedur teknis baru ke database SQLite Anara.",
+        "description": "Anara Lifelong Learning Engine: Learns and permanently saves a new procedural workflow into SQLite database for future reuse.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "name": {"type": "STRING", "description": "Nama keahlian/skill."},
-                "category": {"type": "STRING", "description": "Kategori keahlian: 'coding', 'architecture', 'research', 'devops', 'system'."},
-                "description": {"type": "STRING", "description": "Ringkasan manfaat."},
-                "trigger_keywords": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Kata kunci pemicu."},
-                "procedure_steps": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Langkah-langkah prosedur."}
+                "name": {"type": "STRING", "description": "Skill name."},
+                "category": {"type": "STRING", "description": "Skill category: 'coding', 'architecture', 'research', 'devops', 'system'."},
+                "description": {"type": "STRING", "description": "Summary of capabilities."},
+                "trigger_keywords": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Keywords or concept triggers."},
+                "procedure_steps": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Procedural steps."}
             },
             "required": ["name", "description", "procedure_steps"]
         },
@@ -761,11 +761,11 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "skill_view",
-        "description": "Anara Skill Inspector: Membaca dan memuat isi lengkap pedoman keahlian (SKILL.md) dari perpustakaan 90+ skill.",
+        "description": "Anara Skill Inspector: Reads and loads complete skill guidelines (SKILL.md) from the skill library.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "name": {"type": "STRING", "description": "Nama atau slug keahlian yang ingin dimuat."}
+                "name": {"type": "STRING", "description": "Skill name or slug to load."}
             },
             "required": ["name"]
         },
@@ -779,20 +779,20 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Delegation ──
     {
         "name": "delegate_subagent",
-        "description": "Mendelegasikan tugas investigasi atau riset mandiri ke subagent pekerja latar belakang (mendukung single mission atau batch tasks paralel).",
+        "description": "Delegates investigation or autonomous research tasks to a background worker subagent (supports single mission or parallel batch tasks).",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "title": {"type": "STRING", "description": "Judul singkat misi latar belakang."},
-                "mission_prompt": {"type": "STRING", "description": "Instruksi tugas lengkap."},
-                "goal": {"type": "STRING", "description": "Sasaran spesifik tugas yang harus dicapai subagent."},
-                "context": {"type": "STRING", "description": "Latar belakang teknis atau berkas yang relevan untuk tugas ini."},
+                "title": {"type": "STRING", "description": "Short background mission title."},
+                "mission_prompt": {"type": "STRING", "description": "Complete task instructions."},
+                "goal": {"type": "STRING", "description": "Specific task goal the subagent must achieve."},
+                "context": {"type": "STRING", "description": "Technical background or relevant files for this task."},
                 "tasks": {
                     "type": "ARRAY",
                     "items": {"type": "OBJECT"},
-                    "description": "Daftar batch tugas [{'goal': '...', 'context': '...'}] untuk dieksekusi secara paralel."
+                    "description": "Batch task list [{'goal': '...', 'context': '...'}] for parallel execution."
                 },
-                "background": {"type": "BOOLEAN", "description": "Jalankan di latar belakang (default true)."}
+                "background": {"type": "BOOLEAN", "description": "Run in background (default true)."}
             }
         },
         "handler": _tool_delegate_subagent,
@@ -805,31 +805,31 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Clarifying Questions ──
     {
         "name": "interactive_question",
-        "description": "Menampilkan kartu kuesioner interaktif bertahap (Wizard Card) ke layar pengguna untuk mengklarifikasi instruksi ambigu.",
+        "description": "Displays a step-by-step interactive questionnaire card (Wizard Card) on the user's screen to clarify ambiguous instructions.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
                 "questions": {
                     "type": "ARRAY",
-                    "description": "Daftar pertanyaan interaktif bertahap.",
+                    "description": "List of step-by-step interactive questions.",
                     "items": {
                         "type": "OBJECT",
                         "properties": {
-                            "header": {"type": "STRING", "description": "Label singkat pertanyaan."},
-                            "question": {"type": "STRING", "description": "Teks lengkap pertanyaan."},
+                            "header": {"type": "STRING", "description": "Short question label."},
+                            "question": {"type": "STRING", "description": "Full question text."},
                             "options": {
                                 "type": "ARRAY",
-                                "description": "Daftar opsi pilihan.",
+                                "description": "List of choice options.",
                                 "items": {
                                     "type": "OBJECT",
                                     "properties": {
-                                        "label": {"type": "STRING", "description": "Label opsi."},
-                                        "description": {"type": "STRING", "description": "Penjelasan opsi."}
+                                        "label": {"type": "STRING", "description": "Option label."},
+                                        "description": {"type": "STRING", "description": "Option explanation."}
                                     },
                                     "required": ["label", "description"]
                                 }
                             },
-                            "multiple": {"type": "BOOLEAN", "description": "Boleh memilih lebih dari satu opsi."}
+                            "multiple": {"type": "BOOLEAN", "description": "Allow selecting more than one option."}
                         },
                         "required": ["header", "question", "options"]
                     }
@@ -847,13 +847,13 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Browser Automation ──
     {
         "name": "browser_navigate",
-        "description": "Membuka dan menavigasi ke URL web menggunakan browser Playwright Chromium/Brave.",
+        "description": "Navigates to a web URL using Playwright Chromium/Brave browser.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "url": {"type": "STRING", "description": "Alamat URL website yang ingin dikunjungi."},
-                "headed": {"type": "BOOLEAN", "description": "Buka browser dengan jendela tampak."},
-                "use_brave": {"type": "BOOLEAN", "description": "Gunakan Brave Browser lokal."}
+                "url": {"type": "STRING", "description": "Web address URL to visit."},
+                "headed": {"type": "BOOLEAN", "description": "Launch browser in visible window mode."},
+                "use_brave": {"type": "BOOLEAN", "description": "Use local Brave Browser."}
             },
             "required": ["url"]
         },
@@ -865,11 +865,11 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "browser_click",
-        "description": "Mengklik elemen interaktif pada halaman web aktif.",
+        "description": "Clicks an interactive element on the active web page.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "selector_or_text": {"type": "STRING", "description": "Teks tombol atau selector CSS elemen."}
+                "selector_or_text": {"type": "STRING", "description": "Button text or CSS selector."}
             },
             "required": ["selector_or_text"]
         },
@@ -881,13 +881,13 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "browser_type",
-        "description": "Mengetikkan teks ke dalam form input pada halaman web aktif.",
+        "description": "Types text into an input field on the active web page.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "selector": {"type": "STRING", "description": "Selector CSS field input."},
-                "text": {"type": "STRING", "description": "Teks yang ingin diketikkan."},
-                "press_enter": {"type": "BOOLEAN", "description": "Tekan tombol Enter setelah mengetik."}
+                "selector": {"type": "STRING", "description": "CSS selector of input field."},
+                "text": {"type": "STRING", "description": "Text to type."},
+                "press_enter": {"type": "BOOLEAN", "description": "Press Enter after typing."}
             },
             "required": ["selector", "text"]
         },
@@ -899,7 +899,7 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "browser_snapshot",
-        "description": "Mengambil snapshot struktur DOM halaman web yang sedang aktif secara terstruktur.",
+        "description": "Takes a structured snapshot of the active web page DOM structure.",
         "parameters": {"type": "OBJECT", "properties": {}},
         "handler": _tool_browser_snapshot,
         "risk": "read_only",
@@ -909,10 +909,10 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "browser_screenshot",
-        "description": "Mengambil tangkapan layar visual halaman web aktif dan menyimpannya ke disk.",
+        "description": "Captures a visual screenshot of the active web page and saves to disk.",
         "parameters": {
             "type": "OBJECT",
-            "properties": {"filename": {"type": "STRING", "description": "Nama file screenshot output."}}
+            "properties": {"filename": {"type": "STRING", "description": "Output screenshot filename."}}
         },
         "handler": _tool_browser_screenshot,
         "risk": "read_only",
@@ -922,7 +922,7 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "browser_close",
-        "description": "Menutup jendela dan sesi browser otomasi yang sedang aktif.",
+        "description": "Closes the active browser window and automation session.",
         "parameters": {"type": "OBJECT", "properties": {}},
         "handler": _tool_browser_close,
         "risk": "action",
@@ -932,12 +932,12 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "browser_scroll",
-        "description": "Menggulir halaman web browser ke atas, bawah, paling atas, atau paling bawah.",
+        "description": "Scrolls the browser web page up, down, to top, or to bottom.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "direction": {"type": "STRING", "description": "Arah gulir: 'down', 'up', 'top', 'bottom'."},
-                "amount": {"type": "INTEGER", "description": "Jarak gulir dalam piksel."}
+                "direction": {"type": "STRING", "description": "Scroll direction: 'down', 'up', 'top', 'bottom'."},
+                "amount": {"type": "INTEGER", "description": "Scroll distance in pixels."}
             }
         },
         "handler": _tool_browser_scroll,
@@ -948,10 +948,10 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "browser_press",
-        "description": "Menekan tombol keyboard pada browser aktif (misal 'Enter', 'Escape', 'Tab').",
+        "description": "Presses a keyboard key on the active browser (e.g. 'Enter', 'Escape', 'Tab').",
         "parameters": {
             "type": "OBJECT",
-            "properties": {"key": {"type": "STRING", "description": "Nama tombol keyboard."}},
+            "properties": {"key": {"type": "STRING", "description": "Keyboard key name."}},
             "required": ["key"]
         },
         "handler": _tool_browser_press,
@@ -962,7 +962,7 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "browser_back",
-        "description": "Navigasi kembali ke halaman sebelumnya pada riwayat browser.",
+        "description": "Navigates back to the previous page in browser history.",
         "parameters": {"type": "OBJECT", "properties": {}},
         "handler": _tool_browser_back,
         "risk": "action",
@@ -974,12 +974,12 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Spotify ──
     {
         "name": "spotify_search",
-        "description": "Mencari lagu, artis, atau playlist di Spotify.",
+        "description": "Searches Spotify for tracks, artists, albums, or playlists.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "query": {"type": "STRING", "description": "Judul lagu atau nama artis yang dicari."},
-                "search_type": {"type": "STRING", "description": "Tipe pencarian ('track', 'artist', 'album', 'playlist')."}
+                "query": {"type": "STRING", "description": "Track title, artist, or album query."},
+                "search_type": {"type": "STRING", "description": "Search type ('track', 'artist', 'album', 'playlist')."}
             },
             "required": ["query"]
         },
@@ -991,12 +991,12 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "spotify_playback",
-        "description": "Mengontrol pemutaran musik Spotify: 'play', 'pause', 'next', 'previous'.",
+        "description": "Controls Spotify playback ('play', 'pause', 'next', 'previous', 'resume').",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "action": {"type": "STRING", "description": "Aksi playback ('play', 'pause', 'next', 'previous')."},
-                "query": {"type": "STRING", "description": "Judul lagu atau album opsional."}
+                "action": {"type": "STRING", "description": "Playback action ('play', 'pause', 'next', 'previous')."},
+                "query": {"type": "STRING", "description": "Optional track, album, or playlist search query."}
             }
         },
         "handler": _tool_spotify_playback,
@@ -1009,17 +1009,17 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Cron Scheduler ──
     {
         "name": "cronjob_manage",
-        "description": "Mengelola tugas otomatis terjadwal (Anara Standard cron). Aksi: 'create', 'list', 'pause', 'resume', 'run', 'remove'.",
+        "description": "Manages autonomous scheduled background tasks (Hermes Parity cron). Actions: 'create', 'list', 'pause', 'resume', 'run', 'remove'.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "action": {"type": "STRING", "description": "Aksi cron: 'create', 'list', 'pause', 'resume', 'run', 'remove'."},
-                "name": {"type": "STRING", "description": "Nama deskriptif untuk tugas terjadwal."},
-                "schedule": {"type": "STRING", "description": "Jadwal eksekusi: 'every 30m', 'every 2 hours', 'daily', atau detik."},
-                "prompt": {"type": "STRING", "description": "Instruksi prompt yang harus dijalankan agen saat jadwal terpicu."},
-                "task_id": {"type": "STRING", "description": "ID tugas."},
-                "trust_level": {"type": "STRING", "description": "Tingkat otonomi: 'supervised', 'semi_autonomous', 'full_autonomous'."},
-                "target_channel": {"type": "STRING", "description": "Channel notifikasi hasil: 'telegram', 'whatsapp', 'cli', 'web'."}
+                "action": {"type": "STRING", "description": "Cron action: 'create', 'list', 'pause', 'resume', 'run', 'remove'."},
+                "name": {"type": "STRING", "description": "Descriptive task name."},
+                "schedule": {"type": "STRING", "description": "Execution schedule. Specify as standard cron expression (e.g. '0 9 * * *', '*/15 * * * *'), standard interval shorthand ('30s', '15m', '2h', '1d', '1w'), or interval in seconds (e.g. 3600). The model translates natural language schedule instructions into this format."},
+                "prompt": {"type": "STRING", "description": "Prompt instructions to execute when triggered."},
+                "task_id": {"type": "STRING", "description": "Task identifier."},
+                "trust_level": {"type": "STRING", "description": "Autonomy level: 'supervised', 'semi_autonomous', 'full_autonomous'."},
+                "target_channel": {"type": "STRING", "description": "Notification channel: 'telegram', 'whatsapp', 'cli', 'web'."}
             },
             "required": ["action"]
         },
@@ -1033,13 +1033,13 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Image & Video AI ──
     {
         "name": "image_generate",
-        "description": "Membuat gambar digital AI kreatif beresolusi tinggi berdasarkan prompt deskripsi dan memproyeksikannya ke HUD.",
+        "description": "Generates high-resolution creative AI images from descriptive prompts.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "prompt": {"type": "STRING", "description": "Deskripsi detail visual gambar yang ingin dibuat."},
-                "aspect_ratio": {"type": "STRING", "description": "Rasio gambar: '1:1', '16:9', '9:16'."},
-                "style": {"type": "STRING", "description": "Gaya artistik: 'photorealistic', 'anime', 'digital-art', 'cyberpunk'."}
+                "prompt": {"type": "STRING", "description": "Detailed visual description of image to generate."},
+                "aspect_ratio": {"type": "STRING", "description": "Aspect ratio: '1:1', '16:9', '9:16'."},
+                "style": {"type": "STRING", "description": "Artistic style: 'photorealistic', 'anime', 'digital-art', 'cyberpunk'."}
             },
             "required": ["prompt"]
         },
@@ -1051,14 +1051,14 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "video_generate",
-        "description": "Membuat video digital AI pendek dari teks prompt instruksi atau referensi gambar dan memproyeksikannya ke HUD.",
+        "description": "Generates short AI video clips from text prompts or reference images.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "prompt": {"type": "STRING", "description": "Deskripsi detail pergerakan, subjek, dan adegan video."},
-                "duration": {"type": "INTEGER", "description": "Durasi video dalam detik (default 4)."},
-                "aspect_ratio": {"type": "STRING", "description": "Rasio video: '16:9', '9:16', '1:1'."},
-                "image_url": {"type": "STRING", "description": "Tautan URL gambar referensi untuk image-to-video."}
+                "prompt": {"type": "STRING", "description": "Motion and scene description for the video."},
+                "duration": {"type": "INTEGER", "description": "Duration in seconds (default 4)."},
+                "aspect_ratio": {"type": "STRING", "description": "Aspect ratio: '16:9', '9:16', '1:1'."},
+                "image_url": {"type": "STRING", "description": "Reference image URL for image-to-video."}
             },
             "required": ["prompt"]
         },
@@ -1070,12 +1070,12 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "vision_analyze",
-        "description": "Menganalisis dan mendeskripsikan gambar/foto dari path lokal di PC atau URL internet secara mendalam. Mampu membaca teks di gambar (OCR), mendeteksi error screenshot, bagan arsitektur, dan objek.",
+        "description": "Thoroughly analyzes images from local files or web URLs (OCR, screenshot errors, diagrams, objects).",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "image_path": {"type": "STRING", "description": "Path lokal berkas gambar di PC atau URL http/https."},
-                "question": {"type": "STRING", "description": "Pertanyaan spesifik atau fokus analisis visual (opsional)."}
+                "image_path": {"type": "STRING", "description": "Local image file path or web URL."},
+                "question": {"type": "STRING", "description": "Specific question or focus for the visual analysis."}
             },
             "required": ["image_path"]
         },
@@ -1087,12 +1087,12 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "video_analyze",
-        "description": "Menganalisis berkas rekaman video lokal (.mp4, .webm, .mov) di komputer untuk mengekstrak informasi visual dan kronologi adegan.",
+        "description": "Analyzes local video files (.mp4, .webm, .mov) to extract visual details and scene chronology.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "video_path": {"type": "STRING", "description": "Path lokal berkas video di komputer (contoh: 'C:/Users/.../video.mp4')."},
-                "question": {"type": "STRING", "description": "Pertanyaan spesifik atau instruksi analisis video (opsional)."}
+                "video_path": {"type": "STRING", "description": "Local video file path on host machine."},
+                "question": {"type": "STRING", "description": "Specific question or analysis instructions."}
             },
             "required": ["video_path"]
         },
@@ -1106,10 +1106,10 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Home Assistant ──
     {
         "name": "ha_list_entities",
-        "description": "Membaca dan memeriksa daftar perangkat pintar IoT yang terhubung ke Home Assistant.",
+        "description": "Lists smart home IoT entities connected to Home Assistant.",
         "parameters": {
             "type": "OBJECT",
-            "properties": {"domain": {"type": "STRING", "description": "Filter kategori domain ('light', 'switch', 'sensor', 'climate')."}}
+            "properties": {"domain": {"type": "STRING", "description": "Domain category filter ('light', 'switch', 'sensor', 'climate')."}}
         },
         "handler": _tool_ha_list_entities,
         "risk": "read_only",
@@ -1119,10 +1119,10 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "ha_get_state",
-        "description": "Membaca status terkini dan atribut sensor perangkat spesifik di Home Assistant.",
+        "description": "Reads current status and attributes of a specific Home Assistant entity.",
         "parameters": {
             "type": "OBJECT",
-            "properties": {"entity_id": {"type": "STRING", "description": "ID entitas (misal 'light.living_room')."}},
+            "properties": {"entity_id": {"type": "STRING", "description": "Entity ID (e.g. 'light.living_room')."}},
             "required": ["entity_id"]
         },
         "handler": _tool_ha_get_state,
@@ -1133,14 +1133,14 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "ha_call_service",
-        "description": "Mengontrol atau memanggil service perangkat IoT di Home Assistant (menyalakan/mematikan lampu, atur AC).",
+        "description": "Controls or invokes a Home Assistant service on smart devices (toggle lights, adjust climate, etc.).",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "domain": {"type": "STRING", "description": "Domain service ('light', 'switch', 'climate')."},
-                "service": {"type": "STRING", "description": "Aksi service ('turn_on', 'turn_off', 'toggle')."},
-                "entity_id": {"type": "STRING", "description": "Target ID entitas."},
-                "service_data": {"type": "OBJECT", "description": "Parameter tambahan."}
+                "domain": {"type": "STRING", "description": "Service domain ('light', 'switch', 'climate')."},
+                "service": {"type": "STRING", "description": "Service action ('turn_on', 'turn_off', 'toggle')."},
+                "entity_id": {"type": "STRING", "description": "Target entity ID."},
+                "service_data": {"type": "OBJECT", "description": "Supplementary parameters."}
             },
             "required": ["domain", "service"]
         },
@@ -1154,14 +1154,14 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Voice Biometrics & Wake Word ──
     {
         "name": "voice_biometrics_manage",
-        "description": "Mengelola profil biometrik sidik suara dan identifikasi pengguna berdasarkan rekaman audio.",
+        "description": "Manages voiceprint biometric profiles and user identification based on voice samples.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "action": {"type": "STRING", "description": "Aksi: 'list', 'identify', 'enroll'."},
-                "speaker_name": {"type": "STRING", "description": "Nama pengguna/pembicara."},
-                "audio_file_path": {"type": "STRING", "description": "Path berkas audio WAV lokal."},
-                "audio_base64": {"type": "STRING", "description": "Data audio base64."}
+                "action": {"type": "STRING", "description": "Action: 'list', 'identify', 'enroll'."},
+                "speaker_name": {"type": "STRING", "description": "User or speaker name."},
+                "audio_file_path": {"type": "STRING", "description": "Local WAV audio file path."},
+                "audio_base64": {"type": "STRING", "description": "Base64 encoded audio data."}
             },
             "required": ["action"]
         },
@@ -1173,12 +1173,12 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "wake_word_manage",
-        "description": "Mengontrol listener pendeteksi panggilan suara offline hands-free ('Hey Anara').",
+        "description": "Controls offline hands-free wake word listener ('Hey Anara').",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "action": {"type": "STRING", "description": "Aksi: 'status', 'start', 'stop', 'set_phrase'."},
-                "phrase": {"type": "STRING", "description": "Kata kunci panggilan."}
+                "action": {"type": "STRING", "description": "Action: 'status', 'start', 'stop', 'set_phrase'."},
+                "phrase": {"type": "STRING", "description": "Custom wake phrase."}
             }
         },
         "handler": _tool_wake_word_manage,
@@ -1191,13 +1191,13 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Code Execution ──
     {
         "name": "execute_code",
-        "description": "Mengevaluasi cuplikan script Python atau JavaScript secara terisolasi dalam REPL sandboxed aman.",
+        "description": "Evaluates Python or Node.js code snippets in an isolated sandboxed REPL.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "code": {"type": "STRING", "description": "Kode sumber yang ingin dieksekusi."},
-                "language": {"type": "STRING", "description": "Bahasa pemrograman: 'python' atau 'javascript'."},
-                "timeout": {"type": "INTEGER", "description": "Batas waktu eksekusi dalam detik."}
+                "code": {"type": "STRING", "description": "Source code to execute."},
+                "language": {"type": "STRING", "description": "Programming language: 'python' or 'javascript'."},
+                "timeout": {"type": "INTEGER", "description": "Execution timeout in seconds."}
             },
             "required": ["code"]
         },
@@ -1211,20 +1211,23 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Computer Use ──
     {
         "name": "computer_use",
-        "description": "Otomasi antarmuka OS Windows (CUA). Primitif murni: tangkapan layar (screenshot), klik mouse, pergerakan kursor, drag, scroll, ketik teks, tekan tombol, hotkey, dan fokus jendela.",
+        "description": "OS-level desktop automation (CUA primitives): send_text (RECOMMENDED universal 1-step focus, input targeting, type text, and submit with Enter in ANY app), list_windows, focus_app, type, key, hotkey, click, screenshot.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "action": {"type": "STRING", "description": "Aksi murni OS: 'screenshot', 'mouse_click', 'mouse_move', 'mouse_drag', 'scroll', 'keyboard_type', 'keyboard_press', 'hotkey', 'focus_app', 'wait', 'screen_info'."},
-                "x": {"type": "INTEGER", "description": "Koordinat horizontal piksel layar (opsional)."},
-                "y": {"type": "INTEGER", "description": "Koordinat vertikal piksel layar (opsional)."},
-                "coordinate": {"type": "ARRAY", "items": {"type": "INTEGER"}, "description": "Koordinat [x, y] untuk mouse (opsional)."},
-                "button": {"type": "STRING", "description": "Tombol mouse: 'left', 'right', 'double'."},
-                "text": {"type": "STRING", "description": "Teks yang ingin diketik ke jendela aktif atau judul jendela yang ingin difokuskan."},
-                "key": {"type": "STRING", "description": "Nama tombol keyboard atau kombinasi hotkey (misal 'enter', 'tab', 'ctrl+c')."},
-                "amount": {"type": "INTEGER", "description": "Jumlah putaran scroll mouse wheel."},
-                "duration": {"type": "NUMBER", "description": "Durasi jeda dalam detik."},
-                "app": {"type": "STRING", "description": "Nama atau judul jendela aplikasi target."}
+                "action": {"type": "STRING", "description": "OS action: 'send_text' (RECOMMENDED for typing and submitting text/commands to any active or target desktop app), 'list_windows', 'focus_app', 'type', 'key', 'hotkey', 'click', 'double_click', 'right_click', 'scroll', 'screenshot', 'wait', 'screen_info'."},
+                "app": {"type": "STRING", "description": "Target window name or application title to focus or interact with (e.g. 'Notepad', 'Chrome', 'Telegram', 'OpenCode', 'Terminal'). If omitted, interacts with the active foreground window."},
+                "text": {"type": "STRING", "description": "Text to type or send into focused window or app."},
+                "enter": {"type": "BOOLEAN", "description": "Whether to press Enter/Return key immediately after typing (default true for send_text, false for type)."},
+                "submit": {"type": "BOOLEAN", "description": "Whether to submit with Enter key (default true for send_text)."},
+                "key": {"type": "STRING", "description": "Key name or hotkey combo to press (e.g. 'enter', 'tab', 'ctrl+c', 'ctrl+v', 'p', 'escape')."},
+                "x": {"type": "INTEGER", "description": "Screen horizontal pixel coordinate to click or click-to-focus before typing (optional)."},
+                "y": {"type": "INTEGER", "description": "Screen vertical pixel coordinate to click or click-to-focus before typing (optional)."},
+                "coordinate": {"type": "ARRAY", "items": {"type": "INTEGER"}, "description": "[x, y] coordinates for mouse click or focus (optional)."},
+                "button": {"type": "STRING", "description": "Mouse button: 'left', 'right', 'double'."},
+                "amount": {"type": "INTEGER", "description": "Scroll wheel amount."},
+                "duration": {"type": "NUMBER", "description": "Wait duration in seconds."},
+                "window_id": {"type": "INTEGER", "description": "Optional window handle (HWND)."}
             },
             "required": ["action"]
         },
@@ -1236,11 +1239,11 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "take_screenshot",
-        "description": "Mengambil tangkapan layar penuh (screenshot) desktop/laptop pengguna saat ini.",
+        "description": "Takes a full-screen desktop capture of the active display.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "title": {"type": "STRING", "description": "Keterangan atau judul tangkapan layar (opsional)."}
+                "title": {"type": "STRING", "description": "Optional title for the snapshot."}
             }
         },
         "handler": _tool_take_screenshot,
@@ -1253,15 +1256,15 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── MCP Protocol ──
     {
         "name": "mcp_manage",
-        "description": "Mengelola koneksi ke server Model Context Protocol (MCP) eksternal (menambah, menghapus, atau melihat daftar server).",
+        "description": "Manages external Model Context Protocol (MCP) server connections.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "action": {"type": "STRING", "description": "Aksi MCP: 'list', 'add', 'remove'."},
-                "server_name": {"type": "STRING", "description": "Nama server MCP."},
-                "command": {"type": "STRING", "description": "Perintah CLI untuk server stdio."},
-                "args": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Argumen perintah server."},
-                "url": {"type": "STRING", "description": "URL endpoint untuk server MCP HTTP/SSE."}
+                "action": {"type": "STRING", "description": "MCP action: 'list', 'add', 'remove'."},
+                "server_name": {"type": "STRING", "description": "MCP server name."},
+                "command": {"type": "STRING", "description": "CLI command for stdio server."},
+                "args": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Server command arguments."},
+                "url": {"type": "STRING", "description": "HTTP/SSE server endpoint URL."}
             },
             "required": ["action"]
         },
@@ -1275,14 +1278,14 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Kanban Subsystem ──
     {
         "name": "kanban_create_task",
-        "description": "Membuat kartu task baru di papan Kanban proyek Anara.",
+        "description": "Creates a new task card on the project Kanban board.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "title": {"type": "STRING", "description": "Judul singkat task."},
-                "description": {"type": "STRING", "description": "Rincian spesifikasi tugas."},
-                "priority": {"type": "INTEGER", "description": "Prioritas: 1 (normal), 2 (tinggi), 3 (mendesak)."},
-                "assignee": {"type": "STRING", "description": "Penanggung jawab (default 'agent')."}
+                "title": {"type": "STRING", "description": "Short task title."},
+                "description": {"type": "STRING", "description": "Detailed task specification."},
+                "priority": {"type": "INTEGER", "description": "Priority: 1 (normal), 2 (high), 3 (urgent)."},
+                "assignee": {"type": "STRING", "description": "Assignee name (default 'agent')."}
             },
             "required": ["title"]
         },
@@ -1294,11 +1297,11 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "kanban_list_tasks",
-        "description": "Melihat dan memeriksa daftar seluruh kartu tugas di papan Kanban proyek.",
+        "description": "Inspects and lists all task cards on the project Kanban board.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "status": {"type": "STRING", "description": "Filter kolom: 'todo', 'in_progress', 'review', 'blocked', 'done'."}
+                "status": {"type": "STRING", "description": "Column filter: 'todo', 'in_progress', 'review', 'blocked', 'done'."}
             }
         },
         "handler": _tool_kanban_list_tasks,
@@ -1309,13 +1312,13 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "kanban_update_task",
-        "description": "Menggeser status kartu tugas Kanban ke kolom lain ('todo', 'in_progress', 'review', 'blocked', 'done').",
+        "description": "Updates a Kanban task card status ('todo', 'in_progress', 'review', 'blocked', 'done').",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "task_id": {"type": "INTEGER", "description": "ID kartu task."},
-                "status": {"type": "STRING", "description": "Status kolom baru."},
-                "notes": {"type": "STRING", "description": "Catatan progres atau penjelasan hasil kerja."}
+                "task_id": {"type": "INTEGER", "description": "Task card ID."},
+                "status": {"type": "STRING", "description": "New column status."},
+                "notes": {"type": "STRING", "description": "Progress notes or verification summary."}
             },
             "required": ["task_id", "status"]
         },
@@ -1327,12 +1330,12 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "kanban_request_review",
-        "description": "Meminta review terhadap tugas Kanban yang telah selesai dikerjakan beserta bukti verifikasi.",
+        "description": "Requests human review for a completed Kanban task with verification evidence.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "task_id": {"type": "INTEGER", "description": "ID kartu task."},
-                "review_summary": {"type": "STRING", "description": "Ringkasan apa yang telah diselesaikan dan diverifikasi."}
+                "task_id": {"type": "INTEGER", "description": "Task card ID."},
+                "review_summary": {"type": "STRING", "description": "Summary of what was completed and verified."}
             },
             "required": ["task_id", "review_summary"]
         },

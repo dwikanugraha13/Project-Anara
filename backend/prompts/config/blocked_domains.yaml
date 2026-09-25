@@ -1,0 +1,12 @@
+# ── Stock Image Blocked Domains (Hermes Parity) ──
+# Domains filtered out during web image search to avoid stock photo watermarks.
+
+blocked_domains:
+  - "istockphoto.com"
+  - "gettyimages.com"
+  - "alamy.com"
+  - "shutterstock.com"
+  - "dreamstime.com"
+  - "123rf.com"
+  - "stock.adobe.com"
+  - "depositphotos.com"

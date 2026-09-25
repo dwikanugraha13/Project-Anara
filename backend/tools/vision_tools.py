@@ -91,20 +91,20 @@ async def _tool_vision_analyze(
     question: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Analisis visual mendalam terhadap gambar atau foto dari path berkas lokal di PC atau URL internet.
-    Mampu membaca teks (OCR), mendeteksi error pada tangkapan layar, bagan arsitektur, wajah, dan objek.
-    :param image_path: Path lokal berkas gambar di komputer (contoh: 'C:/Users/.../foto.jpg') atau URL http/https.
-    :param question: Pertanyaan spesifik atau fokus analisis visual (opsional).
+    Deep visual analysis of images or photos from local file paths on PC or internet URLs.
+    Capable of reading text (OCR), detecting errors in screenshots, architecture diagrams, faces, and objects.
+    :param image_path: Local image file path on computer (e.g. 'C:/Users/.../photo.jpg') or http/https URL.
+    :param question: Specific question or visual analysis focus (optional).
     """
     clean_target = (image_path or "").strip().strip('"\'')
     if not clean_target:
-        return {"status": "error", "message": "Path gambar atau URL tidak boleh kosong."}
+        return {"status": "error", "message": "Image path or URL cannot be empty."}
 
-    user_query = (question or "").strip() or "Deskripsikan isi gambar ini secara detail dan jelaskan teks, objek, konteks, serta elemen penting di dalamnya."
+    user_query = (question or "").strip() or "Describe the contents of this image in detail, explaining text, objects, context, and key elements."
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "vision_analyze",
-        "action_title": "Menganalisis Gambar / Foto",
+        "action_title": "Analyzing Image",
         "detail": f"Target: {os.path.basename(clean_target)}",
         "icon": "eye"
     })
@@ -121,22 +121,22 @@ async def _tool_vision_analyze(
                     img_bytes = res.content
                     mime_type = res.headers.get("content-type") or _resolve_mime_type(clean_target)
                 else:
-                    return {"status": "error", "message": f"Gagal mengunduh gambar dari URL: HTTP {res.status_code}"}
+                    return {"status": "error", "message": f"Failed to download image from URL: HTTP {res.status_code}"}
         except Exception as e:
-            return {"status": "error", "message": f"Koneksi gagal saat mengunduh gambar: {e}"}
+            return {"status": "error", "message": f"Connection failed while downloading image: {e}"}
     else:
         norm_path = os.path.abspath(os.path.expanduser(clean_target))
         if not os.path.isfile(norm_path):
-            return {"status": "error", "message": f"Berkas gambar tidak ditemukan di sistem: {clean_target}"}
+            return {"status": "error", "message": f"Image file not found on disk: {clean_target}"}
         try:
             with open(norm_path, "rb") as f:
                 img_bytes = f.read()
             mime_type = _resolve_mime_type(norm_path)
         except Exception as e:
-            return {"status": "error", "message": f"Gagal membaca berkas gambar: {e}"}
+            return {"status": "error", "message": f"Failed to read image file: {e}"}
 
     if not img_bytes:
-        return {"status": "error", "message": "Data gambar kosong."}
+        return {"status": "error", "message": "Image data is empty."}
 
     # 2. Check if active/configured vision model is from a Custom Provider (e.g. 9Router, OpenRouter)
     v_model = _resolve_vision_model()
@@ -229,11 +229,8 @@ async def _tool_vision_analyze(
 
         async def _analyze_with_gemini(client: Any) -> str:
             image_part = types.Part.from_bytes(data=img_bytes, mime_type=mime_type)
-            prompt = (
-                f"You are the visual understanding engine for Project Anara.\n"
-                f"Task: {user_query}\n"
-                "Analyze this image accurately, factually, and thoroughly."
-            )
+            from core.prompt_loader import load_prompt
+            prompt = load_prompt("vision/image_analysis", user_query=user_query)
             # Ensure model name sent to Google GenAI SDK does not contain foreign provider prefixes
             clean_g_model = v_model.split("/")[-1] if ("/" in v_model and not v_model.startswith("models/")) else v_model
             if not clean_g_model.startswith("gemini"):
@@ -302,7 +299,7 @@ async def _tool_vision_analyze(
 
     return {
         "status": "error",
-        "message": "Gagal menganalisis gambar melalui provider vision aktif. Pastikan API Key Gemini atau OpenAI valid."
+        "message": "Failed to analyze image via active vision provider. Ensure valid API key is configured."
     }
 
 
@@ -311,28 +308,26 @@ async def _tool_video_analyze(
     question: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Menganalisis berkas rekaman video lokal (.mp4, .webm, .mov) di komputer.
-    Mengekstrak informasi visual, adegan utama, teks, dan menjawab pertanyaan terkait video.
-    :param video_path: Path lokal berkas video di komputer (contoh: 'C:/Users/.../video.mp4').
-    :param question: Pertanyaan spesifik atau instruksi analisis video (opsional).
+    Analyzes local video files (.mp4, .webm, .mov) on host machine.
+    Extracts visual information, scene dynamics, text, and answers questions regarding video content.
     """
     clean_target = (video_path or "").strip().strip('"\'')
     if not clean_target:
-        return {"status": "error", "message": "Path video tidak boleh kosong."}
+        return {"status": "error", "message": "Video path cannot be empty."}
 
     norm_path = os.path.abspath(os.path.expanduser(clean_target))
     if not os.path.isfile(norm_path):
-        return {"status": "error", "message": f"Berkas video tidak ditemukan di komputer: {clean_target}"}
+        return {"status": "error", "message": f"Video file not found on disk: {clean_target}"}
 
     file_size_mb = os.path.getsize(norm_path) / (1024 * 1024)
     if file_size_mb > 50.0:
-        return {"status": "error", "message": f"Ukuran video ({file_size_mb:.1f} MB) melebihi batas maksimal 50 MB."}
+        return {"status": "error", "message": f"Video size ({file_size_mb:.1f} MB) exceeds maximum 50 MB limit."}
 
-    user_query = (question or "").strip() or "Jelaskan ringkasan adegan, peristiwa, dan konten visual di dalam video ini secara kronologis."
+    user_query = (question or "").strip() or "Provide a chronological analysis of the scenes, events, and visual details in this video."
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "video_analyze",
-        "action_title": "Menganalisis Berkas Video",
+        "action_title": "Analyzing Video File",
         "detail": f"{os.path.basename(norm_path)} ({file_size_mb:.1f} MB)",
         "icon": "video"
     })
@@ -348,11 +343,8 @@ async def _tool_video_analyze(
 
         async def _analyze_video(client: Any) -> str:
             video_part = types.Part.from_bytes(data=video_bytes, mime_type=mime_type)
-            prompt = (
-                f"Kamu adalah modul analisis video Project Anara.\n"
-                f"Tugas: {user_query}\n"
-                "Analisis rekaman video berikut secara objektif, detail, dan runtut."
-            )
+            from core.prompt_loader import load_prompt
+            prompt = load_prompt("vision/video_analysis", user_query=user_query)
             v_model = _resolve_vision_model()
             clean_v_model = v_model.split("/")[-1] if ("/" in v_model and not v_model.startswith("models/")) else v_model
             if not clean_v_model.startswith("gemini"):
@@ -362,13 +354,13 @@ async def _tool_video_analyze(
                 contents=[video_part, prompt],
                 config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=2048)
             )
-            return response.text or "Tidak ada hasil analisis video."
+            return response.text or "No video analysis results returned."
 
         analysis_text = await key_manager.execute_with_failover(_analyze_video)
 
         _emit_agent_event("agent_action_complete", {
             "tool_name": "video_analyze",
-            "action_title": "Analisis Video Selesai",
+            "action_title": "Video Analysis Complete",
             "summary": analysis_text[:120] + "...",
             "icon": "video"
         })
@@ -383,4 +375,4 @@ async def _tool_video_analyze(
         }
     except Exception as e:
         logger.error(f"[VisionTools] Video analysis error: {e}")
-        return {"status": "error", "message": f"Gagal menganalisis video: {str(e)}"}
+        return {"status": "error", "message": f"Failed to analyze video: {str(e)}"}

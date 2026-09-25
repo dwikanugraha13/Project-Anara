@@ -82,12 +82,12 @@ class AnaraLoopBreaker:
         if len(self.call_history) >= self.max_identical:
             recent = list(self.call_history)[-self.max_identical:]
             if len(set(recent)) == 1:
-                msg = (
-                    f"[SYSTEM REFLECTION: PENCEGAH LOOP AKTIF]: Kamu memanggil alat '{clean_name}' "
-                    f"sebanyak {self.max_identical} kali berturut-turut dengan parameter yang sama persis tanpa kemajuan. "
-                    "Hentikan pemanggilan berulang ini sekarang! Evaluasi hasil yang sudah diperoleh sebelumnya, "
-                    "gunakan strategi/alat lain yang relevan, atau berikan kesimpulan jawaban akhir kepada pengguna."
-                )
+                from core.prompt_loader import load_prompt
+                msg = load_prompt(
+                    "self_correction/loop_breaker_identical",
+                    tool_name=clean_name,
+                    max_identical=self.max_identical
+                ).strip()
                 logger.warning(f"[LoopBreaker] Identical call stall detected for tool '{clean_name}' ({self.max_identical}x).")
                 return True, msg
 
@@ -96,11 +96,12 @@ class AnaraLoopBreaker:
             recent_6 = list(self.call_history)[-6:]
             if recent_6[0] == recent_6[2] == recent_6[4] and recent_6[1] == recent_6[3] == recent_6[5] and recent_6[0] != recent_6[1]:
                 t1, t2 = list(self.tool_names)[-2], list(self.tool_names)[-1]
-                msg = (
-                    f"[SYSTEM REFLECTION: PING-PONG LOOP DETECTED]: Alternating thrashing detected (ping-pong loop) "
-                    f"between tools '{t1}' and '{t2}'. Review your collected observations, "
-                    "cease further repetitive calls, and conclude your response now."
-                )
+                from core.prompt_loader import load_prompt
+                msg = load_prompt(
+                    "self_correction/loop_breaker_cycle",
+                    t1=t1,
+                    t2=t2
+                ).strip()
                 logger.warning(f"[LoopBreaker] Ping-pong cycle detected between '{t1}' and '{t2}'.")
                 return True, msg
 
@@ -113,10 +114,11 @@ class AnaraLoopBreaker:
         if is_error:
             self.consecutive_errors += 1
             if self.consecutive_errors >= self.max_consecutive_errors:
-                msg = (
-                    f"[SYSTEM REFLECTION]: Detected {self.consecutive_errors} consecutive tool execution failures. "
-                    "Re-evaluate the underlying error message and pivot your strategy."
-                )
+                from core.prompt_loader import load_prompt
+                msg = load_prompt(
+                    "self_correction/loop_breaker_cascade",
+                    consecutive_errors=self.consecutive_errors
+                ).strip()
                 logger.warning(f"[LoopBreaker] Consecutive error threshold hit ({self.consecutive_errors}).")
                 return True, msg
         else:
@@ -136,9 +138,8 @@ class AnaraLoopBreaker:
 
 class ContextMicroCompactor:
     """
-    Pilar A: Memangkas log terminal & stack trace raksasa agar tidak membanjiri context window.
-    Menghilangkan progress-bar noise, melakukan anchor-sniffing pada titik mula error,
-    dan menyimpan dump penuh ke disk untuk auditability forensics.
+    Pillar A: Compacts massive terminal logs & stack traces to prevent context window overflow.
+    Strips progress bar noise, sniffs traceback anchors, and saves raw forensic dumps to disk.
     """
 
     MAX_OUTPUT_LINES: int = 35
@@ -184,9 +185,9 @@ class ContextMicroCompactor:
         dump_file = TOOL_LOGS_DIR / f"{source_label}_{dump_id}.log"
         try:
             dump_file.write_text(cleaned, encoding="utf-8", errors="replace")
-            log_notice = f"Log lengkap ({len(cleaned):,} karakter) tersimpan di: {dump_file}"
+            log_notice = f"Full log ({len(cleaned):,} chars) saved at: {dump_file}"
         except Exception:
-            log_notice = f"Total karakter log: {len(cleaned):,}"
+            log_notice = f"Total log characters: {len(cleaned):,}"
 
         # 2. Sniff error anchors (Traceback, Error, FAILED, Exception)
         error_keywords = ("traceback (most recent call last)", "error:", "failed:", "exception:", "syntaxerror:", "fatal:")
@@ -207,10 +208,10 @@ class ContextMicroCompactor:
 
             parts = []
             if head_omitted > 0:
-                parts.append(f"[... {head_omitted} lines truncated by compactor / dipangkas oleh compactor ...]")
+                parts.append(f"[... {head_omitted} lines truncated by compactor ...]")
             parts.append("\n".join(important_slice))
             if tail_omitted > 0:
-                parts.append(f"[... {tail_omitted} lines omitted / disembunyikan. {log_notice} ...]")
+                parts.append(f"[... {tail_omitted} lines omitted. {log_notice} ...]")
             return "\n".join(parts)
 
         # 3. Fallback: Preserves Head (40%) + Tail (60%)
@@ -222,7 +223,7 @@ class ContextMicroCompactor:
 
         return (
             "\n".join(head_lines)
-            + f"\n\n[... {omitted} lines of noise truncated by compactor / dipangkas oleh compactor. {log_notice} ...]\n\n"
+            + f"\n\n[... {omitted} lines of noise truncated by compactor. {log_notice} ...]\n\n"
             + "\n".join(tail_lines)
         )
 
@@ -232,7 +233,7 @@ class ContextMicroCompactor:
 # ==============================================================================
 
 class ErrorClassifier:
-    """Mengenali pola error umum dan anomali eksekusi untuk auto-recovery otonom."""
+    """Recognizes common error patterns and execution anomalies for autonomous auto-recovery."""
 
     PATTERNS: Dict[str, str] = {
         "missing_python_pkg": r"ModuleNotFoundError:\s*No\s+module\s+named\s+['\"]([^'\"]+)['\"]",
@@ -282,14 +283,10 @@ class ErrorClassifier:
         try:
             from providers import call_universal_chat_model
             from core.capabilities import get_fast_auxiliary_model
+            from core.prompt_loader import load_prompt
 
             snippet = output[:1500]
-            sys_p = (
-                "You are an automated software error diagnostic classifier. "
-                "Analyze the terminal/tool error output and categorize it into ONE category: "
-                "missing_dependency, port_conflict, syntax_error, file_not_found, permission_denied, test_failure, or execution_error. "
-                "Output JSON in format: {\"error_type\": \"...\", \"detail\": \"...\"}"
-            )
+            sys_p = load_prompt("classifiers/error_classifier").strip()
             user_p = f"Context: {task_context[:100]}\nOutput:\n{snippet}"
 
             model_id = get_fast_auxiliary_model()
@@ -322,34 +319,31 @@ class ErrorClassifier:
 
 # Tools whose "failure" is normal exploratory observation (empty search, missing file, 0 matches)
 # These never trip execution circuit breakers because not-found is useful signal for the agent.
-FAILURE_TOLERANT_TOOL_NAMES = frozenset({
-    "read_local_file",
-    "grep_search_code",
-    "glob_find_files",
-    "list_directory",
-    "scan_workspace_folder",
-    "web_search",
-    "fetch_webpage",
-})
+def _load_failure_tolerant_tools() -> frozenset:
+    try:
+        from core.prompt_loader import load_config_yaml
+        cfg = load_config_yaml("config/failure_tolerant_tools.yaml", default={})
+        tools = cfg.get("failure_tolerant_tools")
+        if tools and isinstance(tools, list):
+            return frozenset(tools)
+    except Exception:
+        pass
+    return frozenset({
+        "read_local_file", "grep_search_code", "glob_find_files",
+        "list_directory", "scan_workspace_folder", "web_search", "fetch_webpage",
+    })
 
-IDEMPOTENT_TOOL_NAMES = frozenset({
-    "read_local_file",
-    "grep_search_code",
-    "glob_find_files",
-    "list_directory",
-    "scan_workspace_folder",
-    "web_search",
-    "fetch_webpage",
-})
+FAILURE_TOLERANT_TOOL_NAMES = _load_failure_tolerant_tools()
+IDEMPOTENT_TOOL_NAMES = FAILURE_TOLERANT_TOOL_NAMES
 
 
 class SelfCorrectionTracker:
     """
-    Pilar B & D: Melacak budget retry mandiri dan menegakkan Circuit Breaker
-    berdasarkan standar Hermes Agent:
-    - Soft Warning pada percobaan identik >= 2 (memberi petunjuk refleksi ke model).
-    - Hard Stop (Diagnostic Card) hanya pada percobaan identik >= 5 (mencegah loop runaway sejati).
-    - Failure-Tolerant: Operasi eksplorasi (baca berkas / grep 0 match) tidak menghabiskan kuota kegagalan sistem.
+    Pillar B & D: Tracks autonomous retry budget and enforces Circuit Breaker
+    based on Hermes Agent standard:
+    - Soft Warning on identical attempts >= 2 (provides reflection hints to model).
+    - Hard Stop (Diagnostic Card) only on identical attempts >= 5 (prevents true runaway loops).
+    - Failure-Tolerant: Exploratory operations (file read / grep 0 match) do not consume system failure quota.
     """
 
     def __init__(
@@ -446,25 +440,27 @@ class SelfCorrectionTracker:
 # ==============================================================================
 
 def format_recovery_guidance(
-    err_type: Optional[str],
-    detail: Optional[str],
-    attempt: int,
-    max_retries: int,
+    err_type: Optional[str] = None,
+    detail: Optional[str] = None,
+    attempt: int = 1,
+    max_retries: int = 5,
     tool_name: str = "tool",
 ) -> str:
     """
     Action-oriented meta-guidance for recovering from repeated tool failures (Hermes Agent Parity).
-    Zero hardcoded canned definitions: empowers the model's own reasoning to diagnose and fix the issue.
+    Zero hardcoded canned definitions: loaded from backend/prompts/self_correction/recovery_guidance.md.
     """
-    diag_line = f"Kategori kendala: {err_type or 'execution_error'}" + (f" ({detail})" if detail else "")
-    return (
-        f"\n\n[SYSTEM INNER-VERIFICATION / ACTION RECOVERY (Percobaan {attempt}/{max_retries})]:\n"
-        f"{diag_line}\n"
-        f"Panduan Pemulihan Mandiri: Alat '{tool_name}' mengalami kendala berulang ({err_type or 'error'}). "
-        "Jangan mengulang pemanggilan yang sama persis tanpa perubahan. "
-        "Periksa pesan error di atas, verifikasi asumsi jalur atau dependensi, sesuaikan parameter, "
-        "atau gunakan pendekatan alat alternatif untuk menyelesaikan tugas pengguna."
-    )
+    from core.prompt_loader import load_prompt
+    diag_line = f"Failure category: {err_type or 'execution_error'}" + (f" ({detail})" if detail else "")
+    guidance = load_prompt(
+        "self_correction/recovery_guidance",
+        attempt=attempt,
+        max_retries=max_retries,
+        diag_line=diag_line,
+        tool_name=tool_name,
+        err_type_or_error=err_type or "error"
+    ).strip()
+    return f"\n\n{guidance}"
 
 
 async def synthesize_diagnostic_explanation(
@@ -480,21 +476,17 @@ async def synthesize_diagnostic_explanation(
     try:
         from providers import call_universal_chat_model
         from core.capabilities import get_fast_auxiliary_model
+        from core.prompt_loader import load_prompt
 
         model_id = get_fast_auxiliary_model()
-        sys_p = (
-            "Kamu adalah AI diagnostic assistant yang cerdas, ramah, dan profesional. "
-            "Rangkum kegagalan teknis berulang yang dialami agen saat mencoba menyelesaikan tugas pengguna. "
-            "Jelaskan secara singkat apa yang telah dicoba, akar masalah teknisnya, dan rekomendasi solusi bagi pengguna. "
-            "Gunakan bahasa percakapan alami, empatik, dan mudah dipahami (DILARANG menggunakan format template kaku atau kartu HTML)."
-        )
+        sys_p = load_prompt("self_correction/diagnostic_synthesis").strip()
         last_item = history[-1] if history else {}
         user_p = (
-            f"Tugas Pengguna: {original_task[:150]}\n"
-            f"Alat Terakhir: {last_item.get('tool_name')}\n"
-            f"Tipe Error: {last_item.get('error_type')} ({last_item.get('detail')})\n"
-            f"Total Percobaan Mandiri: {len(history)}\n"
-            f"Log Error Terakhir:\n{last_error_text[:600]}"
+            f"User Task: {original_task[:150]}\n"
+            f"Last Tool: {last_item.get('tool_name')}\n"
+            f"Error Category: {last_item.get('error_type')} ({last_item.get('detail')})\n"
+            f"Self-Correction Attempts: {len(history)}\n"
+            f"Last Error Log:\n{last_error_text[:600]}"
         )
         synth = await call_universal_chat_model(
             model_id=model_id,
@@ -520,30 +512,28 @@ def format_graceful_diagnostic_card(
     """
     Pilar D: Formulates an elegant, human-readable Diagnostic Root Cause Card
     when self-correction budget is exhausted, preventing raw traceback dumps.
+    Template loaded dynamically from backend/prompts/self_correction/diagnostic_card.md.
     """
+    from core.prompt_loader import load_prompt
+
     last_att = history[-1] if history else {}
-    err_type = last_att.get("error_type", "Kesalahan Eksekusi")
-    tool_name = last_att.get("tool_name", "alat sistem")
+    err_type = last_att.get("error_type", "Execution Error")
+    tool_name = last_att.get("tool_name", "system tool")
     target = last_att.get("target", "")
 
     steps_attempted = []
     for idx, h in enumerate(history, 1):
-        t_n = h.get("tool_name", "tindakan")
+        t_n = h.get("tool_name", "action")
         e_t = h.get("error_type", "error")
-        steps_attempted.append(f"{idx}. Menjalankan <code>{t_n}</code> (Gagal: <i>{e_t}</i>)")
+        steps_attempted.append(f"{idx}. Executed <code>{t_n}</code> (Failed: <i>{e_t}</i>)")
 
-    steps_str = "\n".join(steps_attempted) if steps_attempted else "3 kali upaya perbaikan mandiri"
+    steps_str = "\n".join(steps_attempted) if steps_attempted else "Multiple self-correction attempts"
 
-    card = (
-        f"⚠️ <b>DIAGNOSTIK EKSEKUSI ANARA / EXECUTION DIAGNOSTICS</b>\n\n"
-        f"<b>1. Sasaran Tugas / Task Goal:</b>\n"
-        f"\"{original_task[:120] or 'System step execution'}\"\n\n"
-        f"<b>2. Akar Masalah / Root Cause:</b>\n"
-        f"Tindakan <code>{tool_name}</code> pada <code>{str(target)[:60]}</code> belum berhasil diselesaikan karena kendala: <b>{err_type}</b>.\n\n"
-        f"<b>3. Upaya Mandiri yang Telah Dijalankan / Self-Correction Attempts:</b>\n"
-        f"{steps_str}\n\n"
-        f"<b>4. Rekomendasi Solusi / Recommendations:</b>\n"
-        f"• Periksa apakah dependensi eksternal atau hak akses sistem operasi memerlukan izin khusus.\n"
-        f"• Verify system permissions, file configuration, or execute manually if needed."
-    )
-    return card
+    return load_prompt(
+        "self_correction/diagnostic_card",
+        task_goal=original_task[:120] or "System step execution",
+        tool_name=tool_name,
+        target=str(target)[:60],
+        err_type=err_type,
+        steps_str=steps_str
+    ).strip()

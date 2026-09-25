@@ -14,7 +14,7 @@ export function ThinkingCard({ text }: { text: string }) {
   if (!text) return null;
   return (
     <div className="flex items-center gap-2 py-1 font-mono text-xs select-none animate-fade-in my-1.5">
-      <span className="text-white font-bold tracking-tight">Berpikir</span>
+      <span className="text-white font-bold tracking-tight">Thinking</span>
       <span className="text-slate-400 font-sans truncate">{text}</span>
     </div>
   );
@@ -43,16 +43,16 @@ export function ExplorationGroupCard({
 
   let labelText = "";
   if (readCount > 0 && searchCount > 0) {
-    labelText = `${readCount} pembacaan, ${searchCount} pencarian`;
+    labelText = `${readCount} read${readCount > 1 ? "s" : ""}, ${searchCount} search${searchCount > 1 ? "es" : ""}`;
   } else if (readCount > 0) {
-    labelText = `${readCount} pembacaan`;
+    labelText = `${readCount} read${readCount > 1 ? "s" : ""}`;
   } else if (searchCount > 0) {
-    labelText = `${searchCount} pencarian`;
+    labelText = `${searchCount} search${searchCount > 1 ? "es" : ""}`;
   } else {
-    labelText = `${items.length} operasi`;
+    labelText = `${items.length} operation${items.length > 1 ? "s" : ""}`;
   }
 
-  const prefix = isRunning ? "Menjelajah" : "Selesai menjelajah";
+  const prefix = isRunning ? "Exploring" : "Explored";
 
   return (
     <div className="my-1.5 font-mono text-xs select-none">
@@ -82,7 +82,7 @@ export function ExplorationGroupCard({
             const isRead = tool.includes("read") || tool.includes("scan");
             const isGrep = tool.includes("grep");
             const isGlob = tool.includes("glob");
-            const opLabel = isRead ? "Baca" : isGrep ? "Grep" : isGlob ? "Glob" : "Aksi";
+            const opLabel = isRead ? "Read" : isGrep ? "Grep" : isGlob ? "Glob" : "Action";
             const detailText = sub.detail || sub.actionTitle || "";
 
             return (
@@ -143,7 +143,7 @@ export default function AgentToolCard({ action, todoData, onOpenFile }: AgentToo
               {completed === total ? "✓" : "○"}
             </span>
             <span className="font-semibold text-slate-200">
-              {completed} dari {total} tugas selesai
+              {completed} of {total} tasks completed
             </span>
           </div>
           <svg
@@ -203,10 +203,8 @@ export default function AgentToolCard({ action, todoData, onOpenFile }: AgentToo
 
   // Extract file name and directory path
   const rawTarget = action.detail || action.actionTitle || "";
-  const cleanTarget = rawTarget.replace(/^Sunting\s+/i, "").replace(/^File:\s*/i, "");
-  const parts = cleanTarget.split(" ");
-  const filename = action.filename || parts[0]?.split(/[/\\]/).pop() || "berkas";
-  const dirPath = action.filePath ? action.filePath.replace(filename, "").replace(/[/\\]$/, "") : (parts[1] || "");
+  const filename = action.filename || action.filePath?.split(/[/\\]/).pop() || rawTarget.split(" ")[0]?.split(/[/\\]/).pop() || "file";
+  const dirPath = action.filePath ? action.filePath.replace(filename, "").replace(/[/\\]$/, "") : "";
 
   // Compute diff lines
   const rawDiff = action.rawResult || action.summary || "";
@@ -229,21 +227,21 @@ export default function AgentToolCard({ action, todoData, onOpenFile }: AgentToo
     return { added, deleted, lines: formatted };
   }, [rawDiff]);
 
-  // ── Render Sunting (File Edit / Diff) Pill (Screenshot match) ──
+  // ── Render Edit (File Edit / Diff) Pill ──
   if (isWrite) {
     const addCount = action.added ?? parsedDiff.added ?? 1;
     const delCount = action.deleted ?? parsedDiff.deleted ?? 0;
 
     return (
       <div className="my-2 rounded-xl overflow-hidden border border-white/10 bg-black/60 backdrop-blur-xl font-sans text-xs select-none transition-all shadow-xl">
-        {/* Header Pill: Sunting filename path +X -Y ▾ */}
+        {/* Header Pill: Edit filename path +X -Y ▾ */}
         <div className="w-full flex items-center justify-between px-3.5 py-2 hover:bg-white/[0.04] transition-colors cursor-pointer text-left">
           <button
             type="button"
             onClick={() => setIsExpanded((v) => !v)}
             className="flex items-center gap-2 min-w-0 flex-1 text-left cursor-pointer font-mono"
           >
-            <span className="text-white font-bold text-xs">Sunting</span>
+            <span className="text-white font-bold text-xs">Edit</span>
             <span className="text-slate-100 font-semibold truncate text-xs">{filename}</span>
             {dirPath && <span className="text-slate-400 truncate text-[11px]">{dirPath}</span>}
             <div className="flex items-center gap-1 text-[10.5px] shrink-0 ml-1 font-bold">
@@ -264,9 +262,9 @@ export default function AgentToolCard({ action, todoData, onOpenFile }: AgentToo
                     ? "bg-emerald-500/20 text-emerald-300 border-emerald-400/40"
                     : "bg-white/[0.06] hover:bg-white/[0.12] text-slate-300 hover:text-white border-white/10"
                 }`}
-                title="Batalkan perubahan berkas ke snapshot sebelum diedit agen (1-Click Rollback)"
+                title="Rollback file modifications to prior checkpoint snapshot"
               >
-                {isReverting ? "Memulihkan..." : isReverted ? "✓ Dipulihkan" : "↺ Revert"}
+                {isReverting ? "Reverting..." : isReverted ? "✓ Reverted" : "↺ Revert"}
               </button>
             )}
 
@@ -279,7 +277,7 @@ export default function AgentToolCard({ action, todoData, onOpenFile }: AgentToo
                 }}
                 className="px-2 py-0.5 rounded text-[10px] font-mono text-cyan-300 hover:text-white bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-400/30 transition-all cursor-pointer"
               >
-                Buka di Editor
+                Open in Editor
               </button>
             )}
             <button
@@ -342,7 +340,7 @@ export default function AgentToolCard({ action, todoData, onOpenFile }: AgentToo
                 </table>
               ) : (
                 <pre className="text-slate-300 p-2 leading-relaxed whitespace-pre-wrap font-mono">
-                  {rawDiff || "Perubahan berkas telah disimpan."}
+                  {rawDiff || "File modifications applied."}
                 </pre>
               )}
             </div>

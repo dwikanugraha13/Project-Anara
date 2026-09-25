@@ -31,10 +31,10 @@ async def _tool_calendar_get_schedule(days: int = 3) -> Dict[str, Any]:
 def register_tools():
     registry.register_tool(
         name="gmail_read_inbox",
-        description="Membaca daftar email masuk terbaru dari kotak masuk Gmail pengguna.",
+        description="Reads recent incoming emails from the user's Gmail inbox.",
         parameters={
             "type": "OBJECT",
-            "properties": {"limit": {"type": "INTEGER", "description": "Jumlah maksimal email yang dibaca."}}
+            "properties": {"limit": {"type": "INTEGER", "description": "Maximum number of emails to read."}}
         },
         handler=_tool_gmail_read_inbox,
         risk="read_only",
@@ -45,10 +45,10 @@ def register_tools():
 
     registry.register_tool(
         name="calendar_get_schedule",
-        description="Melihat jadwal janji temu dan acara mendatang di Google Calendar.",
+        description="Views upcoming appointments and events from Google Calendar.",
         parameters={
             "type": "OBJECT",
-            "properties": {"days": {"type": "INTEGER", "description": "Jumlah hari ke depan (default 3 hari)."}}
+            "properties": {"days": {"type": "INTEGER", "description": "Number of days ahead (default 3 days)."}}
         },
         handler=_tool_calendar_get_schedule,
         risk="read_only",

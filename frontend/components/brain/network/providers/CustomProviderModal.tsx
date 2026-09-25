@@ -59,10 +59,10 @@ export default function CustomProviderModal({
       if (data.status === "ok") {
         setCheckMsg({ status: "ok", text: data.message });
       } else {
-        setCheckMsg({ status: "error", text: data.message || "Gagal menghubungi endpoint" });
+        setCheckMsg({ status: "error", text: data.message || "Failed to connect to endpoint" });
       }
     } catch (e: any) {
-      setCheckMsg({ status: "error", text: `Koneksi gagal: ${e.message}` });
+      setCheckMsg({ status: "error", text: `Connection failed: ${e.message}` });
     } finally {
       setCheckLoading(false);
     }
@@ -97,7 +97,7 @@ export default function CustomProviderModal({
         onSuccess(data.providers);
       } else {
         const err = await res.json();
-        alert(err.detail || "Gagal menyimpan custom provider");
+        alert(err.detail || "Failed to save custom provider");
       }
     } catch (e: any) {
       alert(`Error: ${e.message}`);

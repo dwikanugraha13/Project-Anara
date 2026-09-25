@@ -343,19 +343,15 @@ class SubAgentManager:
 
         from providers import call_universal_chat_model, get_active_model_id
         from cognition import get_soul_prompt
+        from core.prompt_loader import load_prompt
 
         task.steps_log.append(f"Analyzing mission context: {task.title}...")
         task.progress_percent = 40
 
-        sub_prompt = (
-            f"[SUBAGENT SPECIALIST WORKER INSTRUCTION — ANARA STANDARD]\n"
-            f"You are an isolated specialist sub-agent tasked with independently completing this mission:\n\n"
-            f"Goal:\n{task.goal}\n\n"
-            f"Context / Parameters:\n{task.context or 'Use available read-only exploration tools in the repository.'}\n\n"
-            "Operational Rules:\n"
-            "1. Operate in isolated clean-slate context without assumptions from external conversations.\n"
-            "2. Use available read-only exploration tools (read_file, grep, glob) to verify physical facts on disk.\n"
-            "3. Synthesize all findings thoroughly and directly in natural prose, matching the language of the mission and user."
+        sub_prompt = load_prompt(
+            "subagent_worker",
+            goal=task.goal,
+            context=task.context or "Use available read-only exploration tools in the repository."
         )
 
         model_id = get_active_model_id()

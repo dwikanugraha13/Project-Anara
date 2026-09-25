@@ -1,0 +1,1 @@
+Concisely and accurately describe the contents of this image. Transcribe and identify any visible text, code snippets, terminal errors, architecture diagrams, or UI components so the autonomous agent has complete context to assist the user.

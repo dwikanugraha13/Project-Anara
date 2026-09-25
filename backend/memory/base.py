@@ -472,12 +472,12 @@ class BaseMemoryEngine:
                             or (cur_time - prev_time).total_seconds() > 1800
                         )
                         if gap_too_big:
-                            raw_title = (row["user_text"] or "Percakapan").strip()
+                            raw_title = (row["user_text"] or "Session").strip()
                             title = (raw_title[:44] + "...") if len(raw_title) > 44 else raw_title
                             cursor.execute(
                                 "INSERT INTO chat_sessions (title, speaker_name, created_at, updated_at) "
                                 "VALUES (?, ?, ?, ?)",
-                                (title or "Percakapan Lama", row["speaker_name"],
+                                (title or "Previous Session", row["speaker_name"],
                                  row["created_at"], row["created_at"])
                             )
                             session_id = cursor.lastrowid
@@ -517,10 +517,10 @@ class BaseMemoryEngine:
             try:
                 cursor.execute(
                     "UPDATE animations SET keywords_json = ? WHERE name = 'dance' OR category = 'dance'",
-                    (json.dumps(["nari", "menari", "tarian", "joget", "dance", "rumba"]),)
+                    (json.dumps(["dance", "dancing", "rumba"]),)
                 )
                 if cursor.rowcount > 0:
-                    logger.info("[AnaraMemory] Dance keywords tightened (removed musik/pesta/hibur/goyang)")
+                    logger.info("[AnaraMemory] Dance keywords tightened")
                 conn.commit()
             except Exception as e:
                 logger.warning(f"[AnaraMemory] Dance keyword migration error: {e}")
@@ -550,42 +550,18 @@ class BaseMemoryEngine:
             return
 
         defaults = [
-            ("dance", "dance", "dance", "dance", 1.0, 9.0, json.dumps([
-                "nari", "menari", "tarian", "joget", "dance", "dancing", "hibur", "goyang", "rumba", "musik", "pesta", "anara siap"
-            ]), "Animasi tarian Rumba 3D penuh semangat dengan irama musik Latin"),
-            ("angry", "emotion", "angry", "angry_pointing", 0.9, 4.0, json.dumps([
-                "marah", "kesal", "jengkel", "frustrasi", "menyebalkan", "tidak sabar", "capek", "bosan", "mengecewakan", "tidak menyenangkan", "angry", "furious", "upset", "annoyed", "frustrated", "irritated", "terrible", "awful", "unacceptable", "ridiculous"
-            ]), "Ekspresi marah dengan alis menekuk dan gestur menunjuk tegas"),
-            ("crying", "emotion", "sad", "sad", 0.85, 4.0, json.dumps([
-                "sedih", "menangis", "crying", "kecewa", "menyesal", "kasihan", "kehilangan", "duka", "hancur", "terpukul", "sakit hati", "patah hati", "sad", "disappointed", "sorry to hear", "unfortunate", "heartbroken"
-            ]), "Ekspresi sedih/menangis dengan kepala menunduk dan mata berkaca-kaca"),
-            ("laughing", "emotion", "happy", "joy", 0.95, 4.0, json.dumps([
-                "senang", "gembira", "bahagia", "tertawa", "ketawa", "ngakak", "laughing", "wkwk", "haha", "suka", "bagus", "keren", "hebat", "luar biasa", "mantap", "wah", "fantastis", "sempurna", "selamat", "sukses", "menakjubkan", "seru", "happy", "great", "awesome", "amazing", "wonderful", "excellent", "fantastic", "congratulations", "yay", "hore"
-            ]), "Ekspresi tertawa riang dan gestur gembira ceria"),
-            ("shy", "emotion", "shy", "shy_movement", 0.8, 3.5, json.dumps([
-                "malu", "tersipu", "canggung", "segan", "salah tingkah", "aduh", "hehe", "hihi", "ehehe", "ah kamu bisa aja", "terima kasih", "makasih", "cantik", "manis", "pujian", "shy", "embarrassed", "blush", "flattered", "thank you", "thanks"
-            ]), "Gestur tersipu malu dengan senyuman manis"),
-            ("salute", "gesture", "happy", "salute", 0.85, 3.0, json.dumps([
-                "hormat", "sikap hormat", "memberi hormat", "salute", "lapor", "siap grak", "tegak grak", "salam hormat"
-            ]), "Gestur memberi hormat tegak ala asisten AI profesional"),
-            ("greeting", "gesture", "happy", "wave", 0.85, 3.0, json.dumps([
-                "halo", "hai", "hey", "hello", "hi", "selamat pagi", "selamat siang", "selamat sore", "selamat malam", "assalamualaikum", "apa kabar", "senang berkenalan", "good morning", "good afternoon", "good evening", "welcome", "greetings", "sampai jumpa", "dadah", "bye", "goodbye"
-            ]), "Melambaikan tangan kanan dengan senyuman ramah"),
-            ("thinking", "gesture", "thinking", "think", 0.75, 3.5, json.dumps([
-                "menurut saya", "mari kita", "mungkin", "sepertinya", "hmm", "menarik", "pertimbangkan", "analisis", "coba kita", "jika dilihat", "secara umum", "let me think", "perhaps", "maybe", "interesting", "considering", "i believe", "in my opinion", "well"
-            ]), "Gestur berpikir dengan tangan di dagu dan mata menatap ke atas"),
-            ("empathy", "emotion", "empathetic", "empathy", 0.8, 3.5, json.dumps([
-                "maaf", "mohon maaf", "turut berduka", "jangan khawatir", "tenang saja", "saya mengerti", "sabar", "tetap semangat", "sorry", "apologize", "don't worry", "i understand", "stay strong", "i feel you"
-            ]), "Gestur menenangkan dengan tatapan penuh kehangatan"),
-            ("agree", "reaction", "happy", "nod", 0.75, 2.5, json.dumps([
-                "iya", "ya", "tentu", "betul", "benar", "setuju", "pasti", "oke", "baik", "siap", "jelas", "tentu saja", "yes", "sure", "absolutely", "correct", "agree", "of course", "definitely"
-            ]), "Mengangguk setuju dengan mantap"),
-            ("disagree", "reaction", "neutral", "shake", 0.75, 2.5, json.dumps([
-                "tidak", "bukan", "kurang tepat", "sayangnya tidak", "mustahil", "no", "not exactly", "incorrect", "disagree", "i'm afraid not"
-            ]), "Menggelengkan kepala dengan tenang"),
-            ("explaining", "gesture", "curious", "explaining", 0.75, 3.0, json.dumps([
-                "pertama", "kedua", "ketiga", "karena", "jadi", "contohnya", "merupakan", "hal ini", "dengan demikian", "langkah", "fungsinya", "first", "second", "because", "therefore", "for example", "this means", "specifically", "in summary"
-            ]), "Gestur tangan terbuka saat memaparkan penjelasan")
+            ("dance", "dance", "dance", "dance", 1.0, 9.0, "[]", "3D Latin Rumba celebratory animation"),
+            ("angry", "emotion", "angry", "angry_pointing", 0.9, 4.0, "[]", "Stern assertive expression with pointing gesture"),
+            ("crying", "emotion", "sad", "sad", 0.85, 4.0, "[]", "Empathetic emotional expression with head lowered"),
+            ("laughing", "emotion", "happy", "joy", 0.95, 4.0, "[]", "Joyful celebration and laughter animation"),
+            ("shy", "emotion", "shy", "shy_movement", 0.8, 3.5, "[]", "Humble flattered gesture and pleasant smile"),
+            ("salute", "gesture", "happy", "salute", 0.85, 3.0, "[]", "Professional agent salute posture"),
+            ("greeting", "gesture", "happy", "wave", 0.85, 3.0, "[]", "Friendly wave greeting gesture"),
+            ("thinking", "gesture", "thinking", "think", 0.75, 3.5, "[]", "Analytical thinking pose with hand at chin"),
+            ("empathy", "emotion", "empathetic", "empathy", 0.8, 3.5, "[]", "Calming supportive posture and focused gaze"),
+            ("agree", "reaction", "happy", "nod", 0.75, 2.5, "[]", "Affirmative nodding gesture"),
+            ("disagree", "reaction", "neutral", "shake", 0.75, 2.5, "[]", "Gentle head shake disagreement reaction"),
+            ("explaining", "gesture", "curious", "explaining", 0.75, 3.0, "[]", "Open-handed informative explanatory gesture")
         ]
 
         cursor.executemany("""
@@ -603,9 +579,8 @@ class BaseMemoryEngine:
             return
 
         defaults = [
-            (None, "todo", "Eksplorasi Fitur Visual Anara", "Coba minta Anara menampilkan foto Monas, ramalan cuaca, kode Python, atau telemetri sistem.", 1, None),
-            (None, "todo", "Kenalkan Nama dan Suara ke Anara", "Sapa Anara: 'Hai Anara, kenalkan aku [Nama Kamu]'.", 0, None),
-            (None, "note", "Protokol Sistem Anara", "Anara memiliki memori kognitif SQLite, biometrik suara, dan proyeksi visual HUD cerdas.", 0, None)
+            (None, "todo", "Explore Anara Capabilities", "Ask Anara to analyze code, inspect workspace, or run testing suites.", 0, None),
+            (None, "note", "Anara Autonomous Agent Protocol", "Anara operates with persistent memory, autonomous multi-tool execution, and safety-gated plan/build modes.", 0, None)
         ]
         cursor.executemany("""
             INSERT INTO notes_and_todos (speaker_id, category, title, content, is_completed, due_date)
@@ -614,86 +589,8 @@ class BaseMemoryEngine:
         conn.commit()
 
     def _seed_default_skills(self, conn: sqlite3.Connection):
-        """Seeds built-in Anara Autonomous Skills if table is empty."""
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM agent_skills")
-        if cursor.fetchone()[0] > 0:
-            return
-
-        built_in_skills = [
-            (
-                "Riset & Sintesis Web Mendalam",
-                "research",
-                "Mencari informasi terkini dari berbagai sumber web dan merangkumnya menjadi poin-poin terstruktur.",
-                json.dumps(["cari", "riset", "berita", "informasi", "harga", "cuaca", "analisis web"]),
-                json.dumps([
-                    "1. Formulasi query pencarian bersih dan spesifik",
-                    "2. Eksekusi web_search ke sumber kredibel",
-                    "3. Jika ada link detail, baca via fetch_webpage",
-                    "4. Sintesis data dan sajikan ringkasan terstruktur ke pengguna"
-                ]),
-                0, 1, 0
-            ),
-            (
-                "Analisis & Ekstraksi Dokumen PDF",
-                "document",
-                "Membaca isi berkas PDF multi-halaman, mengekstrak data penting, dan menyusun laporan ringkas.",
-                json.dumps(["pdf", "dokumen", "baca file", "laporan", "analisis dokumen"]),
-                json.dumps([
-                    "1. Identifikasi lokasi berkas PDF di sistem lokal",
-                    "2. Ekstraksi teks per halaman menggunakan read_local_file",
-                    "3. Analisis struktur data, angka kunci, atau kesimpulan dokumen",
-                    "4. Proyeksikan preview dokumen ke layar HUD holografik"
-                ]),
-                0, 1, 0
-            ),
-            (
-                "Eksplorasi & Pemetaan Struktur Proyek",
-                "coding",
-                "Memindai seluruh hierarki folder proyek (file tree) untuk memahami arsitektur kode dan dependensi.",
-                json.dumps(["folder", "proyek", "project", "struktur", "scan folder", "repo", "arsitektur"]),
-                json.dumps([
-                    "1. Pindai folder proyek menggunakan scan_workspace_folder",
-                    "2. Filter direktori berat (.git, node_modules, venv)",
-                    "3. Petakan arsitektur berkas utama dan dependensi package",
-                    "4. Tampilkan pohon berkas interaktif di layar HUD"
-                ]),
-                0, 1, 0
-            ),
-            (
-                "Automasi Penulisan Berkas & Kode",
-                "coding",
-                "Membuat, menulis, atau memperbarui berkas kode program dan dokumen teks di komputer pengguna secara mandiri.",
-                json.dumps(["buat file", "tulis file", "simpan script", "bikin script", "koding"]),
-                json.dumps([
-                    "1. Evaluasi kebutuhan isi kode/teks dari pengguna",
-                    "2. Tulis kode program yang bersih, modular, dan terdokumentasi",
-                    "3. Simpan langsung ke Desktop/Workspace via write_local_file",
-                    "4. Berikan konfirmasi status path berkas ke pengguna"
-                ]),
-                0, 1, 0
-            ),
-            (
-                "Asisten Komunikasi Lintas Platform",
-                "communication",
-                "Membaca dan mengirimkan pesan notifikasi atau laporan langsung ke WhatsApp dan Telegram.",
-                json.dumps(["wa", "whatsapp", "telegram", "kirim pesan", "kabari", "chat"]),
-                json.dumps([
-                    "1. Tentukan platform tujuan (WhatsApp Web / Telegram Bot)",
-                    "2. Resolusi nama kontak atau chat ID tujuan",
-                    "3. Format pesan teks secara sopan, ringkas, dan jelas",
-                    "4. Kirim pesan via whatsapp_send_message / telegram_send_message"
-                ]),
-                0, 1, 0
-            ),
-        ]
-
-        cursor.executemany("""
-            INSERT INTO agent_skills (name, category, description, trigger_keywords_json, procedure_steps_json, usage_count, is_active, learned_from_experience)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, built_in_skills)
-        conn.commit()
-        logger.info(f"[AnaraMemory] Seeded {len(built_in_skills)} built-in Anara agent skills.")
+        """Hermes Parity: Skills are managed directly from filesystem skills/ (agentskills.io standard)."""
+        pass
 
     def get_brain_stats(self) -> Dict[str, Any]:
         """Returns database node counts and physical size telemetry."""

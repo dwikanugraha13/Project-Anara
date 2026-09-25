@@ -106,7 +106,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
         cb_id = cb.get("id")
         cb_data = cb.get("data", "")
         sender = cb.get("from", {})
-        sender_name = (sender.get("first_name", "") + " " + sender.get("last_name", "")).strip() or "Pengguna"
+        sender_name = (sender.get("first_name", "") + " " + sender.get("last_name", "")).strip() or "User"
         chat_id = str(cb.get("message", {}).get("chat", {}).get("id", ""))
         message_id = cb.get("message", {}).get("message_id")
         user_id = str(sender.get("id", "telegram_user"))
@@ -120,7 +120,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
         # Case B: Selected a Provider
         if cb_data.startswith("prov:"):
             target_prov = cb_data.split(":", 1)[1]
-            await answer_telegram_callback_query(cb_id, text=f"Membuka {target_prov.upper()}...")
+            await answer_telegram_callback_query(cb_id, text=f"Opening {target_prov.upper()}...")
             await send_telegram_models_for_provider(chat_id=chat_id, provider_prefix=target_prov, message_id=message_id)
             return
 
@@ -133,16 +133,16 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                 target_model = cb_data.split(":", 1)[1]
 
             if not target_model:
-                await answer_telegram_callback_query(cb_id, text="Model tidak ditemukan atau expired.")
+                await answer_telegram_callback_query(cb_id, text="Model not found or expired.")
                 return
             from providers.accounts import set_active_model_id
             set_active_model_id(target_model)
-            await answer_telegram_callback_query(cb_id, text=f"Model diubah ke {target_model}")
+            await answer_telegram_callback_query(cb_id, text=f"Model switched to {target_model}")
             if message_id:
                 confirm_text = (
-                    f"✅ <b>Model AI Aktif Berhasil Diubah!</b>\n\n"
-                    f"Model yang sekarang digunakan:\n<code>{target_model}</code>\n\n"
-                    f"<i>Kirim pesan untuk langsung berinteraksi dengan model ini.</i>"
+                    f"✅ <b>Active AI Model Updated!</b>\n\n"
+                    f"Currently active model:\n<code>{target_model}</code>\n\n"
+                    f"<i>Send a message to interact with this model.</i>"
                 )
                 await edit_telegram_message(chat_id=chat_id, message_id=message_id, text=confirm_text)
             return
@@ -153,12 +153,12 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
             from core.command_hub import set_chat_voice_mode, VOICE_MODE_LABELS
             new_m = set_chat_voice_mode("telegram", chat_id, target_mode)
             lbl = VOICE_MODE_LABELS.get(new_m, new_m)
-            await answer_telegram_callback_query(cb_id, text=f"Mode suara: {new_m}")
+            await answer_telegram_callback_query(cb_id, text=f"Voice mode: {new_m}")
             if message_id:
                 await edit_telegram_message(
                     chat_id=chat_id,
                     message_id=message_id,
-                    text=f"✅ <b>Mode Suara Berhasil Diperbarui!</b>\n\nMode aktif di chat ini:\n<b>{lbl}</b>",
+                    text=f"✅ <b>Voice Mode Updated!</b>\n\nActive mode in this chat:\n<b>{lbl}</b>",
                     reply_markup=None
                 )
             return
@@ -172,7 +172,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                 opt_idx = int(opt_idx_str)
                 q_state = _PENDING_TELEGRAM_QUESTIONS.get(q_id)
                 if q_state:
-                    await answer_telegram_callback_query(cb_id, text="Pilihan diterima! ✍️")
+                    await answer_telegram_callback_query(cb_id, text="Choice accepted! ✍️")
                     questions = q_state["questions"]
                     if q_idx < len(questions):
                         cur_q = questions[q_idx]
@@ -181,7 +181,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                             chosen = opts[opt_idx]
                             ans_label = chosen.get("label", "") if isinstance(chosen, dict) else str(chosen)
                         else:
-                            ans_label = f"Opsi {opt_idx+1}"
+                            ans_label = f"Option {opt_idx+1}"
                         q_state["answers"].append({
                             "header": cur_q.get("header", ""),
                             "question": cur_q.get("question", ""),
@@ -195,7 +195,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
         if cb_data.startswith("qdis:"):
             _, q_id = cb_data.split(":", 1)
             q_state = _PENDING_TELEGRAM_QUESTIONS.get(q_id)
-            await answer_telegram_callback_query(cb_id, text="Memproses rekomendasi default / Applying default recommendations...")
+            await answer_telegram_callback_query(cb_id, text="Applying default recommendations...")
             if q_state:
                 from tools.events import resolve_question_response
                 rec_answers = []
@@ -215,9 +215,9 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
 
                 if message_id:
                     skip_msg = (
-                        "⏭️ <b>Kuesioner dilewati / Questionnaire skipped:</b> "
-                        "Anara menggunakan opsi rekomendasi terbaik secara otomatis.\n\n"
-                        "<i>Memulai eksekusi / Starting execution...</i>"
+                        "⏭️ <b>Questionnaire Skipped:</b> "
+                        "Anara applied the recommended options automatically.\n\n"
+                        "<i>Starting execution...</i>"
                     )
                     await edit_telegram_message(chat_id=chat_id, message_id=message_id, text=skip_msg, reply_markup=None)
             return
@@ -231,7 +231,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
             else:
                 action, plan_id = cb_data.split(":", 1)
 
-            action = "approve" if action in ("approve", "yes", "setujui") else "reject"
+            action = "approve" if action in ("approve", "yes") else "reject"
             action_toast = f"Processing {action}..." if action == "approve" else "Cancelling action..."
             await answer_telegram_callback_query(cb_id, text=action_toast)
 
@@ -263,7 +263,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
     if msg:
         chat_id = str(msg.get("chat", {}).get("id"))
         sender = msg.get("from", {})
-        sender_name = (sender.get("first_name", "") + " " + sender.get("last_name", "")).strip() or sender.get("username") or "Pengguna"
+        sender_name = (sender.get("first_name", "") + " " + sender.get("last_name", "")).strip() or sender.get("username") or "User"
         user_id = str(sender.get("id", "telegram_user"))
         raw_text = (msg.get("text") or msg.get("caption") or "").strip()
 
@@ -356,7 +356,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
         reply_context = ""
         if reply_msg and isinstance(reply_msg, dict):
             r_sender = reply_msg.get("from", {})
-            r_sender_name = (r_sender.get("first_name", "") + " " + r_sender.get("last_name", "")).strip() or r_sender.get("username") or "Pengguna"
+            r_sender_name = (r_sender.get("first_name", "") + " " + r_sender.get("last_name", "")).strip() or r_sender.get("username") or "User"
             r_text = (reply_msg.get("text") or reply_msg.get("caption") or "").strip()
 
             r_doc = reply_msg.get("document")
@@ -365,7 +365,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
             r_media_info = ""
 
             if r_doc and r_doc.get("file_id"):
-                r_fname = r_doc.get("file_name", "berkas_lampiran")
+                r_fname = r_doc.get("file_name", "attached_document")
                 r_dl = await download_telegram_attachment(r_doc.get("file_id"), r_fname)
                 if r_dl:
                     incoming_attachments.append({
@@ -375,7 +375,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                         "mime_type": r_doc.get("mime_type", ""),
                         "size": r_doc.get("file_size", 0),
                     })
-                    r_media_info = f"[Lampiran Berkas: {r_fname} di {r_dl}]"
+                    r_media_info = f"[Attached Document: {r_fname} at {r_dl}]"
             elif r_photo and isinstance(r_photo, list) and len(r_photo) > 0:
                 highest_r_photo = r_photo[-1]
                 r_pname = f"replied_photo_{highest_r_photo.get('file_unique_id', 'snap')}.jpg"
@@ -387,7 +387,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                         "local_path": r_pdl,
                         "size": highest_r_photo.get("file_size", 0),
                     })
-                    r_media_info = f"[Lampiran Foto: {r_pname} di {r_pdl}]"
+                    r_media_info = f"[Attached Photo: {r_pname} at {r_pdl}]"
             elif r_video and r_video.get("file_id"):
                 r_vname = r_video.get("file_name") or f"replied_video_{r_video.get('file_unique_id', 'clip')}.mp4"
                 r_vdl = await download_telegram_attachment(r_video.get("file_id"), r_vname)
@@ -399,11 +399,11 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                         "mime_type": r_video.get("mime_type", "video/mp4"),
                         "size": r_video.get("file_size", 0),
                     })
-                    r_media_info = f"[Lampiran Video: {r_vname} di {r_vdl}]"
+                    r_media_info = f"[Attached Video: {r_vname} at {r_vdl}]"
 
             quoted_body = f"{r_text}\n{r_media_info}".strip() if r_media_info else r_text
             if quoted_body:
-                reply_context = f"[KONTEKS: PENGGUNA MEMBALAS/MEREPLY PESAN DARI {r_sender_name.upper()}]:\n\"{quoted_body}\"\n\n"
+                reply_context = f"[REPLY_TO_MESSAGE from {r_sender_name.upper()}]:\n\"{quoted_body}\"\n\n"
 
         if incoming_attachments:
             voice_att = next((att for att in incoming_attachments if att.get("type") in ("voice", "audio")), None)
@@ -413,16 +413,16 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
             att_info = []
             for att in doc_attachments:
                 att_info.append(
-                    f"[BERKAS DOKUMEN DILAMPIRKAN DARI TELEGRAM]:\n"
-                    f"- Nama Berkas: {att['file_name']}\n"
-                    f"- Lokasi Tersimpan di PC: {att['local_path']}"
+                    f"[ATTACHED_DOCUMENT]:\n"
+                    f"- File Name: {att['file_name']}\n"
+                    f"- Local Path: {att['local_path']}"
                 )
                 if any(att["file_name"].lower().endswith(ext) for ext in [".md", ".txt", ".json", ".py", ".csv", ".yaml", ".yml"]):
                     try:
                         with open(att["local_path"], "r", encoding="utf-8", errors="ignore") as tf:
                             snippet = tf.read(2500)
                             if snippet.strip():
-                                att_info.append(f"- Pratinjau Isi:\n```\n{snippet.strip()}\n```")
+                                att_info.append(f"- Content Preview:\n```\n{snippet.strip()}\n```")
                     except Exception:
                         pass
             att_header = "\n".join(att_info)
@@ -436,8 +436,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                         text = f"{text}\n\n{att_header}"
                 else:
                     fallback_audio_msg = (
-                        "🎙️ <i>Voice message could not be transcribed. Please ensure the active model supports audio input or send your request in text.</i>\n\n"
-                        "<i>Maaf, pesan suara tidak dapat ditranskripsikan. Pastikan model aktif mendukung audio atau kirim perintah dalam teks.</i>"
+                        "🎙️ <i>Voice message could not be transcribed. Please ensure the active model supports audio input or send your request in text.</i>"
                     )
                     await send_telegram_message(
                         chat_id=chat_id,
@@ -484,7 +483,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                 return
 
         # ── 3. Handle Commands & Standard Requests via Unified Dispatcher ──
-        if text.strip().lower().startswith(("/stop", "/cancel", "/abort", "/batal")):
+        if text.strip().lower().startswith(("/stop", "/cancel", "/abort")):
             from core.session_manager import session_state_manager
             interrupt_info = await session_state_manager.request_hard_interrupt("telegram", chat_id, reason="telegram_stop")
             active_task = _ACTIVE_CHAT_TASKS.pop(chat_id, None)
@@ -499,15 +498,15 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
 
             details = []
             if interrupt_info.get("task_cancelled"):
-                details.append("eksekusi tugas dibatalkan")
+                details.append("task execution cancelled")
             if interrupt_info.get("processes_killed", 0) > 0:
-                details.append(f"{interrupt_info['processes_killed']} subproses OS dihentikan")
+                details.append(f"{interrupt_info['processes_killed']} OS sub-processes killed")
             if interrupt_info.get("pending_cleared"):
-                details.append("rencana tertahan dibersihkan")
+                details.append("pending plans cleared")
             detail_str = f" ({', '.join(details)})" if details else ""
 
             await send_telegram_message(
-                text=f"🛑 <b>Tugas agen telah dihentikan via /stop.</b>{detail_str}",
+                text=f"🛑 <b>Agent tasks stopped via /stop.</b>{detail_str}",
                 chat_id=chat_id
             )
             return
@@ -525,10 +524,14 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
         status_tracker = TelegramStatusTracker(chat_id)
         current_task = asyncio.current_task()
         if current_task:
+            prev_task = _ACTIVE_CHAT_TASKS.get(chat_id)
+            if prev_task and not prev_task.done() and prev_task is not current_task:
+                logger.info(f"[TelegramDaemon] Superseding previous in-flight task for chat {chat_id}")
+                prev_task.cancel()
             _ACTIVE_CHAT_TASKS[chat_id] = current_task
 
         try:
-            await status_tracker.update("⚙️ Sedang menganalisis & merumuskan langkah... [Langkah 1]")
+            await status_tracker.update("⚙️ Analyzing request and formulating steps...")
             res = await process_channel_request(req, progress_callback=status_tracker.update)
             await status_tracker.cleanup()
 
@@ -578,10 +581,8 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                 await send_telegram_message(text=res.text, chat_id=chat_id, reply_markup=res.reply_markup)
         except asyncio.CancelledError:
             await status_tracker.cleanup()
-            logger.info(f"[TelegramDaemon] Chat {chat_id} task was cancelled via /stop.")
-            from core.channel_adapter import synthesize_channel_notice
-            stop_msg = await synthesize_channel_notice("stopped", channel="telegram")
-            await send_telegram_message(text=f"🛑 <b>{stop_msg}</b>", chat_id=chat_id)
+            logger.info(f"[TelegramDaemon] Chat {chat_id} task was cancelled or superseded.")
+            return
         except Exception as e:
             await status_tracker.cleanup()
             logger.error(f"[TelegramDaemon] Error processing request: {e}")

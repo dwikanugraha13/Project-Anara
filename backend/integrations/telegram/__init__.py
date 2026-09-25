@@ -37,6 +37,7 @@ from .formatter import (
     _rich_normalize_linebreaks,
     has_rich_telegram_constructs,
     split_message_chunks,
+    split_html_chunks,
 )
 from .keyboards import (
     send_telegram_provider_selector,
@@ -82,6 +83,7 @@ __all__ = [
     "_rich_normalize_linebreaks",
     "has_rich_telegram_constructs",
     "split_message_chunks",
+    "split_html_chunks",
     "send_telegram_provider_selector",
     "send_telegram_models_for_provider",
     "send_telegram_model_search",

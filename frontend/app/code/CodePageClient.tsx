@@ -346,7 +346,7 @@ export default function CodePageClient({
   }, [activeSessionId, loadGitStatus]);
 
   const handleClearWorkspace = async () => {
-    if (!confirm(`Tutup & lepaskan folder "${workspaceTree?.workspace_name}" dari sesi ini?`)) return;
+    if (!confirm(`Close & remove folder "${workspaceTree?.workspace_name}" from this session?`)) return;
     try {
       const q = activeSessionId ? `?session_id=${activeSessionId}` : "";
       await fetch(`${BACKEND_URL}/api/agent/workspace${q}`, { method: "DELETE" });
@@ -611,7 +611,7 @@ export default function CodePageClient({
   };
 
   const handleDeleteSession = async (s: ChatSession) => {
-    if (!confirm(`Hapus "${s.title || `Sesi #${s.id}`}"?`)) return;
+    if (!confirm(`Delete "${s.title || `Session #${s.id}`}"?`)) return;
     try {
       const res = await fetch(`${BACKEND_URL}/api/chat/sessions/${s.id}`, { method: "DELETE" });
       if (res.ok) {
@@ -777,11 +777,11 @@ export default function CodePageClient({
               type="button"
               onClick={() => setIsSessionDropdownOpen((v) => !v)}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 hover:border-white/20 text-xs font-mono text-slate-200 hover:text-white transition-colors cursor-pointer"
-              title="Pilih atau beralih sesi proyek"
+              title="Select or switch project session"
             >
               <span>💬</span>
               <span className="font-semibold text-white truncate max-w-[150px]">
-                {activeSession?.title || `Sesi #${activeSessionId || 1}`}
+                {activeSession?.title || `Session #${activeSessionId || 1}`}
               </span>
               <span className="text-[10px] text-slate-400">▾</span>
             </button>
@@ -789,13 +789,13 @@ export default function CodePageClient({
             {isSessionDropdownOpen && (
               <div className="absolute left-0 top-full mt-1.5 w-64 max-h-80 overflow-y-auto custom-scrollbar rounded-xl bg-[#090e1c] border border-white/15 shadow-2xl z-50 p-1.5 select-none font-mono animate-fade-in">
                 <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-white/10 flex items-center justify-between">
-                  <span>Sesi Proyek</span>
-                  <span>{sessions.length} sesi</span>
+                  <span>Project Sessions</span>
+                  <span>{sessions.length} sessions</span>
                 </div>
 
                 <div className="py-1 space-y-0.5">
                   {sessions.length === 0 ? (
-                    <div className="p-3 text-center text-xs text-slate-500">Belum ada sesi</div>
+                    <div className="p-3 text-center text-xs text-slate-500">No sessions yet</div>
                   ) : (
                     sessions.map((s) => {
                       const isCur = s.id === activeSessionId;
@@ -812,7 +812,7 @@ export default function CodePageClient({
                               : "hover:bg-white/[0.06] text-slate-300 hover:text-white"
                           }`}
                         >
-                          <span className="truncate flex-1">{s.title || `Sesi #${s.id}`}</span>
+                          <span className="truncate flex-1">{s.title || `Session #${s.id}`}</span>
                           <span className="text-[10px] text-slate-500 ml-2 shrink-0">
                             {s.message_count}
                           </span>
@@ -831,7 +831,7 @@ export default function CodePageClient({
                     }}
                     className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-xs font-semibold text-cyan-300 hover:text-white transition-colors cursor-pointer"
                   >
-                    <span>+ Sesi Baru</span>
+                    <span>+ New Session</span>
                   </button>
                 </div>
               </div>
@@ -842,7 +842,7 @@ export default function CodePageClient({
             type="button"
             onClick={handleNewSession}
             className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs font-mono text-slate-300 hover:text-white transition-colors cursor-pointer"
-            title="Buat sesi koding baru"
+            title="Create new coding session"
           >
             <span>+ Baru</span>
           </button>
@@ -948,17 +948,17 @@ export default function CodePageClient({
                     </svg>
                   </div>
                   <h4 className="text-xs font-semibold text-white font-mono uppercase tracking-wider">
-                    Belum Ada Folder
+                    No Folder Selected
                   </h4>
                   <p className="text-[11px] text-slate-400 leading-relaxed max-w-[200px]">
-                    Hubungkan direktori lokal untuk membaca struktur berkas proyek.
+                    Connect a local directory to read project file structure.
                   </p>
                   <button
                     type="button"
                     onClick={() => handlePickLocalFolder()}
                     className="px-3 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/30 text-cyan-300 hover:text-white text-xs font-mono font-semibold transition-colors cursor-pointer"
                   >
-                    Pilih Folder Proyek
+                    Select Project Folder
                   </button>
                 </div>
               )}
@@ -968,7 +968,7 @@ export default function CodePageClient({
             <div
               onMouseDown={startResizingLeft}
               className="relative w-px h-full cursor-col-resize shrink-0 select-none bg-white/10 hover:bg-white/30 active:bg-white/50 transition-colors z-20"
-              title="Tarik untuk mengubah lebar panel berkas"
+              title="Drag to resize file panel width"
             >
               <div className="absolute inset-y-0 -left-1.5 w-3 cursor-col-resize bg-transparent" />
             </div>
@@ -1000,7 +1000,7 @@ export default function CodePageClient({
                 onCloseTab={handleCloseIdeTab}
                 onSaveFile={handleSaveIdeFile}
                 onAskAnara={(p: string, n: string) => {
-                  handleSendText(`Tolong analisa dan jelaskan arsitektur berkas @${n} (${p})`, agentMode);
+                  handleSendText(`Please analyze and explain the architecture of file @${n} (${p})`, agentMode);
                 }}
               />
             ) : (
@@ -1012,7 +1012,7 @@ export default function CodePageClient({
                   </svg>
                 </div>
                 <p className="text-xs text-slate-400 max-w-sm leading-relaxed">
-                  Pilih berkas dari explorer di sebelah kiri untuk mulai membaca &amp; menyunting kode
+                  Select a file from the explorer on the left to start reading &amp; editing code
                 </p>
               </div>
             )}
@@ -1025,7 +1025,7 @@ export default function CodePageClient({
               <div
                 onMouseDown={startResizingTerminal}
                 className="relative h-px w-full cursor-row-resize shrink-0 select-none bg-white/10 hover:bg-white/30 active:bg-white/50 transition-colors z-10"
-                title="Tarik untuk mengubah tinggi terminal"
+                title="Drag to resize terminal height"
               >
                 <div className="absolute inset-x-0 -top-1.5 h-3 cursor-row-resize bg-transparent" />
               </div>
@@ -1036,10 +1036,10 @@ export default function CodePageClient({
               >
                 <WorkbenchTerminal
                   logs={[
-                    `[anara-agent] Mode aktif: ${agentMode.toUpperCase()}`,
+                    `[anara-agent] Active mode: ${agentMode.toUpperCase()}`,
                     `[system] Terminal worker ready (Workspace: ${workspaceTree?.workspace_name || "default"}).`,
                   ]}
-                  activeTask={assistantStatus === "thinking" ? "Model AI Sedang Berpikir..." : undefined}
+                  activeTask={assistantStatus === "thinking" ? "AI Model Thinking..." : undefined}
                   onExecuteCommand={() => {}}
                   onClose={() => setIsTerminalOpen(false)}
                 />
@@ -1053,7 +1053,7 @@ export default function CodePageClient({
           <div
             onMouseDown={startResizingRight}
             className="relative w-px h-full cursor-col-resize shrink-0 select-none bg-white/10 hover:bg-white/30 active:bg-white/50 transition-colors z-20"
-            title="Tarik untuk mengubah lebar panel AI Agent"
+            title="Drag to resize AI Agent panel width"
           >
             <div className="absolute inset-y-0 -left-1.5 w-3 cursor-col-resize bg-transparent" />
           </div>

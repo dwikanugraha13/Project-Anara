@@ -3,6 +3,7 @@ Audio utilities for processing audio chunks between browser and Gemini API.
 """
 import base64
 import io
+import re
 from typing import Optional, Dict, Any, List
 import numpy as np
 
@@ -74,7 +75,7 @@ def analyze_speech_emotion(pcm_bytes: bytes, sample_rate: int = 16000) -> dict:
             "pitch_variance": 0.0,
             "rms": 0.0,
             "spectral_centroid_hz": 0.0,
-            "tone_description": "Nada suara santai / percakapan netral"
+            "tone_description": "Relaxed tone / neutral conversation"
         }
         
     arr = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
@@ -178,7 +179,7 @@ def analyze_speech_emotion(pcm_bytes: bytes, sample_rate: int = 16000) -> dict:
             "pitch_variance": round(pitch_std, 1),
             "rms": round(overall_rms, 4),
             "spectral_centroid_hz": round(spectral_centroid, 1),
-            "tone_description": "Nada suara marah / kesal / tegas (Intensitas Tinggi, Frekuensi Tajam)"
+            "tone_description": "Angry / irritated / assertive tone (High Intensity, Sharp Frequency)"
         }
     elif is_sad:
         confidence = min(0.92, 0.70 + (1.0 - (overall_rms / 0.03)) * 0.22)
@@ -189,7 +190,7 @@ def analyze_speech_emotion(pcm_bytes: bytes, sample_rate: int = 16000) -> dict:
             "pitch_variance": round(pitch_std, 1),
             "rms": round(overall_rms, 4),
             "spectral_centroid_hz": round(spectral_centroid, 1),
-            "tone_description": "Nada suara sedih / lemas / pelan (Energi Sangat Lemah, Intonasi Datar)"
+            "tone_description": "Sad / weak / quiet tone (Very Low Energy, Flat Intonation)"
         }
     elif is_happy:
         confidence = min(0.92, 0.72 + (pitch_std / 50.0) * 0.20)
@@ -200,7 +201,7 @@ def analyze_speech_emotion(pcm_bytes: bytes, sample_rate: int = 16000) -> dict:
             "pitch_variance": round(pitch_std, 1),
             "rms": round(overall_rms, 4),
             "spectral_centroid_hz": round(spectral_centroid, 1),
-            "tone_description": "Nada suara ceria / antusias (Pitch Tinggi Melodis)"
+            "tone_description": "Cheerful / enthusiastic tone (High Melodic Pitch)"
         }
     else:
         # Default Natural Conversation
@@ -212,7 +213,7 @@ def analyze_speech_emotion(pcm_bytes: bytes, sample_rate: int = 16000) -> dict:
             "pitch_variance": round(pitch_std, 1),
             "rms": round(overall_rms, 4),
             "spectral_centroid_hz": round(spectral_centroid, 1),
-            "tone_description": "Nada suara santai / percakapan netral"
+            "tone_description": "Relaxed tone / neutral conversation"
         }
 
 
@@ -280,22 +281,44 @@ class AcousticSERTracker:
         return raw_res
 
 
-# ── Acoustic Noise & STT Hallucination Filter ──
-STT_HALLUCINATED_PHRASES = (
-    "terima kasih", "terima kasih telah menonton", "subtitle by", "subtitles by",
-    "diedit oleh", "diterjemahkan oleh", "like and subscribe", "sampai jumpa",
-    "menonton video ini", "link di deskripsi", "jangan lupa like", "di video kali ini",
-    "halo semuanya", "hai teman-teman", "selamat datang kembali", "bye bye", "dadah",
-    "amara", "kamara", "samara", "tamara"
-)
+# ── Acoustic Noise & STT Hallucination Filter (Hermes Parity: Zero-Text-Blacklist) ──
+STT_HALLUCINATED_PHRASES: tuple = ()
 
 
 def is_stt_hallucination(text: str) -> bool:
-    """Returns True if the transcribed text is an acoustic noise artifact or empty hallucination."""
-    clean = (text or "").strip().lower()
-    if not clean or len(clean) < 2:
+    """
+    Returns True if the transcribed text is an acoustic noise artifact, 
+    stutter loop, or empty transcription, using language-agnostic heuristics (Hermes Parity).
+    Preserves legitimate human short greetings, acknowledgments, and commands in any language.
+    """
+    clean = (text or "").strip()
+    if not clean:
         return True
-    return any(phrase in clean for phrase in STT_HALLUCINATED_PHRASES)
+
+    # 1. Strip pure punctuation/symbols and check for meaningful characters
+    alnum = re.findall(r"[\w\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]", clean)
+    if len(alnum) < 2:
+        return True
+
+    # 2. Bracketed/parenthesized acoustic descriptors (e.g. "[music]", "(applause)", "[silence]")
+    bracket_cleaned = re.sub(r"^(\[|\()(music|applause|laughter|silence|audio|noise)(\]|\))$", "", clean.lower().strip())
+    if not bracket_cleaned.strip():
+        return True
+
+    # 3. Character-level repetition / acoustic stutter loop (e.g. "..............", "aaaaaa")
+    non_space = re.sub(r"\s+", "", clean.lower())
+    if len(non_space) >= 12 and len(set(non_space)) <= 2:
+        return True
+
+    # 4. Token-level repetition loop (Whisper background noise hallucination, e.g. "the the the the the")
+    tokens = [t.lower() for t in re.findall(r"\b\w+\b", clean)]
+    if len(tokens) >= 4:
+        if len(set(tokens)) == 1:
+            return True
+        if len(tokens) >= 8 and (len(set(tokens)) / len(tokens)) < 0.25:
+            return True
+
+    return False
 
 
 async def transcribe_audio_file(audio_path: str) -> Optional[str]:
@@ -340,12 +363,14 @@ async def transcribe_audio_file(audio_path: str) -> Optional[str]:
                 if api_key:
                     headers["Authorization"] = f"Bearer {api_key}"
 
+                from core.prompt_loader import load_prompt
+                stt_prompt = load_prompt("voice/stt_tier_transcription").strip()
                 payload = {
                     "model": target_model,
                     "messages": [{
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": "Transkripsikan isi ucapan dalam audio ini secara persis kata per kata. Tuliskan teks ucapannya saja tanpa awalan atau akhiran."},
+                            {"type": "text", "text": stt_prompt},
                             {"type": "input_audio", "input_audio": {"data": audio_b64, "format": clean_fmt}}
                         ]
                     }],
@@ -394,7 +419,8 @@ async def transcribe_audio_file(audio_path: str) -> Optional[str]:
 
         async def _transcribe_call(client: Any) -> str:
             audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime)
-            prompt = "Transkripsikan isi rekaman suara ini secara akurat kata per kata dalam teks. Keluarkan hanya teks hasil transkripsi ucapan."
+            from core.prompt_loader import load_prompt
+            prompt = load_prompt("voice/stt_tier_transcription").strip()
             for m_candidate in ["gemini-3.6-flash", "gemini-3.0-flash", "gemini-2.5-flash"]:
                 try:
                     response = await client.aio.models.generate_content(
@@ -478,9 +504,11 @@ async def resolve_tts_voice_model_driven(text: str) -> str:
     Eliminates developer maintenance of manual language/voice dictionaries.
     Caches results by language fingerprint for 0ms conversational latency.
     """
+    from config import cfg_get
+    default_fallback_voice = str(cfg_get("voice.default", "en-US-AvaNeural"))
     sample = (text or "").strip()[:180]
     if not sample:
-        return "id-ID-GadisNeural"
+        return default_fallback_voice
 
     cache_key = sample[:60].lower()
     if cache_key in _VOICE_RESOLUTION_CACHE:
@@ -490,23 +518,9 @@ async def resolve_tts_voice_model_driven(text: str) -> str:
         import asyncio
         from providers import call_universal_chat_model
         from core.capabilities import get_fast_auxiliary_model
+        from core.prompt_loader import load_prompt
 
-        sys_p = (
-            "You are a multilingual TTS voice router for Microsoft Edge-TTS.\n"
-            "Given a sample text in any human language (e.g. Japanese, Korean, Chinese, Arabic, English, Indonesian, French, Spanish, German, etc.), "
-            "determine its language and output ONLY the single best matching Microsoft Edge-TTS neural voice identifier.\n"
-            "Examples:\n"
-            "- Japanese: ja-JP-NanamiNeural\n"
-            "- Korean: ko-KR-SunHiNeural\n"
-            "- Chinese: zh-CN-XiaoxiaoNeural\n"
-            "- English: en-US-AvaNeural\n"
-            "- Indonesian: id-ID-GadisNeural\n"
-            "- French: fr-FR-DeniseNeural\n"
-            "- Spanish: es-ES-ElviraNeural\n"
-            "- German: de-DE-KatjaNeural\n"
-            "- Arabic: ar-SA-ZariyahNeural\n"
-            "Respond with ONLY the exact voice identifier string, nothing else."
-        )
+        sys_p = load_prompt("tts_voice_router").strip()
         user_p = f"Sample text: \"{sample}\"\nEdge-TTS Voice ID:"
         model_id = get_fast_auxiliary_model()
         res = await asyncio.wait_for(
@@ -530,7 +544,7 @@ async def resolve_tts_voice_model_driven(text: str) -> str:
         import logging
         logging.getLogger(__name__).debug(f"[TTSVoiceRouter] Model voice resolution notice: {e}")
 
-    return "id-ID-GadisNeural"
+    return default_fallback_voice
 
 
 async def synthesize_speech_audio(

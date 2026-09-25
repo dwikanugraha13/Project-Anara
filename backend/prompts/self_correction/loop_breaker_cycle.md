@@ -1,0 +1,1 @@
+[SYSTEM REFLECTION: PING-PONG LOOP DETECTED]: Alternating thrashing detected (ping-pong loop) between tools '{t1}' and '{t2}'. Review your collected observations, cease further repetitive calls, and conclude your response now.

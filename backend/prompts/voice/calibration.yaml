@@ -1,0 +1,12 @@
+# ── Voice Calibration & Live Directives Configuration (Hermes Parity) ──
+# Externalized system directives sent to Gemini Live / Audio pipeline.
+
+cancel_notice: "[SYSTEM INSTRUCTION]: Warmly inform {sp_name} that voice calibration has been cancelled and continue conversation naturally in their active language."
+prompt_phrase_1: "[SYSTEM INSTRUCTION]: Prompt {sp_name} clearly and cheerfully to read the first calibration phrase: \"{p1}\" in their active language."
+ask_permission: "[SYSTEM INSTRUCTION]: Ask {sp_name} warmly if they wish to calibrate their voice now, in their active language."
+audio_faint: "[SYSTEM INSTRUCTION]: Audio was faint. Prompt the user to repeat the phrase clearly: \"{curr_p}\""
+voice_unclear: "[SYSTEM INSTRUCTION]: Voice profile was not captured clearly. Prompt user to repeat the phrase: \"{curr_p}\""
+next_phrase: "[SYSTEM INSTRUCTION]: Acknowledge briefly and prompt user to read the next phrase: \"{next_p}\""
+calibration_success: "[SYSTEM INSTRUCTION]: Warmly inform {sp_name} that their voice profile has been successfully calibrated and saved."
+execution_result_speech: "[SYSTEM INSTRUCTION]: Explain this execution result concisely and warmly to the user in their active language: {spoken_summary}"
+cancel_action_speech: "[SYSTEM INSTRUCTION]: Inform user warmly in their active language: {cancel_msg}"

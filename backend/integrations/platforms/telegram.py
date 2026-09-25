@@ -64,10 +64,15 @@ class TelegramPlatformAdapter(BasePlatformAdapter):
         args = getattr(action, "tool_args", {}) or {}
         pending_tc = getattr(action, "pending_tool_call", None) or {}
         cmd = args.get("command") or pending_tc.get("arguments", {}).get("command")
+        t_name = getattr(action, "tool_name", "")
         if cmd:
             text_parts.append(f"\n```shell\n{cmd}\n```")
         elif args.get("file_path"):
             text_parts.append(f"\n`Target: {args.get('file_path')}`")
+        elif t_name == "computer_use":
+            act = args.get("action", "action")
+            target_desc = args.get("text") or args.get("key") or args.get("keys") or args.get("app") or (f"({args.get('x')}, {args.get('y')})" if args.get("x") is not None else "")
+            text_parts.append(f"\n`Computer Use ({act}): {target_desc}`")
 
         full_text = "\n".join(text_parts)
         action_id = getattr(action, "action_id", getattr(action, "plan_id", "act"))

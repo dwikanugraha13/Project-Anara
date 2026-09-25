@@ -172,7 +172,7 @@ class ToolRegistry:
         """Executes a tool by looking up its handler dynamically (Zero if-elif ladder)."""
         tool = self.get_tool(name)
         if not tool:
-            return {"status": "error", "message": f"Alat '{name}' tidak terdaftar."}
+            return {"status": "error", "message": f"Tool '{name}' is not registered."}
 
         fn = tool.handler
         try:
@@ -191,10 +191,10 @@ class ToolRegistry:
                 return res
             except Exception as e:
                 logger.error(f"[ToolRegistry] Error calling {name}: {e}")
-                return {"status": "error", "message": f"Kesalahan pemanggilan tool {name}: {str(e)}"}
+                return {"status": "error", "message": f"Tool call error for '{name}': {str(e)}"}
         except Exception as e:
             logger.error(f"[ToolRegistry] Execution error in {name}: {e}", exc_info=True)
-            return {"status": "error", "message": f"Kesalahan pada tool {name}: {str(e)}"}
+            return {"status": "error", "message": f"Error in tool {name}: {str(e)}"}
 
 
 # Global singleton registry instance

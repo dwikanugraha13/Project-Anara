@@ -18,7 +18,6 @@ from cognition import (
     AcousticSERTracker,
     is_stt_hallucination,
     generate_visual_projection,
-    could_be_visual_request,
     is_visual_request_semantic,
 )
 from memory import memory_engine
@@ -27,9 +26,9 @@ from shared_state import pcm_to_wav_bytes
 logger = logging.getLogger("anara.websocket.voice")
 
 ENROLLMENT_PROMPTS = [
-    "Halo Anara, senang berkenalan denganmu!",
-    "Hari ini cuacanya cerah dan hariku menyenangkan.",
-    "Tolong bantu aku menyelesaikan tugas dan pekerjaan ya."
+    "Hello Anara, nice to meet you!",
+    "Today the weather is sunny and my day is wonderful.",
+    "Please help me complete my tasks and assignments."
 ]
 
 
@@ -125,10 +124,8 @@ class VoicePipeline:
         if len(audio_pcm) < 4800:
             return ""
         wav_bytes = pcm_to_wav_bytes(audio_pcm, sample_rate=16000)
-        prompt = (
-            "Transkripsikan ucapan pengguna dalam audio ini secara akurat dalam Bahasa Indonesia atau Inggris. "
-            "Keluarkan HANYA JSON: {\"user_text\": \"...\"}. Jika hanya ada keheningan atau derau tanpa kata, keluarkan {\"user_text\": \"\"}."
-        )
+        from core.prompt_loader import load_prompt
+        prompt = load_prompt("voice/stt_transcription").strip()
         try:
             active_key = key_manager.get_active_key()
             if not active_key:
@@ -188,11 +185,11 @@ class VoicePipeline:
         self.last_emotion_style = emotion
         self.last_emotion_style_ts = now
 
-        directive = f"[Acoustic Tone]: Nada suara pengguna terdeteksi bernuansa {emotion}. Sesuaikan nada bicaramu secara alami dan empatik tanpa menyebut analisis ini secara lisan."
+        directive = f"[Acoustic Tone: User voice detected as {emotion}. Adapt your vocal tone naturally and empathetically without reciting this metadata.]"
         try:
             trend = memory_engine.get_emotion_trend(self.get_current_speaker(), days=3)
             if trend.get("dominant") in ("sad", "tired") and trend.get("total", 0) >= 12 and emotion == trend["dominant"]:
-                directive += f"\nCatatan: beberapa hari terakhir nada suaranya sering {trend['dominant']}."
+                directive += f"\n[Note: User tone has frequently been {trend['dominant']} over the last few days.]"
         except Exception:
             pass
 
@@ -214,13 +211,17 @@ class VoicePipeline:
         if stage == "awaiting_confirmation":
             u_text = await self.stt_transcribe(audio_pcm)
             from core.plan_detector import classify_approval_intent
-            spoken_intent = await classify_approval_intent(u_text or "", f"Konfirmasi kalibrasi suara untuk {sp_name}")
+            from core.prompt_loader import load_config_yaml
+            calib_cfg = load_config_yaml("voice/calibration.yaml", default={})
+
+            spoken_intent = await classify_approval_intent(u_text or "", f"Voice calibration confirmation for {sp_name}")
             if spoken_intent == "reject":
                 self.voice_enrollment = None
                 if live_svc:
                     await live_svc.interrupt()
-                    await live_svc.send_text(f"Sistem: Beritahu {sp_name} dengan ramah bahwa kalibrasi suara dibatalkan dan kita lanjut ngobrol biasa.")
-                self.log_turn(user_text=u_text, ai_text="[Kalibrasi suara dibatalkan]", speaker_name=self.get_current_speaker())
+                    cancel_directive = calib_cfg.get("cancel_notice", "[SYSTEM INSTRUCTION]: Voice calibration cancelled.").format(sp_name=sp_name)
+                    await live_svc.send_text(cancel_directive)
+                self.log_turn(user_text=u_text, ai_text="[Voice calibration cancelled]", speaker_name=self.get_current_speaker())
                 return
             elif spoken_intent == "approve":
                 self.voice_enrollment["stage"] = "recording"
@@ -229,30 +230,37 @@ class VoicePipeline:
                 p1 = prompts[0]
                 if live_svc:
                     await live_svc.interrupt()
-                    await live_svc.send_text(f"Sistem: Minta {sp_name} dengan ceria dan jelas untuk mengucapkan kalimat kalibrasi pertama: \"{p1}\"")
-                self.log_turn(user_text=u_text, ai_text=f"Membaca kalimat kalibrasi pertama: {p1}", speaker_name=self.get_current_speaker())
+                    p1_directive = calib_cfg.get("prompt_phrase_1", "[SYSTEM INSTRUCTION]: Read phrase: \"{p1}\"").format(sp_name=sp_name, p1=p1)
+                    await live_svc.send_text(p1_directive)
+                self.log_turn(user_text=u_text, ai_text=f"Reading calibration phrase 1: {p1}", speaker_name=self.get_current_speaker())
                 return
             else:
                 if live_svc:
                     await live_svc.interrupt()
-                    await live_svc.send_text(f"Sistem: Tanyakan ramah ke {sp_name} apakah ingin kalibrasi suara sekarang (cukup jawab iya atau batal).")
+                    ask_directive = calib_cfg.get("ask_permission", "[SYSTEM INSTRUCTION]: Ask user to calibrate voice.").format(sp_name=sp_name)
+                    await live_svc.send_text(ask_directive)
                 return
 
         elif stage == "recording":
             self.voice_enrollment["last_ts"] = _time.time()
             curr_p = prompts[rnd]
             overall_intensity = estimate_audio_intensity(audio_pcm)
+            from core.prompt_loader import load_config_yaml
+            calib_cfg = load_config_yaml("voice/calibration.yaml", default={})
+
             if overall_intensity < 0.006 or len(audio_pcm) < 16000:
                 if live_svc:
                     await live_svc.interrupt()
-                    await live_svc.send_text(f"Sistem: Suara kurang jelas terdengar. Minta pengguna mengulangi kalimat: \"{curr_p}\"")
+                    faint_directive = calib_cfg.get("audio_faint", "[SYSTEM INSTRUCTION]: Audio was faint: \"{curr_p}\"").format(curr_p=curr_p)
+                    await live_svc.send_text(faint_directive)
                 return
 
             res = memory_engine.calibrate_speaker_voice(sp_name, audio_pcm)
             if not res or not res.get("success"):
                 if live_svc:
                     await live_svc.interrupt()
-                    await live_svc.send_text(f"Sistem: Sidik suara belum tertangkap jelas. Minta pengguna mengulangi lagi kalimat: \"{curr_p}\"")
+                    unclear_directive = calib_cfg.get("voice_unclear", "[SYSTEM INSTRUCTION]: Voice profile unclear: \"{curr_p}\"").format(curr_p=curr_p)
+                    await live_svc.send_text(unclear_directive)
                 return
 
             next_round = rnd + 1
@@ -261,14 +269,16 @@ class VoicePipeline:
                 next_p = prompts[next_round]
                 if live_svc:
                     await live_svc.interrupt()
-                    await live_svc.send_text(f"Sistem: Beri apresiasi singkat lalu minta pengguna membaca kalimat berikutnya: \"{next_p}\"")
+                    next_directive = calib_cfg.get("next_phrase", "[SYSTEM INSTRUCTION]: Read next phrase: \"{next_p}\"").format(next_p=next_p)
+                    await live_svc.send_text(next_directive)
                 return
             else:
                 self.voice_enrollment = None
                 if live_svc:
                     await live_svc.interrupt()
-                    await live_svc.send_text(f"Sistem: Beritahu {sp_name} dengan sangat hangat dan senang bahwa kalibrasi suara berhasil dan tersimpan sempurna.")
-                self.log_turn(user_text="[Kalibrasi Suara Berhasil]", ai_text=f"Kalibrasi suara untuk {sp_name} berhasil disimpan.", speaker_name=self.get_current_speaker())
+                    success_directive = calib_cfg.get("calibration_success", "[SYSTEM INSTRUCTION]: Voice calibration saved.").format(sp_name=sp_name)
+                    await live_svc.send_text(success_directive)
+                self.log_turn(user_text="[Voice Calibration Succeeded]", ai_text=f"Voice profile for {sp_name} successfully calibrated.", speaker_name=self.get_current_speaker())
                 return
 
     async def transcribe_and_subtitle_audio(self, audio_pcm: bytes):
@@ -375,16 +385,16 @@ class VoicePipeline:
         if pending_act and is_approval:
             logger.info(f"[VoicePipeline] Spoken approval detected for pending action #{pending_act.action_id} ('{u_text}'). Executing...")
             session_state_manager.resolve_action(pending_act.channel, pending_act.channel_id, pending_act.action_id, ActionState.EXECUTING)
+            target_desc = pending_act.original_prompt or pending_act.tool_name
             if live_svc:
                 await live_svc.interrupt()
-                await live_svc.send_text("Sistem: Katakan singkat dengan mantap: Baik, tindakan disetujui. Sedang dieksekusi sekarang.")
-
-            await self.websocket.send_json({
-                "type": "transcript",
-                "data": "Baik, tindakan disetujui. Sedang dieksekusi sekarang.",
-                "speaker": "output",
-                "is_final": True
-            })
+                from core.prompt_loader import load_config_yaml
+                live_cfg = load_config_yaml("voice/live_directives.yaml", default={})
+                appr_notify = live_cfg.get(
+                    "action_approved",
+                    "[SYSTEM NOTIFICATION]: The user approved the action '{target_desc}'. Acknowledge the approval concisely in 1 sentence matching the user's active language, then execute."
+                ).format(target_desc=target_desc)
+                await live_svc.send_text(appr_notify)
 
             from core.runner import AnaraExecutionRunner
             runner = AnaraExecutionRunner(
@@ -393,7 +403,7 @@ class VoicePipeline:
                 platform="voice",
             )
             exec_res = await runner.execute_turn(
-                user_message=f"Eksekusi tindakan: {pending_act.original_prompt or pending_act.tool_name}",
+                user_message=target_desc,
                 requested_mode="build"
             )
             session_state_manager.resolve_action(pending_act.channel, pending_act.channel_id, pending_act.action_id, ActionState.EXECUTED)
@@ -401,7 +411,10 @@ class VoicePipeline:
             from cognition.audio import filter_tts_speech_text
             spoken_summary = filter_tts_speech_text(exec_res.text)
             if live_svc:
-                await live_svc.send_text(f"Sistem: Jelaskan hasil eksekusi ini kepada pengguna dengan ramah dan ringkas: {spoken_summary}")
+                from core.prompt_loader import load_config_yaml
+                calib_cfg = load_config_yaml("voice/calibration.yaml", default={})
+                exec_dir = calib_cfg.get("execution_result_speech", "[SYSTEM INSTRUCTION]: Explain execution result: {spoken_summary}").format(spoken_summary=spoken_summary)
+                await live_svc.send_text(exec_dir)
 
             await self.websocket.send_json({
                 "type": "transcript",
@@ -415,10 +428,14 @@ class VoicePipeline:
         elif pending_act and is_cancel:
             logger.info(f"[VoicePipeline] Spoken cancellation for pending action #{pending_act.action_id}.")
             session_state_manager.resolve_action(pending_act.channel, pending_act.channel_id, pending_act.action_id, ActionState.REJECTED)
-            cancel_msg = "Baik, tindakan telah dibatalkan. Tidak ada perubahan yang dilakukan."
+            from core.channel_adapter import synthesize_channel_notice
+            cancel_msg = await synthesize_channel_notice(notice_type="rejected", channel="voice", task_description=pending_act.tool_name)
             if live_svc:
                 await live_svc.interrupt()
-                await live_svc.send_text(f"Sistem: Ucapkan singkat dan ramah: {cancel_msg}")
+                from core.prompt_loader import load_config_yaml
+                calib_cfg = load_config_yaml("voice/calibration.yaml", default={})
+                canc_dir = calib_cfg.get("cancel_action_speech", "[SYSTEM INSTRUCTION]: Inform user: {cancel_msg}").format(cancel_msg=cancel_msg)
+                await live_svc.send_text(canc_dir)
 
             await self.websocket.send_json({
                 "type": "transcript",
@@ -437,40 +454,18 @@ class VoicePipeline:
             track = media_resolved["track"]
             kind = media_resolved.get("kind", "music")
             await self.media_controller.send_media_play(track, kind=kind)
-            reply = media_resolved.get("reply_text") or f"Memutar {track.get('title')}"
+            reply = media_resolved.get("reply_text") or f"Playing {track.get('title')}"
             await self.websocket.send_json({"type": "transcript", "data": reply, "speaker": "output", "is_final": True})
             if live_svc:
-                await live_svc.send_text(f"Sistem: Ucapkan singkat dan ceria: {reply}")
+                from core.prompt_loader import load_config_yaml
+                live_cfg = load_config_yaml("voice/live_directives.yaml", default={})
+                music_cmd = live_cfg.get(
+                    "music_playing",
+                    "[SYSTEM NOTIFICATION]: Music track '{title}' is now playing. Acknowledge briefly to the user in their active language."
+                ).format(title=track.get('title'))
+                await live_svc.send_text(music_cmd)
             self.log_turn(user_text=u_text, ai_text=reply, speaker_name=current_speaker_name)
             return
-
-        intent = memory_engine.classify_conversation_intent(u_text, current_speaker_name) if hasattr(memory_engine, "classify_conversation_intent") else None
-        if intent and intent.get("type") and intent["type"] not in ("chat", "other"):
-            if intent.get("type") in ("playlist_create", "playlist_play", "playlist_add_current", "media_history", "playlist_list"):
-                await self.media_controller.handle_playlist_intent(intent, u_text)
-                return
-            elif intent.get("type") == "read_animations":
-                summary = memory_engine.format_animations_summary()
-                if live_svc:
-                    await live_svc.interrupt()
-                    speak_cmd = (
-                        f"[Info Sistem: Daftar animasi 3D Anara di database: {summary}. "
-                        "Ceritakan kemampuan animasi tubuh dan ekspresi 3D ini kepada pengguna dengan ceria.]"
-                    )
-                    await live_svc.send_text(speak_cmd)
-                self.log_turn(user_text=u_text, ai_text=summary, speaker_name=current_speaker_name)
-                return
-            elif intent.get("type") == "delete_memory":
-                if live_svc:
-                    await live_svc.interrupt()
-                memory_engine.delete_memory(current_speaker_name, intent["key"])
-                speak_cmd = (
-                    f"[Info Sistem: Catatan '{intent['key']}' milik {current_speaker_name} telah dihapus dari database. "
-                    "Beri tahu pengguna bahwa catatan tersebut sudah dilupakan.]"
-                )
-                if live_svc:
-                    await live_svc.send_text(speak_cmd)
-                return
 
         speaker_ctx = memory_engine.get_system_prompt_context(current_speaker_name)
         proactive_facts = memory_engine.get_proactive_relevant_facts(u_text, current_speaker_name)
@@ -483,7 +478,7 @@ class VoicePipeline:
             vis = await generate_visual_projection(key_manager.get_client(), u_text, active_sys_prompt)
             if vis.get("has_visual"):
                 v_type = vis.get("visual_type", "image")
-                r_text = vis.get("reply_text", "Protokol visual telah diproyeksikan ke layar HUD.")
+                r_text = vis.get("reply_text", "Visual projection has been displayed on the HUD screen.")
                 n_imgs = len(vis.get("images") or []) or (1 if vis.get("image_url") else 0)
                 self.visual_projected_this_turn = True
                 self.last_visual_projection_ts = _time.monotonic()
@@ -525,7 +520,18 @@ class VoicePipeline:
                 })
                 if live_svc:
                     await live_svc.interrupt()
-                    speak_cmd = f"Sistem: Katakan ini dengan gaya suaramu yang hangat dan singkat: {r_text}"
+                    from core.prompt_loader import load_config_yaml
+                    live_cfg = load_config_yaml("voice/live_directives.yaml", default={})
+                    if r_text:
+                        speak_cmd = live_cfg.get(
+                            "hud_projection_with_text",
+                            "[SYSTEM NOTIFICATION]: A visual projection has been presented on HUD. Relate this concisely in user's active language: {r_text}"
+                        ).format(r_text=r_text)
+                    else:
+                        speak_cmd = live_cfg.get(
+                            "hud_projection_default",
+                            "[SYSTEM NOTIFICATION]: A visual projection has been presented on HUD."
+                        )
                     await live_svc.send_text(speak_cmd)
                 self.log_turn(user_text=u_text, ai_text=r_text, speaker_name=current_speaker_name, media_type=v_type)
                 return

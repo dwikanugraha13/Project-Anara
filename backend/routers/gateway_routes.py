@@ -67,12 +67,12 @@ async def gateway_login(req: GatewayLoginRequest):
         return {
             "status": "success",
             "token": token,
-            "message": "Login gateway berhasil.",
+            "message": "Gateway login successful.",
         }
-    raise HTTPException(status_code=401, detail="Password gateway salah.")
+    raise HTTPException(status_code=401, detail="Incorrect gateway password.")
 
 
 @router.post("/api/gateway/logout")
 async def gateway_logout():
     """Logs out from gateway session."""
-    return {"status": "success", "message": "Sesi gateway ditutup."}
+    return {"status": "success", "message": "Gateway session closed."}

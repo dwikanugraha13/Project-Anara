@@ -35,11 +35,11 @@ async def _tool_video_generate(
     """
     clean_prompt = (prompt or "").strip()
     if not clean_prompt:
-        return {"status": "error", "message": "Prompt pembuatan video tidak boleh kosong."}
+        return {"status": "error", "message": "Video generation prompt cannot be empty."}
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "video_generate",
-        "action_title": "Membuat Video Digital AI",
+        "action_title": "Generating AI Video",
         "detail": f"Prompt: '{clean_prompt[:50]}...' ({aspect_ratio})",
         "icon": "video"
     })

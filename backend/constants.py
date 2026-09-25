@@ -108,6 +108,21 @@ def get_anara_workspace_dir(subdir: str = "") -> Path:
     return wd
 
 
+def get_anara_skills_dir(subdir: str = "") -> Path:
+    """Returns active user runtime skills directory under ANARA_HOME (Hermes Parity)."""
+    sd = get_anara_home() / "skills"
+    if subdir:
+        sd = sd / subdir
+    sd.mkdir(parents=True, exist_ok=True)
+    return sd
+
+
+def get_bundled_skills_dir() -> Path:
+    """Returns in-tree repository skills directory (bundled master templates in Git)."""
+    backend_dir = Path(__file__).resolve().parent
+    return backend_dir / "skills"
+
+
 def get_anara_checkpoints_dir(subdir: str = "") -> Path:
     """Returns persistent checkpoints directory under ANARA_HOME."""
     cp = get_anara_home() / "checkpoints"

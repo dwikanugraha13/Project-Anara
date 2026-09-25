@@ -31,7 +31,7 @@ export interface InteractiveQuestionCardProps {
 }
 
 function resolveAnswerText(raw: any): string {
-  if (!raw) return "(tidak ada jawaban)";
+  if (!raw) return "(no answer)";
   if (typeof raw === "object" && !Array.isArray(raw)) {
     if ("answer" in raw) {
       return resolveAnswerText(raw.answer);
@@ -75,11 +75,11 @@ export default function InteractiveQuestionCard({ data, onSubmitAnswers }: Inter
     const answeredCount = questions.filter((q, idx) => {
       const ans = (Array.isArray(data.answers) ? data.answers[idx] : data.answers?.[idx]) || selectedAnswers[idx];
       const ansText = resolveAnswerText(ans);
-      return ansText && ansText !== "(tidak ada jawaban)";
+      return ansText && ansText !== "(no answer)" && ansText !== "(no answer)";
     }).length;
 
     const accordionTitle =
-      answeredCount === 0 ? "Pertanyaan ditutup (tanpa jawaban)" : `Pertanyaan ${answeredCount} dijawab`;
+      answeredCount === 0 ? "Questions dismissed (no answers)" : `${answeredCount} question${answeredCount > 1 ? "s" : ""} answered`;
 
     return (
       <div className="w-full my-2 px-1">
@@ -117,13 +117,13 @@ export default function InteractiveQuestionCard({ data, onSubmitAnswers }: Inter
                 const ans =
                   (Array.isArray(data.answers) ? data.answers[idx] : data.answers?.[idx]) || selectedAnswers[idx];
                 const ansText = resolveAnswerText(ans);
-                const isNoAnswer = !ansText || ansText === "(tidak ada jawaban)";
+                const isNoAnswer = !ansText || ansText === "(no answer)" || ansText === "(no answer)";
                 return (
                   <div key={idx} className="space-y-0.5">
                     <p className="text-slate-400 font-medium">{q.question}</p>
                     {isNoAnswer ? (
                       <p className="text-slate-500 font-mono text-xs pl-2 border-l border-white/10 italic">
-                        (tidak ada jawaban)
+                        (no answer)
                       </p>
                     ) : (
                       <p className="text-white/90 font-semibold font-mono pl-2 border-l border-white/20">
@@ -155,14 +155,14 @@ export default function InteractiveQuestionCard({ data, onSubmitAnswers }: Inter
 
   const handleCustomChange = (text: string) => {
     setCustomInputs((prev) => ({ ...prev, [currentStep]: text }));
-    setSelectedAnswers((prev) => ({ ...prev, [currentStep]: text.trim() || "(tidak ada jawaban)" }));
+    setSelectedAnswers((prev) => ({ ...prev, [currentStep]: text.trim() || "(no answer)" }));
   };
 
   const handleNext = () => {
     setSelectedAnswers((prev) => ({
       ...prev,
       [currentStep]: isCustomActive[currentStep]
-        ? (customInputs[currentStep]?.trim() || "(tidak ada jawaban)")
+        ? (customInputs[currentStep]?.trim() || "(no answer)")
         : (prev[currentStep] ?? currentSelection),
     }));
     setCurrentStep((prev) => Math.min(totalSteps - 1, prev + 1));
@@ -172,7 +172,7 @@ export default function InteractiveQuestionCard({ data, onSubmitAnswers }: Inter
     const finalAnswers = {
       ...selectedAnswers,
       [currentStep]: isCustomActive[currentStep]
-        ? (customInputs[currentStep]?.trim() || "(tidak ada jawaban)")
+        ? (customInputs[currentStep]?.trim() || "(no answer)")
         : (selectedAnswers[currentStep] ?? currentSelection),
     };
     const formatted = questions.map((q, idx) => ({
@@ -182,17 +182,17 @@ export default function InteractiveQuestionCard({ data, onSubmitAnswers }: Inter
         finalAnswers[idx] ||
         q.options.find((o) => o.label.toLowerCase().includes("(recommended)"))?.label ||
         q.options[0]?.label ||
-        "(tidak ada jawaban)",
+        "(no answer)",
     }));
     onSubmitAnswers(questionId, formatted);
   };
 
   const handleDismiss = () => {
-    // User explicitly closes/dismisses: all questions become "(tidak ada jawaban)" with dismissed flag
+    // User explicitly closes/dismisses: all questions become "(no answer)" with dismissed flag
     const formatted = questions.map((q) => ({
       header: q.header,
       question: q.question,
-      answer: "(tidak ada jawaban)",
+      answer: "(no answer)",
     }));
     onSubmitAnswers(questionId, formatted, true);
   };
@@ -219,7 +219,7 @@ export default function InteractiveQuestionCard({ data, onSubmitAnswers }: Inter
         {/* Step Indicator and Progress Bars */}
         <div className="flex items-center justify-between">
           <span className="text-xs font-mono font-medium text-slate-300">
-            {currentStep + 1} dari {totalSteps} pertanyaan
+            Step {currentStep + 1} of {totalSteps}
           </span>
           <div className="flex items-center gap-1.5">
             {questions.map((_, idx) => (
@@ -243,7 +243,7 @@ export default function InteractiveQuestionCard({ data, onSubmitAnswers }: Inter
             {currentQ.question}
           </h3>
           <p className="text-[11.5px] text-slate-400 font-sans">
-            {currentQ.multiple ? "Pilih satu atau beberapa jawaban" : "Pilih satu jawaban"}
+            {currentQ.multiple ? "Select one or more options" : "Select an option"}
           </p>
         </div>
 
@@ -312,18 +312,18 @@ export default function InteractiveQuestionCard({ data, onSubmitAnswers }: Inter
             </div>
 
             <div className="min-w-0 flex-1">
-              <span className="text-[13px] font-semibold text-slate-100">Ketik jawaban Anda sendiri</span>
+              <span className="text-[13px] font-semibold text-slate-100">Type your own answer</span>
               {isCustomActive[currentStep] ? (
                 <input
                   type="text"
                   value={customInputs[currentStep] || ""}
                   onChange={(e) => handleCustomChange(e.target.value)}
-                  placeholder="Ketik jawaban Anda di sini..."
+                  placeholder="Type your answer here..."
                   className="mt-2 w-full px-3 py-2 rounded-lg bg-black/50 border border-white/20 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-white/40 focus:border-white/40 font-sans"
                   autoFocus
                 />
               ) : (
-                <p className="text-xs text-slate-400 mt-0.5">Ketik jawaban kustom...</p>
+                <p className="text-xs text-slate-400 mt-0.5">Type custom answer...</p>
               )}
             </div>
           </div>
@@ -336,7 +336,7 @@ export default function InteractiveQuestionCard({ data, onSubmitAnswers }: Inter
             onClick={handleDismiss}
             className="text-xs text-slate-400 hover:text-slate-200 transition-colors px-2 py-1.5 cursor-pointer"
           >
-            Tutup
+            Dismiss
           </button>
 
           <div className="flex items-center gap-2">
@@ -346,7 +346,7 @@ export default function InteractiveQuestionCard({ data, onSubmitAnswers }: Inter
                 onClick={() => setCurrentStep((prev) => Math.max(0, prev - 1))}
                 className="px-3.5 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-xs font-semibold text-slate-200 transition-all cursor-pointer active:scale-95"
               >
-                Kembali
+                Back
               </button>
             )}
 
@@ -356,7 +356,7 @@ export default function InteractiveQuestionCard({ data, onSubmitAnswers }: Inter
                 onClick={handleNext}
                 className="px-4 py-1.5 rounded-lg bg-white hover:bg-slate-200 text-xs font-bold text-slate-950 transition-all shadow-md shadow-white/20 cursor-pointer active:scale-95"
               >
-                Berikutnya
+                Next
               </button>
             ) : (
               <button
@@ -364,7 +364,7 @@ export default function InteractiveQuestionCard({ data, onSubmitAnswers }: Inter
                 onClick={handleFinish}
                 className="px-4 py-1.5 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-xs font-bold text-slate-950 transition-all shadow-md shadow-emerald-400/30 cursor-pointer active:scale-95"
               >
-                Selesai
+                Submit
               </button>
             )}
           </div>

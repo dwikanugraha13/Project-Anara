@@ -26,7 +26,7 @@ class CliPlatformAdapter(BasePlatformAdapter):
         pending_tc = getattr(action, "pending_tool_call", None) or {}
         cmd = args.get("command") or pending_tc.get("arguments", {}).get("command")
         cmd_hint = f"\n  Command: {cmd}" if cmd else (f"\n  File: {args.get('file_path')}" if args.get("file_path") else "")
-        prompt = f"\n[Konfirmasi Persetujuan: {getattr(action, 'tool_name', 'action')}]{cmd_hint}\nSetujui dan jalankan? [y/N]: "
+        prompt = f"\n[Approval Confirmation: {getattr(action, 'tool_name', 'action')}]{cmd_hint}\nApprove and execute? [y/N]: "
         return {
             "text": f"{narration}\n{prompt}",
             "narration": narration,

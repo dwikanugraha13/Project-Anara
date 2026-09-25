@@ -9,12 +9,15 @@ Anara Standard multi-channel session state management:
 from __future__ import annotations
 
 from enum import Enum
+import json
 import logging
+import sqlite3
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
+from constants import get_anara_db_path
 from core.plan_detector import is_explicit_plan_approval
 
 logger = logging.getLogger(__name__)
@@ -22,13 +25,13 @@ logger = logging.getLogger(__name__)
 
 class ActionState(str, Enum):
     """Finite State Machine states for a pending action lifecycle (Hermes Parity)."""
-    PENDING = "pending"          # Menunggu keputusan pengguna
-    APPROVED = "approved"        # Disetujui (via tombol atau lisan)
-    REJECTED = "rejected"        # Ditolak/dibatalkan
-    EXECUTING = "executing"      # Sedang berjalan di sandbox
-    EXECUTED = "executed"        # Selesai dengan sukses
-    FAILED = "failed"            # Gagal/eksepsi saat eksekusi
-    EXPIRED = "expired"          # Waktu tunggu (TTL 300s) habis
+    PENDING = "pending"          # Awaiting user decision
+    APPROVED = "approved"        # Approved (via button or voice)
+    REJECTED = "rejected"        # Rejected/cancelled
+    EXECUTING = "executing"      # Running in sandbox
+    EXECUTED = "executed"        # Completed successfully
+    FAILED = "failed"            # Failed/exception during execution
+    EXPIRED = "expired"          # Wait timeout (TTL 300s) exhausted
 
 
 @dataclass
@@ -106,14 +109,215 @@ class SessionStateManager:
     """
     Multi-channel state machine tracking pending action states, active turn tasks,
     and process lifecycles per chat channel (Hermes Parity).
+    Includes SQLite crash resilience for pending actions and audit trail tracking.
     """
 
-    def __init__(self):
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = db_path or get_anara_db_path()
         self._pending: Dict[str, PendingAction] = {}
         self._active_tasks: Dict[str, asyncio.Task] = {}
         self._active_processes: Dict[str, set[int]] = {}
         self._interrupted_sessions: set[str] = set()
         self._recently_expired: Dict[str, tuple[PendingAction, float]] = {}
+
+        # Initialize SQLite persistence & rehydrate unexpired actions on startup
+        self._init_db()
+        self._load_from_db()
+
+    def _get_conn(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path, timeout=10.0)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _init_db(self) -> None:
+        """Initializes the persistent pending_actions table and indexes in SQLite."""
+        try:
+            with self._get_conn() as conn:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS pending_actions (
+                        plan_id TEXT PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        channel TEXT NOT NULL,
+                        channel_id TEXT NOT NULL,
+                        tool_name TEXT NOT NULL,
+                        tool_args_json TEXT NOT NULL,
+                        original_prompt TEXT,
+                        plan_text TEXT,
+                        lead_narration TEXT,
+                        risk_level TEXT DEFAULT 'mutating',
+                        state TEXT NOT NULL,
+                        user_id TEXT DEFAULT 'default_user',
+                        pending_tool_call_json TEXT,
+                        created_at REAL NOT NULL,
+                        ttl_seconds REAL DEFAULT 300.0,
+                        updated_at REAL NOT NULL
+                    );
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_pending_channel_state
+                    ON pending_actions(channel, channel_id, state);
+                """)
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"[SessionManager] DB init error: {e}")
+
+    def _load_from_db(self) -> int:
+        """
+        Reloads unexpired pending actions from SQLite on startup (Crash Resilience).
+        Sweeps any stale actions that expired while the server was down.
+        """
+        loaded = 0
+        now = time.time()
+        try:
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT * FROM pending_actions
+                    WHERE state IN ('pending', 'executing')
+                """)
+                rows = cursor.fetchall()
+                for r in rows:
+                    created_at = float(r["created_at"])
+                    ttl = float(r["ttl_seconds"])
+                    plan_id = r["plan_id"]
+                    ch = r["channel"]
+                    cid = r["channel_id"]
+
+                    if (now - created_at) > ttl:
+                        # Expired while server was down
+                        cursor.execute("""
+                            UPDATE pending_actions
+                            SET state = 'expired', updated_at = ?
+                            WHERE plan_id = ?
+                        """, (now, plan_id))
+                        continue
+
+                    # Unexpired action: rehydrate into memory
+                    try:
+                        args = json.loads(r["tool_args_json"] or "{}")
+                    except Exception:
+                        args = {}
+                    try:
+                        ptc = json.loads(r["pending_tool_call_json"]) if r["pending_tool_call_json"] else None
+                    except Exception:
+                        ptc = None
+
+                    act = PendingAction(
+                        plan_id=plan_id,
+                        session_id=r["session_id"],
+                        channel=ch,
+                        channel_id=cid,
+                        tool_name=r["tool_name"],
+                        tool_args=args,
+                        original_prompt=r["original_prompt"] or "",
+                        plan_text=r["plan_text"] or "",
+                        lead_narration=r["lead_narration"] or "",
+                        risk_level=r["risk_level"] or "mutating",
+                        state=ActionState(r["state"]),
+                        user_id=r["user_id"] or "default_user",
+                        pending_tool_call=ptc,
+                        created_at=created_at,
+                        ttl_seconds=ttl,
+                    )
+                    key = self._make_key(ch, cid)
+                    self._pending[key] = act
+                    loaded += 1
+
+                conn.commit()
+            if loaded > 0:
+                logger.info(f"[SessionManager] Crash-resumed {loaded} active pending action(s) from SQLite.")
+        except Exception as e:
+            logger.warning(f"[SessionManager] Error loading pending actions from DB: {e}")
+        return loaded
+
+    def _persist_action(self, action: PendingAction) -> None:
+        """Upserts a PendingAction record to SQLite."""
+        try:
+            with self._get_conn() as conn:
+                conn.execute("""
+                    INSERT INTO pending_actions (
+                        plan_id, session_id, channel, channel_id,
+                        tool_name, tool_args_json, original_prompt, plan_text,
+                        lead_narration, risk_level, state, user_id,
+                        pending_tool_call_json, created_at, ttl_seconds, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(plan_id) DO UPDATE SET
+                        state = excluded.state,
+                        updated_at = excluded.updated_at,
+                        tool_args_json = excluded.tool_args_json,
+                        plan_text = excluded.plan_text,
+                        lead_narration = excluded.lead_narration;
+                """, (
+                    action.plan_id,
+                    str(action.session_id),
+                    action.channel,
+                    action.channel_id,
+                    action.tool_name,
+                    json.dumps(action.tool_args, ensure_ascii=False),
+                    action.original_prompt,
+                    action.plan_text,
+                    action.lead_narration,
+                    action.risk_level,
+                    action.state.value,
+                    action.user_id,
+                    json.dumps(action.pending_tool_call, ensure_ascii=False) if action.pending_tool_call else None,
+                    action.created_at,
+                    action.ttl_seconds,
+                    time.time(),
+                ))
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"[SessionManager] Failed to persist action #{action.plan_id}: {e}")
+
+    def _update_action_state_in_db(self, plan_id: str, state: ActionState) -> None:
+        """Updates the status of an action in SQLite."""
+        try:
+            with self._get_conn() as conn:
+                conn.execute("""
+                    UPDATE pending_actions
+                    SET state = ?, updated_at = ?
+                    WHERE plan_id = ?
+                """, (state.value, time.time(), plan_id))
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"[SessionManager] Failed to update action #{plan_id} state in DB: {e}")
+
+    def get_action_history(
+        self,
+        channel: Optional[str] = None,
+        channel_id: Optional[str] = None,
+        limit: int = 20
+    ) -> List[Dict[str, Any]]:
+        """Retrieves audit history of pending/resolved actions from SQLite."""
+        results = []
+        try:
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                if channel and channel_id:
+                    cursor.execute("""
+                        SELECT * FROM pending_actions
+                        WHERE channel = ? AND channel_id = ?
+                        ORDER BY created_at DESC
+                        LIMIT ?
+                    """, (channel, str(channel_id), limit))
+                elif channel:
+                    cursor.execute("""
+                        SELECT * FROM pending_actions
+                        WHERE channel = ?
+                        ORDER BY created_at DESC
+                        LIMIT ?
+                    """, (channel, limit))
+                else:
+                    cursor.execute("""
+                        SELECT * FROM pending_actions
+                        ORDER BY created_at DESC
+                        LIMIT ?
+                    """, (limit,))
+                for r in cursor.fetchall():
+                    results.append(dict(r))
+        except Exception as e:
+            logger.warning(f"[SessionManager] Error fetching action history: {e}")
+        return results
 
     def _make_key(self, channel: str, channel_id: str) -> str:
         return f"{str(channel).strip().lower()}_{str(channel_id).strip()}"
@@ -121,6 +325,7 @@ class SessionStateManager:
     def store_pending(self, action: PendingAction) -> None:
         key = self._make_key(action.channel, action.channel_id)
         self._pending[key] = action
+        self._persist_action(action)
         logger.info(f"[SessionManager] Stored pending action #{action.plan_id} ({action.tool_name}) for key: {key}")
 
     def set_pending_action(self, channel: str, channel_id: str, action: PendingAction) -> None:
@@ -138,6 +343,7 @@ class SessionStateManager:
         if action.is_expired:
             logger.info(f"[SessionManager] Pending action #{action.plan_id} has expired.")
             action.state = ActionState.EXPIRED
+            self._update_action_state_in_db(action.plan_id, ActionState.EXPIRED)
             self._recently_expired[key] = (action, time.time())
             self._pending.pop(key, None)
             return None
@@ -179,6 +385,7 @@ class SessionStateManager:
             key = self._make_key(action.channel, action.channel_id)
 
         action.state = state
+        self._update_action_state_in_db(action.plan_id, state)
         logger.info(f"[SessionManager] Resolved action #{action.plan_id} -> {state.value} for {key}")
 
         if state in (ActionState.APPROVED, ActionState.EXECUTING):
@@ -194,6 +401,7 @@ class SessionStateManager:
         for key, action in list(self._pending.items()):
             if (now - action.created_at) > action.ttl_seconds:
                 action.state = ActionState.EXPIRED
+                self._update_action_state_in_db(action.plan_id, ActionState.EXPIRED)
                 self._pending.pop(key, None)
                 expired_count += 1
                 logger.info(f"[SessionManager] Swept expired pending action #{action.plan_id} for {key}")
@@ -205,6 +413,7 @@ class SessionStateManager:
             if action.plan_id == action_id:
                 if action.is_expired:
                     action.status = "expired"
+                    self._update_action_state_in_db(action.plan_id, ActionState.EXPIRED)
                     del self._pending[key]
                     return None
                 return action
@@ -212,13 +421,19 @@ class SessionStateManager:
 
     def clear_pending(self, channel: str, channel_id: str) -> Optional[PendingAction]:
         key = self._make_key(channel, channel_id)
-        return self._pending.pop(key, None)
+        act = self._pending.pop(key, None)
+        if act:
+            self._update_action_state_in_db(act.plan_id, ActionState.REJECTED)
+        return act
 
     def clear_pending_by_id(self, action_id: str) -> Optional[PendingAction]:
         """Removes pending action across any channel by its unique plan_id/action_id."""
         for key, action in list(self._pending.items()):
             if action.plan_id == action_id:
-                return self._pending.pop(key, None)
+                act = self._pending.pop(key, None)
+                if act:
+                    self._update_action_state_in_db(act.plan_id, ActionState.REJECTED)
+                return act
         return None
 
     # ── TASK & SUBPROCESS SUPERVISOR (Hermes Parity) ──

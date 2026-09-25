@@ -130,11 +130,11 @@ async def _tool_custom_webhook(url: str, method: str = "POST", payload_json: Opt
     """Triggers an external automation webhook."""
     target_url = (url or "").strip()
     if not target_url.startswith("http"):
-        return {"status": "error", "message": "URL Webhook harus berawalan http:// atau https://"}
+        return {"status": "error", "message": "Webhook URL must start with http:// or https://"}
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "custom_webhook",
-        "action_title": "Eksekusi Webhook Automasi",
+        "action_title": "Automation Webhook Execution",
         "detail": f"Target: {target_url}",
         "icon": "⚡"
     })
@@ -157,7 +157,7 @@ async def _tool_custom_webhook(url: str, method: str = "POST", payload_json: Opt
         res_text = res.text[:500]
         _emit_agent_event("agent_action_complete", {
             "tool_name": "custom_webhook",
-            "action_title": "Webhook Terkirim",
+            "action_title": "Webhook Sent",
             "summary": f"Status: HTTP {res.status_code}",
             "raw_result": res_text,
             "icon": "⚡"
@@ -176,7 +176,7 @@ async def _tool_web_search_images(query: str, limit: int = 4) -> Dict[str, Any]:
     """
     q = (query or "").strip()
     if not q:
-        return {"status": "error", "message": "Query pencarian gambar tidak boleh kosong"}
+        return {"status": "error", "message": "Image search query cannot be empty."}
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "web_search_images",
@@ -249,7 +249,7 @@ async def _tool_web_search_images(query: str, limit: int = 4) -> Dict[str, Any]:
             "query": q,
             "total_found": 0,
             "images": [],
-            "message": f"Tidak ditemukan foto spesifik untuk '{q}' di web."
+            "message": f"No specific web photos found for '{q}'."
         }
 
     # Emit HUD visual card
@@ -258,7 +258,7 @@ async def _tool_web_search_images(query: str, limit: int = 4) -> Dict[str, Any]:
         "type": "image",
         "title": first_img["title"],
         "image_url": first_img["image_url"],
-        "summary": f"Foto terkait {q} ditemukan dari web."
+        "summary": f"Image related to {q} discovered from web."
     })
 
     # Auto-dispatch to active remote channel (Telegram / WhatsApp) if user is mobile
@@ -282,6 +282,6 @@ async def _tool_web_search_images(query: str, limit: int = 4) -> Dict[str, Any]:
         "total_found": len(images),
         "primary_image_url": first_img["image_url"],
         "images": images,
-        "message": f"Ditemukan {len(images)} foto untuk '{q}'. Foto pertama telah diproses untuk dikirim langsung ke obrolan."
+        "message": f"Found {len(images)} photos for '{q}'. First photo has been processed for direct delivery to chat."
     }
 

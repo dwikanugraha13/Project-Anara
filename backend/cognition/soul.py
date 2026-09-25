@@ -48,15 +48,9 @@ def get_soul_prompt(mode: str = "chat") -> str:
     if _SOUL_CACHE:
         return _SOUL_CACHE
 
-    # Fallback if soul.md cannot be read (Hermes Parity)
-    return (
-        "You are Anara, an autonomous visual 3D AI agent and expert software engineer. "
-        "Seamlessly integrate autonomous multi-tools and OpenCode Plan & Build protocols. "
-        "Communicate empathetically, directly, and concisely. Always adapt your response language "
-        "to naturally match the user's active language without rigid templates or artificial phrasing.\n\n"
-        "Kamu adalah Anara, asisten AI visual 3D dan autonomous agent yang cerdas, hangat, dan ekspresif. "
-        "Bicaralah secara alami, ramah, dan ringkas dalam bahasa yang digunakan pengguna."
-    )
+    # Fallback if soul.md cannot be read (Hermes Parity: externalized template)
+    from core.prompt_loader import load_prompt
+    return load_prompt("soul_fallback").strip()
 
 def get_soul_raw() -> str:
     """Returns the raw unparsed soul.md content directly from disk."""

@@ -8,7 +8,13 @@ from .context_compactor import ContextCompactor
 from .skill_extractor import SkillExtractor
 from .skill_library import SkillLibraryManager, skill_library
 from .sandbox import CommandSandbox, command_sandbox, get_sanitized_environment, check_command_safety
-from .security import check_prompt_injection, is_authorized_approver
+from .security import (
+    check_prompt_injection,
+    is_authorized_approver,
+    require_gateway_auth,
+    is_request_local,
+    verify_gateway_session_token,
+)
 from .session_manager import ActionState, PendingAction, session_state_manager
 from .autonomous_engine import (
     AutonomousEngine,
@@ -52,6 +58,14 @@ from .runner import (
 from .workspace_sentinel import (
     WorkspaceSentinel,
     workspace_sentinel,
+)
+from .convergence import (
+    ConvergenceDetector,
+    ConvergenceStatus,
+)
+from .prompt_loader import (
+    load_prompt,
+    load_config_yaml,
 )
 
 __all__ = [
@@ -107,4 +121,11 @@ __all__ = [
     "AgentTurnResult",
     "WorkspaceSentinel",
     "workspace_sentinel",
+    "ConvergenceDetector",
+    "ConvergenceStatus",
+    "require_gateway_auth",
+    "is_request_local",
+    "verify_gateway_session_token",
+    "load_prompt",
+    "load_config_yaml",
 ]

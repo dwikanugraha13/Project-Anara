@@ -70,7 +70,7 @@ export function GatewayAuthModal() {
 
     const handleUnauthorized = () => {
       setIsOpen(true);
-      setErrorMsg("Sesi telah kedaluwarsa atau membutuhkan autentikasi password.");
+      setErrorMsg("Session has expired or requires password authentication.");
     };
 
     window.addEventListener("anara_gateway_unauthorized", handleUnauthorized);
@@ -118,7 +118,7 @@ export function GatewayAuthModal() {
             <ShieldCheckIcon className="h-5 w-5 text-cyan-400" />
           </h2>
           <p className="mt-1.5 text-xs text-slate-400 leading-relaxed max-w-xs">
-            Akses jarak jauh terdeteksi. Masukkan Password Gateway untuk menghubungkan browser ini ke laptop Anda.
+            Remote access detected. Enter Gateway Password to connect this browser to your laptop.
           </p>
 
           <form onSubmit={handleLogin} className="mt-6 w-full space-y-4">
@@ -130,7 +130,7 @@ export function GatewayAuthModal() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Masukkan Password Gateway..."
+                placeholder="Enter Gateway Password..."
                 autoFocus
                 className="w-full rounded-xl border border-slate-800 bg-slate-900/90 py-3 pl-10 pr-4 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 transition-all"
               />
@@ -147,7 +147,7 @@ export function GatewayAuthModal() {
               disabled={isLoading || !password.trim()}
               className="w-full rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 py-3 text-sm font-semibold text-white shadow-lg shadow-cyan-500/25 transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none"
             >
-              {isLoading ? "Memverifikasi..." : "Buka Akses Gateway"}
+              {isLoading ? "Verifying..." : "Open Gateway Access"}
             </button>
           </form>
 

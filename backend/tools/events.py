@@ -54,10 +54,10 @@ async def request_interactive_question(questions: List[Dict[str, Any]], timeout:
             is_dismissed = bool(user_res.get("dismissed", False))
             user_answers = user_res.get("answers", [])
 
-        # Check if all answers are "(tidak ada jawaban)"
+        # Check if all answers are empty or no answer marker
         if isinstance(user_answers, list) and user_answers:
             all_empty = all(
-                (a.get("answer") if isinstance(a, dict) else str(a)).strip() == "(tidak ada jawaban)"
+                (a.get("answer") if isinstance(a, dict) else str(a)).strip() in ("(no answer)", "")
                 for a in user_answers
             )
             if all_empty:
@@ -68,7 +68,7 @@ async def request_interactive_question(questions: List[Dict[str, Any]], timeout:
                 "status": "dismissed",
                 "dismissed": True,
                 "question_id": question_id,
-                "message": "Pertanyaan kuesioner ditutup oleh pengguna.",
+                "message": "Questionnaire dismissed by user.",
                 "answers": user_answers
             }
 
@@ -76,20 +76,20 @@ async def request_interactive_question(questions: List[Dict[str, Any]], timeout:
             "status": "success",
             "dismissed": False,
             "question_id": question_id,
-            "message": "Pengguna telah menjawab seluruh pertanyaan kuesioner.",
+            "message": "User completed the questionnaire.",
             "answers": user_answers
         }
     except asyncio.TimeoutError:
         logger.info(f"[InteractiveQuestion] Question {question_id} timed out after {timeout}s.")
         fallback_answers = [
-            {"header": q.get("header", ""), "question": q.get("question", ""), "answer": "(tidak ada jawaban)"}
+            {"header": q.get("header", ""), "question": q.get("question", ""), "answer": "(no answer)"}
             for q in questions
         ]
         return {
             "status": "dismissed",
             "dismissed": True,
             "question_id": question_id,
-            "message": "Pengguna menutup/melewati kuesioner tanpa memilih jawaban.",
+            "message": "Questionnaire timed out without selections.",
             "answers": fallback_answers
         }
     finally:

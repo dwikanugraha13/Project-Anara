@@ -177,39 +177,39 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
     const isDancingRef = useRef(false);
     const danceSafetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Clean animations: Gunakan animasi Idle bawaan dari avatar.glb & Talking_0 + Emosi + HipHopDancing dari animations.glb
+    // Clean animations: Use built-in Idle animation from avatar.glb & Talking_0 + Emotion + HipHopDancing from animations.glb
     const cleanAnimations = useMemo(() => {
       const anims: THREE.AnimationClip[] = [];
 
-      // 1. HANYA gunakan Animasi Bawaan (Internal avatar.glb) untuk Idle
+      // 1. ONLY use Built-in Animation (Internal avatar.glb) for Idle
       if (gltfAnimations && gltfAnimations.length > 0) {
         const builtinIdle = gltfAnimations[0].clone();
         builtinIdle.name = "Idle";
         builtinIdle.tracks = builtinIdle.tracks.filter((t: any) => {
           const lower = t.name.toLowerCase();
-          if (lower.includes(".morphtargetinfluences")) return false; // Jangan timpa ARKit morphs
+          if (lower.includes(".morphtargetinfluences")) return false; // Don't override ARKit morphs
           if (lower.includes("jaw")) return false;
           return true;
         });
         anims.push(builtinIdle);
       }
 
-      // 2. Gunakan animasi Talking_0, emosi, & HipHopDancing dari animations.glb saat AI berbicara / berekspresi
+      // 2. Use Talking_0, emotion, & HipHopDancing animations from animations.glb when AI is speaking / expressing
       if (externalAnimations) {
         externalAnimations.forEach((clip) => {
           const newClip = clip.clone();
 
-          // Map Talking_0 dari public/animations.glb sebagai klip Talking utama
+          // Map Talking_0 from public/animations.glb as main Talking clip
           if (newClip.name === "Talking_0") newClip.name = "Talking";
           if (newClip.name === "Talking_1") newClip.name = "TalkingAlternative0";
           if (newClip.name === "Talking_2") newClip.name = "TalkingAlternative1";
 
-          // Jangan timpa Idle bawaan avatar.glb
+          // Don't override built-in Idle from avatar.glb
           if (newClip.name === "Idle" && anims.find((a) => a.name === "Idle")) {
             return;
           }
 
-          // Bersihkan hanya track non-rotasi yang merusak framing kamera atau morph wajah
+          // Clean only non-rotation tracks that break camera framing or face morph
           newClip.tracks = newClip.tracks.filter((t: any) => {
             const lower = t.name.toLowerCase();
             if (lower.includes("lefteye") || lower.includes("righteye")) return false;
@@ -236,7 +236,7 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
     const prevAnimRef = useRef<string | null>(null);
 
     /** True once idle is playing */
-    const idleAnimPlayingRef = useRef(true); // default true agar procedural arm lerp tidak kaku
+    const idleAnimPlayingRef = useRef(true); // default true so procedural arm lerp is not stiff
     const [isLoaded, setIsLoaded] = useState(false);
     const { mouse, gl } = useThree();
 
@@ -416,12 +416,12 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
     useEffect(() => {
       isSpeakingRef.current = isSpeaking;
       if (isSpeaking) {
-        // Jika sedang aktif menari, jangan batalkan tarian!
+        // If currently dancing, don't cancel the dance!
         if (dancePhaseRef.current === "dancing") {
           return;
         }
 
-        // Jika sebelumnya sedang menunggu audio intro dari Gemini, sekarang suara intro mulai aktif!
+        // If previously waiting for Gemini intro audio, now the intro voice started playing!
         if (dancePhaseRef.current === "awaiting_intro") {
           if (danceSafetyTimerRef.current) clearTimeout(danceSafetyTimerRef.current);
           dancePhaseRef.current = "speaking_intro";
@@ -429,7 +429,7 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
         }
 
         setAnimation((prev) => {
-          // Jika sedang memainkan ekspresi emosi khusus (termasuk Rumba), pertahankan
+          // If playing special emotion expression (including Rumba), keep it
           if (["Laughing", "Angry", "Crying", "Terrified", "Rumba"].includes(prev)) {
             return prev;
           }
@@ -437,7 +437,7 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
         });
       } else {
         // isSpeaking is false:
-        // Cek apakah suara intro baru saja selesai ("speaking_intro")
+        // Check if intro audio just finished ("speaking_intro")
         if (dancePhaseRef.current === "speaking_intro") {
           if (danceSafetyTimerRef.current) clearTimeout(danceSafetyTimerRef.current);
           dancePhaseRef.current = "dancing";
@@ -445,7 +445,7 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
           if (actions["Rumba"]) {
             if (emotionAnimResetTimerRef.current) clearTimeout(emotionAnimResetTimerRef.current);
             setAnimation("Rumba");
-            console.log("[Avatar3D] 💃 Gemini selesai berbicara intro — mulai menari Rumba & musik!");
+            console.log("[Avatar3D] 💃 Gemini finished speaking intro — start Rumba dance & music!");
             onDanceStart?.();
             emotionAnimResetTimerRef.current = setTimeout(() => {
               dancePhaseRef.current = "idle";
@@ -460,17 +460,17 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
           }
         }
 
-        // Jika masih menunggu audio Gemini ("awaiting_intro"), JANGAN mulai tarian dulu!
+        // If still waiting for Gemini audio ("awaiting_intro"), DON'T start dance yet!
         if (dancePhaseRef.current === "awaiting_intro") {
           return;
         }
 
-        // Jika sedang aktif menari, jangan paksa Idle
+        // If currently dancing, don't force Idle
         if (dancePhaseRef.current === "dancing" || isDancingRef.current) {
           return;
         }
 
-        // Jika ada animasi emosi aktif, jangan potong
+        // If emotion animation is active, don't cut
         if (emotionAnimResetTimerRef.current) {
           return;
         }
@@ -487,7 +487,7 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
     // ─────────────────────────────────────────────────────────────────────────
 
     const triggerEmotionAnimation = useCallback((emotion: AvatarEmotion) => {
-      // Jika sedang aktif menari, abaikan semua trigger emosi lain sampai tarian selesai
+      // If currently dancing, ignore all other emotion triggers until dance finishes
       if (isDancingRef.current) {
         return;
       }
@@ -529,7 +529,7 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
       const cfg = EMOTION_ANIM_MAP[emotion];
 
       if (cfg && actions[cfg.key]) {
-        // Jika animasi emosi ini sudah sedang berjalan, biarkan berjalan mulus tanpa mereset
+        // If this emotion animation is already running, let it run smoothly without resetting
         if (emotionAnimResetTimerRef.current && prevAnimRef.current === cfg.key) {
           return;
         }
@@ -542,7 +542,7 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
           emotionAnimResetTimerRef.current = null;
         }, cfg.durationMs);
       } else {
-        // JANGAN potong animasi emosi yang sedang berlangsung dengan status neutral!
+        // DON'T cut ongoing emotion animation with neutral status!
         if (emotionAnimResetTimerRef.current) {
           return;
         }
@@ -556,7 +556,7 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
     }, [actions]);
 
     const triggerTextMotion = useCallback((text: string) => {
-      // Jika sedang aktif menari, jangan ubah ekspresi atau potong tarian
+      // If currently dancing, don't change expression or cut dance
       if (isDancingRef.current) return;
 
       // Skip: backend gesture is active and has priority
@@ -565,7 +565,7 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
       // Only use client-side sentiment as fallback when no backend emotion is active
       const { emotion, gesture, gestureDurationMs } = analyzeSpeechSentiment(text);
 
-      // Jika animasi emosi sedang berjalan, jangan reset ekspresi wajah oleh kata netral di tengah kalimat
+      // If emotion animation is running, don't reset facial expression by neutral word mid-sentence
       if (emotion === "neutral" && emotionAnimResetTimerRef.current) {
         return;
       }
@@ -700,7 +700,7 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
       const cachedMorphs: CachedMorphMesh[] = [];
       baseRotationsRef.current.clear();
 
-      // Gunakan material & tekstur bawaan avatar.glb + sentuhan dewy skin glowing pada wajah
+      // Use built-in avatar.glb materials & textures + dewy skin glow on face
       scene.traverse((child) => {
         if (child instanceof THREE.Mesh) {
           child.frustumCulled = false;
@@ -710,7 +710,7 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
             const mats = Array.isArray(child.material) ? child.material : [child.material];
             mats.forEach((mat) => {
               if (mat instanceof THREE.MeshStandardMaterial) {
-                mat.roughness = 0.62; // Lebih natural, tidak terlalu mengkilap
+                mat.roughness = 0.62; // More natural, not too shiny
                 mat.envMapIntensity = 0.85; // Pantulan cahaya lembut
               }
             });
@@ -856,7 +856,7 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
           bones.spine2.rotation.z = THREE.MathUtils.lerp(bones.spine2.rotation.z, targetZ, Math.min(safeDelta * 2.5, 1));
         }
 
-        // Shoulders: Organic breathing with soft sway (hanya saat mode Idle agar Talking tetap 100% mulus)
+        // Shoulders: Organic breathing with soft sway (only during Idle mode so Talking stays 100% smooth)
         if (animation === "Idle") {
           const lShoulderBase = getBase(bones.leftShoulder);
           const rShoulderBase = getBase(bones.rightShoulder);

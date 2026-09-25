@@ -30,6 +30,12 @@ from .discovery import (
 from .caller import (
     stream_universal_chat_model,
     call_universal_chat_model,
+    _execute_native_agent_loop,
+    _execute_json_agent_loop,
+)
+from .native_turn import (
+    NativeToolCall,
+    NativeTurnResult,
 )
 from .profile_registry import (
     get_registered_profiles,
@@ -63,6 +69,8 @@ __all__ = [
     "get_all_dynamic_models",
     "stream_universal_chat_model",
     "call_universal_chat_model",
+    "NativeToolCall",
+    "NativeTurnResult",
     "get_registered_profiles",
     "register_provider_profile",
     "resolve_provider_profile",

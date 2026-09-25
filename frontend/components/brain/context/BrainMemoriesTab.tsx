@@ -155,19 +155,19 @@ export default function BrainMemoriesTab({
       {/* Information Metric Ribbon */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="p-4 rounded-2xl liquid-glass-subtle">
-          <span className="text-[10px] uppercase tracking-wider text-slate-400">Node Memori</span>
-          <p className="text-base font-bold text-white mt-0.5">{currentSpeakerMemories.length} Fakta</p>
+          <span className="text-[10px] uppercase tracking-wider text-slate-400">Memory Nodes</span>
+          <p className="text-base font-bold text-white mt-0.5">{currentSpeakerMemories.length} Facts</p>
         </div>
         <div className="p-4 rounded-2xl liquid-glass-subtle">
-          <span className="text-[10px] uppercase tracking-wider text-slate-400">Profil Sesi</span>
+          <span className="text-[10px] uppercase tracking-wider text-slate-400">Session Profile</span>
           <p className={`text-base font-bold mt-0.5 truncate ${activeSpeaker ? "text-cyan-300" : "text-amber-300"}`}>
             {activeSpeaker || "Tamu"}
           </p>
         </div>
         <div className="p-4 rounded-2xl liquid-glass-subtle">
-          <span className="text-[10px] uppercase tracking-wider text-slate-400">Status Sesi</span>
+          <span className="text-[10px] uppercase tracking-wider text-slate-400">Session Status</span>
           <p className={`text-base font-bold mt-0.5 ${activeSpeaker ? "text-emerald-300" : "text-amber-300"}`}>
-            {activeSpeaker ? "Terautentikasi" : "Sesi Tamu"}
+            {activeSpeaker ? "Authenticated" : "Guest Session"}
           </p>
         </div>
         <div className="p-4 rounded-2xl liquid-glass-subtle">
@@ -184,13 +184,13 @@ export default function BrainMemoriesTab({
             </svg>
           </div>
           <h4 className="text-sm sm:text-base font-bold text-white uppercase tracking-wider">
-            Belum Ada Profil Terdaftar
+            No Profiles Registered Yet
           </h4>
           <p className="text-xs sm:text-sm text-slate-300 max-w-lg leading-relaxed">
-            Aktifkan mikrofon dan perkenalkan namamu (contoh: <span className="text-cyan-300 font-semibold">&quot;Halo Anara, namaku Agnan&quot;</span>) atau tambahkan profil secara manual di tab Profil Pengguna.
+            Enable microphone and introduce your name (contoh: <span className="text-cyan-300 font-semibold">&quot;Halo Anara, namaku Agnan&quot;</span>) or add a profile manually in the User Profile tab.
           </p>
           <span className="text-[11px] text-cyan-300/90 px-3.5 py-1.5 rounded-full bg-cyan-400/10 border border-cyan-400/25 mt-1">
-            Engine Biometrik Suara 128-D &amp; Multi-Profil Aktif
+            128-D Voice Biometric Engine &amp; Multi-Profile Active
           </span>
         </div>
       ) : (
@@ -200,7 +200,7 @@ export default function BrainMemoriesTab({
             <div className="flex items-center justify-between">
               <span className="text-[10px] uppercase tracking-wider text-cyan-300 font-semibold flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-                Pencarian Semantik Kognitif
+                Cognitive Semantic Search
               </span>
               <span className="text-[10px] text-slate-500 hidden sm:inline">Konsep &amp; lintas tabel</span>
             </div>
@@ -210,7 +210,7 @@ export default function BrainMemoriesTab({
                 type="text"
                 value={ragQuery}
                 onChange={(e) => setRagQuery(e.target.value)}
-                placeholder="Ketik topik bebas (cth: 'arsitektur proyek', 'makanan kesukaan')..."
+                placeholder="Type any topic (e.g. 'project architecture', 'favorite food')..."
                 className="flex-1 liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
               />
               <button
@@ -218,7 +218,7 @@ export default function BrainMemoriesTab({
                 disabled={isRagSearching}
                 className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-500 text-white font-semibold text-xs transition-all hover:opacity-90 cursor-pointer shrink-0 disabled:opacity-50"
               >
-                {isRagSearching ? "Mencari..." : "Cari"}
+                {isRagSearching ? "Searching..." : "Search"}
               </button>
             </div>
 
@@ -251,7 +251,7 @@ export default function BrainMemoriesTab({
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={activeSpeaker ? `Cari ingatan milik ${activeSpeaker}...` : "Cari ingatan semua profil terdaftar..."}
+                  placeholder={activeSpeaker ? `Search memories of ${activeSpeaker}...` : "Search memories of all registered profiles..."}
                   className="w-full liquid-glass-input rounded-2xl py-2.5 pl-10 pr-4 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none"
                 />
               </div>
@@ -283,7 +283,7 @@ export default function BrainMemoriesTab({
                   type="text"
                   value={newSpeaker}
                   onChange={(e) => setNewSpeaker(e.target.value)}
-                  placeholder="Nama Pengguna"
+                  placeholder="User Name"
                   className="liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
                   required
                 />
@@ -321,7 +321,7 @@ export default function BrainMemoriesTab({
                   type="submit"
                   className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-500 text-white font-semibold text-xs cursor-pointer shadow-[0_4px_16px_rgba(34,211,238,0.3)] transition-all hover:opacity-90"
                 >
-                  Simpan
+                   Save
                 </button>
               </div>
             </form>
@@ -331,8 +331,8 @@ export default function BrainMemoriesTab({
           {filteredMemories.length === 0 ? (
             <div className="text-center py-16 rounded-2xl liquid-glass-subtle text-slate-400 text-xs">
               {activeSpeaker
-                ? `Belum ada catatan memori tersimpan untuk ${activeSpeaker}.`
-                : "Belum ada catatan memori tersimpan. Perkenalkan diri Anda lewat mikrofon atau pilih profil di tab Profil Pengguna."}
+                ? `No stored memory notes for ${activeSpeaker} yet.`
+                : "No stored memory notes yet. Introduce yourself via microphone or select a profile in the User Profile tab."}
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -349,7 +349,7 @@ export default function BrainMemoriesTab({
                       <button
                         onClick={() => handleDeleteMemory(m.id)}
                         className="text-slate-500 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 cursor-pointer"
-                        title="Hapus memori"
+                        title="Delete memory"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

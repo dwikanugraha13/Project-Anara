@@ -87,7 +87,7 @@ export default function SessionHistoryList({
         <button
           onClick={onOpenBrain}
           className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.10] border border-white/10 hover:border-white/20 text-slate-200 hover:text-white text-xs font-medium transition-all active:scale-[0.98] cursor-pointer shadow-sm"
-          title="Buka Anara Brain (Memori, Tugas, Proyek & Providers)"
+          title="Open Anara Brain (Memory, Tasks, Projects & Providers)"
         >
           <svg className="w-3.5 h-3.5 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -99,12 +99,12 @@ export default function SessionHistoryList({
           <button
             onClick={onOpenCode}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/30 hover:border-cyan-400/50 text-cyan-200 hover:text-white text-xs font-semibold transition-all active:scale-[0.98] cursor-pointer shadow-sm group"
-            title="Buka Workspace Editor & Terminal"
+            title="Open Workspace Editor & Terminal"
           >
             <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
             </svg>
-            <span>Buka Editor ‹/›</span>
+            <span>Open Editor ‹/›</span>
           </button>
         ) : (
           <button
@@ -114,12 +114,12 @@ export default function SessionHistoryList({
               }
             }}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/30 hover:border-cyan-400/50 text-cyan-200 hover:text-white text-xs font-semibold transition-all active:scale-[0.98] cursor-pointer shadow-sm group"
-            title="Buka Anara Code Studio di tab browser baru"
+            title="Open Anara Code Studio in new browser tab"
           >
             <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
             </svg>
-            <span>Buka Anara Code ↗</span>
+            <span>Open Anara Code ↗</span>
           </button>
         )}
 
@@ -130,7 +130,7 @@ export default function SessionHistoryList({
           <svg className="w-3.5 h-3.5 text-slate-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          <span>{sessionType === "code" ? "Proyek Baru" : "Chat Baru"}</span>
+          <span>{sessionType === "code" ? "New Project" : "New Chat"}</span>
         </button>
       </div>
 
@@ -147,7 +147,7 @@ export default function SessionHistoryList({
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Cari percakapan..."
+          placeholder="Search conversations..."
           className="w-full py-1.5 pl-8 pr-3 rounded-xl bg-black/30 border border-white/8 text-[11.5px] text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-cyan-400/40 focus:bg-black/45 transition-all font-sans"
         />
       </div>
@@ -195,25 +195,25 @@ export default function SessionHistoryList({
               <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
               </svg>
-              <span>Lepaskan untuk menyematkan</span>
+              <span>Release to pin</span>
             </div>
           </div>
         )}
 
         {loading && sessions.length === 0 ? (
-          <p className="text-[11px] text-slate-500 text-center py-8 font-mono">Memuat riwayat...</p>
+          <p className="text-[11px] text-slate-500 text-center py-8 font-mono">Loading history...</p>
         ) : groups.length === 0 ? (
           <div className="text-center py-10 px-4">
             <p className="text-xs font-semibold text-slate-300">
-              {search ? "Tidak ditemukan" : "Belum ada riwayat"}
+              {search ? "Not found" : "No history yet"}
             </p>
             <p className="text-[10.5px] text-slate-500 mt-1 leading-relaxed">
-              {search ? "Coba kata kunci lain." : "Mulai ngobrol, Anara menyimpannya di sini."}
+              {search ? "Try different keywords." : "Start chatting, Anara saves them here."}
             </p>
           </div>
         ) : (
           groups.map((group) => {
-            const isPinnedGroup = group.label === "Disematkan";
+            const isPinnedGroup = group.label === "Pinned";
             return (
               <React.Fragment key={group.label}>
                 <div
@@ -253,7 +253,7 @@ export default function SessionHistoryList({
                     <span>{group.label}</span>
                     {isPinnedGroup && (
                       <span className="text-[8.5px] font-normal lowercase opacity-70 text-slate-400">
-                        (seret ke bawah untuk lepas)
+                        (drag down to release)
                       </span>
                     )}
                   </p>
@@ -307,11 +307,11 @@ export default function SessionHistoryList({
                             <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-50 pointer-events-none animate-scale-up">
                               {draggedSession.is_pinned === 1 ? (
                                 <div className="px-3 py-1.5 rounded-xl bg-[#2d0a11]/95 border border-rose-500/50 text-rose-200 text-[11px] font-sans font-medium shadow-[0_8px_24px_rgba(0,0,0,0.85),0_0_16px_rgba(244,63,94,0.3)] backdrop-blur-xl flex items-center gap-1.5 whitespace-nowrap select-none">
-                                  <span>Lepaskan untuk melepas sematan</span>
+                                  <span>Release to unpin</span>
                                 </div>
                               ) : (
                                 <div className="px-3 py-1.5 rounded-xl bg-[#08202f]/95 border border-cyan-400/50 text-cyan-200 text-[11px] font-sans font-medium shadow-[0_8px_24px_rgba(0,0,0,0.85),0_0_16px_rgba(34,211,238,0.3)] backdrop-blur-xl flex items-center gap-1.5 whitespace-nowrap select-none">
-                                  <span>Lepaskan untuk menyematkan</span>
+                                  <span>Release to pin</span>
                                 </div>
                               )}
                             </div>
@@ -356,7 +356,7 @@ export default function SessionHistoryList({
                                   onSelectSession(s.id);
                                 }
                               }}
-                              title={`${s.title || `Percakapan #${s.id}`} (${formattedTime}) • Tahan dan seret untuk sematkan/lepas`}
+                              title={`${s.title || `Conversation #${s.id}`} (${formattedTime}) • Hold and drag to pin/unpin`}
                               className={`w-full flex flex-col gap-0.5 text-left p-2.5 pr-7 rounded-xl transition-all border outline-none cursor-grab active:cursor-grabbing select-none ${
                                 isHoveredTarget && draggedSession
                                   ? draggedSession.is_pinned === 1
@@ -374,21 +374,21 @@ export default function SessionHistoryList({
                                   </svg>
                                 )}
                                 {s.is_archived === 1 && (
-                                  <span className="text-[8.5px] font-mono text-slate-500 shrink-0">[arsip]</span>
+                                  <span className="text-[8.5px] font-mono text-slate-500 shrink-0">[archived]</span>
                                 )}
                                 <p
                                   className={`text-[12px] font-medium truncate flex-1 leading-snug ${
                                     isActive ? "text-white font-semibold" : "text-slate-300"
                                   }`}
                                 >
-                                  {s.title || `Percakapan #${s.id}`}
+                                  {s.title || `Conversation #${s.id}`}
                                 </p>
                               </div>
 
                               {/* Full Datetime Display */}
                               <div className="flex items-center justify-between text-[9.5px] font-mono text-slate-400/90 pt-0.5 pointer-events-none">
                                 <span className="truncate">{formattedTime}</span>
-                                <span className={`shrink-0 ${isActive ? "text-slate-400" : "text-slate-500"}`}>{s.message_count} pesan</span>
+                                <span className={`shrink-0 ${isActive ? "text-slate-400" : "text-slate-500"}`}>{s.message_count} messages</span>
                               </div>
                             </div>
                           )}
@@ -404,7 +404,7 @@ export default function SessionHistoryList({
                                 className={`w-5 h-6 rounded flex items-center justify-center text-slate-500 hover:text-white hover:bg-white/15 transition-all cursor-pointer ${
                                   menuOpenId === s.id ? "opacity-100" : "opacity-0 group-hover/item:opacity-100"
                                 }`}
-                                title="Opsi sesi"
+                                title="Session options"
                               >
                                 <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
                                   <circle cx="12" cy="5" r="2" />
@@ -420,7 +420,7 @@ export default function SessionHistoryList({
                                 >
                                   {[
                                     {
-                                      label: "Ganti nama",
+                                      label: "Rename",
                                       action: () => {
                                         setRenameValue(s.title || "");
                                         setRenamingId(s.id);
@@ -428,7 +428,7 @@ export default function SessionHistoryList({
                                       },
                                     },
                                     {
-                                      label: s.is_pinned === 1 ? "Lepas sematan" : "Sematkan",
+                                      label: s.is_pinned === 1 ? "Unpin" : "Pin",
                                       action: () => {
                                         onPatchSession(s.id, { is_pinned: s.is_pinned !== 1 });
                                         setMenuOpenId(null);
@@ -451,7 +451,7 @@ export default function SessionHistoryList({
                                     }}
                                     className="w-full text-left px-3 py-1.5 text-[11px] text-rose-300 hover:text-white hover:bg-rose-500/25 transition-colors cursor-pointer"
                                   >
-                                    Hapus sesi
+                                    Delete session
                                   </button>
                                 </div>
                               )}
@@ -490,7 +490,7 @@ export default function SessionHistoryList({
                       <svg className="w-3.5 h-3.5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                       </svg>
-                      <span>Lepaskan di sini untuk melepas sematan</span>
+                      <span>Release here to unpin</span>
                     </div>
                   </div>
                 )}
@@ -523,7 +523,7 @@ export default function SessionHistoryList({
               <svg className="w-3.5 h-3.5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
               </svg>
-              <span>Lepaskan di sini untuk melepas sematan</span>
+              <span>Release here to unpin</span>
             </div>
           </div>
         )}

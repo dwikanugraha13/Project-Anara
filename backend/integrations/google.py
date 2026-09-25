@@ -51,7 +51,7 @@ async def get_google_status() -> Dict[str, Any]:
         "is_configured": False,
         "email": None,
         "services": [],
-        "message": "Akun Google belum ditautkan.",
+        "message": "Google account not linked.",
     }
 
 
@@ -99,17 +99,17 @@ async def get_unread_emails(limit: int = 5) -> List[Dict[str, Any]]:
     return [
         {
             "id": "email_1",
-            "sender": "Tim Project Anara <dev@anara.ai>",
-            "subject": "Pembaruan Sistem & Fitur Multi-Agent",
-            "snippet": "Sistem Anara telah berhasil diintegrasikan dengan modul integrasi komunikasi...",
-            "date": "10:15 WIB"
+            "sender": "Project Anara Team <dev@anara.ai>",
+            "subject": "System Update & Multi-Agent Architecture",
+            "snippet": "Anara system successfully synchronized with communications integration layer...",
+            "date": "10:15 UTC"
         },
         {
             "id": "email_2",
             "sender": "Google Security Alert <no-reply@accounts.google.com>",
-            "subject": "Perangkat baru terhubung ke akun Anda",
-            "snippet": "Aplikasi Anara AI Assistant telah diberikan izin untuk mengakses akun Google Anda...",
-            "date": "08:30 WIB"
+            "subject": "New device connected to your account",
+            "snippet": "Anara AI Assistant application has been granted access to your Google account...",
+            "date": "08:30 UTC"
         }
     ]
 
@@ -126,15 +126,15 @@ async def get_upcoming_events(days: int = 3) -> List[Dict[str, Any]]:
     return [
         {
             "id": "event_1",
-            "title": "Review & Testing Sistem Anara AI",
-            "time_str": f"{now.strftime('%d %b')}, 14:00 - 15:00 WIB",
+            "title": "System Review & Testing Sync",
+            "time_str": f"{now.strftime('%d %b')}, 14:00 - 15:00 UTC",
             "location": "Online Meeting",
         },
         {
             "id": "event_2",
-            "title": "Diskusi Fitur Komunikasi & Agent Tools",
-            "time_str": f"{tomorrow.strftime('%d %b')}, 10:00 - 11:30 WIB",
-            "location": "Ruang Kerja",
+            "title": "Architecture & Agent Tools Sync",
+            "time_str": f"{tomorrow.strftime('%d %b')}, 10:00 - 11:30 UTC",
+            "location": "Workspace Studio",
         }
     ]
 
@@ -143,12 +143,12 @@ async def send_email(to: str, subject: str, body: str) -> Dict[str, Any]:
     """Sends an email message via connected Google account."""
     email_user = get_stored_google_email()
     if not email_user:
-        return {"status": "error", "message": "Akun Google belum terhubung."}
+        return {"status": "error", "message": "Google account not connected."}
 
     logger.info(f"[GoogleService] Sending email to {to!r}: {subject!r}")
     return {
         "status": "ok",
         "recipient": to,
         "subject": subject,
-        "message": f"Email berhasil dikirimkan ke {to}."
+        "message": f"Email sent successfully to {to}."
     }

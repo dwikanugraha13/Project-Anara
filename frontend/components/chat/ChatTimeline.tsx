@@ -124,17 +124,17 @@ export default function ChatTimeline({
                 </svg>
               </div>
               <h2 className="text-xl sm:text-2xl font-semibold text-slate-100 tracking-tight leading-relaxed">
-                Halo{activeSpeaker ? <> <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-slate-100 to-indigo-300 font-bold">{activeSpeaker}</span></> : ""}, apa yang ingin kita bangun?
+                Hello{activeSpeaker ? <> <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-slate-100 to-indigo-300 font-bold">{activeSpeaker}</span></> : ""}, what should we build today?
               </h2>
               <p className="text-xs text-slate-400 mt-1.5 max-w-md mx-auto">
-                Diskusikan ide arsitektur di Plan Mode, atau eksekusi perubahan file secara mandiri di Build Mode.
+                Discuss architecture in Plan Mode, or execute autonomous code modifications in Build Mode.
               </p>
 
               {/* Clean Starter Prompt Chips */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-6 w-full max-w-xl">
                 <button
                   type="button"
-                  onClick={() => onSelectPrompt?.("Tolong buatkan rencana arsitektur untuk proyek ini")}
+                  onClick={() => onSelectPrompt?.("Create an architectural implementation plan for this project")}
                   className="p-3.5 rounded-2xl starter-card-glow text-left cursor-pointer group flex items-start gap-3 select-none"
                 >
                   <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-400/25 flex items-center justify-center text-cyan-400 shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
@@ -144,17 +144,17 @@ export default function ChatTimeline({
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-slate-100 group-hover:text-cyan-300 transition-colors">
-                      Rancang Arsitektur
+                      Architecture Blueprint
                     </p>
                     <p className="text-[11px] text-slate-400 mt-0.5 font-sans leading-relaxed">
-                      Susun blueprint &amp; dependensi di Plan Mode
+                      Formulate blueprint &amp; dependencies in Plan Mode
                     </p>
                   </div>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => onSelectPrompt?.("Tolong analisis file proyek dan temukan potensi perbaikan")}
+                  onClick={() => onSelectPrompt?.("Analyze the project files and identify potential improvements")}
                   className="p-3.5 rounded-2xl starter-card-glow text-left cursor-pointer group flex items-start gap-3 select-none"
                 >
                   <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-400/25 flex items-center justify-center text-indigo-400 shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
@@ -164,17 +164,17 @@ export default function ChatTimeline({
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-slate-100 group-hover:text-indigo-300 transition-colors">
-                      Analisis &amp; Review Kode
+                      Code Analysis &amp; Review
                     </p>
                     <p className="text-[11px] text-slate-400 mt-0.5 font-sans leading-relaxed">
-                      Inspeksi workspace untuk optimasi kode
+                      Inspect workspace files and logic optimizations
                     </p>
                   </div>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => onSelectPrompt?.("Buatkan to-do list tugas prioritas untuk sesi hari ini")}
+                  onClick={() => onSelectPrompt?.("Create a priority task checklist for this session")}
                   className="p-3.5 rounded-2xl starter-card-glow text-left cursor-pointer group flex items-start gap-3 select-none"
                 >
                   <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-400/25 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
@@ -184,17 +184,17 @@ export default function ChatTimeline({
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-slate-100 group-hover:text-emerald-300 transition-colors">
-                      Susun Checklist Tugas
+                      Task Checklist
                     </p>
                     <p className="text-[11px] text-slate-400 mt-0.5 font-sans leading-relaxed">
-                      Catat target pekerjaan ke database
+                      Record priority deliverables to memory
                     </p>
                   </div>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => onSelectPrompt?.("Apa saja kemampuan dan tools yang bisa kamu jalankan?")}
+                  onClick={() => onSelectPrompt?.("What tools and capabilities do you have available?")}
                   className="p-3.5 rounded-2xl starter-card-glow text-left cursor-pointer group flex items-start gap-3 select-none"
                 >
                   <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-400/25 flex items-center justify-center text-amber-400 shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
@@ -204,10 +204,10 @@ export default function ChatTimeline({
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-slate-100 group-hover:text-amber-300 transition-colors">
-                      Eksplorasi Kapabilitas
+                      Agent Capabilities
                     </p>
                     <p className="text-[11px] text-slate-400 mt-0.5 font-sans leading-relaxed">
-                      Cek tools Anara, terminal, dan memori
+                      Explore multi-modal tools and skill catalog
                     </p>
                   </div>
                 </button>
@@ -344,8 +344,8 @@ export default function ChatTimeline({
                               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
                               <span>
                                 {isLatestAi && liveToolProgress
-                                  ? `${liveToolProgress.icon || "⚡"} Menjalankan ${liveToolProgress.toolName}...`
-                                  : "Sedang memproses..."}
+                                  ? `${liveToolProgress.icon || "⚡"} Running ${liveToolProgress.toolName}...`
+                                  : "Processing..."}
                               </span>
                             </div>
                           </div>

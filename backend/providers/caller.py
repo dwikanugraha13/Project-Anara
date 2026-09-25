@@ -270,7 +270,7 @@ def _sanitize_lead_narration(raw_lead: str) -> str:
 
     # 3. Strip observation artifacts (e.g. \f"...", [TOOL RESULT], [OBSERVATION], [DIRECTORY STATUS])
     text = re.sub(r'\\f["\'][^\n]*', "", text)
-    text = re.sub(r'\[(?:TOOL[ _](?:RESULT|OBSERVATION|ERROR)|OBSERVATION|DIRECTORY[ _]STATUS|TOOL RESULT|STATUS DIREKTORI|OBSERVASI|HASIL)[^\]]*\][^\n]*', "", text, flags=re.IGNORECASE)
+    text = re.sub(r'\[(?:TOOL[ _](?:RESULT|OBSERVATION|ERROR)|OBSERVATION|DIRECTORY[ _]STATUS|TOOL RESULT|STATUS[^\]]*|OBSERVASI|HASIL)[^\]]*\][^\n]*', "", text, flags=re.IGNORECASE)
 
     # 4. Strip directory listing lines (e.g. - [DIR] ..., - [FILE] ...)
     text = re.sub(r"(?m)^\s*-\s*\[(?:DIR|FILE)\][^\n]*\n?", "", text)
@@ -289,36 +289,41 @@ def _sanitize_lead_narration(raw_lead: str) -> str:
 
 def _format_empty_model_notice(prompt: str = "") -> str:
     """
-    Hermes Dynamic Multilingual Fallback Notice:
-    Detects user's active language and returns culturally appropriate, natural fallback notice
-    (never rigidly hardcoded to a single language).
+    Hermes Dynamic Universal Fallback Notice:
+    Returns a clean, neutral technical fallback notice when the model produces an empty turn,
+    without brittle Unicode character range checks, biased language assumptions, or rigid hardcoding.
     """
-    clean = (prompt or "").lower()
-    en_words = ("what", "how", "why", "where", "when", "can", "please", "check", "does", "is", "folder", "this", "need", "have", "you", "tell", "show")
-    id_words = ("apakah", "bagaimana", "kenapa", "mengapa", "dimana", "tolong", "bisa", "ini", "itu", "punya", "perlu", "ada", "kalau", "isi", "folder", "jelaskan")
+    return "No response was generated for this turn. Please retry or rephrase your request."
 
-    en_score = sum(1 for w in en_words if re.search(r'\b' + w + r'\b', clean))
-    id_score = sum(1 for w in id_words if re.search(r'\b' + w + r'\b', clean))
 
-    if en_score > id_score:
-        return "I apologize, the model did not generate a text response for this request. Please try asking again."
-
-    if any(ord(char) >= 0x3040 and ord(char) <= 0x30FF for char in prompt):
-        return "申し訳ありませんが、モデルから応答が生成されませんでした。もう一度お試しください。"
-
-    return "Mohon maaf, model belum memberikan teks respons untuk permintaan ini. Silakan coba ajukan kembali."
+def _strip_think_blocks(text: str) -> str:
+    """
+    Hermes Agent Parity (agent/think_scrubber.py & gateway/stream_consumer_think.py):
+    Strips inline <think>, <thought>, <reasoning>, and <REASONING_SCRATCHPAD> blocks,
+    orphan tags, and bare thinking monologue preambles from model responses.
+    """
+    if not text:
+        return ""
+    # 1. Strip paired think / reasoning tags
+    pattern = r"(?is)<(think|thought|reasoning|thinking|REASONING_SCRATCHPAD)\b[^>]*>[\s\S]*?</\1>"
+    text = re.sub(pattern, "", text)
+    # 2. Strip unclosed opening think tag at start of output
+    text = re.sub(r"(?is)^<(think|thought|reasoning|thinking|REASONING_SCRATCHPAD)\b[^>]*>[\s\S]*?(?:(?=```)|$)", "", text)
+    # 3. Strip orphan closing tags
+    text = re.sub(r"(?i)</(?:think|thought|reasoning|thinking|REASONING_SCRATCHPAD)>", "", text)
+    return text.strip()
 
 
 def _clean_model_chat_text(raw_text: str) -> str:
     """
     Cleans model chat responses by removing markdown tool-call fences,
-    bare JSON tool payloads, observation tags, and trailing punctuation/braces (Hermes Parity).
+    bare JSON tool payloads, reasoning/think blocks, observation tags, and trailing punctuation/braces (Hermes Parity).
     Guarantees that responses consisting solely of brackets or punctuation (e.g. '}', '{}', '```')
     are treated as empty so proper conversational synthesis is executed.
     """
     if not raw_text or not isinstance(raw_text, str):
         return ""
-    text = raw_text.strip()
+    text = _strip_think_blocks(raw_text.strip())
 
     # 1. Strip markdown fences containing tool calls
     text = re.sub(r"```(?:json)?\s*\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\}\s*```", "", text, flags=re.IGNORECASE)
@@ -328,7 +333,7 @@ def _clean_model_chat_text(raw_text: str) -> str:
     text = re.sub(r"\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\}", "", text, flags=re.IGNORECASE)
 
     # 3. Strip observation tags
-    text = re.sub(r'\[(?:TOOL[ _](?:RESULT|OBSERVATION|ERROR)|OBSERVATION|DIRECTORY[ _]STATUS|TOOL RESULT|STATUS DIREKTORI|OBSERVASI|HASIL)[^\]]*\][^\n]*', "", text, flags=re.IGNORECASE)
+    text = re.sub(r'\[(?:TOOL[ _](?:RESULT|OBSERVATION|ERROR)|OBSERVATION|DIRECTORY[ _]STATUS|TOOL RESULT)[^\]]*\][^\n]*', "", text, flags=re.IGNORECASE)
 
     # 4. Strip empty fences and trailing/leading structural punctuation
     text = re.sub(r"```(?:json|shell|bash)?\s*```", "", text)
@@ -476,6 +481,383 @@ def _extract_and_parse_tool_call(raw_out: str) -> tuple[Optional[Dict[str, Any]]
     return (calls[0] if calls else None, lead_text, is_malformed)
 
 
+async def _execute_native_agent_loop(
+    native_turn_caller: Callable[[List[Any]], Awaitable[Any]],
+    record_results_fn: Callable[[List[Any], Any, List[Tuple[Any, str, bool]]], None],
+    initial_history: List[Any],
+    user_prompt: str,
+    read_only: bool = False,
+    progress_cb: Optional[Callable[[Dict[str, Any]], Any]] = None,
+    token_cb: Optional[Callable[[str], Any]] = None,
+    intercept_mutating_tools: bool = False,
+    model_id: str = "",
+    max_steps: int = 25,
+) -> Any:
+    """
+    Hermes & Claude Code Parity: Native Structured Tool Calling Agent Loop.
+    Executes multi-turn tool loops using native API tool_use/function_call structures
+    instead of stringified text JSON blocks.
+    Preserves all 10 Anara safety pillars:
+    - AnaraLoopBreaker (cycle prevention)
+    - TokenBudgetTracker (context window safety)
+    - SelfCorrectionTracker & ErrorClassifier
+    - Plan Mode Interception & Smart Command Safety
+    - Parallel read-only tool execution (asyncio.gather)
+    - Workspace Sentinel Ground-Truth Test Verification
+    - ContextMicroCompactor & Head:Tail Output Compaction
+    """
+    from tools import dispatch_tool_call, READ_ONLY_TOOL_NAMES, get_tool_risk, AnaraLoopBreaker
+    from tools.catalog import is_safe_read_only_cli_command
+    from tools.output_manager import compact_tool_output
+    from tools.self_correction import (
+        AnaraLoopBreaker,
+        ContextMicroCompactor,
+        ErrorClassifier,
+        SelfCorrectionTracker,
+        format_recovery_guidance,
+        format_graceful_diagnostic_card,
+    )
+    from core.token_budget import TokenBudgetTracker
+    from core.convergence import ConvergenceDetector
+    from .native_turn import NativeToolCall, NativeTurnResult
+
+    loop_breaker = AnaraLoopBreaker(max_identical=4)
+    self_correction_tracker = SelfCorrectionTracker(
+        max_retries=5,
+        max_identical_failures=5,
+        warn_after_exact=2,
+        interactive=True
+    )
+    token_tracker = TokenBudgetTracker(model_id=model_id)
+    convergence_detector = ConvergenceDetector(read_only=read_only)
+
+    history = list(initial_history)
+    last_text = ""
+    circuit_breaker_tripped = False
+    budget_exhausted = False
+
+    for step in range(max_steps):
+        # Token Budget Management (Hermes Parity: Gap 1 in Native Loop)
+        token_tracker.record_step(step, history)
+        if step > 0 and token_tracker.is_budget_critical(history):
+            logger.warning(
+                f"[NativeAgentLoop] Token budget critical at step {step+1}: "
+                f"{token_tracker.usage_ratio(history):.0%} of {token_tracker.input_budget:,} tokens consumed. "
+                f"Forcing final narrative conclusion."
+            )
+            try:
+                final_turn = await native_turn_caller(history)
+                if final_turn and final_turn.clean_text:
+                    final_text = _clean_model_chat_text(final_turn.clean_text) or final_turn.clean_text
+                    if token_cb and final_text:
+                        r = token_cb(final_text)
+                        if asyncio.iscoroutine(r):
+                            await r
+                    return final_text
+            except Exception:
+                pass
+            return _clean_model_chat_text(last_text) or last_text or _format_empty_model_notice(user_prompt)
+
+        # Progress callback: thinking/reasoning
+        if progress_cb:
+            try:
+                res_cb = progress_cb({
+                    "tool_name": "agent",
+                    "status": "thinking",
+                    "step": step + 1,
+                    "summary": "Reasoning & planning..." if read_only else "Reasoning & planning actions..."
+                })
+                if asyncio.iscoroutine(res_cb):
+                    await res_cb
+            except Exception:
+                pass
+
+        # Call provider for single turn
+        turn = await native_turn_caller(history)
+        if not isinstance(turn, NativeTurnResult):
+            # If provider returned raw string or unexpected type, fallback
+            return str(turn)
+
+        last_text = turn.clean_text
+
+        # If turn has NO tool calls, it's a final conversational narrative response
+        if not turn.has_tool_calls:
+            final_text = _clean_model_chat_text(last_text) or last_text
+            if not final_text:
+                final_text = _format_empty_model_notice(user_prompt)
+            if token_cb and final_text:
+                res = token_cb(final_text)
+                if asyncio.iscoroutine(res):
+                    await res
+            return final_text
+
+        # Turn emitted native tool calls
+        parsed_calls = []
+        is_intercepted = False
+        interception_result = None
+
+        for call in turn.tool_calls:
+            t_name = call.name
+            t_args = call.arguments or {}
+
+            # Loop Breaker check
+            is_stalled, stall_msg = loop_breaker.record_and_check(t_name, t_args)
+            if is_stalled and stall_msg:
+                logger.warning(f"[NativeAgentLoop] LoopBreaker triggered on tool '{t_name}'")
+
+            t_risk = get_tool_risk(t_name)
+            if t_name in ("execute_cli_command", "terminal", "run_terminal_command"):
+                from core.plan_detector import smart_evaluate_command_safety
+                t_risk = await smart_evaluate_command_safety(t_args.get("command", ""), description=user_prompt[:80])
+
+            # Safety Interception:
+            # 1. 'ask' tier (fatal commands: rm -rf /, format, drop db, bulk wipes) ALWAYS intercepts
+            # 2. Plan Mode (intercept_mutating_tools=True) intercepts both 'mutating' and 'ask'
+            should_intercept = (t_risk == "ask") or (intercept_mutating_tools and t_risk in ("mutating", "ask"))
+            if should_intercept:
+                logger.info(f"[NativeToolInterceptor] Intercepted tool '{t_name}' (risk={t_risk}) for Plan/Safety approval.")
+                cmd_preview = t_args.get("command") or t_args.get("file_path") or t_args.get("title") or t_args.get("app") or ""
+                is_intercepted = True
+                interception_result = {
+                    "intercepted": True,
+                    "tool_name": t_name,
+                    "tool_args": t_args,
+                    "tool_risk": t_risk,
+                    "cmd_preview": cmd_preview,
+                    "lead_text": turn.clean_text,
+                    "raw_call": call.to_dict(),
+                }
+                break
+
+            parsed_calls.append({
+                "call": call,
+                "name": t_name,
+                "args": t_args,
+                "risk": t_risk,
+            })
+
+        if is_intercepted:
+            return interception_result
+
+        if not parsed_calls:
+            continue
+
+        # Multi-Tool Execution: Parallelize Read-Only calls via asyncio.gather, serialize Mutating calls
+        results_by_index: Dict[int, Any] = {}
+        call_idx = 0
+        while call_idx < len(parsed_calls):
+            if parsed_calls[call_idx]["risk"] == "read_only":
+                end_idx = call_idx
+                while end_idx < len(parsed_calls) and parsed_calls[end_idx]["risk"] == "read_only":
+                    end_idx += 1
+                ro_batch = parsed_calls[call_idx:end_idx]
+
+                if progress_cb:
+                    for item in ro_batch:
+                        try:
+                            res_cb = progress_cb({
+                                "tool_name": item["name"],
+                                "status": "running",
+                                "parallel": len(ro_batch) > 1,
+                                "detail": str(item["args"].get("file_path") or item["args"].get("command") or item["args"].get("pattern") or "")
+                            })
+                            if asyncio.iscoroutine(res_cb):
+                                await res_cb
+                        except Exception:
+                            pass
+
+                batch_results = await asyncio.gather(*[
+                    dispatch_tool_call(item["name"], item["args"], read_only=read_only)
+                    for item in ro_batch
+                ])
+
+                for offset_i, tool_res in enumerate(batch_results):
+                    results_by_index[call_idx + offset_i] = tool_res
+                    item = ro_batch[offset_i]
+                    if progress_cb:
+                        try:
+                            res_cb = progress_cb({
+                                "tool_name": item["name"],
+                                "status": "done",
+                                "summary": (tool_res.get("message") or tool_res.get("summary") or "")[:160] if isinstance(tool_res, dict) else str(tool_res)[:160]
+                            })
+                            if asyncio.iscoroutine(res_cb):
+                                await res_cb
+                        except Exception:
+                            pass
+                call_idx = end_idx
+            else:
+                item = parsed_calls[call_idx]
+                if progress_cb:
+                    try:
+                        res_cb = progress_cb({
+                            "tool_name": item["name"],
+                            "status": "running",
+                            "detail": str(item["args"].get("file_path") or item["args"].get("command") or item["args"].get("title") or "")
+                        })
+                        if asyncio.iscoroutine(res_cb):
+                            await res_cb
+                    except Exception:
+                        pass
+
+                is_safe_cli = (item["name"] == "execute_cli_command" and is_safe_read_only_cli_command(item["args"].get("command", "")))
+                if read_only and item["name"] not in READ_ONLY_TOOL_NAMES and not is_safe_cli:
+                    mut_res = {"status": "error", "message": f"Tool '{item['name']}' is disabled in Plan Mode (Read-Only)."}
+                else:
+                    mut_res = await dispatch_tool_call(item["name"], item["args"], read_only=read_only)
+                results_by_index[call_idx] = mut_res
+
+                if progress_cb:
+                    try:
+                        res_cb = progress_cb({
+                            "tool_name": item["name"],
+                            "status": "done",
+                            "summary": (mut_res.get("message") or mut_res.get("summary") or "")[:160] if isinstance(mut_res, dict) else str(mut_res)[:160]
+                        })
+                        if asyncio.iscoroutine(res_cb):
+                            await res_cb
+                    except Exception:
+                        pass
+                call_idx += 1
+
+        # Format and compact tool observations with Self-Correction & Micro-Compactor
+        executed_results_for_history: List[Tuple[Any, str, bool]] = []
+        turn_had_error = False
+        last_err_str = ""
+
+        for idx, item in enumerate(parsed_calls):
+            call_obj: NativeToolCall = item["call"]
+            tool_name: str = item["name"]
+            tool_res = results_by_index.get(idx, {})
+
+            if tool_name == "interactive_question" and isinstance(tool_res, dict) and tool_res.get("dismissed"):
+                dismiss_notice = "Question dismissed."
+                if token_cb:
+                    res = token_cb(dismiss_notice)
+                    if asyncio.iscoroutine(res):
+                        await res
+                return dismiss_notice
+
+            res_str = json.dumps(tool_res, ensure_ascii=False) if not isinstance(tool_res, str) else tool_res
+
+            is_tolerant = self_correction_tracker.is_failure_tolerant(tool_name)
+            raw_err = isinstance(tool_res, dict) and (
+                tool_res.get("status") in ("error", "failed")
+                or tool_res.get("return_code", 0) != 0
+                or tool_res.get("is_error") is True
+            )
+            is_err = raw_err and not is_tolerant
+
+            # Ground-Truth Test Verification
+            if tool_name == "execute_cli_command":
+                cmd_str = str(item["args"].get("command", "")).lower()
+                if any(k in cmd_str for k in ("run_tests", "pytest", "npm test", "npm run test", "test_general_agent")):
+                    from core.workspace_sentinel import workspace_sentinel
+                    gt = workspace_sentinel.verify_ground_truth(res_str, tool_res.get("return_code", 0) if isinstance(tool_res, dict) else 0)
+                    if not gt.get("verified"):
+                        is_err = True
+
+            loop_breaker.record_result(is_err)
+
+            if is_err:
+                turn_had_error = True
+                compacted_err_str = ContextMicroCompactor.compact_output(res_str, max_lines=35, source_label=f"err_{tool_name}")
+                last_err_str = compacted_err_str
+                err_type, detail = ErrorClassifier.classify(compacted_err_str)
+
+                target_arg = str(item["args"].get("command") or item["args"].get("file_path") or item["args"].get("query") or "")
+                track_res = self_correction_tracker.register_attempt(
+                    tool_name=tool_name,
+                    command_or_arg=target_arg,
+                    err_type=err_type or "execution_error",
+                    detail=detail or "",
+                )
+                if track_res.get("is_stalled"):
+                    circuit_breaker_tripped = True
+                if track_res.get("budget_exhausted"):
+                    budget_exhausted = True
+
+                executed_results_for_history.append((call_obj, compacted_err_str, True))
+            else:
+                compacted_res_str = compact_tool_output(res_str, max_lines=60, max_chars=4000, source_label=f"caller_{tool_name}")
+                executed_results_for_history.append((call_obj, compacted_res_str, False))
+
+        # Circuit breaker check
+        if circuit_breaker_tripped or (budget_exhausted and not self_correction_tracker.interactive):
+            diag_card = format_graceful_diagnostic_card(
+                history=self_correction_tracker.history,
+                last_error_text=last_err_str,
+                original_task=user_prompt
+            )
+            logger.warning("[NativeAgentLoop] Circuit breaker tripped on repeated identical stall. Delivering graceful diagnostic card.")
+            if token_cb:
+                res = token_cb(diag_card)
+                if asyncio.iscoroutine(res):
+                    await res
+            return diag_card
+
+        if not turn_had_error:
+            self_correction_tracker.reset()
+
+        # Convergence Tracking (Hermes & Claude Code Parity: Gap 3)
+        executed_items_for_convergence = []
+        for idx, item in enumerate(parsed_calls):
+            tool_res = results_by_index.get(idx, {})
+            is_e = bool(isinstance(tool_res, dict) and (tool_res.get("status") in ("error", "failed") or tool_res.get("return_code", 0) != 0))
+            executed_items_for_convergence.append({
+                "tool_name": item["name"],
+                "args": item["args"],
+                "risk": item["risk"],
+                "is_error": is_e,
+                "summary": str(tool_res)[:200]
+            })
+        conv_status = convergence_detector.record_turn_actions(step, executed_items_for_convergence)
+
+        # Append assistant turn and tool results to native history
+        record_results_fn(history, turn, executed_results_for_history)
+
+        if conv_status.is_converged:
+            logger.info(f"[NativeAgentLoop] Trajectory converged (reason: {conv_status.reason}). Forcing final conclusion.")
+            try:
+                from core.prompt_loader import load_prompt
+                closing_instruction = load_prompt("agent_loop/closing_narrative").strip()
+                closing_history = [
+                    *history,
+                    {"role": "user", "content": closing_instruction}
+                ]
+                final_turn = await native_turn_caller(closing_history)
+                if final_turn and final_turn.clean_text:
+                    final_text = _clean_model_chat_text(final_turn.clean_text) or final_turn.clean_text
+                    if token_cb and final_text:
+                        r = token_cb(final_text)
+                        if asyncio.iscoroutine(r):
+                            await r
+                    return final_text
+            except Exception as e_close:
+                logger.warning(f"[NativeAgentLoop] Closing pass error: {e_close}")
+
+            cleaned_last = _clean_model_chat_text(last_text)
+            if cleaned_last:
+                return cleaned_last
+            return _format_empty_model_notice(user_prompt)
+
+    cleaned_last = _clean_model_chat_text(last_text)
+    if not cleaned_last:
+        try:
+            from core.prompt_loader import load_prompt
+            closing_instruction = load_prompt("agent_loop/closing_narrative").strip()
+            closing_history = [
+                *history,
+                {"role": "user", "content": closing_instruction}
+            ]
+            final_turn = await native_turn_caller(closing_history)
+            if final_turn and final_turn.clean_text:
+                return _clean_model_chat_text(final_turn.clean_text) or final_turn.clean_text
+        except Exception:
+            pass
+    return cleaned_last or _format_empty_model_notice(user_prompt)
+
+
 async def _execute_json_agent_loop(
     provider_caller: Callable[..., Awaitable[str]],
     user_prompt: str,
@@ -485,6 +867,7 @@ async def _execute_json_agent_loop(
     token_cb: Optional[Callable[[str], Any]] = None,
     intercept_mutating_tools: bool = False,
     platform: Optional[str] = None,
+    model_id: str = "",
 ) -> Any:
     """Universal multi-turn JSON tool loop for OpenAI Codex, Claude, and Custom Providers."""
     from tools import dispatch_tool_call, READ_ONLY_TOOL_NAMES, get_tool_risk, get_tools_catalog, AnaraLoopBreaker
@@ -492,7 +875,7 @@ async def _execute_json_agent_loop(
     from tools.toolsets import PlatformToolRegistry
 
     target_platform = platform or "web_studio"
-    active_tool_names = set(PlatformToolRegistry.get_tools_for_platform(target_platform, user_task=user_prompt))
+    active_tool_names = set(PlatformToolRegistry.get_pruned_tools_for_execution(target_platform, user_task=user_prompt, read_only=read_only))
     catalog = get_tools_catalog(enabled_set=active_tool_names)
     tool_lines = []
     for t in catalog:
@@ -502,26 +885,11 @@ async def _execute_json_agent_loop(
 
     dynamic_catalog_str = "\n".join(tool_lines)
 
-    tool_spec_doc = (
-        "\n\n[UNIVERSAL AUTONOMOUS AGENT PROTOCOL — ANARA STANDARD]\n"
-        "Kamu adalah Autonomous AI Agent cerdas, berdaya cipta tinggi, dan solutif.\n"
-        "Gunakan instrumen alat universal yang tersedia untuk menyelesaikan tugas pengguna secara mandiri dan tuntas.\n"
-        "PENTING: Selalu gunakan forward slash '/' untuk semua path direktori dan berkas (contoh: 'backend/tools/catalog.py', 'C:/Users/...').\n"
-        "Ketika memanggil alat, BALAS HANYA DENGAN SATU BLOK JSON VALID BERIKUT:\n"
-        "```json\n"
-        "{\n"
-        '  "action": "tool_call",\n'
-        '  "tool": "nama_alat",\n'
-        '  "arguments": { ... }\n'
-        "}\n"
-        "```\n\n"
-        f"Katalog Alat Aktif ({len(tool_lines)} alat):\n"
-        f"{dynamic_catalog_str}\n\n"
-        "OPERATIONAL GUIDELINES (HERMES PARITY):\n"
-        "1. USER INTENT REASONING (CONVERSATION VS ACTION — HERMES PARITY): If the conversation context is conceptual discussion, Q&A, or conversational follow-up ('ok continue', 'yes', 'explain', 'what do you think?'), RESPOND PURELY IN NATURAL CONVERSATIONAL PROSE. Do NOT call tools or execute terminal commands unless the user explicitly requests physical execution or testing.\n"
-        "2. Always inspect files/directories (read_local_file, glob_find_files, list_directory) before concluding or modifying.\n"
-        "3. Use 'edit_file' for targeted replacements without disturbing surrounding code.\n"
-        "4. Conclude your turn with a complete, direct, and empathetic final response naturally matching the user's active language (no raw tool JSON)."
+    from core.prompt_loader import load_prompt
+    tool_spec_doc = "\n\n" + load_prompt(
+        "agent_protocol",
+        tool_count=len(tool_lines),
+        dynamic_catalog_str=dynamic_catalog_str
     )
     
     messages = [
@@ -544,15 +912,42 @@ async def _execute_json_agent_loop(
         warn_after_exact=2,
         interactive=True
     )
+
+    # Token Budget Tracker (Hermes/Claude Code Parity: token-aware context management)
+    from core.token_budget import TokenBudgetTracker
+    from core.convergence import ConvergenceDetector
+    token_tracker = TokenBudgetTracker(model_id=model_id)
+    convergence_detector = ConvergenceDetector(read_only=read_only)
+
     last_response = ""
     empty_turn_retries = 0
     for step in range(25):
-        # Soft-cap only very old turns if context history grows exceptionally large (> 24 messages)
-        if len(messages) > 24:
-            for m_idx in range(2, len(messages) - 6):
-                if messages[m_idx].get("role") == "user" and len(messages[m_idx].get("content", "")) > 4000:
-                    c = messages[m_idx]["content"]
-                    messages[m_idx]["content"] = c[:1200] + "\n[... earlier observation output truncated for context efficiency ...]\n" + c[-600:]
+        # Token-aware context compaction (replaces old 24-message char-based heuristic)
+        token_tracker.compact_messages_if_needed(messages)
+
+        # Budget-critical stop: if >90% of context consumed, force final response
+        if step > 0 and token_tracker.is_budget_critical(messages):
+            logger.warning(
+                f"[AgentLoop] Token budget critical at step {step+1}: "
+                f"{token_tracker.usage_ratio(messages):.0%} of {token_tracker.input_budget:,} tokens consumed. "
+                f"Forcing final narrative response."
+            )
+            messages.append({
+                "role": "user",
+                "content": load_prompt("agent_loop/budget_critical")
+            })
+            try:
+                final_raw = await provider_caller(messages)
+                if final_raw and final_raw.strip():
+                    cleaned = _clean_model_chat_text(final_raw)
+                    if cleaned and '"action": "tool_call"' not in cleaned:
+                        return cleaned
+            except Exception:
+                pass
+            break
+
+        # Record step for diagnostics
+        token_tracker.record_step(step, messages)
 
         buffered_chunks = []
         is_tool_candidate = None  # None: undetermined, True: looks like JSON tool call, False: narrative streaming
@@ -566,9 +961,11 @@ async def _execute_json_agent_loop(
             if is_tool_candidate is False:
                 accumulated_narrative.append(delta)
                 if token_cb:
-                    res = token_cb("".join(accumulated_narrative))
-                    if asyncio.iscoroutine(res):
-                        await res
+                    scrubbed = _strip_think_blocks("".join(accumulated_narrative))
+                    if scrubbed:
+                        res = token_cb(scrubbed)
+                        if asyncio.iscoroutine(res):
+                            await res
                 return
 
             buffered_chunks.append(delta)
@@ -580,9 +977,11 @@ async def _execute_json_agent_loop(
                     is_tool_candidate = False
                     accumulated_narrative.extend(buffered_chunks)
                     if token_cb:
-                        res = token_cb("".join(accumulated_narrative))
-                        if asyncio.iscoroutine(res):
-                            await res
+                        scrubbed = _strip_think_blocks("".join(accumulated_narrative))
+                        if scrubbed:
+                            res = token_cb(scrubbed)
+                            if asyncio.iscoroutine(res):
+                                await res
                 return
 
             if trimmed.startswith("```json") or trimmed.startswith("```") or (trimmed.startswith("{") and ('"action"' in trimmed or '"tool"' in trimmed)):
@@ -591,9 +990,11 @@ async def _execute_json_agent_loop(
                 is_tool_candidate = False
                 accumulated_narrative.extend(buffered_chunks)
                 if token_cb:
-                    res = token_cb("".join(accumulated_narrative))
-                    if asyncio.iscoroutine(res):
-                        await res
+                    scrubbed = _strip_think_blocks("".join(accumulated_narrative))
+                    if scrubbed:
+                        res = token_cb(scrubbed)
+                        if asyncio.iscoroutine(res):
+                            await res
 
         if progress_cb:
             try:
@@ -601,7 +1002,7 @@ async def _execute_json_agent_loop(
                     "tool_name": "agent",
                     "status": "thinking",
                     "step": step + 1,
-                    "summary": "Sedang menganalisis & merumuskan pemikiran..." if read_only else "Sedang bernalar & merancang tindakan..."
+                    "summary": "Analyzing & reasoning..." if read_only else "Reasoning & planning actions..."
                 })
                 if asyncio.iscoroutine(res_cb):
                     await res_cb
@@ -620,9 +1021,9 @@ async def _execute_json_agent_loop(
                 empty_turn_retries += 1
                 logger.info(f"[AgentLoop] Empty or thinking-only response detected (turn {step+1}). Nudging model continuation ({empty_turn_retries}/2)...")
                 nudge_content = (
-                    "You just executed tool calls above but returned an empty response. Please process the tool results above and provide your clear, helpful response naturally matching the user's active language."
+                    load_prompt("agent_loop/empty_turn_nudge_tool")
                     if (step > 0 and len(messages) >= 2 and "[TOOL" in messages[-1].get("content", ""))
-                    else "Please provide your complete, helpful response to the user's request in natural conversational prose matching the user's active language."
+                    else load_prompt("agent_loop/empty_turn_nudge_general")
                 )
                 messages.append({
                     "role": "user",
@@ -641,7 +1042,7 @@ async def _execute_json_agent_loop(
             messages.append({"role": "assistant", "content": raw_out})
             messages.append({
                 "role": "user",
-                "content": "[SYSTEM REFLECTION]: Tool call format could not be parsed as valid JSON. Ensure code blocks contain valid JSON objects with forward slashes '/' for file paths (e.g. 'C:/path/file.py'). Please retry the tool call correctly."
+                "content": load_prompt("agent_loop/malformed_json")
             })
             continue
 
@@ -655,7 +1056,7 @@ async def _execute_json_agent_loop(
                     synth = await provider_caller([
                         *messages,
                         {"role": "assistant", "content": last_response},
-                        {"role": "user", "content": "Explain your conclusion or answer clearly to the user in natural conversational prose matching the user's active language."}
+                        {"role": "user", "content": load_prompt("agent_loop/narrative_synthesis").strip()}
                     ])
                     cleaned_text = _clean_model_chat_text(synth or "")
                 except Exception:
@@ -692,9 +1093,13 @@ async def _execute_json_agent_loop(
                 from core.plan_detector import smart_evaluate_command_safety
                 t_risk = await smart_evaluate_command_safety(t_args.get("command", ""), description=user_prompt[:80])
 
-            if intercept_mutating_tools and t_risk in ("mutating", "ask"):
-                logger.info(f"[ToolInterceptor JSON] Intercepted mutating tool '{t_name}' for Plan approval.")
-                cmd_preview = t_args.get("command") or t_args.get("file_path") or t_args.get("title") or ""
+            # Safety Interception:
+            # 1. 'ask' tier (fatal commands: rm -rf /, format, drop db, bulk wipes) ALWAYS intercepts
+            # 2. Plan Mode (intercept_mutating_tools=True) intercepts both 'mutating' and 'ask'
+            should_intercept = (t_risk == "ask") or (intercept_mutating_tools and t_risk in ("mutating", "ask"))
+            if should_intercept:
+                logger.info(f"[ToolInterceptor JSON] Intercepted tool '{t_name}' (risk={t_risk}) for Plan/Safety approval.")
+                cmd_preview = t_args.get("command") or t_args.get("file_path") or t_args.get("title") or t_args.get("app") or ""
                 is_intercepted = True
                 interception_result = {
                     "intercepted": True,
@@ -780,7 +1185,7 @@ async def _execute_json_agent_loop(
 
                 is_safe_cli = (item["name"] == "execute_cli_command" and is_safe_read_only_cli_command(item["args"].get("command", "")))
                 if read_only and item["name"] not in READ_ONLY_TOOL_NAMES and not is_safe_cli:
-                    mut_res = {"status": "error", "message": f"Tool '{item['name']}' dinonaktifkan di Plan Mode (Read-Only)."}
+                    mut_res = {"status": "error", "message": f"Tool '{item['name']}' is disabled in Plan Mode (Read-Only)."}
                 else:
                     mut_res = await dispatch_tool_call(item["name"], item["args"], read_only=read_only)
                 results_by_index[call_idx] = mut_res
@@ -814,7 +1219,7 @@ async def _execute_json_agent_loop(
             tool_res = results_by_index.get(idx, {})
 
             if tool_name == "interactive_question" and isinstance(tool_res, dict) and tool_res.get("dismissed"):
-                dismiss_notice = "Pertanyaan ditutup."
+                dismiss_notice = "Question dismissed."
                 if token_cb:
                     res = token_cb(dismiss_notice)
                     if asyncio.iscoroutine(res):
@@ -895,17 +1300,42 @@ async def _execute_json_agent_loop(
                     await res
             return diag_card
 
+        if not turn_had_error:
+            self_correction_tracker.reset()
+
+        # Convergence Tracking (Hermes & Claude Code Parity: Gap 3)
+        executed_items_for_convergence = []
+        for idx, item in enumerate(parsed_calls):
+            tool_res = results_by_index.get(idx, {})
+            is_e = bool(isinstance(tool_res, dict) and (tool_res.get("status") in ("error", "failed") or tool_res.get("return_code", 0) != 0))
+            executed_items_for_convergence.append({
+                "tool_name": item["name"],
+                "args": item["args"],
+                "risk": item["risk"],
+                "is_error": is_e,
+                "summary": str(tool_res)[:200]
+            })
+        conv_status = convergence_detector.record_turn_actions(step, executed_items_for_convergence)
+
         if turn_had_error:
             guidance = "\n\n".join(recovery_hints)
         else:
-            self_correction_tracker.reset()
-            guidance = "\n\nProceed with the next required action, or provide your final response matching the user's active language if all steps are complete."
+            if conv_status.is_converged:
+                logger.info(f"[AgentLoop] Trajectory converged (reason: {conv_status.reason}). Forcing closing pass.")
+                guidance = f"\n\n{conv_status.guidance}"
+            elif conv_status.should_nudge:
+                guidance = f"\n\n{conv_status.guidance}"
+            else:
+                guidance = "\n\nProceed with the next required action, or provide your final response matching the user's active language if all steps are complete."
 
         combined_tool_feedback = "\n\n".join(tool_result_blocks) + guidance
         messages.append({
             "role": "user",
             "content": combined_tool_feedback
         })
+
+        if conv_status.is_converged:
+            break
 
         if progress_cb:
             try:
@@ -930,7 +1360,7 @@ async def _execute_json_agent_loop(
                 *messages,
                 {
                     "role": "user",
-                    "content": "Based on all the work, observations, and attachments above, provide a clear, helpful, and complete final response to the user in natural conversational prose (no raw tool call JSON), matching the user's active language."
+                    "content": load_prompt("agent_loop/closing_narrative")
                 }
             ]
             synth = await provider_caller(closing_prompt)
@@ -982,7 +1412,7 @@ async def _make_gemini_raw_call(
             contents.append(types.Content(role=role, parts=[types.Part.from_text(text=c)]))
 
     if not contents:
-        contents = [types.Content(role="user", parts=[types.Part.from_text(text="Lanjutkan.")])]
+        contents = [types.Content(role="user", parts=[types.Part.from_text(text="Continue.")])]
 
     async def _exec(client):
         chunks = []
@@ -1013,6 +1443,70 @@ async def _make_gemini_raw_call(
                 if asyncio.iscoroutine(r):
                     await r
             return txt
+
+    return await key_manager.execute_with_failover(_exec)
+
+
+async def _make_gemini_native_turn(
+    model_name: str,
+    contents: List[Any],
+    tools: List[Any],
+    system_instruction: str = "",
+    temperature: float = 0.7,
+    max_tokens: Optional[int] = None,
+    on_chunk: Optional[Callable[[str], Any]] = None,
+) -> Any:
+    """Executes a single native tool-calling turn via Google GenAI SDK (Hermes/Gemini Parity)."""
+    from core import key_manager
+    from google.genai import types
+    from .native_turn import NativeToolCall, NativeTurnResult
+
+    cfg_kwargs: Dict[str, Any] = {
+        "temperature": temperature,
+        "tools": tools,
+    }
+    if max_tokens is not None and max_tokens > 0:
+        cfg_kwargs["max_output_tokens"] = max_tokens
+    if system_instruction and system_instruction.strip():
+        cfg_kwargs["system_instruction"] = system_instruction.strip()
+    config = types.GenerateContentConfig(**cfg_kwargs)
+
+    async def _exec(client):
+        res = await client.aio.models.generate_content(
+            model=model_name,
+            contents=contents,
+            config=config,
+        )
+        text_parts = []
+        tool_calls = []
+
+        if res.candidates and len(res.candidates) > 0:
+            cand = res.candidates[0]
+            if cand.content and cand.content.parts:
+                for idx, part in enumerate(cand.content.parts):
+                    if getattr(part, "text", None):
+                        text_parts.append(part.text)
+                        if on_chunk:
+                            r = on_chunk(part.text)
+                            if asyncio.iscoroutine(r):
+                                await r
+                    if getattr(part, "function_call", None):
+                        fc = part.function_call
+                        call_id = f"call_{fc.name}_{idx}"
+                        args_dict = dict(fc.args) if fc.args else {}
+                        tool_calls.append(NativeToolCall(
+                            call_id=call_id,
+                            name=fc.name,
+                            arguments=args_dict
+                        ))
+
+        full_text = "".join(text_parts)
+        cand_content = res.candidates[0].content if (res.candidates and res.candidates[0].content) else None
+        return NativeTurnResult(
+            text=full_text,
+            tool_calls=tool_calls,
+            raw_response=cand_content,
+        )
 
     return await key_manager.execute_with_failover(_exec)
 

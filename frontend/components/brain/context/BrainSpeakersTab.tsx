@@ -57,7 +57,7 @@ export default function BrainSpeakersTab({
   };
 
   const handleDeleteSpeaker = async (speakerName: string) => {
-    if (!confirm(`Hapus profil pembicara "${speakerName}" beserta seluruh ingatan dan data terkait?`)) return;
+    if (!confirm(`Delete speaker profile "${speakerName}" along with all related memories and data?`)) return;
     try {
       const res = await fetch(`${BACKEND_URL}/api/brain/speakers/${encodeURIComponent(speakerName)}`, {
         method: "DELETE",
@@ -80,9 +80,9 @@ export default function BrainSpeakersTab({
   };
 
   const buildCalibrationPrompts = (name: string): string[] => [
-    `Halo Anara, namaku ${name}, senang berkenalan denganmu.`,
-    "Cuaca hari ini sangat cerah, aku ingin minum segelas kopi hangat.",
-    "Teknologi kecerdasan buatan berkembang sangat pesat belakangan ini.",
+    `Hello Anara, my name is ${name}, nice to meet you.`,
+    "The weather today is very clear, I want to drink a warm cup of coffee.",
+    "Artificial intelligence technology has been developing very rapidly lately.",
   ];
 
   const convertFloatChunksToBase64Pcm16 = (
@@ -176,7 +176,7 @@ export default function BrainSpeakersTab({
 
           const promptText = prompts[roundIdx];
           const attemptNote = attempt > 1 ? ` (percobaan ${attempt})` : "";
-          setCalibrationStatusText(`Ronde ${roundIdx + 1}/3${attemptNote}: Baca keras: "${promptText}"`);
+          setCalibrationStatusText(`Round ${roundIdx + 1}/3${attemptNote}: Read aloud: "${promptText}"`);
 
           for (let sec = ROUND_SECONDS; sec > 0; sec--) {
             setCalibrationCountdown(sec);
@@ -186,12 +186,12 @@ export default function BrainSpeakersTab({
 
           const chunksSnapshot = currentChunks.slice();
           if (chunksSnapshot.length === 0) {
-            setCalibrationStatusText(`Ronde ${roundIdx + 1}: Suara tidak tertangkap, mengulang...`);
+            setCalibrationStatusText(`Round ${roundIdx + 1}: Voice not captured, retrying...`);
             await new Promise((r) => setTimeout(r, 1200));
             continue;
           }
 
-          setCalibrationStatusText(`Ronde ${roundIdx + 1}: Menganalisis akustik sidik suara...`);
+          setCalibrationStatusText(`Round ${roundIdx + 1}: Analyzing voice acoustic fingerprint...`);
           const base64Audio = convertFloatChunksToBase64Pcm16(chunksSnapshot, nativeSampleRate);
 
           try {
@@ -203,26 +203,26 @@ export default function BrainSpeakersTab({
             const data = await res.json();
             if (data.status === "success") {
               roundSuccess = true;
-              setCalibrationStatusText(`✓ Ronde ${roundIdx + 1}/3 berhasil direkam!`);
+              setCalibrationStatusText(`✓ Round ${roundIdx + 1}/3 recorded successfully!`);
               await new Promise((r) => setTimeout(r, 1000));
             } else {
-              setCalibrationStatusText(`Ronde ${roundIdx + 1} gagal. Mengulang...`);
+              setCalibrationStatusText(`Round ${roundIdx + 1} failed. Retrying...`);
               await new Promise((r) => setTimeout(r, 1200));
             }
           } catch {
-            setCalibrationStatusText(`Ronde ${roundIdx + 1} gagal kirim. Mengulang...`);
+            setCalibrationStatusText(`Round ${roundIdx + 1} send failed. Retrying...`);
             await new Promise((r) => setTimeout(r, 1200));
           }
         }
       }
 
-      setCalibrationStatusText(`✓ Kalibrasi 3-ronde selesai untuk ${speakerName}!`);
+      setCalibrationStatusText(`✓ 3-round calibration complete for ${speakerName}!`);
       await new Promise((r) => setTimeout(r, 1600));
       fetchSpeakers();
       onRefreshAll?.();
     } catch (err: any) {
       console.error("Calibration error:", err);
-      alert(`Kalibrasi gagal: ${err?.message || "Tidak dapat mengakses mikrofon"}`);
+      alert(`Calibration failed: ${err?.message || "Cannot access microphone"}`);
     } finally {
       if (stream) stream.getTracks().forEach((t) => t.stop());
       if (audioCtx && audioCtx.state !== "closed") {
@@ -243,10 +243,10 @@ export default function BrainSpeakersTab({
         <div>
           <span className="text-cyan-300 font-semibold uppercase tracking-wider text-[11px] flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-            Engine Biometrik Sidik Suara 128-D
+            128-D Voice Fingerprint Biometric Engine
           </span>
           <p className="mt-1.5 leading-relaxed text-slate-400">
-            Sistem mengekstrak vektor MFCC, pitch F0, dan formants dari audio mikrofon secara real-time untuk mengenali pembicara dari database tanpa jeda.
+            The system extracts MFCC vectors, pitch F0, and formants from microphone audio in real-time to identify speakers from the database without delay.
           </p>
         </div>
         <button
@@ -276,7 +276,7 @@ export default function BrainSpeakersTab({
             </div>
             <div className="min-w-0">
               <h4 className="text-xs font-bold text-white uppercase tracking-wide">
-                Kalibrasi Multi-Ronde: {calibratingSpeaker}
+                Multi-Round Calibration: {calibratingSpeaker}
               </h4>
               <p className="text-xs text-cyan-300 mt-0.5">{calibrationStatusText}</p>
             </div>
@@ -293,7 +293,7 @@ export default function BrainSpeakersTab({
           <div className="flex items-center justify-between border-b border-white/10 pb-3">
             <h4 className="text-sm font-bold text-white flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-              Daftarkan Profil Pembicara Baru
+              Register New Speaker Profile
             </h4>
             <button
               onClick={() => setIsAddSpeakerOpen(false)}
@@ -307,14 +307,14 @@ export default function BrainSpeakersTab({
           <form onSubmit={handleSaveSpeaker} className="space-y-4">
             <div>
               <label className="block text-xs text-slate-400 mb-1.5 uppercase tracking-wider">
-                Nama Pembicara (Contoh: Agnan, Sarah, Budi)
+                Speaker Name (Example: Agnan, Sarah, John)
               </label>
               <input
                 type="text"
                 required
                 value={newSpeakerInput}
                 onChange={(e) => setNewSpeakerInput(e.target.value)}
-                placeholder="Ketik nama pembicara..."
+                placeholder="Type speaker name..."
                 className="w-full liquid-glass-input rounded-xl px-4 py-2.5 text-white text-xs placeholder-slate-500 focus:outline-none"
               />
             </div>
@@ -330,7 +330,7 @@ export default function BrainSpeakersTab({
                 type="submit"
                 className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-500 text-white text-xs font-semibold shadow-[0_4px_16px_rgba(34,211,238,0.3)] cursor-pointer hover:opacity-90"
               >
-                Simpan Profil
+                Save Profile
               </button>
             </div>
           </form>
@@ -344,9 +344,9 @@ export default function BrainSpeakersTab({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
           </div>
-          <h4 className="text-sm font-semibold text-white">Belum Ada Profil Terdaftar</h4>
+          <h4 className="text-sm font-semibold text-white">No Profiles Registered Yet</h4>
           <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-            Klik tombol <strong className="text-cyan-300">Tambah Profil</strong> di atas atau perkenalkan nama Anda secara langsung melalui mikrofon untuk membuat profil baru.
+            Click the <strong className="text-cyan-300">Add Profile</strong> button above or introduce your name directly via microphone to create a new profile.
           </p>
         </div>
       ) : (
@@ -397,7 +397,7 @@ export default function BrainSpeakersTab({
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                             </svg>
-                            Belum Ada Sidik Suara
+                            No Voice Fingerprint Yet
                           </span>
                         )}
                       </div>
@@ -409,12 +409,12 @@ export default function BrainSpeakersTab({
                         ? "bg-emerald-500/15 text-emerald-300 border border-emerald-400/35" 
                         : "liquid-glass-subtle text-slate-400 border border-white/10"
                     }`}>
-                      {isActive ? "Aktif" : "Tersimpan"}
+                      {isActive ? "Active" : "Stored"}
                     </span>
                     <button
                       onClick={() => handleDeleteSpeaker(sp.name)}
                       className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition-all cursor-pointer opacity-0 group-hover:opacity-100"
-                      title={`Hapus profil ${sp.name}`}
+                      title={`Delete profile ${sp.name}`}
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -433,7 +433,7 @@ export default function BrainSpeakersTab({
                     <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                     </svg>
-                    {hasEmbedding ? "Rekalibrasi (3×)" : "Kalibrasi (3×)"}
+                    {hasEmbedding ? "Recalibrate (3×)" : "Calibrate (3×)"}
                   </button>
 
                   {!isActive && (
@@ -441,7 +441,7 @@ export default function BrainSpeakersTab({
                       onClick={() => handleSelectActiveSpeaker(sp.name)}
                       className="px-3 py-1.5 rounded-xl liquid-glass-subtle hover:bg-emerald-500/15 hover:border-emerald-400/35 border border-white/10 text-slate-300 hover:text-emerald-200 text-xs transition-all cursor-pointer"
                     >
-                      Pilih Aktif
+                      Set Active
                     </button>
                   )}
                 </div>

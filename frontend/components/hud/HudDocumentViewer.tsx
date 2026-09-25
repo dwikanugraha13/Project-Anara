@@ -36,7 +36,7 @@ export default function HudDocumentViewer({
           <div className="flex items-center gap-2 min-w-0">
             <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]" />
             <span className="text-cyan-300 font-bold uppercase tracking-widest truncate">
-              {isPdf ? "📄 PDF DOCUMENT VIEWER" : isWord ? "📘 WORD DOCX VIEWER" : isZip ? "📦 ZIP ARCHIVE VIEWER" : "📄 BERKAS DOKUMEN WORKSPACE"}
+               {isPdf ? "📄 PDF DOCUMENT VIEWER" : isWord ? "📘 WORD DOCX VIEWER" : isZip ? "📦 ZIP ARCHIVE VIEWER" : "📄 WORKSPACE DOCUMENT FILES"}
             </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -82,11 +82,11 @@ export default function HudDocumentViewer({
               <h4 className="text-sm font-bold text-white truncate font-mono">{documentViewerData.fileName}</h4>
               <p className="text-[11px] text-slate-400">
                 {isPdf
-                  ? "Teks dokumen PDF biner diekstrak cerdas oleh Anara"
+                  ? "Binary PDF document text intelligently extracted by Anara"
                   : isWord
                   ? "Dokumen resmi Microsoft Word (.docx) berhasil dibuat"
                   : isZip
-                  ? "Arsip berkas proyek terkompresi (.zip) siap diunduh"
+                  ? "Compressed project file archive (.zip) ready for download"
                   : `Format ${documentViewerData.fileExt.toUpperCase()} • ${documentViewerData.totalChars || documentViewerData.content.length} karakter`}
               </p>
             </div>
@@ -95,7 +95,7 @@ export default function HudDocumentViewer({
           {isZip && (documentViewerData as any).archiveFiles && (documentViewerData as any).archiveFiles.length > 0 ? (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
-                <span>Daftar Isi Arsip ({(documentViewerData as any).archiveFiles.length} berkas):</span>
+                <span>Archive Contents ({(documentViewerData as any).archiveFiles.length} files):</span>
                 <span className="text-[10px] text-emerald-300 font-bold">✓ Terkompresi Otomatis</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-[220px] overflow-y-auto custom-scrollbar p-1">
@@ -137,12 +137,12 @@ export default function HudDocumentViewer({
           <div className="flex items-center gap-2 min-w-0">
             <span className="w-2.5 h-2.5 rounded-full bg-indigo-400 shadow-[0_0_8px_#818cf8]" />
             <span className="text-indigo-300 font-bold uppercase tracking-widest truncate">
-              📁 WORKSPACE PROYEK &amp; FOLDER TREE
+               📁 PROJECT WORKSPACE &amp; FOLDER TREE
             </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span className="px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-200 border border-indigo-400/35 text-[10px] font-mono font-bold">
-              {workspaceFolderData.totalFiles} Berkas
+              {workspaceFolderData.totalFiles} Files
             </span>
             <HudDismissButton onDismiss={onDismiss} />
           </div>
@@ -170,7 +170,7 @@ export default function HudDocumentViewer({
                 key={idx}
                 onClick={() => onOpenFile?.(f.path)}
                 className="flex items-center justify-between p-2 rounded-xl bg-black/40 border border-white/5 hover:border-indigo-400/40 hover:bg-white/[0.04] text-xs transition-all cursor-pointer group"
-                title={`Buka & Analisis ${f.name}`}
+                title={`Open & Analyze ${f.name}`}
               >
                 <div className="flex items-center gap-2 truncate">
                   <span className="text-sm">

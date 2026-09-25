@@ -91,10 +91,10 @@ export default function BrainProjectsTab({
             </svg>
           </div>
           <h4 className="text-sm sm:text-base font-bold text-white uppercase tracking-wider">
-            Menunggu Identifikasi Pengguna
+            Awaiting User Identification
           </h4>
           <p className="text-xs sm:text-sm text-slate-300 max-w-lg leading-relaxed">
-            Proyek kerja dan riwayat target disimpan khusus per profil. Silakan bicara atau pilih profil Anda agar Anara memuat konteks proyek Anda.
+            Work projects and target history saved per profile. Please speak or select your profile so Anara can load your project context.
           </p>
         </div>
       ) : (
@@ -102,10 +102,10 @@ export default function BrainProjectsTab({
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
               <span className="text-[10px] uppercase tracking-wider text-cyan-300 font-semibold">
-                Konteks Proyek • {activeSpeaker}
+                Project Context • {activeSpeaker}
               </span>
               <h3 className="text-base sm:text-lg font-bold text-white mt-0.5">
-                {currentSpeakerProjects.length} Proyek Terdaftar
+                {currentSpeakerProjects.length} Registered Projects
               </h3>
             </div>
 
@@ -116,19 +116,19 @@ export default function BrainProjectsTab({
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
-              Proyek Baru
+              New Project
             </button>
           </div>
 
           {isAddProjectOpen && (
             <form onSubmit={handleSaveProject} className="p-5 rounded-2xl liquid-glass space-y-3.5 animate-fade-in">
-              <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wider">Proyek / Konteks Kerja Baru</h4>
+              <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wider">New Project / Work Context</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <input
                   type="text"
                   value={newProjectName}
                   onChange={(e) => setNewProjectName(e.target.value)}
-                  placeholder="Nama Proyek (cth: Sistem Asisten Anara)"
+                  placeholder="Project Name (e.g. Anara Assistant System)"
                   className="liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
                   required
                 />
@@ -144,14 +144,14 @@ export default function BrainProjectsTab({
                 type="text"
                 value={newProjectGoal}
                 onChange={(e) => setNewProjectGoal(e.target.value)}
-                placeholder="Target / Sasaran Utama Proyek Ini"
+                placeholder="Primary Target / Goal of This Project"
                 className="w-full liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
               />
               <input
                 type="text"
                 value={newProjectNotes}
                 onChange={(e) => setNewProjectNotes(e.target.value)}
-                placeholder="Catatan tambahan untuk Anara (opsional)"
+                placeholder="Additional notes for Anara (optional)"
                 className="w-full liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
               />
               <div className="flex justify-end gap-2.5 pt-1">
@@ -166,7 +166,7 @@ export default function BrainProjectsTab({
                   type="submit"
                   className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-bold text-xs cursor-pointer shadow-[0_4px_16px_rgba(245,158,11,0.3)] transition-all hover:opacity-90"
                 >
-                  Simpan
+                   Save
                 </button>
               </div>
             </form>
@@ -174,7 +174,7 @@ export default function BrainProjectsTab({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
             {currentSpeakerProjects.length === 0 ? (
-              <p className="col-span-2 text-xs text-slate-400 text-center py-16 rounded-2xl liquid-glass-subtle">Belum ada catatan proyek kerja untuk {activeSpeaker}. Klik 'Proyek Baru' atau ceritakan proyek Anda saat mengobrol.</p>
+              <p className="col-span-2 text-xs text-slate-400 text-center py-16 rounded-2xl liquid-glass-subtle">No work project notes for {activeSpeaker} yet. Click 'New Project' or tell Anara about your project during chat.</p>
             ) : (
               currentSpeakerProjects.map((p) => (
                 <div
@@ -204,7 +204,7 @@ export default function BrainProjectsTab({
                     <button
                       onClick={() => handleDeleteProject(p.id)}
                       className="text-slate-500 hover:text-rose-400 transition-colors p-1 cursor-pointer"
-                      title="Hapus proyek"
+                      title="Delete project"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

@@ -1,0 +1,15 @@
+# ── Toolset Configuration & Platform Aliases (Hermes Parity) ──
+# Universal platform normalization aliases. Zero lexical stop-words dictionaries.
+
+platform_aliases:
+  terminal: "cli"
+  bash: "cli"
+  powershell: "cli"
+  web: "web_studio"
+  code: "web_studio"
+  studio: "web_studio"
+  voice: "voice_hud"
+  hud: "voice_hud"
+  avatar: "voice_hud"
+  tele: "telegram"
+  wa: "whatsapp"

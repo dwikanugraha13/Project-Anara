@@ -91,7 +91,7 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
           onClick={handleCopy}
           className="text-slate-400 hover:text-white transition-colors cursor-pointer text-[10.5px] flex items-center gap-1"
         >
-          {copied ? "✓ Tersalin" : "Salin"}
+          {copied ? "✓ Copied" : "Copy"}
         </button>
       </div>
       <pre className="p-3.5 overflow-x-auto custom-scrollbar text-slate-200 leading-relaxed">

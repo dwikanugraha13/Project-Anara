@@ -230,3 +230,64 @@ def split_message_chunks(text: str, max_chars: int = 2200, add_part_headers: boo
 
     return final_chunks
 
+
+def split_html_chunks(html_text: str, max_chars: int = 3800) -> List[str]:
+    """
+    Splits an already-formatted Telegram HTML string into safe sub-chunks without breaking HTML entities.
+    Accurately closes any open HTML tags at chunk boundaries and re-opens them with identical attributes
+    at the start of subsequent chunks to prevent Telegram 'unclosed entity' 400 errors.
+    """
+    if not html_text or len(html_text) <= max_chars:
+        return [html_text] if html_text else []
+
+    chunks: List[str] = []
+    current = html_text
+    tag_re = re.compile(r'<(/)?([a-zA-Z0-9_-]+)(\s+[^>]*)?>')
+
+    while len(current) > max_chars:
+        # Reserve headroom for closing tags (e.g. 100 chars)
+        candidate = current[:max_chars - 100]
+
+        # Prevent splitting inside an HTML tag: <tag ...>
+        last_open_angle = candidate.rfind('<')
+        last_close_angle = candidate.rfind('>')
+        if last_open_angle > last_close_angle:
+            candidate = candidate[:last_open_angle]
+
+        # Prefer splitting at semantic block closures or newlines
+        split_idx = -1
+        for sep in ['</blockquote>', '</pre>', '</code>', '</b>', '</i>', '\n\n', '\n', ' ']:
+            p = candidate.rfind(sep)
+            if p > len(candidate) // 3:
+                split_idx = p + len(sep)
+                break
+
+        if split_idx <= 0:
+            split_idx = len(candidate)
+
+        raw_chunk = current[:split_idx]
+        current = current[split_idx:]
+
+        # Find open unclosed tags in raw_chunk
+        open_tags: List[tuple] = []
+        for m in tag_re.finditer(raw_chunk):
+            is_close, tag_name, attrs = m.group(1), m.group(2).lower(), m.group(3)
+            full_tag = m.group(0)
+            if is_close:
+                if open_tags and open_tags[-1][0] == tag_name:
+                    open_tags.pop()
+            else:
+                open_tags.append((tag_name, full_tag))
+
+        closing_str = "".join(f"</{t[0]}>" for t in reversed(open_tags))
+        reopening_str = "".join(t[1] for t in open_tags)
+
+        chunks.append(raw_chunk + closing_str)
+        current = reopening_str + current
+
+    if current:
+        chunks.append(current)
+
+    return chunks
+
+

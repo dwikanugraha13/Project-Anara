@@ -135,7 +135,7 @@ class AnaraAgent:
         """Binds an existing user-selected local folder to a session without copying it."""
         clean_path = os.path.abspath(os.path.expanduser(folder_path.strip().strip('"\'')))
         if not os.path.isdir(clean_path):
-            raise ValueError(f"Folder '{clean_path}' tidak ditemukan.")
+            raise ValueError(f"Folder '{clean_path}' not found.")
 
         effective_sid = session_id if session_id is not None else self._active_session_id
         folder_name = os.path.basename(clean_path.rstrip("\\/")) or "Project Workspace"

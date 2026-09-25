@@ -72,9 +72,20 @@ class GeminiLiveService:
                     )
                 )
             ),
-            # Universal Agent Tools (Native Function Calling for Anara Actions & Real-time Web Search)
-            tools=get_agent_tools(),
+            # Universal Agent Tools — Hermes Posture Pruned (Native Function Calling)
+            tools=get_agent_tools(enabled_set=self._get_pruned_voice_tools()),
         )
+
+    def _get_pruned_voice_tools(self):
+        """Hermes Posture: prune tool set for voice platform instead of sending all 55+ tools."""
+        try:
+            from tools.toolsets import PlatformToolRegistry
+            return PlatformToolRegistry.get_pruned_tools_for_execution(
+                platform="voice_hud",
+                user_task=self.bridge_context or "",
+            )
+        except Exception:
+            return None  # Fallback: get_agent_tools(enabled_set=None) sends all tools
 
     async def switch_model(self, new_model_id: str):
         """Switches the live voice model dynamically and restarts connection with the new model."""

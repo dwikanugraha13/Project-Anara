@@ -1,0 +1,1 @@
+Transcribe the user's speech in this audio recording verbatim in whatever language is spoken. Output ONLY valid JSON: {{"user_text": "..."}}. If there is only silence, noise, or unvoiced audio, output {{"user_text": ""}}.

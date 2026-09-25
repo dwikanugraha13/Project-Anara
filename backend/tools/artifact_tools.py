@@ -188,7 +188,7 @@ async def _tool_generate_file_artifact(
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "generate_file_artifact",
-        "action_title": f"Membuat Berkas: {safe_filename}",
+        "action_title": f"Creating File: {safe_filename}",
         "detail": f"Format: {ext.upper()}",
         "icon": icon
     })
@@ -221,8 +221,8 @@ async def _tool_generate_file_artifact(
 
         _emit_agent_event("agent_action_complete", {
             "tool_name": "generate_file_artifact",
-            "action_title": f"Berkas Siap: {safe_filename}",
-            "summary": f"Format {ext.upper()} • {file_size_kb} KB • Tersedia untuk diunduh.",
+            "action_title": f"Artifact Ready: {safe_filename}",
+            "summary": f"Format {ext.upper()} • {file_size_kb} KB • Available for download.",
             "raw_result": content[:300],
             "icon": icon
         })
@@ -230,7 +230,7 @@ async def _tool_generate_file_artifact(
         _emit_agent_event("agent_hud_project", {
             "visual_type": "document_viewer",
             "title": raw_title,
-            "summary": f"Berkas '{safe_filename}' telah dibuat dan siap diunduh.",
+            "summary": f"File '{safe_filename}' generated and available for download.",
             "documentViewerData": {
                 "fileName": safe_filename,
                 "fileExt": ext,
@@ -258,7 +258,7 @@ async def _tool_generate_file_artifact(
 
     except Exception as e:
         logger.error(f"[AgentTools] Generate artifact error: {e}", exc_info=True)
-        return {"status": "error", "message": f"Gagal membuat berkas '{safe_filename}': {str(e)}"}
+        return {"status": "error", "message": f"Failed to create file '{safe_filename}': {str(e)}"}
 
 
 async def _tool_create_zip_archive(
@@ -274,8 +274,8 @@ async def _tool_create_zip_archive(
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "create_zip_archive",
-        "action_title": f"Membuat Arsip ZIP: {safe_filename}",
-        "detail": "Mengumpulkan & mengompresi berkas proyek...",
+        "action_title": f"Create ZIP Archive: {safe_filename}",
+        "detail": "Collecting & compressing workspace files...",
         "icon": "📦"
     })
 
@@ -307,7 +307,7 @@ async def _tool_create_zip_archive(
                         continue
                     
                     fname = None
-                    fn_comment = re.search(r"(?://|/\*|#|<!--)\s*(?:filename|file|nama berkas|berkas)\s*[:=]\s*([a-zA-Z0-9_\-\.]+)", code_content, re.IGNORECASE)
+                    fn_comment = re.search(r"(?://|/\*|#|<!--)\s*(?:filename|file|filepath|path)\s*[:=]\s*([a-zA-Z0-9_\-\.]+)", code_content, re.IGNORECASE)
                     if fn_comment:
                         fname = fn_comment.group(1).strip()
                     elif lang_hint:
@@ -380,11 +380,11 @@ async def _tool_create_zip_archive(
         register_turn_artifact(zip_workspace_path, safe_filename, 'application/zip')
         download_url = f"http://localhost:8000/api/agent/artifacts/download/{urllib.parse.quote(safe_filename)}"
 
-        summary_msg = f"Berhasil mengompresi {len(packed_files)} berkas ({file_size_kb} KB). Tersedia untuk diunduh."
+        summary_msg = f"Compressed {len(packed_files)} files ({file_size_kb} KB). Ready for download."
 
         _emit_agent_event("agent_action_complete", {
             "tool_name": "create_zip_archive",
-            "action_title": f"Arsip ZIP Siap: {safe_filename}",
+            "action_title": f"ZIP Archive Ready: {safe_filename}",
             "summary": summary_msg,
             "raw_result": "\n".join([f"- {f}" for f in packed_files]),
             "file_path": zip_workspace_path,
@@ -394,14 +394,14 @@ async def _tool_create_zip_archive(
 
         _emit_agent_event("agent_hud_project", {
             "visual_type": "document_viewer",
-            "title": f"Arsip Proyek: {safe_filename}",
-            "summary": f"Berkas ZIP proyek ({file_size_kb} KB) berisi {len(packed_files)} file siap diunduh.",
+            "title": f"Project Archive: {safe_filename}",
+            "summary": f"ZIP archive ({file_size_kb} KB) containing {len(packed_files)} files ready for download.",
             "documentViewerData": {
                 "fileName": safe_filename,
                 "fileExt": ".zip",
                 "fileSizeKb": file_size_kb,
                 "totalChars": len(packed_files),
-                "content": f"Daftar Berkas dalam {safe_filename}:\n" + "\n".join([f"• {f}" for f in packed_files]) + f"\n\nLokasi berkas: {zip_workspace_path}",
+                "content": f"Files in {safe_filename}:\n" + "\n".join([f"• {f}" for f in packed_files]) + f"\n\nFile location: {zip_workspace_path}",
                 "isPdf": False,
                 "isZip": True,
                 "archiveFiles": packed_files,
@@ -423,7 +423,7 @@ async def _tool_create_zip_archive(
 
     except Exception as e:
         logger.error(f"[AgentTools] Create zip archive error: {e}", exc_info=True)
-        return {"status": "error", "message": f"Gagal membuat arsip ZIP '{safe_filename}': {str(e)}"}
+        return {"status": "error", "message": f"Failed to create ZIP archive '{safe_filename}': {str(e)}"}
 
 
 async def _tool_extract_zip_archive(
@@ -433,7 +433,7 @@ async def _tool_extract_zip_archive(
     """Fast native extraction of a ZIP archive with path traversal protection (Unzip in milliseconds)."""
     raw_zip = (zip_path or "").strip().strip('"\'')
     if not raw_zip:
-        return {"status": "error", "message": "Path berkas ZIP tidak boleh kosong."}
+        return {"status": "error", "message": "ZIP file path cannot be empty."}
 
     from core import anara_agent
     active_f = anara_agent.get_session_dir()
@@ -474,7 +474,7 @@ async def _tool_extract_zip_archive(
         _emit_agent_event("agent_action_complete", {
             "tool_name": "extract_zip_archive",
             "action_title": f"ZIP Terekstrak: {os.path.basename(resolved_zip)}",
-            "summary": f"{len(extracted_files)} berkas terekstrak ke {dest_dir}",
+            "summary": f"{len(extracted_files)} files extracted to {dest_dir}",
             "raw_result": "\n".join([f"- {f}" for f in extracted_files[:30]]),
             "icon": "📦"
         })
@@ -488,14 +488,14 @@ async def _tool_extract_zip_archive(
         }
     except Exception as e:
         logger.error(f"[AgentTools] Extract zip error: {e}")
-        return {"status": "error", "message": f"Gagal mengekstrak berkas ZIP: {str(e)}"}
+        return {"status": "error", "message": f"Failed to extract ZIP archive: {str(e)}"}
 
 
 async def _tool_read_zip_contents(zip_path: str) -> Dict[str, Any]:
     """Fast inspection of ZIP archive contents without extracting to disk (Inspect ZIP in 1ms)."""
     raw_zip = (zip_path or "").strip().strip('"\'')
     if not raw_zip:
-        return {"status": "error", "message": "Path berkas ZIP tidak boleh kosong."}
+        return {"status": "error", "message": "ZIP file path cannot be empty."}
 
     from core import anara_agent
     active_f = anara_agent.get_session_dir()
@@ -540,7 +540,7 @@ async def _tool_read_zip_contents(zip_path: str) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error(f"[AgentTools] Read zip contents error: {e}")
-        return {"status": "error", "message": f"Gagal membaca isi ZIP: {str(e)}"}
+        return {"status": "error", "message": f"Failed to read ZIP contents: {str(e)}"}
 
 
 async def _tool_send_document_file(
@@ -589,7 +589,7 @@ async def _tool_rezip_archive(
     """
     raw_zip = (zip_path or "").strip().strip('"\'')
     if not raw_zip:
-        return {"status": "error", "message": "Path berkas ZIP asal tidak boleh kosong."}
+        return {"status": "error", "message": "Source ZIP path cannot be empty."}
 
     from core import anara_agent
     active_f = anara_agent.get_session_dir()
@@ -608,13 +608,13 @@ async def _tool_rezip_archive(
 
     valid_adds = [p for p in add_paths if os.path.isfile(p)]
     if not valid_adds and not remove_set:
-        return {"status": "error", "message": "Tidak ada berkas yang valid untuk ditambahkan atau dihapus."}
+        return {"status": "error", "message": "No valid files specified to add or remove."}
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "rezip_archive",
-        "action_title": f"Memperbarui ZIP: {os.path.basename(resolved_zip)}",
-        "detail": f"Tambah: {len(valid_adds)} berkas, Hapus: {len(remove_set)} berkas",
-        "icon": "??"
+        "action_title": f"Update ZIP: {os.path.basename(resolved_zip)}",
+        "detail": f"Add: {len(valid_adds)} file(s), Remove: {len(remove_set)} file(s)",
+        "icon": "package"
     })
 
     def _rezip_worker():
@@ -660,10 +660,10 @@ async def _tool_rezip_archive(
 
         _emit_agent_event("agent_action_complete", {
             "tool_name": "rezip_archive",
-            "action_title": f"ZIP Diperbarui: {safe_name}",
-            "summary": f"Kini berisi {len(final_contents)} berkas ({file_size_kb} KB).",
+            "action_title": f"ZIP Updated: {safe_name}",
+            "summary": f"Now contains {len(final_contents)} files ({file_size_kb} KB).",
             "raw_result": "\n".join([f"- {f}" for f in final_contents]),
-            "icon": "??"
+            "icon": "zip"
         })
 
         return {
@@ -678,4 +678,4 @@ async def _tool_rezip_archive(
         }
     except Exception as e:
         logger.error(f"[AgentTools] Rezip archive error: {e}", exc_info=True)
-        return {"status": "error", "message": f"Gagal memperbarui berkas ZIP: {str(e)}"}
+        return {"status": "error", "message": f"Failed to update ZIP archive: {str(e)}"}

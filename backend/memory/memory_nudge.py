@@ -29,22 +29,23 @@ class SessionTurnTracker:
         self.turn_count += 1
         nudges: List[str] = []
 
-        # 1. Autonomous Memory Nudge (Anara Standard)
+        # 1. Autonomous Memory Nudge (Hermes Parity)
         if self.turn_count % self.memory_nudge_interval == 0:
             nudges.append(
                 f"[ANARA AUTONOMOUS MEMORY NUDGE (Turn {self.turn_count})]\n"
-                "Tinjau 10 interaksi terakhir. Apakah pengguna membagikan preferensi baru, "
-                "koreksi kode penting, fakta proyek, atau profil diri? "
-                "Jika ya, panggil tool 'memory' (target: USER.md atau MEMORY.md) sekarang secara diam-diam."
+                "Review recent conversation turns. If the user shared new preferences, habits, "
+                "crucial code corrections, project facts, or profile details, "
+                "call the 'memory' tool (target: USER.md or MEMORY.md) silently. "
+                "Maintain active conversation language."
             )
 
-        # 2. Autonomous Skill Creation Nudge (Anara Standard)
+        # 2. Autonomous Skill Creation Nudge (Hermes Parity)
         if self.turn_count % self.skill_nudge_interval == 0:
             nudges.append(
                 f"[ANARA SKILL CREATION NUDGE (Turn {self.turn_count})]\n"
-                "Tinjau alur kerja teknis yang baru saja diselesaikan. "
-                "Jika Anda menemukan pola solusi baru atau prosedur setup yang bernilai pakai ulang, "
-                "simpan ke database menggunakan tool 'learn_and_save_skill'."
+                "Review recently completed technical workflows. "
+                "If you identified a novel, reusable solution pattern or setup procedure, "
+                "persist it using 'learn_and_save_skill'. Maintain active conversation language."
             )
 
         if nudges:
@@ -156,12 +157,12 @@ class TaskScratchpad:
             icon = "[x]" if st == "done" else ("[-]" if st == "in_progress" else "[ ]")
             step_lines.append(f"  {icon} {i + 1}. {s['step']}")
 
-        findings_lines = [f"  • {f}" for f in self.findings] if self.findings else ["  (Belum ada catatan khusus)"]
+        findings_lines = [f"  • {f}" for f in self.findings] if self.findings else ["  (No special notes yet)"]
 
         return (
             "\n=== [ANARA ACTIVE SCRATCHPAD & TASK STATE] ===\n"
-            f"🎯 TARGET UTAMA: {self.objective}\n"
-            f"📋 CHECKLIST PROGRESS:\n" + ("\n".join(step_lines) if step_lines else "  (Belum ada langkah terdaftar)") + "\n"
+            f"🎯 PRIMARY TARGET: {self.objective}\n"
+            f"📋 CHECKLIST PROGRESS:\n" + ("\n".join(step_lines) if step_lines else "  (No steps registered yet)") + "\n"
             f"🔍 KEY FINDINGS:\n" + "\n".join(findings_lines) + "\n"
             "===============================================\n"
         )

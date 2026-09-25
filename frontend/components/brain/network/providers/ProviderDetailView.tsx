@@ -63,7 +63,7 @@ export default function ProviderDetailView({
           className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white border border-white/15 text-xs font-mono font-medium transition-all cursor-pointer flex items-center gap-2 group shadow-sm w-fit"
         >
         <span className="text-cyan-400 group-hover:-translate-x-1 transition-transform font-bold text-sm">←</span>
-        <span>Kembali ke Daftar Provider</span>
+        <span>Back to Provider List</span>
       </button>
         
       <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
@@ -101,11 +101,11 @@ export default function ProviderDetailView({
               {selectedProvider.is_connected ? (
                 <span className="px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-400/30 uppercase flex items-center gap-1.5 shadow-sm">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  {selectedProvider.accounts?.length || 0} Akun Terhubung · {selectedProvider.models?.length || 0} Model
+                  {selectedProvider.accounts?.length || 0} Connected Accounts · {selectedProvider.models?.length || 0} Model
                 </span>
               ) : (
                 <span className="px-2.5 py-0.5 rounded-lg text-xs font-mono text-slate-400 bg-white/5 border border-white/10 uppercase">
-                  Belum Terhubung
+                  Not Connected
                 </span>
               )}
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 text-slate-400 border border-white/10">
@@ -126,7 +126,7 @@ export default function ProviderDetailView({
               onClick={() => handleDeleteCustomProvider(selectedProvider.custom_data.id, selectedProvider.name)}
               className="px-3.5 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 hover:text-rose-100 border border-rose-400/30 text-xs font-mono font-medium transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
             >
-              <span>Hapus Provider</span>
+              <span>Delete Provider</span>
             </button>
           ) : selectedProvider.is_connected ? (
             <button
@@ -173,7 +173,7 @@ export default function ProviderDetailView({
         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
         </svg>
-        <span>Katalog Model AI</span>
+        <span>AI Model Catalog</span>
         <span className="px-2 py-0.2 rounded-full bg-white/10 text-[11px]">
           {selectedProvider.models?.length || 0}
         </span>
@@ -193,7 +193,7 @@ export default function ProviderDetailView({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
-          <span>Endpoint &amp; Konfigurasi</span>
+          <span>Endpoint &amp; Configuration</span>
         </button>
       )}
     </div>
@@ -209,14 +209,14 @@ export default function ProviderDetailView({
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <BrandIcon name="openai" className="w-5 h-5 text-emerald-400" />
-                  <span className="text-sm font-bold text-white">Login Cepat Akun OpenAI (OAuth PKCE)</span>
+                  <span className="text-sm font-bold text-white">Quick Login OpenAI Account (OAuth PKCE)</span>
                 </div>
                 <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 font-semibold">
-                  Resmi Codex CLI
+                  Official Codex CLI
                 </span>
               </div>
               <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
-                Login langsung dengan akun ChatGPT/OpenAI Anda via popup otentikasi resmi. <strong>Tanpa perlu API key berbayar</strong> dan tanpa kartu kredit terpisah.
+                Login directly with your ChatGPT/OpenAI account via official authentication popup. <strong>No paid API key needed</strong> and no separate credit card needed.
               </p>
               <button
                 type="button"
@@ -225,7 +225,7 @@ export default function ProviderDetailView({
                 className="w-full sm:w-auto py-2.5 px-6 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold font-mono transition-all cursor-pointer shadow-lg shadow-emerald-950/50 flex items-center justify-center gap-2 border border-emerald-400/40 disabled:opacity-50"
               >
                 <BrandIcon name="openai" className="w-4 h-4 text-white" />
-                <span>{isConnectingProvider === selectedProvider.id ? "Menghubungkan OAuth..." : "Login dengan Akun OpenAI (OAuth PKCE)"}</span>
+                <span>{isConnectingProvider === selectedProvider.id ? "Connecting OAuth..." : "Login with OpenAI Account (OAuth PKCE)"}</span>
               </button>
             </div>
           )}
@@ -234,7 +234,7 @@ export default function ProviderDetailView({
             <div className="relative flex py-1 items-center">
               <div className="flex-grow border-t border-white/10" />
               <span className="flex-shrink mx-3 text-[10px] font-mono text-slate-400 uppercase tracking-wider">
-                atau masukkan API Key / Access Token manual
+                or enter API Key / Access Token manually
               </span>
               <div className="flex-grow border-t border-white/10" />
             </div>
@@ -243,7 +243,7 @@ export default function ProviderDetailView({
           {/* Input Form Tambah Akun */}
           <div className="p-4 rounded-2xl bg-black/40 border border-white/10 space-y-3">
             <span className="text-[10px] font-mono font-bold uppercase text-slate-400 block">
-              {selectedProvider.is_connected ? "+ Tambah Akun ke Pool (Auto-Rotate)" : "Hubungkan Akun / Kunci API"}
+              {selectedProvider.is_connected ? "+ Add Account to Pool (Auto-Rotate)" : "Connect Account / API Key"}
             </span>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <input
@@ -255,7 +255,7 @@ export default function ProviderDetailView({
               />
               <input
                 type="password"
-                placeholder={selectedProvider.key_placeholder || "Masukkan API Key / Token..."}
+                placeholder={selectedProvider.key_placeholder || "Enter API Key / Token..."}
                 value={providerKeyInputs[selectedProvider.id] ?? ""}
                 onChange={(e) => setProviderKeyInputs((prev) => ({ ...prev, [selectedProvider.id]: e.target.value }))}
                 className="sm:col-span-2 px-3.5 py-2 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 font-mono"
@@ -268,7 +268,7 @@ export default function ProviderDetailView({
                 disabled={isConnectingProvider === selectedProvider.id || !(providerKeyInputs[selectedProvider.id] || "").trim()}
                 className="px-5 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-400/40 text-xs font-semibold text-white transition-all cursor-pointer disabled:opacity-40 flex items-center gap-1.5 shadow-sm"
               >
-                <span>+</span> {isConnectingProvider === selectedProvider.id ? "Menyimpan..." : "Simpan & Hubungkan"}
+                <span>+</span> {isConnectingProvider === selectedProvider.id ? "Saving..." : "Save & Connect"}
               </button>
             </div>
           </div>
@@ -276,11 +276,11 @@ export default function ProviderDetailView({
           {/* DAFTAR AKUN DENGAN TOGGLE ON/OFF PER AKUN */}
           <div className="space-y-2.5">
             <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
-              Daftar Akun Terhubung ({selectedProvider.accounts?.length || 0}):
+              Connected Accounts List ({selectedProvider.accounts?.length || 0}):
             </span>
             {(!selectedProvider.accounts || selectedProvider.accounts.length === 0) ? (
               <div className="p-6 rounded-2xl bg-black/30 border border-white/5 text-center text-xs font-mono text-slate-500">
-                Belum ada akun yang terdaftar untuk provider ini.
+                No accounts registered for this provider yet.
               </div>
             ) : (
               <div className="space-y-2">
@@ -306,11 +306,11 @@ export default function ProviderDetailView({
                             </span>
                             {isEnabled ? (
                               <span className="px-2 py-0.5 rounded text-[9px] font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-400/30 font-semibold">
-                                Aktif
+                                Active
                               </span>
                             ) : (
                               <span className="px-2 py-0.5 rounded text-[9px] font-mono bg-slate-700/50 text-slate-400 border border-slate-600/30">
-                                Nonaktif
+                                Inactive
                               </span>
                             )}
                             {acc.status === "cooldown" && (
@@ -333,7 +333,7 @@ export default function ProviderDetailView({
                           className={`w-10 h-5 rounded-full p-0.5 transition-colors cursor-pointer shrink-0 ${
                             isEnabled ? "bg-emerald-500" : "bg-slate-700/60"
                           }`}
-                          title={isEnabled ? "Klik untuk menonaktifkan akun ini" : "Klik untuk mengaktifkan akun ini"}
+                          title={isEnabled ? "Click to deactivate this account" : "Click to activate this account"}
                         >
                           <div
                             className={`w-4 h-4 rounded-full bg-white transition-transform shadow-sm ${
@@ -346,7 +346,7 @@ export default function ProviderDetailView({
                           type="button"
                           onClick={() => handleDeleteAccount(selectedProvider.id, acc.id, acc.account_label)}
                           className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 text-rose-300 hover:text-rose-100 transition-colors cursor-pointer text-xs"
-                          title="Hapus akun ini"
+                          title="Delete this account"
                         >
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -382,7 +382,7 @@ export default function ProviderDetailView({
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] font-mono uppercase text-slate-400 font-bold">
-              Katalog Model AI ({selectedProvider.models?.length || 0})
+              AI Model Catalog ({selectedProvider.models?.length || 0})
             </span>
             <input
               type="text"
@@ -395,7 +395,7 @@ export default function ProviderDetailView({
         
           {(!selectedProvider.models || selectedProvider.models.length === 0) ? (
             <div className="p-8 rounded-2xl bg-black/30 text-center text-xs text-slate-500 font-mono">
-              Belum ada model aktif. Silakan hubungkan akun di tab Akun &amp; Koneksi.
+              No active models. Please connect an account in the Accounts &amp; Connections tab.
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[480px] overflow-y-auto custom-scrollbar pr-1">
@@ -425,7 +425,7 @@ export default function ProviderDetailView({
                       <button
                         onClick={() => handleHideModel(m.id, selectedProvider.id)}
                         className="text-slate-500 hover:text-rose-400 p-1 rounded hover:bg-rose-500/10 transition-colors cursor-pointer"
-                        title="Sembunyikan model ini"
+                        title="Hide this model"
                       >
                         ✕
                       </button>
@@ -447,7 +447,7 @@ export default function ProviderDetailView({
                   onClick={() => handleRestoreAllHidden(selectedProvider.id)}
                   className="text-[10px] text-cyan-400 hover:text-cyan-200 font-mono font-bold cursor-pointer transition-colors"
                 >
-                  Pulihkan Semua
+                  Restore All
                 </button>
               </div>
         
@@ -458,7 +458,7 @@ export default function ProviderDetailView({
                     type="button"
                     onClick={() => handleUnhideModel(mId, selectedProvider.id)}
                     className="px-3 py-1.5 rounded-xl bg-black/40 hover:bg-black/60 border border-white/10 hover:border-cyan-400/40 text-xs font-mono text-slate-400 hover:text-white transition-all cursor-pointer flex items-center gap-1.5 shadow-sm group"
-                    title={`Aktifkan kembali model ${mId}`}
+                    title={`Reactivate model ${mId}`}
                   >
                     <span className="text-cyan-400 font-bold group-hover:scale-110 transition-transform">+</span>
                     <span>{mId}</span>
@@ -500,7 +500,7 @@ export default function ProviderDetailView({
               onClick={() => handleDeleteCustomProvider(selectedProvider.custom_data.id, selectedProvider.name)}
               className="px-4 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 hover:text-rose-100 border border-rose-400/30 text-xs font-mono font-medium transition-all cursor-pointer flex items-center gap-1.5"
             >
-              <span>Hapus Custom Provider Ini</span>
+              <span>Delete This Custom Provider</span>
             </button>
           </div>
         </div>

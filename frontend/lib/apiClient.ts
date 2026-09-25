@@ -313,6 +313,11 @@ export const anaraApi = {
       apiRequest<{ status: string }>(`/api/brain/skills/v2/${slug}/approve`, { method: "POST" }),
     deleteSkillV2: (slug: string) =>
       apiRequest<{ status: string }>(`/api/brain/skills/v2/${slug}`, { method: "DELETE" }),
+    toggleSkillV2: (slug: string, enabled?: boolean) =>
+      apiRequest<{ status: string; skill: any }>(`/api/brain/skills/v2/${slug}/toggle`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled }),
+      }),
     getSkillHubSources: () => apiRequest<any[]>("/api/brain/skills/hub/sources"),
     searchSkillHub: (query: string, source: string, limit: number = 40) =>
       apiRequest<any[]>(`/api/brain/skills/hub/search?q=${encodeURIComponent(query)}&source=${encodeURIComponent(source)}&limit=${limit}`),

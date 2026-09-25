@@ -22,6 +22,16 @@ def prune_tool_output(content: str, max_chars: int = 1500) -> str:
     return content[:head] + "\n[... truncated output ...]\n" + content[-tail:]
 
 
+def estimate_tokens(text: str) -> int:
+    """Estimates token count. Uses tiktoken if available, otherwise heuristic."""
+    try:
+        from core.token_budget import count_tokens
+        return count_tokens(text)
+    except Exception:
+        # Fallback heuristic: ~3.4 chars per token
+        return max(1, int(len(text) / 3.4))
+
+
 class ContextCompactor:
     """Manages context window compaction to maintain infinite multi-turn dialogue without token overflow."""
 
@@ -100,7 +110,7 @@ class ContextCompactor:
         if protect_head_n > 0 and len(cleaned) > verbatim_turns:
             head_items = cleaned[:protect_head_n]
             head_lines = [f"• Goal: {h.get('user_text', '').strip()}" for h in head_items if h.get('user_text')]
-            head_block = "[TUJUAN AWAL / INISIASI SESI (PROTECTED HEAD)]:\n" + "\n".join(head_lines) + "\n\n"
+            head_block = "[INITIAL SESSION GOAL (PROTECTED HEAD)]:\n" + "\n".join(head_lines) + "\n\n"
             cleaned = cleaned[protect_head_n:]
 
         # If short session, render all verbatim
@@ -110,7 +120,7 @@ class ContextCompactor:
                 u = (h.get("user_text") or "").strip()
                 a = (h.get("ai_text") or "").strip()
                 turns_str.append(f"User: {u}\nAnara: {a}")
-            return f"{head_block}PERCAKAPAN TERBARU:\n" + "\n---\n".join(turns_str) + "\n\n"
+            return f"{head_block}RECENT CONVERSATION:\n" + "\n---\n".join(turns_str) + "\n\n"
 
         # Split into older turns and recent verbatim turns
         older_turns = cleaned[:-verbatim_turns]
@@ -129,7 +139,7 @@ class ContextCompactor:
                 first_a = summary_a.split("\n")[0][:110]
                 capsule_lines.append(f"  Anara: {first_a}")
 
-        capsule_header = "[KAPSUL RINGKASAN SESI SEBELUMNYA]:\n" + "\n".join(capsule_lines) + "\n\n"
+        capsule_header = "[SESSION SUMMARY CAPSULE]:\n" + "\n".join(capsule_lines) + "\n\n"
 
         # Render recent turns verbatim
         recent_lines = []
@@ -138,4 +148,14 @@ class ContextCompactor:
             a = (h.get("ai_text") or "").strip()
             recent_lines.append(f"User: {u}\nAnara: {a}")
 
-        return f"{head_block}{capsule_header}PERCAKAPAN TERBARU:\n" + "\n---\n".join(recent_lines) + "\n\n"
+        return f"{head_block}{capsule_header}RECENT CONVERSATION:\n" + "\n---\n".join(recent_lines) + "\n\n"
+
+    @classmethod
+    def estimate_history_tokens(cls, history: List[Dict[str, Any]]) -> int:
+        """Estimates total token count of a conversation history."""
+        total = 0
+        for h in history:
+            u = h.get("user_text", "") or ""
+            a = h.get("ai_text", "") or ""
+            total += estimate_tokens(u) + estimate_tokens(a) + 8  # overhead per turn
+        return total

@@ -16,25 +16,23 @@ logger = logging.getLogger(__name__)
 
 def _parse_schedule_to_seconds(schedule: str) -> int:
     """
-    Parses natural language, cron expressions, or numeric schedule string into interval seconds (Anara Standard).
-    Examples:
-    - "3600" -> 3600
-    - "every 30m", "30 minutes", "30m" -> 1800
-    - "every 2 hours", "2h", "2 hours" -> 7200
-    - "every 1 day", "1d", "daily" -> 86400
-    - "*/10 * * * *" -> 600
-    - "0 * * * *" -> 3600
-    - "0 9 * * *" -> 86400
+    Parses machine-standard schedule expressions into interval seconds (Hermes Parity).
+    Accepts:
+    - Pure integer seconds: "3600", "1800"
+    - Standard cron expressions: "0 9 * * *", "*/15 * * * *"
+    - Standard interval shorthand: "30s", "15m", "2h", "1d", "1w"
+    
+    Natural language translation is handled by the model prior to tool invocation.
     """
     s = (schedule or "").strip().lower()
     if not s:
         return 3600
 
-    # Direct integer
+    # 1. Direct integer seconds
     if s.isdigit():
         return max(10, int(s))
 
-    # Try croniter if available
+    # 2. Standard 5-part cron expression via croniter
     try:
         from croniter import croniter
         from datetime import datetime
@@ -49,34 +47,18 @@ def _parse_schedule_to_seconds(schedule: str) -> int:
     except Exception:
         pass
 
-    # Cron step pattern e.g. "*/15 * * * *"
+    # 3. Cron step pattern e.g. "*/15 * * * *"
     m_cron_step = re.match(r"^\*/(\d+)\s+\*\s+\*\s+\*\s+\*$", s)
     if m_cron_step:
         return max(60, int(m_cron_step.group(1)) * 60)
 
-    # Match duration patterns like "every 30 min", "15m", "2h", "1d"
-    m_sec = re.search(r"(\d+)\s*(?:s|sec|detik)", s)
-    if m_sec:
-        return max(10, int(m_sec.group(1)))
-
-    m_min = re.search(r"(\d+)\s*(?:m|min|menit)", s)
-    if m_min:
-        return max(60, int(m_min.group(1)) * 60)
-
-    m_hour = re.search(r"(\d+)\s*(?:h|hr|hour|jam)", s)
-    if m_hour:
-        return max(300, int(m_hour.group(1)) * 3600)
-
-    m_day = re.search(r"(\d+)\s*(?:d|day|hari)", s)
-    if m_day:
-        return max(3600, int(m_day.group(1)) * 86400)
-
-    if "weekly" in s or "mingguan" in s or "@weekly" in s:
-        return 604800
-    if "daily" in s or "harian" in s or "@daily" in s or s.startswith("0 0 *"):
-        return 86400
-    if "hourly" in s or "tiap jam" in s or "@hourly" in s or s.startswith("0 *"):
-        return 3600
+    # 4. Standard machine interval shorthand: e.g. "30s", "15m", "2h", "1d", "1w"
+    m_short = re.match(r"^(\d+)\s*([smhdw])$", s)
+    if m_short:
+        val = int(m_short.group(1))
+        unit = m_short.group(2)
+        multipliers = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+        return max(10, val * multipliers.get(unit, 1))
 
     # Default fallback
     return 3600
@@ -113,7 +95,7 @@ async def _tool_cronjob_manage(
     _emit_agent_event("agent_action_start", {
         "tool_name": "cronjob_manage",
         "action_title": f"Cron Scheduler ({act.upper()})",
-        "detail": f"{name or task_id or 'Daftar Tugas'}",
+        "detail": f"{name or task_id or 'Task List'}",
         "icon": "clock"
     })
 
@@ -121,7 +103,7 @@ async def _tool_cronjob_manage(
         if not prompt or not prompt.strip():
             return {
                 "status": "error",
-                "message": "Parameter 'prompt' (instruksi tugas) wajib diisi untuk membuat jadwal tugas."
+                "message": "Parameter 'prompt' (task instruction) is required to schedule a background task."
             }
         task_name = (name or prompt[:30]).strip()
         interval = _parse_schedule_to_seconds(schedule or "1h")
@@ -138,7 +120,7 @@ async def _tool_cronjob_manage(
         )
         return {
             "status": "success",
-            "message": f"Tugas terjadwal '{task_name}' berhasil dibuat [ID: {res['id']}]. Berjalan setiap {interval} detik ke channel {target_channel}.",
+            "message": f"Scheduled task '{task_name}' created successfully [ID: {res['id']}]. Runs every {interval}s to channel {target_channel}.",
             "task": res
         }
 
@@ -152,43 +134,43 @@ async def _tool_cronjob_manage(
 
     elif act in ("pause", "stop"):
         if not task_id:
-            return {"status": "error", "message": "Parameter 'task_id' wajib diisi untuk menjeda tugas."}
+            return {"status": "error", "message": "Parameter 'task_id' is required to pause a task."}
         ok = autonomous_engine.pause_task(task_id.strip())
         return {
             "status": "success" if ok else "error",
-            "message": f"Tugas {task_id} {'berhasil dijeda.' if ok else 'gagal dijeda atau tidak ditemukan.'}"
+            "message": f"Task '{task_id}' {'paused successfully.' if ok else 'failed to pause or not found.'}"
         }
 
     elif act in ("resume", "start"):
         if not task_id:
-            return {"status": "error", "message": "Parameter 'task_id' wajib diisi untuk mengaktifkan kembali tugas."}
+            return {"status": "error", "message": "Parameter 'task_id' is required to resume a task."}
         ok = autonomous_engine.resume_task(task_id.strip())
         return {
             "status": "success" if ok else "error",
-            "message": f"Tugas {task_id} {'berhasil diaktifkan kembali.' if ok else 'gagal diaktifkan atau tidak ditemukan.'}"
+            "message": f"Task '{task_id}' {'resumed successfully.' if ok else 'failed to resume or not found.'}"
         }
 
     elif act in ("run", "trigger"):
         if not task_id:
-            return {"status": "error", "message": "Parameter 'task_id' wajib diisi untuk menjalankan tugas sekarang."}
+            return {"status": "error", "message": "Parameter 'task_id' is required to run a task immediately."}
         run_res = await autonomous_engine.trigger_task_now(task_id.strip())
         return {
             "status": "success",
-            "message": f"Tugas {task_id} telah dipicu eksekusinya segera.",
+            "message": f"Task '{task_id}' execution triggered immediately.",
             "execution_result": run_res
         }
 
     elif act in ("remove", "delete"):
         if not task_id:
-            return {"status": "error", "message": "Parameter 'task_id' wajib diisi untuk menghapus tugas."}
+            return {"status": "error", "message": "Parameter 'task_id' is required to delete a task."}
         ok = autonomous_engine.delete_task(task_id.strip())
         return {
             "status": "success" if ok else "error",
-            "message": f"Tugas {task_id} {'berhasil dihapus.' if ok else 'gagal dihapus atau tidak ditemukan.'}"
+            "message": f"Task '{task_id}' {'deleted successfully.' if ok else 'failed to delete or not found.'}"
         }
 
     else:
         return {
             "status": "error",
-            "message": f"Aksi '{act}' tidak dikenal. Pilih dari: 'create', 'list', 'pause', 'resume', 'run', 'remove'."
+            "message": f"Unknown action '{act}'. Supported actions: 'create', 'list', 'pause', 'resume', 'run', 'remove'."
         }

@@ -78,8 +78,9 @@ def check_tool_permission(tool_name: str, mode: str = "plan", args: Optional[Dic
                 "allowed": False,
                 "risk": "mutating",
                 "message": (
-                    f"DITOLAK PERMISSION GATE: Perintah terminal '{cmd}' tidak diizinkan di Plan Mode. "
-                    "Hanya perintah inspeksi lingkungan read-only (seperti node -v, Test-Path, Get-ChildItem, $env:USERPROFILE) yang diizinkan."
+                    f"PERMISSION GATE DENIAL: Terminal command '{cmd}' is mutating and not permitted in Plan Mode. "
+                    "Only safe read-only inspection commands (such as version checks, directory listing, environment probes) are allowed. "
+                    "Propose this command in your structured plan for execution in Build Mode."
                 )
             }
         if risk != "read_only":
@@ -87,9 +88,9 @@ def check_tool_permission(tool_name: str, mode: str = "plan", args: Optional[Dic
                 "allowed": False,
                 "risk": risk,
                 "message": (
-                    f"DITOLAK PERMISSION GATE: Tool '{tool_name}' (risk={risk}) diblokir di Plan Mode. "
-                    "Mode ini beroperasi dalam status Read-Only untuk eksplorasi dan perancangan arsitektur. "
-                    "Usulkan perubahan ini sebagai tahapan rencana kerja yang dapat dieksekusi di Build Mode."
+                    f"PERMISSION GATE DENIAL: Tool '{tool_name}' ({risk}) cannot be executed in Plan Mode. "
+                    "Plan Mode operates in Read-Only for exploration and architectural planning. "
+                    "Incorporate this action into a structured implementation plan and request user approval."
                 )
             }
 
@@ -111,7 +112,7 @@ def check_tool_permission(tool_name: str, mode: str = "plan", args: Optional[Dic
                     "allowed": False,
                     "risk": "ask",
                     "requires_prompt": True,
-                    "message": f"DITOLAK: Perintah sistem berisiko tinggi '{cmd}' membutuhkan persetujuan manual eksplisit."
+                    "message": f"PERMISSION GATE ESCALATION: High-blast-radius system command '{cmd}' requires explicit user confirmation."
                 }
 
     return {"allowed": True, "risk": risk}
@@ -121,6 +122,65 @@ def get_agent_tools(read_only: bool = False, enabled_set: Optional[Set[str]] = N
     """Returns dynamic agent tools formatted for Gemini API (Hermes Parity)."""
     decls = registry.get_all_declarations(read_only=read_only, enabled_set=enabled_set)
     return [types.Tool(function_declarations=decls)]
+
+
+def _convert_to_standard_json_schema(val: Any) -> Any:
+    """Recursively converts uppercase Gemini types (OBJECT, STRING, etc.) to lowercase OpenAPI types."""
+    if isinstance(val, dict):
+        res = {}
+        for k, v in val.items():
+            if k == "type" and isinstance(v, str):
+                res[k] = v.lower()
+            elif k == "properties" and isinstance(v, dict):
+                # 'properties' is a mapping of property_name -> property_definition
+                # Do NOT inject "type": "object" into the properties dictionary itself!
+                res[k] = {
+                    prop_name: _convert_to_standard_json_schema(prop_val)
+                    for prop_name, prop_val in v.items()
+                }
+            else:
+                res[k] = _convert_to_standard_json_schema(v)
+        return res
+    elif isinstance(val, list):
+        return [_convert_to_standard_json_schema(x) for x in val]
+    return val
+
+
+def get_native_tools_anthropic(read_only: bool = False, enabled_set: Optional[Set[str]] = None) -> List[Dict[str, Any]]:
+    """Returns dynamic agent tools formatted for Anthropic Messages API (Claude Code Parity)."""
+    tools = []
+    for name, t in registry._tools.items():
+        if enabled_set is not None and name not in enabled_set:
+            continue
+        if read_only and t.risk != "read_only":
+            continue
+        schema = _convert_to_standard_json_schema(t.parameters or {"type": "object", "properties": {}})
+        tools.append({
+            "name": t.name,
+            "description": t.description or "",
+            "input_schema": schema
+        })
+    return tools
+
+
+def get_native_tools_openai(read_only: bool = False, enabled_set: Optional[Set[str]] = None) -> List[Dict[str, Any]]:
+    """Returns dynamic agent tools formatted for OpenAI / Codex / Custom Providers."""
+    tools = []
+    for name, t in registry._tools.items():
+        if enabled_set is not None and name not in enabled_set:
+            continue
+        if read_only and t.risk != "read_only":
+            continue
+        schema = _convert_to_standard_json_schema(t.parameters or {"type": "object", "properties": {}})
+        tools.append({
+            "type": "function",
+            "function": {
+                "name": t.name,
+                "description": t.description or "",
+                "parameters": schema
+            }
+        })
+    return tools
 
 
 def get_tools_catalog(enabled_set: Optional[Set[str]] = None) -> List[Dict[str, Any]]:

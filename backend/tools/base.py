@@ -129,7 +129,7 @@ def anara_tool(
     """
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
         tool_name = (name or fn.__name__).lstrip("_")
-        raw_doc = inspect.getdoc(fn) or f"Alat {tool_name} untuk Project Anara."
+        raw_doc = inspect.getdoc(fn) or f"Tool {tool_name} for Project Anara."
         # Use first paragraph of docstring as description if not explicitly set
         doc_lines = [l.strip() for l in raw_doc.splitlines() if l.strip() and not l.strip().startswith(":")]
         tool_desc = description or (" ".join(doc_lines) if doc_lines else raw_doc)

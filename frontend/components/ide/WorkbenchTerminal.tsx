@@ -263,10 +263,10 @@ export default function WorkbenchTerminal({
               type="button"
               onClick={onClose}
               className="px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white border border-white/10 text-[10px] font-mono transition-all cursor-pointer flex items-center gap-1"
-              title="Tutup Panel Terminal"
+              title="Close Terminal Panel"
             >
               <span>✕</span>
-              <span>Tutup</span>
+              <span>Close</span>
             </button>
           )}
         </div>
@@ -312,7 +312,7 @@ export default function WorkbenchTerminal({
           type="text"
           value={commandInput}
           onChange={(e) => setCommandInput(e.target.value)}
-          placeholder={isExecuting ? "Menjalankan perintah..." : "Ketik perintah terminal atau instruksi build..."}
+          placeholder={isExecuting ? "Running command..." : "Type terminal command or build instructions..."}
           disabled={isExecuting}
           className="flex-1 bg-transparent border-none text-xs text-white placeholder:text-slate-600 focus:outline-none font-mono disabled:opacity-50"
         />
@@ -321,10 +321,10 @@ export default function WorkbenchTerminal({
             type="button"
             onClick={handleStopExecution}
             className="px-2.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[10px] cursor-pointer flex items-center gap-1 font-mono"
-            title="Batalkan proses terminal"
+            title="Cancel terminal process"
           >
             <span>■</span>
-            <span>Batal</span>
+            <span>Cancel</span>
           </button>
         ) : commandInput ? (
           <button

@@ -82,8 +82,8 @@ class AgentRunner:
                 sel_model_for_check = data.get("model_id") or get_active_model_id()
                 if not ModelCapabilityRegistry.supports_voice(sel_model_for_check):
                     err_msg = (
-                        f"Model '{sel_model_for_check}' tidak mendukung input/output audio real-time. "
-                        "Pilih model Live Preview (misal gemini-2.5-flash-live-preview) di Mode Voice."
+                        f"Model '{sel_model_for_check}' does not support real-time audio input/output. "
+                        "Please select a live-preview model in Voice Mode."
                     )
                     logger.warning(f"[Chat] {err_msg}")
                     chat_diagnostics["last_error"] = err_msg
@@ -117,32 +117,34 @@ class AgentRunner:
                 "sessionId": sid
             })
 
-            # 2. Resolve session context & mode
+            # 2. Resolve session context & mode (Hermes Model-Driven Parity: Zero Pre-Turn Keyword Guessing)
             session_obj = memory_engine.get_session(sid) if sid else None
             session_type = (session_obj.get("session_type") or "chat") if session_obj else "chat"
             session_mode = (session_obj.get("session_mode") or ("explicit_plan_build" if session_type == "code" else "conversational")) if session_obj else "conversational"
 
-            norm_text = text.lower().strip()
-            is_approved = is_explicit_plan_approval(norm_text)
+            # Check if there is an active pending action awaiting approval
+            from core.session_manager import session_state_manager
+            active_pending = session_state_manager.get_pending("web_studio", str(sid))
+            is_approved = False
+            if active_pending:
+                norm_text = text.lower().strip()
+                is_approved = is_explicit_plan_approval(norm_text)
 
             if session_mode == "explicit_plan_build":
                 if is_approved:
                     agent_mode = "build"
-                    logger.info("[Agent Mode] Plan approved in Code Studio -> Switch to BUILD MODE")
+                    logger.info("[Agent Mode] Pending plan approved in Code Studio -> Switch to BUILD MODE")
                 else:
                     agent_mode = req_agent_mode if req_agent_mode in ("plan", "build") else "plan"
             else:
                 if is_approved:
                     agent_mode = "build"
-                    logger.info("[Agent Mode] Plan approved in Conversational Mode -> Switch to BUILD MODE")
-                elif needs_plan(text, session_mode="conversational"):
-                    agent_mode = "plan"
-                    logger.info(f"[Agent Mode] High-risk/mutating intent detected -> Auto PLAN MODE for '{text[:40]}...'")
+                    logger.info("[Agent Mode] Pending action approved in Conversational Mode -> Switch to BUILD MODE")
                 else:
                     agent_mode = "build"
 
             # 3. Dance directive
-            if text.startswith("Sistem:"):
+            if text.startswith("Sistem:") or text.startswith("[SYSTEM"):
                 logger.info(f"[Dance] System speech directive: {text[:60]!r}")
                 await self.activate_dance_llm_turn(text)
                 return
@@ -191,7 +193,7 @@ class AgentRunner:
                             "type": "tool_progress",
                             "tool_name": t_name,
                             "status": "running",
-                            "summary": f"Menjalankan {t_name}...",
+                            "summary": f"Executing {t_name}...",
                             "icon": "terminal" if "command" in t_name or "shell" in t_name else "file",
                         })
                     elif event.type == "tool_result":
@@ -202,7 +204,7 @@ class AgentRunner:
                             "type": "tool_progress",
                             "tool_name": t_name,
                             "status": "done",
-                            "summary": str(event.tool_result)[:160] if event.tool_result else "Selesai",
+                            "summary": str(event.tool_result)[:160] if event.tool_result else "Done",
                             "icon": "terminal" if "command" in t_name or "shell" in t_name else "file",
                         })
                     elif event.type == "need_approval":
@@ -211,7 +213,7 @@ class AgentRunner:
                             "plan_id": event.plan_id or "plan_pending",
                             "tool_name": event.tool_name,
                             "tool_args": event.tool_args or {},
-                            "text": event.content or "Rencana tindakan memerlukan persetujuan sebelum dieksekusi.",
+                            "text": event.content or "Action plan requires confirmation before execution.",
                             "action_metadata": event.metadata,
                         })
                     elif event.type == "final_text":

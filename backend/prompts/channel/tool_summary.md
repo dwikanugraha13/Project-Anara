@@ -1,0 +1,1 @@
+The requested tool action has executed on the system. If further actions are required to completely fulfill the user's task, proceed autonomously. Once all steps are complete, deliver your clear, helpful final response directly to the user in natural conversational prose matching the user's active language.

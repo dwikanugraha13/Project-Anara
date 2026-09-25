@@ -37,36 +37,13 @@ class SkillExtractor:
         existing_skills = memory_engine.get_all_agent_skills()
         existing_names = [s["name"].lower() for s in existing_skills]
 
-        prompt = f"""Kamu adalah Anara Autonomous Skill Extractor untuk Project Anara.
-Agen baru saja berhasil menyelesaikan tugas konstruksi koding berikut:
-Permintaan User: "{user_prompt}"
-Alat yang Digunakan: {', '.join(tools_used)}
-Laporan Hasil Eksekusi: "{final_summary[:600]}"
-
-TUGAS:
-1. Evaluasi apakah pekerjaan ini menghasilkan prosedur/resep teknis yang REUSABLE (dapat digunakan kembali di masa depan).
-   Contoh alur yang bernilai: Scaffold proyek framework, setup styling/linter, integrasi database, pembuatan API endpoint, packaging zip, dsb.
-2. Jika BUKAN prosedur reusable (misal cuma perbaikan typo satu kata atau obrolan santai), kembalikan is_reusable: false.
-3. Jika YA (is_reusable: true):
-   - name: Nama keahlian singkat & profesional (contoh: 'Scaffold Proyek React Vite Tailwind', 'Setup Docker Swarm').
-   - category: 'coding' | 'architecture' | 'devops' | 'system'
-   - description: 1-2 kalimat ringkasan tentang apa yang diselesaikan dan kapan keahlian ini dipanggil.
-   - trigger_keywords: Array 3-5 kata kunci pemicu spesifik (contoh: ['react', 'vite', 'tailwind', 'scaffold']).
-   - procedure_steps: Array 3-6 langkah konkret yang telah dilakukan.
-
-KEMBALIKAN HANYA JSON VALID:
-{{
-  "is_reusable": true,
-  "name": "Scaffold Proyek React Vite Tailwind",
-  "category": "coding",
-  "description": "Menyiapkan starter proyek React modern berbasis Vite dengan Tailwind CSS.",
-  "trigger_keywords": ["react", "vite", "tailwind"],
-  "procedure_steps": [
-    "1. Inisialisasi struktur berkas proyek React",
-    "2. Konfigurasi Tailwind CSS dan utilitas styling",
-    "3. Implementasi komponen layout dan state awal"
-  ]
-}}"""
+        from core.prompt_loader import load_prompt
+        prompt = load_prompt(
+            "skill_extractor",
+            user_prompt=user_prompt,
+            tools_used=", ".join(tools_used),
+            final_summary=final_summary[:600]
+        )
 
         try:
             from core.capabilities import get_fast_auxiliary_model

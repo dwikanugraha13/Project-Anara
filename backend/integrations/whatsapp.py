@@ -116,7 +116,7 @@ async def logout_whatsapp() -> Dict[str, Any]:
                 return res.json()
     except Exception as e:
         return {"status": "error", "message": str(e)}
-    return {"status": "error", "message": "Gagal menghubungi WhatsApp bridge."}
+    return {"status": "error", "message": "Failed to connect to WhatsApp bridge."}
 
 
 def format_whatsapp_message_context(msg: Dict[str, Any]) -> str:
@@ -166,11 +166,8 @@ def format_whatsapp_message_context(msg: Dict[str, Any]) -> str:
 
     # 3. Clean user prompt text
     user_prompt = text
-    placeholder_triggers = (
-        "[Foto]", "[Foto terlampir]", "[Photo]", "[Video]", "[Video terlampir]",
-        "[Pesan Suara / Voice Note]", "[Voice Note]", "[Dokumen]", "[Document]",
-    )
-    if not user_prompt or any(user_prompt == p for p in placeholder_triggers) or user_prompt.startswith(("[Dokumen:", "[Document:")):
+    is_bracketed_placeholder = bool(user_prompt.startswith("[") and user_prompt.endswith("]"))
+    if not user_prompt or is_bracketed_placeholder or user_prompt.startswith(("[Dokumen:", "[Document:")):
         if media_type == "document":
             user_prompt = f"[User sent an attached document '{f_display}'. Inspect and respond naturally in the user's active language.]"
         elif media_type == "photo":
@@ -179,8 +176,8 @@ def format_whatsapp_message_context(msg: Dict[str, Any]) -> str:
             user_prompt = "[User sent an attached video without caption. Inspect and respond naturally in the user's active language.]"
         elif media_type == "audio":
             user_prompt = "[User sent an attached voice audio without caption. Process and respond naturally in the user's active language.]"
-        else:
-            user_prompt = f"[User sent an attached {media_type or 'file'} without caption. Inspect and respond naturally in the user's active language.]"
+        elif media_type:
+            user_prompt = f"[User sent an attached {media_type} without caption. Inspect and respond naturally in the user's active language.]"
 
     if quote_context:
         if att_info:
@@ -233,14 +230,14 @@ async def send_whatsapp_message(to: str, message: str) -> Dict[str, Any]:
                 except Exception:
                     return {"status": "error", "message": f"HTTP {res.status_code}: {res.text}"}
     except Exception as e:
-        return {"status": "error", "message": f"Koneksi error: {str(e)}"}
+        return {"status": "error", "message": f"Connection error: {str(e)}"}
 
 
 async def send_whatsapp_document(to: str, file_path: str, caption: Optional[str] = None) -> Dict[str, Any]:
     """Sends a native document file (.pdf, .docx, .zip, etc.) to a WhatsApp number via the bridge."""
     clean_path = os.path.abspath(os.path.expanduser(file_path.strip().strip('"\'')))
     if not os.path.isfile(clean_path):
-        return {"status": "error", "message": f"Berkas tidak ditemukan: {clean_path}"}
+        return {"status": "error", "message": f"File not found: {clean_path}"}
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:

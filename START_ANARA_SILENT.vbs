@@ -65,10 +65,10 @@ tunnelCmd = "cmd.exe /c """"" & pythonExe & """ cli.py gateway tunnel > """ & lo
 sh.Run tunnelCmd, 0, False
 
 ' 7. Windows notification dialog (auto-closes after 6s)
-sh.Popup "Project Anara berhasil dijalankan di latar belakang (Silent Daemon)!" & vbCrLf & vbCrLf & _
+sh.Popup "Project Anara successfully started in background (Silent Daemon)!" & vbCrLf & vbCrLf & _
          "• Backend API : http://localhost:8000" & vbCrLf & _
          "• 3D Studio   : http://localhost:3000" & vbCrLf & _
          "• Code Studio : http://localhost:3000/code" & vbCrLf & _
          "• Remote URL  : https://anara.my.id" & vbCrLf & vbCrLf & _
          "Status & Log  : %LOCALAPPDATA%\anara\logs\" & vbCrLf & _
-         "Untuk stop    : jalankan STOP_ANARA.bat atau 'python cli.py daemon stop'", 6, "Anara 3D AI Assistant", 64
+         "To stop       : run STOP_ANARA.bat or 'python cli.py daemon stop'", 6, "Anara 3D AI Assistant", 64

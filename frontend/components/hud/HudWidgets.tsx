@@ -155,10 +155,10 @@ export function HudSystemCard({
         </div>
         <div className="p-2.5 rounded-xl bg-black/40 border border-cyan-400/20 flex flex-col">
           <span className="text-slate-400">KEY POOL</span>
-          <span className="text-cyan-300 font-bold mt-1">{systemHudData.active_keys} Akun Aktif</span>
+          <span className="text-cyan-300 font-bold mt-1">{systemHudData.active_keys} Active Accounts</span>
         </div>
         <div className="p-2.5 rounded-xl bg-black/40 border border-cyan-400/20 flex flex-col">
-          <span className="text-slate-400">MEMORI NODES</span>
+          <span className="text-slate-400">MEMORY NODES</span>
           <span className="text-purple-300 font-bold mt-1">{systemHudData.memory_nodes} Fakta SQLite</span>
         </div>
         <div className="p-2.5 rounded-xl bg-black/40 border border-cyan-400/20 flex flex-col">
@@ -308,7 +308,7 @@ export function HudWhatsAppQrCard({
 
       <div className="p-5 flex flex-col items-center text-center">
         <p className="text-xs text-slate-300 mb-3.5 leading-relaxed">
-          Buka <span className="text-emerald-300 font-semibold">WhatsApp di HP</span> &gt; Perangkat Tertaut &gt; Tautkan Perangkat, lalu scan QR ini:
+          Open <span className="text-emerald-300 font-semibold">WhatsApp on your phone</span> &gt; Linked Devices &gt; Link a Device, then scan this QR:
         </p>
 
         <div className="p-3 bg-white rounded-2xl shadow-2xl border-2 border-emerald-400/40 relative group">
@@ -329,7 +329,7 @@ export function HudWhatsAppQrCard({
 
         <div className="mt-4 flex items-center gap-2 text-[10px] font-mono text-slate-400">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-          <span>QR akan tertutup otomatis setelah tersambung</span>
+          <span>QR will close automatically after connected</span>
         </div>
       </div>
     </div>
@@ -370,7 +370,7 @@ export function HudWhatsAppChatCard({
 
         <div className="mt-3 space-y-2 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
           {steps.length === 0 ? (
-            <p className="text-xs text-slate-400 text-center py-4">Tidak ada pesan belum dibaca.</p>
+            <p className="text-xs text-slate-400 text-center py-4">No unread messages.</p>
           ) : (
             steps.map((msgItem, idx) => (
               <div

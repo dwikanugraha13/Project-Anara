@@ -108,7 +108,7 @@ def verify_gateway_password(input_password: str) -> bool:
 def set_gateway_password(new_password: str) -> bool:
     clean_p = (new_password or "").strip()
     if len(clean_p) < 4:
-        raise ValueError("Password gateway minimal 4 karakter.")
+        raise ValueError("Gateway password must be at least 4 characters.")
     p_hash = hash_gateway_password(clean_p)
     try:
         from config import save_config
@@ -155,4 +155,47 @@ def is_request_local(client_host: Optional[str], headers: Optional[Dict[str, str
             return False
     clean_host = (client_host or "").strip().lower()
     return clean_host in ("127.0.0.1", "::1", "localhost", "testclient")
+
+
+from starlette.requests import HTTPConnection
+
+
+async def require_gateway_auth(conn: HTTPConnection) -> bool:
+    """
+    Hermes & Production API Security Guard (Gap 6 Parity):
+    1. Local requests (127.0.0.1, ::1, localhost, testclient) are automatically permitted
+       to ensure friction-free local developer experience for Web Studio, 3D HUD, and CLI.
+    2. Remote / Tunnel requests must provide a valid Authorization: Bearer <token> or query param ?token=<token>.
+    3. If gateway.auth_enabled is False in config, all requests are permitted.
+    """
+    try:
+        from config import cfg_get
+        if not bool(cfg_get("gateway.auth_enabled", True)):
+            return True
+    except Exception:
+        pass
+
+    from fastapi import HTTPException
+
+    client_host = conn.client.host if hasattr(conn, "client") and conn.client else None
+    headers_dict = dict(conn.headers) if hasattr(conn, "headers") and conn.headers else {}
+    if is_request_local(client_host, headers_dict):
+        return True
+
+    # Check Bearer token in Authorization header
+    auth_header = headers_dict.get("authorization") or ""
+    token = ""
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+    elif hasattr(conn, "query_params") and conn.query_params.get("token"):
+        token = conn.query_params.get("token", "").strip()
+
+    if token and verify_gateway_session_token(token):
+        return True
+
+    raise HTTPException(
+        status_code=401,
+        detail="Unauthorized: Remote access requires a valid gateway session token. Login at /api/gateway/login."
+    )
+
 

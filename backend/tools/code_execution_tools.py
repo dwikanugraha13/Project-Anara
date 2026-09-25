@@ -29,14 +29,14 @@ async def _tool_execute_code(
     """
     clean_code = (code or "").strip()
     if not clean_code:
-        return {"status": "error", "message": "Kode yang akan dieksekusi tidak boleh kosong."}
+        return {"status": "error", "message": "Code to execute cannot be empty."}
 
     lang = language.strip().lower()
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "execute_code",
-        "action_title": f"Menjalankan Kode ({lang.capitalize()})",
-        "detail": f"{len(clean_code.splitlines())} baris kode",
+        "action_title": f"Executing Code ({lang.capitalize()})",
+        "detail": f"{len(clean_code.splitlines())} lines of code",
         "icon": "play"
     })
 

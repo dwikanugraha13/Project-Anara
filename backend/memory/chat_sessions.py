@@ -59,7 +59,7 @@ class ChatSessionsMixin:
 
         self.clean_empty_sessions(clean_name, exclude_session_id=sid)
 
-        logger.info(f"[ChatSessions] Created {clean_type} session #{sid} ('{initial_title}') [channel={clean_channel}, mode={clean_mode}] for {clean_name or 'Tamu'}")
+        logger.info(f"[ChatSessions] Created {clean_type} session #{sid} ('{initial_title}') [channel={clean_channel}, mode={clean_mode}] for {clean_name or 'Guest'}")
         self._emit_mutation("session_created", {"id": sid, "title": initial_title, "speaker_name": clean_name, "session_type": clean_type, "channel": clean_channel, "session_mode": clean_mode})
         return {"id": sid, "title": initial_title, "speaker_name": clean_name, "session_type": clean_type, "channel": clean_channel, "session_mode": clean_mode, "message_count": 0}
 
@@ -300,8 +300,8 @@ class ChatSessionsMixin:
         current_title = (sess.get("title") or "").strip()
         is_placeholder = (
             not current_title
-            or current_title.lower() in ["new chat", "chat baru", "percakapan baru"]
-            or current_title.lower().startswith("percakapan #")
+            or current_title.lower() in ["new chat", "new session", "session", "chat"]
+            or current_title.lower().startswith(("session #", "chat #"))
         )
         if not is_placeholder:
             return None
@@ -314,7 +314,7 @@ class ChatSessionsMixin:
             f"User: {(m.get('user_text') or '')[:160]}\nAnara: {(m.get('ai_text') or '')[:160]}"
             for m in msgs[:3]
         )
-        fallback = (msgs[0].get("user_text") or "Percakapan").strip()
+        fallback = (msgs[0].get("user_text") or "New Session").strip()
         fallback = (fallback[:36] + "...") if len(fallback) > 36 else fallback
 
         prompt = (
@@ -337,7 +337,7 @@ class ChatSessionsMixin:
                     )
                     if res and res.text:
                         title = res.text.strip().strip('"\'').rstrip(".")
-                        title = re.sub(r"^(?:judul|title)\s*:\s*", "", title, flags=re.IGNORECASE).strip()
+                        title = re.sub(r"^(?:title|topic|subject)\s*[:=]\s*", "", title, flags=re.IGNORECASE).strip()
                         if title:
                             break
                 except Exception:
@@ -521,7 +521,7 @@ class ChatSessionsMixin:
             if len(a) > 200:
                 a = a[:200] + "..."
 
-            sp = r.get("speaker_name") or speaker_name or "Pengguna"
+            sp = r.get("speaker_name") or speaker_name or "User"
             if u:
                 dialogue_turns.append(f"{sp}: {u}")
             if a:
@@ -531,6 +531,6 @@ class ChatSessionsMixin:
             return ""
 
         return (
-            "[KONTEKS PERCAKAPAN TERAKHIR]:\n"
+            "## Recent Conversation Context:\n"
             + "\n".join(dialogue_turns) + "\n"
         )

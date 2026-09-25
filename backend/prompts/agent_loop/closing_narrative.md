@@ -1,0 +1,1 @@
+Based on all the work, observations, and attachments above, provide a clear, helpful, and complete final response to the user in natural conversational prose (no raw tool call JSON), strictly matching the user's active language; no internal thinking monologues.

@@ -39,9 +39,9 @@ export default function BrainSoulTab() {
           body: JSON.stringify({ content: fileMemory.soul }),
         });
         if (res.ok) {
-          setSaveMsg("✓ Berkas SOUL.md berhasil disimpan & di-hot-reload.");
+          setSaveMsg("✓ SOUL.md file saved & hot-reloaded successfully.");
         } else {
-          setSaveMsg("Gagal menyimpan SOUL.md");
+          setSaveMsg("Failed to save SOUL.md");
         }
       } else {
         const res = await fetch(`${BACKEND_URL}/api/brain/file-memory`, {
@@ -53,9 +53,9 @@ export default function BrainSoulTab() {
           }),
         });
         if (res.ok) {
-          setSaveMsg(`✓ Berkas ${activeTab.toUpperCase()}.md berhasil disimpan (tersanitasi).`);
+          setSaveMsg(`✓ ${activeTab.toUpperCase()}.md saved successfully (sanitized).`);
         } else {
-          setSaveMsg(`Gagal menyimpan ${activeTab.toUpperCase()}.md`);
+          setSaveMsg(`Failed to save ${activeTab.toUpperCase()}.md`);
         }
       }
       setTimeout(() => setSaveMsg(null), 4000);
@@ -73,8 +73,8 @@ export default function BrainSoulTab() {
 
   const getFileBadge = () => {
     if (activeTab === "soul") return { label: "SOUL.md", desc: "Identitas, Kepribadian & Filosofi Agen (Global)", cap: "Bebas" };
-    if (activeTab === "user") return { label: "USER.md", desc: "Profil & Preferensi Pengguna (Cap ~1.500 char)", cap: "~1.500 char" };
-    return { label: "MEMORY.md", desc: "Catatan Fakta & Konteks Persisten (Cap ~2.200 char)", cap: "~2.200 char" };
+    if (activeTab === "user") return { label: "USER.md", desc: "User Profile & Preferences (Cap ~1,500 chars)", cap: "~1.500 char" };
+    return { label: "MEMORY.md", desc: "Persistent Facts & Context Notes (Cap ~2,200 chars)", cap: "~2.200 char" };
   };
 
   const badge = getFileBadge();
@@ -86,7 +86,7 @@ export default function BrainSoulTab() {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="space-y-0.5">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-white font-mono">Arsitektur Memori 4-File (PRD Standar)</h3>
+              <h3 className="text-sm font-bold text-white font-mono">4-File Memory Architecture (Standard PRD)</h3>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-500/15 border border-emerald-400/30 text-emerald-300">
                 ● Persistent Markdown
               </span>
@@ -116,7 +116,7 @@ export default function BrainSoulTab() {
                   <svg className="w-3.5 h-3.5 text-cyan-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
-                  <span>Simpan {badge.label}</span>
+                  <span>Save {badge.label}</span>
                 </>
               )}
             </button>
@@ -131,7 +131,7 @@ export default function BrainSoulTab() {
 
         {/* 4-File Selector Pills */}
         <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-white/5 text-xs font-mono">
-          <span className="text-slate-500 text-[11px]">Berkas Memori:</span>
+          <span className="text-slate-500 text-[11px]">Memory Files:</span>
           <button
             type="button"
             onClick={() => setActiveTab("soul")}
@@ -166,7 +166,7 @@ export default function BrainSoulTab() {
             MEMORY.md (Fakta)
           </button>
           <span className="text-[10px] text-slate-500 ml-auto hidden sm:inline">
-            AGENTS.md otomatis aktif di root folder proyek
+            AGENTS.md automatically active in project root folder
           </span>
         </div>
       </div>
@@ -191,7 +191,7 @@ export default function BrainSoulTab() {
           placeholder={`# Tuliskan konten ${badge.label} di sini...`}
         />
         <div className="px-4 py-2 bg-black/40 border-t border-white/5 text-[11px] text-slate-400 font-mono flex items-center justify-between">
-          <span>🔒 Privacy Filter aktif: Kredensial &amp; API key otomatis disensor sebelum disimpan.</span>
+          <span>🔒 Privacy Filter active: Credentials &amp; API keys are automatically redacted before saving.</span>
           <span>UTF-8 Markdown</span>
         </div>
       </div>

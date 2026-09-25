@@ -135,11 +135,11 @@ export function groupSessions(sessions: ChatSession[]) {
   const sevenDaysAgo = startOfToday - 7 * 86400_000;
 
   const buckets: { label: string; items: ChatSession[] }[] = [
-    { label: "Disematkan", items: [] },
-    { label: "Hari ini", items: [] },
-    { label: "Kemarin", items: [] },
-    { label: "7 hari lalu", items: [] },
-    { label: "Lebih lama", items: [] },
+    { label: "Pinned", items: [] },
+    { label: "Today", items: [] },
+    { label: "Yesterday", items: [] },
+    { label: "Last 7 days", items: [] },
+    { label: "Older", items: [] },
   ];
 
   for (const s of sessions) {

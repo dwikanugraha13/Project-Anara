@@ -144,7 +144,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
           sessionStorage.setItem("anara_cached_providers", JSON.stringify(list));
         } catch {}
       } else if (!res && providersList.length === 0) {
-        setProvidersError("Gagal menghubungi server providers.");
+        setProvidersError("Failed to connect to providers server.");
       }
 
       if (hRes && hRes.ok) {
@@ -169,7 +169,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
       }
     } catch (err: any) {
       if (err?.name === "AbortError") {
-        setProvidersError("Waktu memuat provider habis (timeout 12s). Silakan klik 'Pindai Ulang'.");
+        setProvidersError("Provider loading timed out (12s). Please click 'Rescan'.");
       } else {
         console.error("fetchProviders error:", err);
       }
@@ -189,7 +189,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
       const authRes = await fetch(`${BACKEND_URL}/api/auth/${providerId}/authorize-url`);
       if (!authRes.ok) {
         const errData = await authRes.json().catch(() => ({}));
-        alert(errData.detail || "Gagal mendapatkan URL otorisasi.");
+        alert(errData.detail || "Failed to get authorization URL.");
         return;
       }
       const authData = await authRes.json();
@@ -227,7 +227,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
       });
       if (res.ok) {
         const data = await res.json();
-        setProviderActionMsg({ id: providerId, text: "✓ Akun Berhasil Ditambahkan ke Pool!" });
+        setProviderActionMsg({ id: providerId, text: "✓ Account Successfully Added to Pool!" });
         setProviderKeyInputs((prev) => ({ ...prev, [providerId]: "" }));
         setProviderLabelInputs((prev) => ({ ...prev, [providerId]: "" }));
         setTimeout(() => setProviderActionMsg(null), 4000);
@@ -268,13 +268,13 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
   };
 
   const handleDeleteAccount = async (providerId: string, accountId: number, label: string) => {
-    if (!confirm(`Hapus akun "${label}" dari pool provider ${providerId.toUpperCase()}?`)) return;
+    if (!confirm(`Delete account "${label}" from pool provider ${providerId.toUpperCase()}?`)) return;
     try {
       const res = await fetch(`${BACKEND_URL}/api/providers/${providerId}/accounts/${accountId}`, {
         method: "DELETE",
       });
       if (res.ok) {
-        setProviderActionMsg({ id: providerId, text: "✓ Akun Dihapus" });
+        setProviderActionMsg({ id: providerId, text: "✓ Account Deleted" });
         setTimeout(() => setProviderActionMsg(null), 3000);
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("anara-models-sync"));
@@ -386,7 +386,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
   };
 
   const handleDeleteCustomProvider = async (providerId: number, name: string) => {
-    if (!confirm(`Hapus custom provider "${name}" beserta semua modelnya?`)) return;
+    if (!confirm(`Delete custom provider "${name}" along with all its models?`)) return;
     try {
       const res = await fetch(`${BACKEND_URL}/api/providers/custom/${providerId}`, {
         method: "DELETE",
@@ -451,7 +451,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
         }),
       });
       if (res.ok) {
-        setProviderActionMsg({ id: providerId, text: "✓ Terhubung & Model Berhasil Ditarik!" });
+        setProviderActionMsg({ id: providerId, text: "✓ Connected & Models Successfully Fetched!" });
         setProviderKeyInputs((prev) => ({ ...prev, [providerId]: "" }));
         setProviderLabelInputs((prev) => ({ ...prev, [providerId]: "" }));
         setTimeout(() => setProviderActionMsg(null), 4000);
@@ -468,7 +468,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
   };
 
   const handleDisconnectProvider = async (providerId: string) => {
-    if (!confirm(`Putuskan sambungan provider ${providerId.toUpperCase()}? Seluruh akun dalam pool dan model-modelnya akan dinonaktifkan.`)) return;
+    if (!confirm(`Disconnect provider ${providerId.toUpperCase()}? All accounts in the pool and their models will be deactivated.`)) return;
     setIsConnectingProvider(providerId);
     try {
       const res = await fetch(`${BACKEND_URL}/api/providers/${providerId}/disconnect`, {
@@ -563,7 +563,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
               onClick={() => fetchProviders(true)}
               disabled={isRefreshingProviders}
               className="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-mono transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50"
-              title="Pindai ulang model dan status koneksi live"
+              title="Rescan models and live connection status"
             >
               <svg className={`w-3.5 h-3.5 text-cyan-400 ${isRefreshingProviders ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -638,7 +638,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
     
                 {customProviders.length === 0 ? (
                   <div className="p-6 rounded-2xl border border-dashed border-white/10 liquid-glass-subtle text-center text-xs font-mono text-slate-500">
-                    Belum ada custom provider. Gunakan tombol di atas untuk menambahkan proxy seperti 9Router Proxy, Ollama, atau vLLM.
+                    No custom providers yet. Use the button above to add a proxy like 9Router Proxy, Ollama, or vLLM.
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
@@ -692,7 +692,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
                             className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer shrink-0 ${
                               isActive ? "bg-emerald-500" : "bg-slate-700/60"
                             }`}
-                            title={isActive ? "Nonaktifkan provider ini" : "Aktifkan provider ini"}
+                            title={isActive ? "Deactivate this provider" : "Activate this provider"}
                           >
                             <div
                               className={`w-4 h-4 rounded-full bg-white transition-transform shadow-sm ${
@@ -804,7 +804,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
         session={activeOAuthSession}
         onClose={() => setActiveOAuthSession(null)}
         onSuccess={(updatedProviders) => {
-          setProviderActionMsg({ id: activeOAuthSession?.providerId || "codex", text: "✓ Login OAuth Berhasil Terhubung!" });
+          setProviderActionMsg({ id: activeOAuthSession?.providerId || "codex", text: "✓ OAuth Login Successfully Connected!" });
           setTimeout(() => setProviderActionMsg(null), 4000);
           if (updatedProviders && Array.isArray(updatedProviders)) {
             setProvidersList(updatedProviders);

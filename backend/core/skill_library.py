@@ -19,9 +19,24 @@ from typing import Dict, List, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # backend/
-SKILLS_DIR = os.path.join(_BASE_DIR, "skills")
-os.makedirs(SKILLS_DIR, exist_ok=True)
+from constants import get_anara_skills_dir, get_bundled_skills_dir
+from core.skills_sync import sync_bundled_skills
+
+
+def _resolve_skills_root() -> str:
+    """
+    Resolves the active user runtime skills directory with auto-seeding (Hermes Parity).
+    Pristine bundled templates in Git (backend/skills/) are mirrored to runtime (ANARA_HOME/skills/).
+    """
+    try:
+        sync_bundled_skills()
+        return str(get_anara_skills_dir())
+    except Exception as e:
+        logger.warning(f"[SkillLibrary] Runtime skills sync notice: {e}")
+        return str(get_bundled_skills_dir())
+
+
+SKILLS_DIR = _resolve_skills_root()
 
 
 def slugify(text: str) -> str:
@@ -33,11 +48,20 @@ def slugify(text: str) -> str:
 
 
 class SkillLibraryManager:
-    """Manages the agentskills.io folder-based skill repository with progressive disclosure."""
+    """Manages the agentskills.io folder-based skill repository with progressive disclosure (Hermes Parity)."""
 
-    def __init__(self, root_dir: str = SKILLS_DIR):
-        self.root_dir = root_dir
-        os.makedirs(self.root_dir, exist_ok=True)
+    def __init__(self, root_dir: Optional[str] = None):
+        self._root_dir = root_dir
+
+    @property
+    def root_dir(self) -> str:
+        if self._root_dir:
+            return self._root_dir
+        return str(get_anara_skills_dir())
+
+    @root_dir.setter
+    def root_dir(self, val: str):
+        self._root_dir = val
 
     def parse_skill_file(self, skill_md_path: str) -> Optional[Dict[str, Any]]:
         """Parses frontmatter and body markdown from a SKILL.md file."""
@@ -55,6 +79,7 @@ class SkillLibraryManager:
             meta = yaml.safe_load(raw_yaml) or {}
 
             slug = os.path.basename(os.path.dirname(skill_md_path))
+            status = str(meta.get("status", "active")).lower()
             return {
                 "slug": slug,
                 "name": meta.get("name", slug),
@@ -63,7 +88,8 @@ class SkillLibraryManager:
                 "trigger_keywords": meta.get("trigger_keywords", []),
                 "required_environment_variables": meta.get("required_environment_variables", []),
                 "required_credential_files": meta.get("required_credential_files", []),
-                "status": meta.get("status", "active"),  # 'active' | 'pending' | 'rejected'
+                "status": status,  # 'active' | 'disabled' | 'pending' | 'rejected'
+                "enabled": status == "active",
                 "learned_from_experience": bool(meta.get("learned_from_experience", False)),
                 "created_at": meta.get("created_at", ""),
                 "body": raw_body.strip(),
@@ -116,7 +142,7 @@ class SkillLibraryManager:
 {description}
 
 ## When to Use
-Gunakan keahlian ini saat diminta atau mendeteksi tugas dengan kata kunci: {', '.join(triggers) or name}.
+Use this skill when requested or when detecting tasks with keywords: {', '.join(triggers) or name}.
 
 ## Steps
 {steps_md}
@@ -157,17 +183,21 @@ Gunakan keahlian ini saat diminta atau mendeteksi tugas dengan kata kunci: {', '
         }
 
     def list_skills(self, status_filter: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Scans all folders and subfolders in backend/skills/ and parses their SKILL.md."""
+        """Scans all folders and subfolders in runtime skills directory and parses their SKILL.md."""
         results = []
         if not os.path.isdir(self.root_dir):
             return results
 
         from pathlib import Path
         for skill_path in Path(self.root_dir).rglob("SKILL.md"):
+            # Exclude hidden directories (like .hub, .git)
+            if any(part.startswith(".") for part in skill_path.parts):
+                continue
             parsed = self.parse_skill_file(str(skill_path))
             if parsed:
-                if status_filter and parsed.get("status") != status_filter:
-                    continue
+                if status_filter and status_filter != "all":
+                    if parsed.get("status") != status_filter:
+                        continue
                 results.append(parsed)
 
         return sorted(results, key=lambda s: s.get("name", ""))
@@ -179,6 +209,32 @@ Gunakan keahlian ini saat diminta atau mendeteksi tugas dengan kata kunci: {', '
             if s["slug"].lower() == clean or s["name"].lower() == clean or slugify(s["name"]) == clean:
                 return s
         return None
+
+    def toggle_skill(self, slug: str, enabled: Optional[bool] = None) -> Optional[Dict[str, Any]]:
+        """
+        Toggles a skill between 'active' and 'disabled' (Hermes Parity).
+        Disabled skills remain safely on disk but are hidden from the agent prompt manifest.
+        """
+        skill = self.get_skill(slug)
+        if not skill:
+            return None
+
+        skill_file = skill["file_path"]
+        current_status = skill.get("status", "active")
+
+        if enabled is not None:
+            new_status = "active" if enabled else "disabled"
+        else:
+            new_status = "disabled" if current_status == "active" else "active"
+
+        ok = self._rewrite_status(skill_file, new_status)
+        if not ok:
+            return None
+
+        skill["status"] = new_status
+        skill["enabled"] = (new_status == "active")
+        logger.info(f"[SkillLibrary] Toggled skill '{slug}' status: {current_status} -> {new_status}")
+        return skill
 
     def get_skill_file(self, skill_name_or_slug: str, relative_file_path: str) -> Optional[Dict[str, Any]]:
         """Retrieves a sub-resource file (e.g. references/*.md, scripts/*.py) inside a skill folder."""
@@ -229,8 +285,10 @@ Gunakan keahlian ini saat diminta atau mendeteksi tugas dengan kata kunci: {', '
         try:
             with open(skill_file, "r", encoding="utf-8") as f:
                 content = f.read()
-            # Replace status in frontmatter
-            updated = re.sub(r"(?m)^status:\s*['\"]?\w+['\"]?", f"status: {new_status}", content)
+            if re.search(r"(?m)^status:\s*['\"]?\w+['\"]?", content):
+                updated = re.sub(r"(?m)^status:\s*['\"]?\w+['\"]?", f"status: {new_status}", content)
+            else:
+                updated = re.sub(r"^---\s*\n", f"---\nstatus: {new_status}\n", content)
             with open(skill_file, "w", encoding="utf-8") as f:
                 f.write(updated)
             return True
@@ -248,22 +306,32 @@ Gunakan keahlian ini saat diminta atau mendeteksi tugas dengan kata kunci: {', '
         if not active_skills:
             return ""
 
-        # 1. Compact index manifest
-        lines = ["[KEAHLIAN AGEN AKTIF (SKILL LIBRARY V2 — AGENTSKILLS.IO)]:\n"]
+        # 1. Compact index manifest with dynamic paths (Hermes Parity)
+        lines = [
+            f"## Skills & Execution Architecture ({len(active_skills)} Active Skills):",
+            f"- Active User Runtime Skills: {self.root_dir}",
+            f"- Bundled In-Tree Skills: {get_bundled_skills_dir()}",
+            "- Tools Implementation: backend/tools/ (dispatched via backend/tools/registry.py)",
+            "- Community Skills Hub: 100,000+ indexed skills searchable and installable on-demand via skills_hub engine.",
+            "\nActive Catalog Summary:",
+        ]
         for s in active_skills[:12]:
             lines.append(f"- **{s['name']}** ({s['category']}): {s['description']}")
 
-        # 2. Progressive disclosure: Check if task matches any active skill
+        # 2. Progressive disclosure: Include full skill instructions when relevant to current task
         if user_task:
             task_lower = user_task.lower()
+            task_tokens = set(re.findall(r"\w+", task_lower))
             matched_skills = []
             for s in active_skills:
+                skill_name_lower = s["name"].lower()
                 triggers = [t.lower() for t in s.get("trigger_keywords", [])]
-                if any(t in task_lower for t in triggers) or s["name"].lower() in task_lower:
+                name_words = set(re.findall(r"\w+", skill_name_lower))
+                if (name_words & task_tokens) or any(t in task_lower for t in triggers) or skill_name_lower in task_lower:
                     matched_skills.append(s)
 
             if matched_skills:
-                lines.append("\n[PROSEDUR KEAHLIAN TERKAIT]:")
+                lines.append("\n## Active Skill Instructions:")
                 for ms in matched_skills[:2]:
                     lines.append(f"\n### {ms['name']}\n{ms.get('body', '')}")
 

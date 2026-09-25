@@ -17,11 +17,11 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 from memory import memory_engine, get_current_indonesian_time_str
-from core import ModelCapabilityRegistry
+from core import ModelCapabilityRegistry, require_gateway_auth
 from integrations import start_whatsapp_bridge
 from tools import register_agent_event_listener
 from shared_state import (
@@ -102,9 +102,11 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[Startup] Provider seed check: {e}")
 
-    # Seed agentskills.io folder skill library from database if empty
+    # Synchronize bundled in-tree skills to active user runtime skills (Hermes Parity)
     try:
+        from core.skills_sync import sync_bundled_skills
         from core.skill_library import skill_library
+        sync_bundled_skills()
         skill_library.sync_from_database()
     except Exception as e:
         logger.warning(f"[Startup] Skill library sync skipped: {e}")
@@ -130,6 +132,13 @@ async def lifespan(app: FastAPI):
         start_whatsapp_bridge()
     except Exception as e:
         logger.warning(f"[Startup] WhatsApp bridge start skipped: {e}")
+
+    # Ensure native CUA driver daemon is active on startup (Hermes Parity)
+    try:
+        from tools.computer_use.driver import ensure_cua_driver_daemon_running
+        ensure_cua_driver_daemon_running()
+    except Exception as e:
+        logger.debug(f"[Startup] CUA driver daemon init note: {e}")
 
     yield
 
@@ -190,15 +199,18 @@ async def health_check():
         "time": time_info
     }
 
-# ── Mount Modular APIRouters ──
-app.include_router(brain_router)
-app.include_router(provider_router)
-app.include_router(workspace_router)
-app.include_router(integration_router)
-app.include_router(session_router)
+# ── Mount Modular APIRouters (Hermes Security Parity: Per-Route Gateway Auth) ──
+# Public gateway router (for login and remote status check)
 app.include_router(gateway_router)
-app.include_router(telemetry_router)
-app.include_router(websocket_router)
+
+# Protected endpoints (local origin auto-permitted, remote requires session token)
+app.include_router(brain_router, dependencies=[Depends(require_gateway_auth)])
+app.include_router(provider_router, dependencies=[Depends(require_gateway_auth)])
+app.include_router(workspace_router, dependencies=[Depends(require_gateway_auth)])
+app.include_router(integration_router, dependencies=[Depends(require_gateway_auth)])
+app.include_router(session_router, dependencies=[Depends(require_gateway_auth)])
+app.include_router(telemetry_router, dependencies=[Depends(require_gateway_auth)])
+app.include_router(websocket_router, dependencies=[Depends(require_gateway_auth)])
 
 def _assert_port_free(port: int):
     """Startup guard: checks if port is free before starting."""
@@ -218,21 +230,22 @@ def _assert_port_free(port: int):
         except Exception:
             pass
         logger.error(
-            f"[Anara] PORT {port} MASIH DIPAKAI proses lain (PID {owner_pid})! "
-            f"Matikan dulu dengan: Stop-Process -Id {owner_pid} -Force"
+            f"[Anara] PORT {port} is still in use by another process (PID {owner_pid})! "
+            f"Stop it first with: Stop-Process -Id {owner_pid} -Force"
         )
         raise SystemExit(1)
 
 if __name__ == "__main__":
     _assert_port_free(8000)
+    dev_reload = os.getenv("ANARA_RELOAD", "false").lower() in ("true", "1", "yes")
     try:
         uvicorn.run(
             "main:app",
             host="0.0.0.0",
             port=8000,
             log_level="info",
-            reload=True
+            reload=dev_reload
         )
     except (KeyboardInterrupt, SystemExit, asyncio.CancelledError):
-        logger.info("[Anara] Server backend telah dimatikan dengan aman.")
+        logger.info("[Anara] Backend server shut down safely.")
         sys.exit(0)

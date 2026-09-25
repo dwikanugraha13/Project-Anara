@@ -61,7 +61,7 @@ def ensure_cloudflared_installed(progress_cb: Optional[Any] = None) -> Path:
     bin_path = get_bin_dir() / ("cloudflared.exe" if sys.platform == "win32" else "cloudflared")
     logger.info(f"[GatewayManager] Downloading portable cloudflared to {bin_path}...")
     if progress_cb:
-        progress_cb("Mengunduh cloudflared portable dari GitHub...")
+        progress_cb("Downloading cloudflared portable from GitHub...")
 
     headers = {"User-Agent": "Project-Anara-Gateway/3.0"}
     req = urllib.request.Request(CLOUDFLARE_WINDOWS_URL, headers=headers)
@@ -212,7 +212,7 @@ async def start_quick_tunnel(port: int = 3000, timeout_seconds: int = 25) -> Dic
         stop_tunnel()
         return {
             "status": "error",
-            "message": "Gagal mendapatkan URL Cloudflare Tunnel dalam batas waktu. Periksa koneksi internet.",
+            "message": "Failed to acquire Cloudflare Tunnel URL within timeout. Check internet connection.",
         }
 
     meta = {

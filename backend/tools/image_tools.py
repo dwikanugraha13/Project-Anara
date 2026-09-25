@@ -34,7 +34,7 @@ async def _tool_image_generate(
     """
     clean_prompt = (prompt or "").strip()
     if not clean_prompt:
-        return {"status": "error", "message": "Prompt pembuatan gambar tidak boleh kosong."}
+        return {"status": "error", "message": "Image generation prompt cannot be empty."}
 
     full_prompt = clean_prompt
     if style:
@@ -42,7 +42,7 @@ async def _tool_image_generate(
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "image_generate",
-        "action_title": "Membuat Gambar Digital",
+        "action_title": "Generating Image",
         "detail": f"Prompt: '{clean_prompt[:60]}...'",
         "icon": "image"
     })

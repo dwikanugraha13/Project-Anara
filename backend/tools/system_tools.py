@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import subprocess
+import tempfile
 from typing import Any, Dict, Optional
 
 from .events import _emit_agent_event
@@ -18,7 +19,7 @@ async def _tool_execute_cli_command(command: str, workdir: Optional[str] = None)
     """
     cmd = (command or "").strip()
     if not cmd:
-        return {"status": "error", "message": "Perintah terminal kosong"}
+        return {"status": "error", "message": "Command cannot be empty."}
 
     # Dynamic pre-flight validation via Sandbox Security Engine (Single Source of Truth)
     from core.sandbox import check_command_safety
@@ -27,7 +28,7 @@ async def _tool_execute_cli_command(command: str, workdir: Optional[str] = None)
         logger.warning(f"[High-Risk Guard] Blocked potentially destructive command: {cmd}")
         return {
             "status": "error",
-            "message": denial_reason or f"DITOLAK SISTEM KEAMANAN ANARA: Perintah '{cmd}' terdeteksi berisiko tinggi."
+            "message": denial_reason or f"BLOCKED BY SECURITY POLICY: Command '{cmd}' flagged as high risk."
         }
 
     # Workspace Sentinel Blast-Radius Guard (Hermes Repo-Safety)
@@ -37,7 +38,7 @@ async def _tool_execute_cli_command(command: str, workdir: Optional[str] = None)
         logger.warning(f"[WorkspaceSentinel] Blocked high blast-radius command: {cmd}")
         return {
             "status": "error",
-            "message": sentinel_msg or f"DITOLAK WORKSPACE SENTINEL: Perintah '{cmd}' memiliki blast-radius destruktif tinggi."
+            "message": sentinel_msg or f"BLOCKED BY WORKSPACE SENTINEL: Command '{cmd}' flagged for high blast radius."
         }
 
     from core import anara_agent
@@ -48,7 +49,7 @@ async def _tool_execute_cli_command(command: str, workdir: Optional[str] = None)
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "execute_cli_command",
-        "action_title": "Eksekusi Terminal",
+        "action_title": "Terminal Execution",
         "detail": f"CMD: {cmd[:50]}",
         "icon": "terminal"
     })
@@ -65,11 +66,11 @@ async def _tool_execute_cli_command(command: str, workdir: Optional[str] = None)
         return_code = sandbox_res.get("exit_code", 0)
         is_ok = sandbox_res.get("status") == "success"
 
-        status_label = "Berhasil" if is_ok else f"Gagal (Code {return_code})"
+        status_label = "Success" if is_ok else f"Failed (exit code {return_code})"
         _emit_agent_event("agent_action_complete", {
             "tool_name": "execute_cli_command",
             "action_title": f"Terminal: {status_label}",
-            "summary": f"Selesai (exit code {return_code}).",
+            "summary": f"Finished (exit code {return_code}).",
             "raw_result": combined[:800],
             "icon": "terminal"
         })
@@ -102,7 +103,7 @@ async def _tool_manage_memory_and_todos(action: str, title: str, content: Option
     })
 
     try:
-        if act in ["add", "create", "catat", "tambah"]:
+        if act in ["add", "create", "save"]:
             note_id = memory_engine.create_note_or_todo(title=t_clean, content=c_clean, category=category)
             res_payload = {
                 "status": "success",
@@ -112,7 +113,7 @@ async def _tool_manage_memory_and_todos(action: str, title: str, content: Option
                 "category": category,
                 "message": f"Recorded '{t_clean}' to {category} list."
             }
-        elif act in ["complete", "selesai", "toggle"]:
+        elif act in ["complete", "toggle", "done"]:
             all_notes = memory_engine.get_notes_and_todos()
             target_id = None
             for n in all_notes:
@@ -184,7 +185,7 @@ async def _tool_anara_memory(
         _emit_agent_event("agent_action_complete", {
             "tool_name": "memory",
             "action_title": f"Anara Memory {res.get('status', 'complete').title()}",
-            "summary": res.get("message", "Operasi memori selesai."),
+            "summary": res.get("message", "Memory operation completed."),
             "icon": "🧠"
         })
         return res
@@ -342,7 +343,7 @@ async def _tool_system_control(
     target_url = url or (tgt if (tgt.startswith("http://") or tgt.startswith("https://")) else None)
 
     try:
-        if act in ["open", "buka", "launch", "jalankan", "start", "putar", "setel"]:
+        if act in ["open", "launch", "start", "run"]:
             # Case A: URL opening (Hermes Parity: webbrowser.open)
             if target_url:
                 webbrowser.open(target_url)
@@ -428,7 +429,7 @@ async def _tool_project_hud(visual_type: str, title: str, summary: str, specs_js
         "badge": "Anara Agent Proactive"
     })
 
-    return {"status": "success", "message": f"Holographic HUD '{t_clean}' telah diproyeksikan ke layar."}
+    return {"status": "success", "message": f"Holographic HUD '{t_clean}' has been projected to screen."}
 
 
 async def _tool_delegate_subagent(
@@ -509,25 +510,25 @@ async def _tool_delegate_subagent(
 
 
 async def _tool_trigger_avatar_animation(animation_name: str, emotion: Optional[str] = None) -> Dict[str, Any]:
-    """Mengendalikan gerakan fisik, gestur tubuh, atau tarian avatar 3D Anara di layar."""
+    """Controls physical gestures, body movements, or 3D avatar dance animations on screen."""
     anim = (animation_name or "dance").strip().lower()
     emo = (emotion or "happy").strip().lower()
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "trigger_avatar_animation",
         "action_title": f"Avatar 3D: {anim.title()}",
-        "detail": f"Memainkan animasi '{anim}' (emosi: {emo})",
-        "icon": "dance" if anim in ["dance", "rumba", "joget", "dansa"] else "sparkles"
+        "detail": f"Playing animation '{anim}' (emotion: {emo})",
+        "icon": "dance" if anim in ["dance", "rumba"] else "sparkles"
     })
 
-    if anim in ["dance", "rumba", "joget", "dansa"]:
+    if anim in ["dance", "rumba"]:
         _emit_agent_event("emotion_update", {
             "type": "emotion_update",
             "emotion": "dance",
             "gesture": "joy",
             "intensity": 1.0,
         })
-        msg = "Avatar 3D Anara mulai menari dengan irama musik Latin Rumba."
+        msg = "Avatar 3D dance animation triggered."
     else:
         _emit_agent_event("emotion_update", {
             "type": "emotion_update",
@@ -535,7 +536,7 @@ async def _tool_trigger_avatar_animation(animation_name: str, emotion: Optional[
             "gesture": anim,
             "intensity": 0.8,
         })
-        msg = f"Avatar 3D Anara menampilkan ekspresi '{anim}' ({emo})."
+        msg = f"Avatar 3D expression '{anim}' ({emo}) triggered."
 
     _emit_agent_event("agent_action_complete", {
         "tool_name": "trigger_avatar_animation",
@@ -574,16 +575,16 @@ async def _tool_learn_and_save_skill(
     steps = [str(s).strip() for s in (procedure_steps or []) if str(s).strip()]
 
     if not clean_name:
-        return {"status": "error", "message": "Nama skill tidak boleh kosong."}
+        return {"status": "error", "message": "Skill name cannot be empty."}
     if not clean_desc:
-        return {"status": "error", "message": "Deskripsi skill tidak boleh kosong."}
+        return {"status": "error", "message": "Skill description cannot be empty."}
     if not steps:
-        steps = [f"Prosedur standar untuk {clean_name}"]
+        steps = [f"Standard procedure for {clean_name}"]
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "learn_and_save_skill",
-        "action_title": f"Mempelajari Skill: {clean_name}",
-        "detail": f"Kategori: {clean_cat}",
+        "action_title": f"Learning Skill: {clean_name}",
+        "detail": f"Category: {clean_cat}",
         "icon": "brain"
     })
 
@@ -681,9 +682,9 @@ async def _tool_skill_view(name: str, file_path: Optional[str] = None) -> Dict[s
 
     _emit_agent_event("agent_action_complete", {
         "tool_name": "skill_view",
-        "action_title": f"Memuat Keahlian: {skill['name']}",
-        "detail": f"Kategori: {skill['category']}",
-        "summary": f"Petunjuk teknis dan prosedur skill '{skill['name']}' berhasil dimuat ke memori aktif.",
+        "action_title": f"Load Skill: {skill['name']}",
+        "detail": f"Category: {skill['category']}",
+        "summary": f"Technical instructions for skill '{skill['name']}' loaded to active memory.",
         "icon": "book-open"
     })
 

@@ -1,0 +1,1 @@
+[CONTEXT BUDGET LIMIT]: You have consumed most of the available context window. Do NOT call any more tools. Deliver your complete, helpful final response to the user NOW, summarizing all work done and results observed.

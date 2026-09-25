@@ -18,7 +18,7 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Anara - AI 3D Suara & Teks",
   description:
-    "Anara - AI interaktif dengan avatar 3D real-time, sinkronisasi gerak bibir, dan percakapan suara alami.",
+    "Anara - Interactive AI with real-time 3D avatar, lip sync, and natural voice conversation.",
   keywords: ["Anara", "asisten suara", "avatar 3D", "lip sync", "Gemini Live"],
   authors: [{ name: "Anara Project" }],
   other: {

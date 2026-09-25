@@ -1,0 +1,12 @@
+# ── Failure Tolerant & Idempotent Tools (Hermes Parity) ──
+# Tools whose "failure" is normal exploratory observation (empty search, missing file, 0 matches)
+# These never trip execution circuit breakers because not-found is useful signal for the agent.
+
+failure_tolerant_tools:
+  - "read_local_file"
+  - "grep_search_code"
+  - "glob_find_files"
+  - "list_directory"
+  - "scan_workspace_folder"
+  - "web_search"
+  - "fetch_webpage"

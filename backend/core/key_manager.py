@@ -81,12 +81,12 @@ class GeminiKeyManager:
 
         self._keys = parsed
         if not self._keys:
-            logger.info("[KeyManager] Google AI Studio belum memiliki akun aktif. Tambahkan akun via Anara Brain Console (tab Providers).")
+            logger.info("[KeyManager] Google AI Studio has no active account. Add an account via Anara Brain Console (Providers tab).")
         else:
             n_legacy = sum(1 for k in self._keys if k.startswith("AIzaSy"))
             n_new = sum(1 for k in self._keys if k.startswith("AQ."))
             n_other = len(self._keys) - n_legacy - n_new
-            fmt_info = f"(AIzaSy: {n_legacy}, AQ.: {n_new}" + (f", lainnya: {n_other})" if n_other else ")")
+            fmt_info = f"(AIzaSy: {n_legacy}, AQ.: {n_new}" + (f", others: {n_other})" if n_other else ")")
             logger.info(f"[KeyManager] Loaded {len(self._keys)} Google AI Studio API key(s) into active pool {fmt_info}.")
 
     @property
@@ -162,7 +162,7 @@ class GeminiKeyManager:
         a strict per-key timeout (15s) to ensure fast failover and never hang.
         """
         if not self._keys:
-            raise ValueError("API Key Google AI Studio belum diatur. Tambahkan akun di tab Providers pada Anara Brain Console.")
+            raise ValueError("Google AI Studio API Key not configured. Add an account in the Providers tab of Anara Brain Console.")
 
         # Try up to ALL keys in pool so no key is left unattempted
         attempts = max_attempts or len(self._keys)

@@ -75,7 +75,7 @@ export default function HudPlanCard({
       <div className="p-3.5 sm:p-4 space-y-3.5 font-sans">
         <div className="space-y-1.5">
           <h4 className="text-sm sm:text-base font-bold text-white tracking-wide leading-snug">
-            {planData.title || "Rencana Pengerjaan Proyek"}
+            {planData.title || "Project Execution Plan"}
           </h4>
           {planData.summary && (
             <p className="text-xs text-slate-300 leading-relaxed">
@@ -99,7 +99,7 @@ export default function HudPlanCard({
         {/* Steps Checklist */}
         <div className="space-y-1.5">
           <p className={`text-[10px] font-mono font-bold uppercase tracking-wider ${isApproved ? "text-emerald-400/80" : "text-cyan-400/80"}`}>
-            Tahapan Eksekusi:
+            Execution Stages:
           </p>
           <div className="space-y-1.5 max-h-[220px] overflow-y-auto custom-scrollbar pr-1 font-mono">
             {steps.map((st: any, idx: number) => {
@@ -145,7 +145,7 @@ export default function HudPlanCard({
         {files.length > 0 && (
           <div className="space-y-1 pt-1.5 border-t border-white/10 font-mono">
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Berkas Terkait:
+              Related Files:
             </p>
             <div className="flex flex-wrap gap-1.5">
               {files.map((fp, fIdx) => (
@@ -167,7 +167,7 @@ export default function HudPlanCard({
           <div className="pt-2.5 border-t border-white/10 flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 text-[10.5px] text-slate-400 font-mono">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-              <span>Menunggu persetujuan user</span>
+              <span>Awaiting user approval</span>
             </div>
             <div className="flex items-center gap-2">
               {onRejectPlan && (
@@ -185,7 +185,7 @@ export default function HudPlanCard({
                   onClick={() => onApprovePlan(planData)}
                   className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/30 to-amber-600/40 hover:from-amber-500/50 hover:to-amber-600/60 text-amber-100 hover:text-white border border-amber-400/60 text-xs font-bold font-mono cursor-pointer transition-all shadow-[0_0_12px_rgba(251,191,36,0.25)] active:scale-95 flex items-center gap-1.5"
                 >
-                  <span>⚡ Setujui &amp; Eksekusi di Build Mode</span>
+                  <span>⚡ Approve &amp; Execute in Build Mode</span>
                 </button>
               )}
             </div>
@@ -195,14 +195,14 @@ export default function HudPlanCard({
         {isApproved && !isCompleted && (
           <div className="pt-2.5 border-t border-emerald-500/20 flex items-center gap-2 text-[10.5px] font-mono text-emerald-300">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Rencana disimpan ke memori. Agent sedang mengeksekusi...</span>
+            <span>Plan saved to memory. Agent is executing...</span>
           </div>
         )}
 
         {isCompleted && (
           <div className="pt-2.5 border-t border-emerald-500/20 flex items-center gap-2 text-[10.5px] font-mono text-emerald-300">
             <span>✅</span>
-            <span>Arsitektur proyek berhasil dibangun.</span>
+            <span>Project architecture successfully built.</span>
           </div>
         )}
       </div>

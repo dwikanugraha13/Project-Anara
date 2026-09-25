@@ -566,7 +566,7 @@ export default function HomePageClient({
     onInterrupted: handleInterrupted,
     onTurnComplete: handleTurnComplete,
     onError: (msg) => {
-      if (msg === "Sesi percakapan tidak ditemukan.") {
+      if (msg === "Conversation session not found.") {
         localStorage.removeItem("anara_active_session_id");
         setActiveSessionId(null);
         setTranscript([]);
@@ -882,10 +882,10 @@ export default function HomePageClient({
       const techStr = (plan.tech_stack || plan.techStack || []).join(", ");
 
       const richPrompt = [
-        `Saya setujui rencana "${plan.title}". Eksekusi sekarang di Build Mode!`,
+        `I approve the plan "${plan.title}". Execute now in Build Mode!`,
         techStr ? `Tech Stack: ${techStr}` : "",
         stepsList ? `Tahapan:\n${stepsList}` : "",
-        "Instruksi Eksekusi: Buat seluruh berkas kode yang diperlukan menggunakan tool write_local_file, lalu buatkan arsip ZIP menggunakan tool create_zip_archive agar siap diunduh.",
+        "Execution Instructions: Create all required code files using the write_local_file tool, then create a ZIP archive using the create_zip_archive tool for download.",
       ]
         .filter(Boolean)
         .join("\n\n");

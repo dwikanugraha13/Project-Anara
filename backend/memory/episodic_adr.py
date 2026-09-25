@@ -223,15 +223,9 @@ class EpisodicADRManager:
         """
         from providers import call_universal_chat_model
         from core.capabilities import get_fast_auxiliary_model
+        from core.prompt_loader import load_prompt
 
-        sys_inst = (
-            "You are an Architecture Decision Record (ADR) synthesizer for an AI software engineering agent. "
-            "A technical task has been implemented and successfully verified with exit_code=0.\n"
-            "Summarize the technical decision concisely into a valid JSON object with exactly two keys:\n"
-            "- \"architecture_decision\": 1 clear sentence describing what architectural pattern/change was applied.\n"
-            "- \"rationale\": 1 clear sentence explaining why this change was made and how it solved the issue.\n"
-            "Respond ONLY with raw JSON: {\"architecture_decision\": \"...\", \"rationale\": \"...\"}"
-        )
+        sys_inst = load_prompt("classifiers/adr_synthesizer").strip()
         user_p = (
             f"Task: \"{task_prompt}\"\n"
             f"Modified files: {json.dumps(modified_files)}\n"
@@ -263,7 +257,7 @@ class EpisodicADRManager:
                     return self.record_project_adr(
                         milestone_task=task_prompt,
                         architecture_decision=decision,
-                        rationale=rationale or "Verifikasi fisik lulus 100%.",
+                        rationale=rationale or "Physical verification passed 100%.",
                         affected_files=modified_files,
                         session_id=session_id,
                         test_exit_code=0,
@@ -276,7 +270,7 @@ class EpisodicADRManager:
         return self.record_project_adr(
             milestone_task=task_prompt,
             architecture_decision=f"Penyelesaian {task_prompt[:60]} via {aff_str}",
-            rationale="Diverifikasi valid dan lulus melalui pengujian terminal fisik.",
+            rationale="Verified valid and passed through physical terminal testing.",
             affected_files=modified_files,
             session_id=session_id,
             test_exit_code=0,

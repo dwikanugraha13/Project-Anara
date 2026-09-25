@@ -106,7 +106,7 @@ async def wa_save_config_endpoint(req: WhatsAppConfigRequest):
 
 class WhatsAppWebhookPayload(BaseModel):
     id: Optional[str] = None
-    sender: Optional[str] = "Pengguna WhatsApp"
+    sender: Optional[str] = "WhatsApp User"
     phone: str
     jid: Optional[str] = None
     isGroup: Optional[bool] = False
@@ -137,7 +137,7 @@ async def wa_webhook_endpoint(payload: WhatsAppWebhookPayload):
             from cognition.audio import transcribe_audio_file
             transcript = await transcribe_audio_file(payload.localPath)
             if transcript:
-                p_dict["text"] = f"{transcript}\n\n[Transkripsi Pesan Suara WhatsApp]"
+                p_dict["text"] = f"{transcript}\n\n[Voice Note Transcription]"
         except Exception as stt_err:
             logger.debug(f"[WAWebhook] Audio STT skipped: {stt_err}")
 
@@ -155,7 +155,7 @@ async def wa_webhook_endpoint(payload: WhatsAppWebhookPayload):
             return {"status": "skipped", "reason": "not_in_whitelist"}
 
     # Check for /stop command immediately before starting turn
-    if clean_text.strip().lower().startswith(("/stop", "/cancel", "/abort", "/batal")):
+    if clean_text.strip().lower().startswith(("/stop", "/cancel", "/abort")):
         from core.session_manager import session_state_manager
         interrupt_info = await session_state_manager.request_hard_interrupt(
             channel="whatsapp",
@@ -164,14 +164,14 @@ async def wa_webhook_endpoint(payload: WhatsAppWebhookPayload):
         )
         details = []
         if interrupt_info.get("task_cancelled"):
-            details.append("eksekusi tugas dibatalkan")
+            details.append("task cancelled")
         if interrupt_info.get("processes_killed", 0) > 0:
-            details.append(f"{interrupt_info['processes_killed']} subproses OS dihentikan")
+            details.append(f"{interrupt_info['processes_killed']} sub-processes terminated")
         if interrupt_info.get("pending_cleared"):
-            details.append("rencana tertahan dibersihkan")
+            details.append("pending plans cleared")
         detail_str = f" ({', '.join(details)})" if details else ""
 
-        cancel_reply = f"🛑 *Tugas Anara telah dihentikan via /stop.*{detail_str}"
+        cancel_reply = f"🛑 *Agent task halted via /stop.*{detail_str}"
         await send_whatsapp_message(payload.phone, cancel_reply)
         return {"status": "cancelled", "interrupt_info": interrupt_info}
 
@@ -180,7 +180,7 @@ async def wa_webhook_endpoint(payload: WhatsAppWebhookPayload):
         channel="whatsapp",
         channel_id=payload.phone,
         user_id=payload.phone,
-        sender_name=payload.sender or "Pengguna WhatsApp",
+        sender_name=payload.sender or "WhatsApp User",
         trigger_type="interactive"
     )
 

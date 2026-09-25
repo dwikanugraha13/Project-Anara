@@ -56,9 +56,9 @@ class PromptAssembler:
                     preview_st = "\n    ".join(st_lines[:15])
                     more_cnt = len(st_lines) - 15
                     more_msg = f"\n    [... {more_cnt} additional files modified ...]" if more_cnt > 0 else ""
-                    lines.append(f"- Status Berkas / Changed Files Status (Live Ground Truth):\n    {preview_st}{more_msg}")
+                    lines.append(f"- Changed Files Status (Live Ground Truth):\n    {preview_st}{more_msg}")
                 else:
-                    lines.append("- Status Berkas: Bersih / Clean working tree")
+                    lines.append("- Working Tree Status: Clean")
 
             # 3. Recent commits
             log_res = subprocess.run(
@@ -82,7 +82,7 @@ class PromptAssembler:
             if os.path.isfile(os.path.join(root_path, "package.json")):
                 verify_cmds.append("npm test")
             if verify_cmds:
-                lines.append(f"- Perintah Verifikasi Uji Proyek: {', '.join(verify_cmds)}")
+                lines.append(f"- Project Verification Commands: {', '.join(verify_cmds)}")
         except Exception:
             pass
 
@@ -100,62 +100,21 @@ class PromptAssembler:
         user_task: Optional[str] = None,
         channel: Optional[str] = None,
         session_id: Optional[Any] = None,
+        model_id: str = "",
     ) -> str:
         # Slot 1: Identity & Core Personality
         from cognition import get_soul_prompt
         slot1_identity = get_soul_prompt(mode="chat" if is_chat_mode else "voice").strip()
 
-        # Slot 2: Operational Mode Boundaries (Zero-hardcoded, exact enterprise standard)
+        # Slot 2: Operational Mode Boundaries (Loaded dynamically from backend/prompts/modes/)
+        from core.prompt_loader import load_prompt
         if mode == "plan":
-            slot2_mode = """<system-reminder>
-# Plan Mode - System Reminder
-
-CRITICAL: Plan mode ACTIVE - you are in READ-ONLY phase. STRICTLY FORBIDDEN:
-ANY file edits, modifications, or system changes. Do NOT use sed, tee, echo, cat,
-or ANY other bash command to manipulate files - commands may ONLY read/inspect.
-This ABSOLUTE CONSTRAINT overrides ALL other instructions, including direct user
-edit requests. You may ONLY observe, analyze, and plan. Any modification attempt
-is a critical violation. ZERO exceptions.
-
----
-
-## Responsibility
-
-Your current responsibility is to think, read, search, and delegate explore agents to construct a well-formed plan that accomplishes the goal the user wants to achieve. Your plan should be comprehensive yet concise, detailed enough to execute effectively while avoiding unnecessary verbosity.
-
-Ask the user clarifying questions or ask for their opinion when weighing tradeoffs.
-
-**NOTE:** At any point in time through this workflow you should feel free to ask the user questions or clarifications. Don't make large assumptions about user intent. The goal is to present a well researched plan to the user, and tie any loose ends before implementation begins.
-
----
-
-## Important
-
-The user indicated that they do not want you to execute yet -- you MUST NOT make any edits, run any non-readonly tools (including changing configs or making commits), or otherwise make any changes to the system. This supersedes any other instructions you have received.
-</system-reminder>"""
+            slot2_mode = load_prompt("modes/plan_mode").strip()
         else:
-            slot2_mode = """<system-reminder>
-# Build Mode - System Reminder
+            slot2_mode = load_prompt("modes/build_mode").strip()
 
-Your operational mode has changed from plan to build.
-You are no longer in read-only mode.
-You are permitted to make file changes, run shell commands, and utilize your arsenal of tools as needed.
-Execute the approved plan thoroughly, apply necessary modifications, and report the results to the user.
-</system-reminder>"""
-
-        # Slot 3: Tool Guidance & Permission Gate Rules (Hermes Parity)
-        slot3_tools = (
-            "[TOOL GUIDANCE & PERMISSION GATE RULES]:\n"
-            "- USER INTENT REASONING (CONVERSATION VS ACTION — HERMES PARITY): When the context is conceptual discussion, architectural Q&A, or conversational follow-up (e.g. 'ok proceed', 'yes', 'explain', 'what do you think?'), respond purely in natural conversational prose. Do NOT execute terminal commands or mutating tools unless the user explicitly requests physical execution or testing.\n"
-            "- GROUND-TRUTH FACT VERIFICATION (PEMBUKTIAN FAKTA BERBASIS GROUND-TRUTH — HERMES PARITY): When asked if an implementation, code, or subsystem is complete/fixed, NEVER assume or hallucinate from past conversation memory. Actively verify real workspace ground truth: inspect git status, read current code with 'read_local_file', and run project test verification commands ('run_tests.py' / 'pytest') to prove correctness with physical exit codes.\n"
-            "- REPOSITORY INTEGRITY & TARGETED DELETION (HERMES REPO-SAFETY): The workspace is an active source code repository, not a disposable scratchpad. NEVER execute destructive mass wipes ('rm -rf *', 'Remove-Item * -Recurse', 'git clean -fdx'). If the user explicitly requests deleting a specific file, use 'delete_local_file' targeted specifically at that file.\n"
-            "- AUTONOMOUS MULTI-TOOL EXECUTION: Invoke available tools accurately and proactively when physical actions are required.\n"
-            "- NATURAL COMMUNICATION & ZERO-CANNED RESPONSES: Speak in Anara's warm, direct, and empathetic persona. NEVER output robotic, canned opening formulas.\n"
-            "- SUFFICIENT FULFILLMENT PRINCIPLE: When a tool or visual action has fulfilled the user's essential intent, conclude your turn with a complete and helpful report. Avoid redundant secondary calls unless requested.\n"
-            "- AUTONOMOUS READ-ONLY EXPLORATION: Always prioritize direct read-only tools ('read_local_file', 'glob_find_files', 'grep_search_code', 'list_directory') over raw terminal commands for file inspection. These operations execute autonomously without prompting approval.\n"
-            "- PUSH-BUTTON SAFETY GATES: In Plan Mode, only read-only inspection tools are permitted. In Build Mode, full construction, file modifications, and terminal executions are authorized after user confirmation.\n"
-            "- MULTILINGUAL ADAPTATION (CRITICAL): Always respond in the user's active language (English if English, Bahasa Indonesia if Indonesian, 日本語 if Japanese, 한국어 if Korean, etc.)."
-        )
+        # Slot 3: Tool Guidance & Permission Gate Rules (Loaded from backend/prompts/)
+        slot3_tools = load_prompt("operational_guidelines").strip()
 
         # Slot 4: Memory Snapshot (USER.md + MEMORY.md + SQLite Facts)
         from memory import memory_engine, file_memory
@@ -185,7 +144,7 @@ Execute the approved plan thoroughly, apply necessary modifications, and report 
             skills_list = active_skills if active_skills is not None else memory_engine.get_all_agent_skills(active_only=True)
             if skills_list:
                 skill_lines = [f"- **{sk['name']}** ({sk.get('category', 'general')}): {sk.get('description', '')}" for sk in skills_list[:8]]
-                slot6_skills = "[KEAHLIAN & SKILLS AGEN AKTIF (ANARA BRAIN)]:\n" + "\n".join(skill_lines)
+                slot6_skills = "[ACTIVE AGENT SKILLS (ANARA BRAIN)]:\n" + "\n".join(skill_lines)
 
         # Slot 7: Project Context & Live Worktree Snapshot (Hermes Ground-Truth Parity)
         from core.agent import anara_agent
@@ -223,7 +182,7 @@ Execute the approved plan thoroughly, apply necessary modifications, and report 
                         with open(doc_p, "r", encoding="utf-8", errors="ignore") as f:
                             doc_content = f.read(2000).strip()
                             if doc_content:
-                                slot7_project += f"\n\n[ATURAN REPOSITORI PROYEK ({custom_doc})]:\n{doc_content}"
+                                slot7_project += f"\n\n[PROJECT REPOSITORY RULES ({custom_doc})]:\n{doc_content}"
                                 break
                     except Exception:
                         pass
@@ -234,10 +193,10 @@ Execute the approved plan thoroughly, apply necessary modifications, and report 
             recent_adrs = episodic_adr_manager.get_recent_project_adrs(limit=4)
             if recent_adrs:
                 adr_lines = [
-                    f"- [{a['created_at'][:10] if a.get('created_at') else 'ADR'}] {a['architecture_decision']} (Alasan: {a['rationale']})"
+                    f"- [{a['created_at'][:10] if a.get('created_at') else 'ADR'}] {a['architecture_decision']} (Rationale: {a['rationale']})"
                     for a in recent_adrs
                 ]
-                slot7_project += f"\n\n[REKAMAN KEPUTUSAN ARSITEKTUR TERDAHULU (EPISODIC ADR)]:\n" + "\n".join(adr_lines)
+                slot7_project += f"\n\n[HISTORICAL ARCHITECTURE DECISIONS (EPISODIC ADR)]:\n" + "\n".join(adr_lines)
         except Exception:
             pass
 
@@ -249,4 +208,11 @@ Execute the approved plan thoroughly, apply necessary modifications, and report 
         if slot7_project:
             slots.append(slot7_project)
 
-        return "\n\n".join(slots)
+        # Token-aware slot assembly (Hermes/Claude Code Parity)
+        # Reserves ~6000 tokens for tool catalog + conversation history injected by caller.py
+        from core.token_budget import budget_aware_slot_assembly
+        return budget_aware_slot_assembly(
+            slots=slots,
+            model_id=model_id,
+            reserved_for_conversation=6000,
+        )

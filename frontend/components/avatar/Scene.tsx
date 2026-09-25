@@ -45,10 +45,10 @@ class CanvasErrorBoundary extends Component<
               ⚡
             </div>
             <h3 className="text-sm font-bold text-white mb-1.5 font-mono">
-              Akselerasi 3D GPU Dinonaktifkan di Browser
+              3D GPU Acceleration Disabled in Browser
             </h3>
             <p className="text-xs text-slate-300 mb-4 leading-relaxed font-sans">
-              Chrome menonaktifkan WebGL sementara waktu (<code className="text-amber-300 font-mono text-[11px]">GL_VENDOR = Disabled</code>). Anda tetap bisa berinteraksi penuh via suara atau teks, atau restart Chrome untuk menyalakan kembali avatar 3D.
+              Chrome has temporarily disabled WebGL (<code className="text-amber-300 font-mono text-[11px]">GL_VENDOR = Disabled</code>). You can still interact fully via voice or text, or restart Chrome to re-enable the 3D avatar.
             </p>
             <div className="flex items-center justify-center gap-2 font-mono">
               <a

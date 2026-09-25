@@ -251,7 +251,7 @@ export default function BottomDock({
           <svg className="w-4 h-4 text-rose-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
-          <span suppressHydrationWarning>Akses mikrofon ditolak. Izinkan izin mikrofon di browser Anda.</span>
+          <span suppressHydrationWarning>Microphone access denied. Allow microphone permission in your browser.</span>
         </div>
       )}
 
@@ -291,7 +291,7 @@ export default function BottomDock({
               <svg className="w-5 h-5 text-cyan-300 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
               </svg>
-              <span>Lepaskan berkas di sini untuk melampirkan</span>
+              <span>Drop files here to attach</span>
             </div>
           )}
 
@@ -336,7 +336,7 @@ export default function BottomDock({
                     value={inputMessage}
                     onChange={(e) => setInputMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Tanyakan apa saja, / untuk perintah, @ untuk konteks..."
+                    placeholder="Ask anything, / for commands, @ for context..."
                     className={`w-full bg-transparent border-none py-1.5 px-1 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none font-sans resize-none custom-scrollbar leading-relaxed overflow-y-auto ${
                       isInputExpanded ? "flex-1 h-full max-h-none" : ""
                     }`}
@@ -374,7 +374,7 @@ export default function BottomDock({
                           setIsInputExpanded(false);
                         }}
                         className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-all text-xs cursor-pointer active:scale-95"
-                        title="Hapus pesan"
+                        title="Clear message"
                       >
                         ✕
                       </button>
@@ -400,7 +400,7 @@ export default function BottomDock({
                     ? "bg-white/15 border-white/30 text-white"
                     : "bg-white/[0.04] hover:bg-white/10 border-white/10 text-slate-300 hover:text-white hover:border-white/20"
                 }`}
-                title="Tambah lampiran / berkas / folder"
+                title="Add attachment / file / folder"
               >
                 <span className="text-sm font-light">＋</span>
               </button>
@@ -419,7 +419,7 @@ export default function BottomDock({
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                     <div>
-                      <p className="font-bold text-slate-200">Unggah Berkas</p>
+                      <p className="font-bold text-slate-200">Upload File</p>
                       <p className="text-[10px] text-slate-400 font-sans">PDF, Gambar, Teks, Code</p>
                     </div>
                   </button>
@@ -437,7 +437,7 @@ export default function BottomDock({
                     </svg>
                     <div>
                       <p className="font-bold text-slate-200">Import Folder Lokal</p>
-                      <p className="text-[10px] text-slate-400 font-sans">Pilih folder asli lewat dialog Windows</p>
+                      <p className="text-[10px] text-slate-400 font-sans">Select original folder via Windows dialog</p>
                     </div>
                   </button>
                 </div>
@@ -455,7 +455,7 @@ export default function BottomDock({
                       ? "bg-white/15 border-white/25 text-white"
                       : "bg-white/[0.04] hover:bg-white/10 border-white/10 text-slate-300 hover:text-white"
                   }`}
-                  title="Pilih Mode Interaksi: Voice atau Chat"
+                  title="Select Interaction Mode: Voice or Chat"
                 >
                   {interactionMode === "voice" ? (
                     <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -494,7 +494,7 @@ export default function BottomDock({
                       </div>
                       <div>
                         <p className="font-bold">Voice Mode</p>
-                        <p className="text-[10px] text-slate-400">Interaksi suara dua arah live & avatar 3D aktif.</p>
+                        <p className="text-[10px] text-slate-400">Live bidirectional voice interaction & 3D avatar active.</p>
                       </div>
                     </button>
 
@@ -534,7 +534,7 @@ export default function BottomDock({
                       ? "pill-plan-mode font-bold"
                       : "pill-build-mode font-bold"
                   }`}
-                  title="Pilih Mode Agen: Plan Mode atau Build Mode"
+                  title="Select Agent Mode: Plan Mode or Build Mode"
                 >
                   {agentMode === "plan" ? (
                     <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -573,7 +573,7 @@ export default function BottomDock({
                       </div>
                       <div>
                         <p className="font-bold">Plan Mode</p>
-                        <p className="text-[10px] text-slate-400">Riset &amp; susun rencana bertahap tanpa memodifikasi file.</p>
+                        <p className="text-[10px] text-slate-400">Research &amp; compose step-by-step plans without modifying files.</p>
                       </div>
                     </button>
 
@@ -594,7 +594,7 @@ export default function BottomDock({
                       </div>
                       <div>
                         <p className="font-bold">Build Mode</p>
-                        <p className="text-[10px] text-slate-400">Eksekusi otonom, tulis file, dan selesaikan tugas.</p>
+                        <p className="text-[10px] text-slate-400">Autonomous execution, write files, and complete tasks.</p>
                       </div>
                     </button>
                   </div>
@@ -610,7 +610,7 @@ export default function BottomDock({
                   <button
                     type="button"
                     onClick={(e) => toggleDropdown("model", e)}
-                    title="Pilih Model AI"
+                    title="Select AI Model"
                     className={`flex items-center gap-1.5 py-1 px-2.5 rounded-lg border text-[11px] font-medium font-mono transition-all cursor-pointer ${
                       isModelDropdownOpen
                         ? "bg-white/15 border-white/30 text-white"
@@ -663,12 +663,12 @@ export default function BottomDock({
                   }}
                   disabled={!isConnected}
                   className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-cyan-100 text-xs font-semibold shadow-[0_0_15px_rgba(34,211,238,0.2)] cursor-pointer active:scale-95 transition-all font-mono"
-                  title="Klik untuk memulai obrolan suara dua arah"
+                  title="Click to start bidirectional voice chat"
                 >
                   <svg className="w-3.5 h-3.5 text-cyan-300 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 02-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                   </svg>
-                  <span>Mulai Obrolan</span>
+                  <span>Start Chat</span>
                 </button>
               ) : (
                 <button
@@ -722,7 +722,7 @@ export default function BottomDock({
                       ? "bg-gradient-to-tr from-cyan-400 via-teal-500 to-indigo-500 text-white hover:scale-105 active:scale-95 shadow-[0_0_16px_rgba(34,211,238,0.45)] border border-cyan-300/60"
                       : "bg-white/[0.04] text-slate-600 border border-white/10 cursor-not-allowed opacity-50"
                   }`}
-                  title="Kirim pesan (Enter, Shift+Enter untuk baris baru)"
+                  title="Send message (Enter, Shift+Enter for new line)"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 10l7-7m0 0l7 7m-7-7v18" />

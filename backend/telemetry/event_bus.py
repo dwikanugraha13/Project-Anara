@@ -15,12 +15,12 @@ from typing import Any, Callable, Dict, List, Optional
 class EventType(str, Enum):
     SESSION_START = "session_start"
     REASONING_START = "reasoning_start"
-    REASONING_CHUNK = "reasoning_chunk"      # Streaming token pemikiran (thought)
-    TOOL_START = "tool_start"                # Mulai eksekusi alat
-    TOOL_PROGRESS = "tool_progress"          # Log streaming proses panjang
-    TOOL_COMPLETED = "tool_completed"        # Hasil eksekusi alat + latency
-    TEXT_CHUNK = "text_chunk"                # Streaming jawaban teks akhir
-    TOKEN_TELEMETRY = "token_telemetry"      # Laporan penggunaan token & biaya
+    REASONING_CHUNK = "reasoning_chunk"      # Streaming thought tokens
+    TOOL_START = "tool_start"                # Tool execution start
+    TOOL_PROGRESS = "tool_progress"          # Long process streaming log
+    TOOL_COMPLETED = "tool_completed"        # Tool execution result + latency
+    TEXT_CHUNK = "text_chunk"                # Final text answer streaming
+    TOKEN_TELEMETRY = "token_telemetry"      # Token usage & cost report
     ERROR = "error"
     SESSION_FINISH = "session_finish"
 

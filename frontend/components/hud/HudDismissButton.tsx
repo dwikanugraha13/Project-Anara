@@ -7,8 +7,8 @@ export function HudDismissButton({ onDismiss }: { onDismiss?: () => void }) {
   return (
     <button
       type="button"
-      aria-label="Tutup proyeksi HUD"
-      title="Tutup (Esc)"
+      aria-label="Close HUD projection"
+      title="Close (Esc)"
       onClick={(e) => {
         e.stopPropagation();
         onDismiss();

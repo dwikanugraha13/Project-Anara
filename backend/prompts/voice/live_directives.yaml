@@ -1,0 +1,20 @@
+# ── Live Voice & Media Runtime Directives (Hermes Parity) ──
+# System notifications and context directives injected into Gemini Live voice sessions.
+
+action_approved: "[SYSTEM NOTIFICATION]: The user approved the action '{target_desc}'. Acknowledge the approval concisely in 1 sentence matching the user's active language, then execute."
+
+music_playing: "[SYSTEM NOTIFICATION]: Music track '{title}' is now playing. Acknowledge briefly to the user in their active language."
+
+animations_context: "[SYSTEM CONTEXT: 3D avatar animations in database: {summary}. Describe these visual gesture capabilities to the user matching their active language.]"
+
+memory_deleted: "[SYSTEM CONTEXT: Memory note '{key}' for {speaker_name} has been deleted. Notify the user warmly in their active language.]"
+
+hud_projection_with_text: "[SYSTEM NOTIFICATION]: A visual projection has been presented on HUD. Relate this concisely in user's active language: {r_text}"
+
+hud_projection_default: "[SYSTEM NOTIFICATION]: A visual projection has been presented on HUD."
+
+playlist_not_found: "[SYSTEM NOTIFICATION]: No tracks were found for playlist query '{query}'. Inform the user in their active language."
+
+playlist_ready: "[SYSTEM NOTIFICATION]: Playlist '{name}' with {count} tracks is ready and playing. Inform the user in their active language."
+
+no_media_playing: "[SYSTEM NOTIFICATION]: No media track is currently playing to add to a playlist. Inform the user in their active language."

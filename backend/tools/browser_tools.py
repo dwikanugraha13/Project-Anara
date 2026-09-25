@@ -53,7 +53,7 @@ def _find_brave_binary() -> Optional[str]:
 async def _ensure_browser_session(headed: bool = False, use_brave: bool = False) -> Page:
     """Ensures a live Playwright page is open. Re-creates session if switching between headed and headless."""
     if not PLAYWRIGHT_AVAILABLE:
-        raise RuntimeError("Modul 'playwright' belum terinstal. Jalankan 'pip install playwright' jika ingin menggunakan alat browser.")
+        raise RuntimeError("Module 'playwright' is not installed. Run 'pip install playwright' to use browser tools.")
 
     global _PLAYWRIGHT_INSTANCE, _ACTIVE_BROWSER, _ACTIVE_CONTEXT, _ACTIVE_PAGE, _CURRENT_HEADED_STATE
 
@@ -114,7 +114,7 @@ async def _tool_browser_navigate(url: str, headed: Optional[bool] = None, use_br
     """
     clean_url = (url or "").strip()
     if not clean_url:
-        return {"status": "error", "message": "URL tidak boleh kosong."}
+        return {"status": "error", "message": "URL cannot be empty."}
 
     if not clean_url.startswith("http://") and not clean_url.startswith("https://"):
         clean_url = f"https://{clean_url}"
@@ -127,7 +127,7 @@ async def _tool_browser_navigate(url: str, headed: Optional[bool] = None, use_br
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "browser_navigate",
-        "action_title": "Navigasi Browser",
+        "action_title": "Navigate Browser",
         "detail": clean_url,
         "icon": "globe"
     })

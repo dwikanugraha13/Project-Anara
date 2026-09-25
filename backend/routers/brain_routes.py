@@ -35,6 +35,14 @@ class SpeakerCreateRequest(BaseModel):
 class SpeakerCalibrateRequest(BaseModel):
     audio_base64: str
 
+class SkillToggleRequest(BaseModel):
+    enabled: Optional[bool] = None
+
+class SkillHubInstallRequest(BaseModel):
+    identifier: str
+    name: Optional[str] = None
+    category: Optional[str] = None
+
 class ActiveSpeakerRequest(BaseModel):
     name: str
 
@@ -321,3 +329,45 @@ async def delete_skill_v2_endpoint(slug: str):
     from core.skill_library import skill_library
     ok = skill_library.reject_skill(slug, delete_folder=True)
     return {"status": "success" if ok else "error"}
+
+@router.patch("/api/brain/skills/v2/{slug}/toggle")
+async def toggle_skill_v2_endpoint(slug: str, req: Optional[SkillToggleRequest] = None):
+    """Toggles active/disabled status of a folder-based skill."""
+    from core.skill_library import skill_library
+    enabled = req.enabled if req else None
+    updated = skill_library.toggle_skill(slug, enabled=enabled)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Skill '{slug}' not found.")
+    return {"status": "success", "skill": updated}
+
+@router.get("/api/brain/skills/hub/sources")
+async def get_skill_hub_sources_endpoint():
+    """Returns catalog sources available in the 100k+ Skills Hub."""
+    from core.skills_hub import get_available_sources
+    return get_available_sources()
+
+@router.get("/api/brain/skills/hub/search")
+async def search_skill_hub_endpoint(
+    q: str = "",
+    source: str = "all",
+    limit: int = 40,
+    offset: int = 0
+):
+    """Searches across the 100k+ Skills Hub catalog."""
+    from core.skills_hub import search_skills
+    return search_skills(query=q, source=source, limit=limit, offset=offset)
+
+@router.post("/api/brain/skills/hub/install")
+async def install_skill_hub_endpoint(req: SkillHubInstallRequest):
+    """Installs a skill on-demand from the Skills Hub into runtime skills."""
+    from core.skills_hub import install_skill_from_hub
+    try:
+        res = install_skill_from_hub(
+            identifier=req.identifier,
+            custom_name=req.name,
+            category=req.category
+        )
+        return {"status": "success", **res}
+    except Exception as e:
+        logger.error(f"[SkillsHub] Install error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -15,7 +15,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "clarifying_questions": {
         "id": "clarifying_questions",
         "title": "Clarifying Questions",
-        "description": "Kuesioner bertahap (Interactive Wizard Card) untuk memperjelas tujuan pengguna jika perintah ambigu.",
+        "description": "Interactive multi-step questionnaire cards (Wizard) for clarifying ambiguous user tasks.",
         "icon": "help-circle",
         "category": "intelligence",
         "default_enabled": True,
@@ -24,7 +24,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "web_search_scraping": {
         "id": "web_search_scraping",
         "title": "Web Search & Scraping",
-        "description": "Pencarian web real-time (DuckDuckGo/Brave) dan ekstraksi konten laman bersih dalam format Markdown.",
+        "description": "Real-time web search (DuckDuckGo/Brave) and clean Markdown content extraction.",
         "icon": "globe",
         "category": "exploration",
         "default_enabled": True,
@@ -33,7 +33,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "file_operations": {
         "id": "file_operations",
         "title": "File Operations",
-        "description": "Membaca, menulis, menyunting, mencari, dan menelusuri berkas maupun folder di dalam workspace proyek.",
+        "description": "Workspace file operations (read, write, edit, search, glob, scan).",
         "icon": "folder",
         "category": "coding",
         "default_enabled": True,
@@ -50,7 +50,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "terminal_processes": {
         "id": "terminal_processes",
         "title": "Terminal & Processes",
-        "description": "Eksekusi perintah terminal shell aman (PowerShell/Bash) serta pengelolaan daemon/proses background persisten.",
+        "description": "Sandboxed terminal command execution (PowerShell/Bash) and persistent background daemon management.",
         "icon": "terminal",
         "category": "system",
         "default_enabled": True,
@@ -62,7 +62,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "memory_hot": {
         "id": "memory_hot",
         "title": "Memory (Working RAM)",
-        "description": "Manajemen memori jangka pendek & menengah (MEMORY.md dan USER.md) dengan operasi add, replace, remove.",
+        "description": "Short and mid-term working memory management (MEMORY.md and USER.md) with add, replace, and remove operations.",
         "icon": "cpu",
         "category": "memory",
         "default_enabled": True,
@@ -71,7 +71,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "session_search": {
         "id": "session_search",
         "title": "Session Search",
-        "description": "Mencari seluruh riwayat percakapan dan sesi lampau di database SQLite (long-term conversational recall).",
+        "description": "Full-text search across past conversations and sessions stored in SQLite database.",
         "icon": "history",
         "category": "memory",
         "default_enabled": True,
@@ -80,7 +80,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "skills_engine": {
         "id": "skills_engine",
         "title": "Skills Engine",
-        "description": "Mempelajari, memeriksa, dan memuat prosedur teknis lengkap dari repositori 90+ keahlian (agentskills.io format).",
+        "description": "Learn, inspect, and load technical procedures from the skill repository (agentskills.io format).",
         "icon": "book-open",
         "category": "intelligence",
         "default_enabled": True,
@@ -92,7 +92,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "task_delegation": {
         "id": "task_delegation",
         "title": "Task Delegation",
-        "description": "Pendelegasian tugas eksplorasi atau riset mandiri ke sub-agent pekerja independen.",
+        "description": "Autonomous task delegation to independent worker subagents.",
         "icon": "users",
         "category": "system",
         "default_enabled": True,
@@ -101,7 +101,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "digital_artifacts": {
         "id": "digital_artifacts",
         "title": "Digital Artifacts & ZIP",
-        "description": "Membuat dokumen berkas (DOCX Word, PDF, CSV, Excel, TXT, MD) dan pembuatan/ekstraksi arsip ZIP.",
+        "description": "Generate downloadable documents (DOCX, PDF, CSV, Excel, TXT, MD) and manage ZIP archives.",
         "icon": "file-archive",
         "category": "coding",
         "default_enabled": True,
@@ -116,7 +116,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "messaging_telegram": {
         "id": "messaging_telegram",
         "title": "Messaging: Telegram",
-        "description": "Membaca dan mengirimkan pesan teks, perintah, atau update status melalui bot Telegram resmi.",
+        "description": "Read and send messages, notifications, and status updates via Telegram bot.",
         "icon": "send",
         "category": "communication",
         "default_enabled": True,
@@ -125,7 +125,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "messaging_whatsapp": {
         "id": "messaging_whatsapp",
         "title": "Messaging: WhatsApp",
-        "description": "Membaca dan mengirimkan pesan percakapan melalui WhatsApp Web Baileys Bridge lokal.",
+        "description": "Read and send messages via local WhatsApp Web Baileys bridge.",
         "icon": "message-circle",
         "category": "communication",
         "default_enabled": True,
@@ -134,7 +134,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "messaging_discord": {
         "id": "messaging_discord",
         "title": "Messaging: Discord",
-        "description": "Membaca dan mengirimkan pesan ke channel server Discord resmi.",
+        "description": "Read and send messages to Discord server channels.",
         "icon": "message-square",
         "category": "communication",
         "default_enabled": True,
@@ -143,7 +143,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "messaging_slack": {
         "id": "messaging_slack",
         "title": "Messaging: Slack",
-        "description": "Membaca dan mengirimkan pesan ke channel workspace Slack.",
+        "description": "Read and send messages to Slack workspace channels.",
         "icon": "hash",
         "category": "communication",
         "default_enabled": True,
@@ -152,7 +152,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "document_delivery": {
         "id": "document_delivery",
         "title": "Document Delivery",
-        "description": "Mengirimkan berkas dokumen digital (PDF, DOCX, ZIP, Code) langsung ke chat WhatsApp atau Telegram.",
+        "description": "Auto-dispatch digital documents (PDF, DOCX, ZIP, code) directly to WhatsApp or Telegram chats.",
         "icon": "share-2",
         "category": "communication",
         "default_enabled": True,
@@ -161,7 +161,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "google_workspace": {
         "id": "google_workspace",
         "title": "Google Workspace",
-        "description": "Membaca pesan email masuk Gmail dan memeriksa jadwal acara di Google Calendar.",
+        "description": "Read incoming Gmail messages and inspect Google Calendar schedules.",
         "icon": "mail",
         "category": "communication",
         "default_enabled": True,
@@ -170,7 +170,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "system_desktop": {
         "id": "system_desktop",
         "title": "System & Desktop",
-        "description": "Membuka aplikasi komputer lokal Windows (Spotify, VS Code, Browser, Notepad, Calculator).",
+        "description": "Launch and control desktop applications and system functions.",
         "icon": "monitor",
         "category": "system",
         "default_enabled": True,
@@ -179,7 +179,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "visual_hud": {
         "id": "visual_hud",
         "title": "Visual HUD Projection",
-        "description": "Memproyeksikan visualisasi interaktif, kartu pengetahuan, dan terminal kode ke layar HUD pengguna.",
+        "description": "Project interactive visualizations, knowledge schematic cards, and code terminals to user HUD.",
         "icon": "layout",
         "category": "multimedia",
         "default_enabled": True,
@@ -188,7 +188,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "avatar_3d": {
         "id": "avatar_3d",
         "title": "Avatar 3D & Gestures",
-        "description": "Menggerakkan ekspresi wajah, tarian (Rumba), salam, dan gestur avatar 3D Anara di layar.",
+        "description": "Drive 3D avatar animations, gestures, and expressions on screen.",
         "icon": "smile",
         "category": "multimedia",
         "default_enabled": True,
@@ -197,7 +197,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "custom_webhooks": {
         "id": "custom_webhooks",
         "title": "Custom Webhooks",
-        "description": "Mengirimkan payload HTTP request otomatis ke URL webhook luar (Discord, Zapier, n8n).",
+        "description": "Dispatch automated HTTP payloads to external webhooks (Discord, Zapier, n8n).",
         "icon": "webhook",
         "category": "system",
         "default_enabled": True,
@@ -206,7 +206,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "code_execution": {
         "id": "code_execution",
         "title": "Code Execution (REPL)",
-        "description": "Mengevaluasi cuplikan kode Python, Node.js, atau skrip secara terisolasi.",
+        "description": "Evaluate Python and Node.js code snippets in an isolated sandboxed REPL.",
         "icon": "play",
         "category": "coding",
         "default_enabled": True,
@@ -215,7 +215,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "browser_automation": {
         "id": "browser_automation",
         "title": "Browser Automation",
-        "description": "Otomasi navigasi web, pencarian/pemutaran video YouTube, pengambilan screenshot, scroll, dan interaksi browser via Playwright.",
+        "description": "Automate web navigation, interaction, clicks, typing, and screenshots via Playwright.",
         "icon": "compass",
         "category": "exploration",
         "default_enabled": True,
@@ -234,7 +234,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "spotify_music": {
         "id": "spotify_music",
         "title": "Spotify & Audio Player",
-        "description": "Pemutaran musik, pencarian lagu, dan kontrol playlist pemutar audio latar belakang Anara.",
+        "description": "Search and control Spotify audio and background playlist playback.",
         "icon": "music",
         "category": "multimedia",
         "default_enabled": True,
@@ -246,7 +246,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "home_assistant": {
         "id": "home_assistant",
         "title": "Home Assistant & IoT",
-        "description": "Kontrol perangkat pintar rumah tangga, lampu, dan sensor IoT melalui gateway Home Assistant.",
+        "description": "Smart home automation and IoT device control via Home Assistant.",
         "icon": "home",
         "category": "system",
         "default_enabled": True,
@@ -259,7 +259,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "image_generation": {
         "id": "image_generation",
         "title": "Image Generation",
-        "description": "Pembuatan gambar digital kreatif berbasis AI menggunakan Pollinations Flux dan DALL-E.",
+        "description": "Creative AI image generation via Pollinations Flux and DALL-E.",
         "icon": "image",
         "category": "multimedia",
         "default_enabled": True,
@@ -268,7 +268,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "video_generation": {
         "id": "video_generation",
         "title": "Video Generation",
-        "description": "Pembuatan video digital AI pendek berbasis teks atau gambar referensi menggunakan CogVideoX.",
+        "description": "AI video generation from descriptive prompts or reference images.",
         "icon": "video",
         "category": "multimedia",
         "default_enabled": True,
@@ -277,7 +277,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "voice_biometrics": {
         "id": "voice_biometrics",
         "title": "Voice Biometrics & Wake Word",
-        "description": "Pengenalan identitas pengguna berdasarkan pola sidik suara dan deteksi panggilan suara hands-free ('Hey Anara').",
+        "description": "Voiceprint biometrics identification and hands-free wake word detection.",
         "icon": "mic",
         "category": "intelligence",
         "default_enabled": True,
@@ -289,7 +289,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "cron_scheduler": {
         "id": "cron_scheduler",
         "title": "Cron Scheduler",
-        "description": "Penjadwalan tugas otonom berkala di latar belakang berdasarkan interval waktu atau cron.",
+        "description": "Schedule autonomous background tasks by time interval or cron expressions.",
         "icon": "clock",
         "category": "system",
         "default_enabled": True,
@@ -298,7 +298,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "kanban_management": {
         "id": "kanban_management",
         "title": "Kanban Multi-Agent Board",
-        "description": "Koordinasi papan tugas multi-agen (To Do, In Progress, Review, Blocked, Done).",
+        "description": "Multi-agent Kanban task board coordination (To Do, In Progress, Review, Blocked, Done).",
         "icon": "clipboard",
         "category": "system",
         "default_enabled": True,
@@ -312,7 +312,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "mcp_protocol": {
         "id": "mcp_protocol",
         "title": "Model Context Protocol (MCP)",
-        "description": "Integrasi dan manajemen koneksi server MCP eksternal (stdio dan HTTP/SSE).",
+        "description": "External Model Context Protocol (MCP) server connection management (stdio and HTTP/SSE).",
         "icon": "cpu",
         "category": "intelligence",
         "default_enabled": True,
@@ -321,11 +321,20 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "computer_use": {
         "id": "computer_use",
         "title": "Computer Use (OS Desktop)",
-        "description": "Otomasi layar desktop tingkat OS Windows (tangkapan layar, mouse click, drag, keyboard type & press).",
+        "description": "OS-level desktop automation (screenshots, mouse click, drag, keyboard typing and hotkeys).",
         "icon": "monitor",
         "category": "system",
         "default_enabled": True,
-        "tools": ["computer_use"]
+        "tools": ["computer_use", "take_screenshot"]
+    },
+    "vision": {
+        "id": "vision",
+        "title": "Vision & Video Analysis",
+        "description": "Deep image OCR, diagram inspection, and video analysis tools.",
+        "icon": "eye",
+        "category": "multimedia",
+        "default_enabled": True,
+        "tools": ["vision_analyze", "video_analyze"]
     }
 }
 
@@ -415,7 +424,30 @@ def get_enabled_tool_names() -> Set[str]:
     return enabled_tools
 
 
-# ── Surface-specific toolset filtering (Hermes Parity: _HERMES_CORE_TOOLS) ──
+# ── Hermes Coding Posture & Surface Toolsets (_HERMES_CORE_TOOLS Parity) ──
+# Universal toolset: file I/O, terminal, search, memory, agent primitives, and OS desktop control (CUA).
+CODING_TOOLS: Set[str] = {
+    "read_local_file",
+    "edit_file",
+    "write_local_file",
+    "delete_local_file",
+    "glob_find_files",
+    "grep_search_code",
+    "list_directory",
+    "execute_cli_command",
+    "process_manage",
+    "execute_code",
+    "web_search",
+    "fetch_webpage",
+    "memory",
+    "manage_memory_and_todos",
+    "interactive_question",
+    "delegate_subagent",
+    "computer_use",
+    "take_screenshot",
+}
+ESSENTIAL_CODING_TOOLS = CODING_TOOLS
+
 CORE_TOOLS: List[str] = [
     "read_local_file",
     "edit_file",
@@ -443,22 +475,26 @@ CORE_TOOLS: List[str] = [
     "interactive_question",
     "session_search",
     "delegate_subagent",
-    "manage_scratchpad",
 ]
 
-PLATFORM_ALIASES: Dict[str, str] = {
-    "terminal": "cli",
-    "bash": "cli",
-    "powershell": "cli",
-    "web": "web_studio",
-    "code": "web_studio",
-    "studio": "web_studio",
-    "voice": "voice_hud",
-    "hud": "voice_hud",
-    "avatar": "voice_hud",
-    "tele": "telegram",
-    "wa": "whatsapp",
-}
+# ── Platform Aliases (Hermes Parity: Externalized YAML) ──
+def _load_platform_aliases() -> Dict[str, str]:
+    try:
+        from core.prompt_loader import load_config_yaml
+        cfg = load_config_yaml("config/toolset_config.yaml", default={})
+        return dict(cfg.get("platform_aliases") or {
+            "terminal": "cli", "bash": "cli", "powershell": "cli", "web": "web_studio",
+            "code": "web_studio", "studio": "web_studio", "voice": "voice_hud",
+            "hud": "voice_hud", "avatar": "voice_hud", "tele": "telegram", "wa": "whatsapp",
+        })
+    except Exception:
+        return {
+            "terminal": "cli", "bash": "cli", "powershell": "cli", "web": "web_studio",
+            "code": "web_studio", "studio": "web_studio", "voice": "voice_hud",
+            "hud": "voice_hud", "avatar": "voice_hud", "tele": "telegram", "wa": "whatsapp"
+        }
+
+PLATFORM_ALIASES = _load_platform_aliases()
 
 
 class PlatformToolRegistry:
@@ -509,23 +545,86 @@ class PlatformToolRegistry:
                 "project_hud",
             ])
 
-        # Dynamic On-Demand Tool Expansion (Hermes Parity: zero static keyword regexes)
+        # Dynamic Toolset Domain Activation (Hermes Parity: Explicit Domain Posture Extension)
         if user_task:
             try:
-                from tools.registry import registry
-                task_tokens = set(re.findall(r"\w+", str(user_task).lower()))
-                for name, tool_def in registry._tools.items():
-                    name_segments = set(name.lower().split("_"))
-                    cat_segments = set(tool_def.category.lower().split("_")) if getattr(tool_def, "category", None) else set()
-                    ts_segments = set(tool_def.toolset.lower().split("_")) if getattr(tool_def, "toolset", None) else set()
-                    if (name_segments | cat_segments | ts_segments) & task_tokens:
-                        active_tools.add(name)
+                clean_task = str(user_task).lower()
+                for ts_id, ts_def in ANARA_TOOLSETS.items():
+                    ts_name = ts_id.replace("_", " ").lower()
+                    domain_root = ts_id.split("_")[0].lower()
+                    if (domain_root in clean_task) or (ts_name in clean_task):
+                        for t in ts_def.get("tools", []):
+                            active_tools.add(t)
             except Exception:
                 pass
 
         if extra_tools:
             active_tools.update(extra_tools)
 
+        return active_tools
+
+    @classmethod
+    def get_pruned_tools_for_execution(
+        cls,
+        platform: Optional[str] = None,
+        user_task: Optional[str] = None,
+        read_only: bool = False,
+        extra_tools: Optional[List[str]] = None,
+    ) -> Set[str]:
+        """
+        Hermes & Claude Code Parity: Posture-Based Dynamic Toolset Pruning.
+        Zero hardcoded keyword dictionaries. Adopts Hermes Coding Posture in software
+        workspaces, while dynamically discovering domain tools from ToolRegistry
+        when specific domain identifiers are referenced.
+        """
+        clean_task = (user_task or "").strip().lower()
+        p_key = cls.resolve_platform_key(platform)
+
+        # 1. Start with the high-signal Hermes Coding Posture
+        active_tools: Set[str] = set(CODING_TOOLS)
+
+        # 2. Platform-specific egress requirements
+        if p_key in ("telegram", "whatsapp"):
+            active_tools.add("send_document_file")
+            active_tools.add("create_zip_archive")
+
+        if p_key in ("voice_hud", "voice", "audio"):
+            active_tools.update([
+                "trigger_avatar_animation",
+                "project_hud",
+                "spotify_playback",
+                "spotify_search",
+            ])
+
+        # 3. Dynamic Toolset Domain Activation (Hermes Parity: Explicit Domain Posture Extension)
+        if user_task:
+            try:
+                for ts_id, ts_def in ANARA_TOOLSETS.items():
+                    ts_name = ts_id.replace("_", " ").lower()
+                    domain_root = ts_id.split("_")[0].lower()
+                    if (domain_root in clean_task) or (ts_name in clean_task):
+                        for t in ts_def.get("tools", []):
+                            active_tools.add(t)
+            except Exception:
+                pass
+
+        if extra_tools:
+            active_tools.update(extra_tools)
+
+        # 4. Respect user's explicit toolset toggles in SQLite
+        enabled_in_db = get_enabled_tool_names()
+        if enabled_in_db:
+            active_tools = active_tools & enabled_in_db
+
+        # 5. Read-only gate: prune mutating tools if in read_only mode
+        if read_only:
+            from tools.catalog import READ_ONLY_TOOL_NAMES
+            active_tools = {t for t in active_tools if t in READ_ONLY_TOOL_NAMES}
+
+        logger.info(
+            f"[Toolsets] Hermes Posture active ({p_key}): {len(active_tools)} tools loaded "
+            f"(pruned from full catalog of {len(CORE_TOOLS)})"
+        )
         return active_tools
 
 
