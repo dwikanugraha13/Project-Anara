@@ -148,12 +148,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.debug(f"[Startup] MCP discovery task launch note: {e}")
 
-    # Ensure Windows background autostart is registered across reboots (Anara Standard)
+    # Ensure Windows background autostart & global 'anara' CLI are registered (Anara Standard)
     try:
         from core.windows_service import windows_autostart
-        asyncio.get_running_loop().run_in_executor(None, windows_autostart.ensure_autostart_registered)
+        from core.global_cli import global_cli_installer
+        def _bg_sys_init():
+            windows_autostart.ensure_autostart_registered()
+            global_cli_installer.install()
+        asyncio.get_running_loop().run_in_executor(None, _bg_sys_init)
     except Exception as e:
-        logger.debug(f"[Startup] Windows autostart check note: {e}")
+        logger.debug(f"[Startup] Windows system registration note: {e}")
 
     yield
 
