@@ -289,6 +289,15 @@ async def manage_cli_daemon(action: str = "status"):
         if stopped == 0:
             print(f"{DIM}No background Anara processes are currently running.{RESET}")
 
+    elif act in ("restart", "reboot"):
+        print(f"{BOLD}Restarting Project Anara Daemons...{RESET}")
+        # 1. Stop existing
+        await manage_cli_daemon("stop")
+        import time
+        time.sleep(1.5)
+        # 2. Start
+        await manage_cli_daemon("start")
+
     elif act in ("start", "start-silent"):
         vbs_path = os.path.join(ROOT_DIR, "START_ANARA_SILENT.vbs")
         if os.path.isfile(vbs_path):
@@ -532,7 +541,7 @@ def main():
 
     # daemon subcommand
     daemon_p = subparsers.add_parser("daemon", help="Manage Anara background daemons")
-    daemon_p.add_argument("action", choices=["status", "stop", "start"], default="status", nargs="?")
+    daemon_p.add_argument("action", choices=["status", "stop", "start", "restart"], default="status", nargs="?")
 
     # autostart subcommand (Automated Windows boot startup)
     as_p = subparsers.add_parser("autostart", help="Manage automated background startup across Windows reboots")
