@@ -299,6 +299,31 @@ async def manage_cli_daemon(action: str = "status"):
             print(f"{RED}Launcher file {vbs_path} not found!{RESET}")
 
 
+def manage_cli_autostart(action: str = "status"):
+    from core.windows_service import windows_autostart
+    act = (action or "status").strip().lower()
+
+    if act in ("enable", "install", "start"):
+        res = windows_autostart.install(force=True)
+        if res.get("status") == "success":
+            print(f"{GREEN}✓ Anara Windows Autostart enabled via {res.get('method')}!{RESET}")
+            print(f"{DIM}{res.get('message')}{RESET}")
+        else:
+            print(f"{RED}✗ Failed to enable autostart: {res.get('message')}{RESET}")
+
+    elif act in ("disable", "uninstall", "stop", "remove"):
+        res = windows_autostart.uninstall()
+        print(f"{GREEN}✓ Anara Windows Autostart disabled.{RESET}")
+
+    else:
+        st = windows_autostart.get_status()
+        print(f"\n{BOLD}Anara Windows Autostart Status:{RESET}")
+        print(f"  • Registered : {GREEN}YES{RESET}" if st["installed"] else f"  • Registered : {DIM}NO{RESET}")
+        print(f"  • Method     : {st['method']}")
+        print(f"  • Task Name  : {st['task_name']}")
+        print(f"  • Launcher   : {st['launcher']}\n")
+
+
 async def manage_cli_gateway(action: str = "status", param: Optional[str] = None):
     from core.tunnel_manager import get_tunnel_status, start_quick_tunnel, stop_tunnel
     from core.security import verify_gateway_password, set_gateway_password, get_configured_gateway_password_hash
@@ -509,6 +534,10 @@ def main():
     daemon_p = subparsers.add_parser("daemon", help="Manage Anara background daemons")
     daemon_p.add_argument("action", choices=["status", "stop", "start"], default="status", nargs="?")
 
+    # autostart subcommand (Automated Windows boot startup)
+    as_p = subparsers.add_parser("autostart", help="Manage automated background startup across Windows reboots")
+    as_p.add_argument("action", choices=["status", "enable", "disable"], default="status", nargs="?")
+
     # gateway subcommand
     gw_p = subparsers.add_parser("gateway", help="Manage Anara Remote Gateway & Cloudflare Tunnel")
     gw_p.add_argument("action", choices=["status", "tunnel", "stop-tunnel", "set-password"], default="status", nargs="?")
@@ -532,6 +561,8 @@ def main():
 
     if args.command == "daemon":
         asyncio.run(manage_cli_daemon(args.action))
+    elif args.command == "autostart":
+        manage_cli_autostart(args.action)
     elif args.command == "gateway":
         asyncio.run(manage_cli_gateway(args.action, args.param))
     elif args.command == "computer-use":

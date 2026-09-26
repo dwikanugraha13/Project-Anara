@@ -148,6 +148,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.debug(f"[Startup] MCP discovery task launch note: {e}")
 
+    # Ensure Windows background autostart is registered across reboots (Anara Standard)
+    try:
+        from core.windows_service import windows_autostart
+        asyncio.get_running_loop().run_in_executor(None, windows_autostart.ensure_autostart_registered)
+    except Exception as e:
+        logger.debug(f"[Startup] Windows autostart check note: {e}")
+
     yield
 
     # 1. Cleanly close active WebSocket connections (Anara Standard)
