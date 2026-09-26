@@ -130,6 +130,8 @@ class PromptAssembler:
         from core.prompt_loader import load_prompt
         if mode == "plan":
             slot2_mode = load_prompt("modes/plan_mode").strip()
+        elif mode in ("conversational", "chat"):
+            slot2_mode = load_prompt("modes/conversational_mode").strip()
         else:
             slot2_mode = load_prompt("modes/build_mode").strip()
 
@@ -244,37 +246,44 @@ class PromptAssembler:
         except Exception:
             pass
 
-        # Tier 2b: Active Channel / Interface Context
-        slot_channel = ""
+        # Tier 2b: Active Channel / Interface Context & Session Metadata
         ch_clean = (channel or "").strip().lower()
+        sess_disp = str(session_id) if session_id is not None else "cli_session"
+        slot_channel = (
+            f"[ACTIVE RUNTIME & SESSION METADATA]:\n"
+            f"- Current Platform / Channel: {ch_clean or 'cli'}\n"
+            f"- Current Session ID: {sess_disp}\n"
+            f"- Current User / Speaker: {speaker_name or 'Agnan'}\n"
+            f"- Active Workspace Root: {root_path}\n\n"
+        )
         if ch_clean == "cli":
-            slot_channel = (
+            slot_channel += (
                 "[ACTIVE PLATFORM INTERFACE: TERMINAL / CLI SESSION]\n"
                 "You are currently interacting with the user inside an interactive Terminal (CLI) session, NOT in Web Studio, Telegram, or Discord.\n"
                 "Provide direct, concise terminal-friendly responses without HTML tags."
             )
         elif ch_clean in ("web", "studio", "code"):
-            slot_channel = (
+            slot_channel += (
                 "[ACTIVE PLATFORM INTERFACE: WEB CODE STUDIO]\n"
                 "You are currently interacting with the user inside the Web Studio / Code Studio interface."
             )
         elif ch_clean == "telegram":
-            slot_channel = (
+            slot_channel += (
                 "[ACTIVE PLATFORM INTERFACE: TELEGRAM MESSENGER]\n"
                 "You are currently interacting via Telegram chat."
             )
         elif ch_clean == "whatsapp":
-            slot_channel = (
+            slot_channel += (
                 "[ACTIVE PLATFORM INTERFACE: WHATSAPP MESSENGER]\n"
                 "You are currently interacting via WhatsApp chat."
             )
         elif ch_clean == "discord":
-            slot_channel = (
+            slot_channel += (
                 "[ACTIVE PLATFORM INTERFACE: DISCORD]\n"
                 "You are currently interacting via Discord server/DM."
             )
         elif ch_clean:
-            slot_channel = f"[ACTIVE PLATFORM INTERFACE: {ch_clean.upper()}]"
+            slot_channel += f"[ACTIVE PLATFORM INTERFACE: {ch_clean.upper()}]"
 
         # Anara 3-Tier Prefix Caching Architecture:
         # Tier 1 — Stable Prefix (Tokens 0..N remain byte-identical across turns): Identity, Mode, Tools

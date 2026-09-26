@@ -317,7 +317,7 @@ def _sanitize_lead_narration(raw_lead: str) -> str:
 
 def _format_empty_model_notice(prompt: str = "") -> str:
     """
-    Hermes Dynamic Universal Fallback Notice:
+    Anara Universal Fallback Notice:
     Returns a clean, neutral technical fallback notice when the model produces an empty turn,
     without brittle Unicode character range checks, biased language assumptions, or rigid hardcoding.
     """

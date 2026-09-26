@@ -864,8 +864,9 @@ async def _process_channel_request_core(
     full_user_prompt = f"{dialogue_context}User: {clean_text}" if dialogue_context else clean_text
 
     ws_tree = anara_agent.get_workspace_tree(session_id=session_id)
+    eff_mode = "conversational" if actual_session_mode == "conversational" else "build"
     sys_prompt = PromptAssembler.assemble(
-        mode="build",
+        mode=eff_mode,
         speaker_name=req.sender_name,
         workspace_tree=ws_tree,
         is_chat_mode=True,
