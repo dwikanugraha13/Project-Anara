@@ -190,7 +190,7 @@ class PromptAssembler:
             git_snapshot=git_block,
             files_info=files_info,
             default=(
-                f"[LIVE WORKSPACE & REPOSITORY SNAPSHOT (HERMES GROUND-TRUTH)]:\n"
+                f"[LIVE WORKSPACE & REPOSITORY SNAPSHOT (ANARA GROUND-TRUTH)]:\n"
                 f"- Project Name: {project_name}\n"
                 f"- Physical Root Path: {root_path}\n"
                 f"{git_block}"
@@ -244,15 +244,49 @@ class PromptAssembler:
         except Exception:
             pass
 
+        # Tier 2b: Active Channel / Interface Context
+        slot_channel = ""
+        ch_clean = (channel or "").strip().lower()
+        if ch_clean == "cli":
+            slot_channel = (
+                "[ACTIVE PLATFORM INTERFACE: TERMINAL / CLI SESSION]\n"
+                "You are currently interacting with the user inside an interactive Terminal (CLI) session, NOT in Web Studio, Telegram, or Discord.\n"
+                "Provide direct, concise terminal-friendly responses without HTML tags."
+            )
+        elif ch_clean in ("web", "studio", "code"):
+            slot_channel = (
+                "[ACTIVE PLATFORM INTERFACE: WEB CODE STUDIO]\n"
+                "You are currently interacting with the user inside the Web Studio / Code Studio interface."
+            )
+        elif ch_clean == "telegram":
+            slot_channel = (
+                "[ACTIVE PLATFORM INTERFACE: TELEGRAM MESSENGER]\n"
+                "You are currently interacting via Telegram chat."
+            )
+        elif ch_clean == "whatsapp":
+            slot_channel = (
+                "[ACTIVE PLATFORM INTERFACE: WHATSAPP MESSENGER]\n"
+                "You are currently interacting via WhatsApp chat."
+            )
+        elif ch_clean == "discord":
+            slot_channel = (
+                "[ACTIVE PLATFORM INTERFACE: DISCORD]\n"
+                "You are currently interacting via Discord server/DM."
+            )
+        elif ch_clean:
+            slot_channel = f"[ACTIVE PLATFORM INTERFACE: {ch_clean.upper()}]"
+
         # Anara 3-Tier Prefix Caching Architecture:
         # Tier 1 — Stable Prefix (Tokens 0..N remain byte-identical across turns): Identity, Mode, Tools
-        # Tier 2 — Semi-Static Project Context: Skills Manifest, Workspace Snapshot & AGENTS.md
+        # Tier 2 — Semi-Static Project Context: Skills Manifest, Workspace Snapshot & AGENTS.md, Active Platform Interface
         # Tier 3 — Volatile Tail: Long-Term Memory, Episodic ADR, Working Memory / Scratchpad State
         slots = [slot1_identity, slot2_mode, slot3_tools]
         if slot6_skills:
             slots.append(slot6_skills)
         if slot7_project:
             slots.append(slot7_project)
+        if slot_channel:
+            slots.append(slot_channel)
         if slot4_memory:
             slots.append(slot4_memory)
         if slot_adr:
@@ -260,7 +294,7 @@ class PromptAssembler:
         if slot5_scratchpad:
             slots.append(slot5_scratchpad)
 
-        # Token-aware slot assembly (Hermes/Anara Standard)
+        # Token-aware slot assembly (Anara Standard)
         # Reserves ~6000 tokens for tool catalog + conversation history injected by caller.py
         from core.token_budget import budget_aware_slot_assembly
         return budget_aware_slot_assembly(

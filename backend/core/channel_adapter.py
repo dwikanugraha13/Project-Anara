@@ -611,7 +611,7 @@ async def _process_channel_request_core(
             )
         return cmd_response
 
-    # 4. First-Run Onboarding Guard (Hermes Multi-User Parity):
+    # 4. First-Run Onboarding Guard (Anara Standard):
     # If the user or fresh installer has not yet configured ANY provider or key,
     # guide them with clean universal onboarding instructions.
     from providers import has_any_active_provider
@@ -758,7 +758,8 @@ async def _process_channel_request_core(
             mode="plan",
             speaker_name=req.sender_name,
             is_chat_mode=True,
-            session_type="chat"
+            session_type="chat",
+            channel=req.channel,
         )
 
         plan_text = await call_universal_chat_model(
