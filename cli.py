@@ -49,17 +49,27 @@ DIM = "\033[2m"
 RESET = "\033[0m"
 
 
+try:
+    from integrations.platforms.terminal import (
+        terminal_ui,
+        AnaraCliCompleter,
+        ToolActivitySpinner,
+        StreamTokenRenderer,
+    )
+except ImportError:
+    from backend.integrations.platforms.terminal import (
+        terminal_ui,
+        AnaraCliCompleter,
+        ToolActivitySpinner,
+        StreamTokenRenderer,
+    )
+from prompt_toolkit import PromptSession
+from prompt_toolkit.history import FileHistory
+from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+
+
 def print_banner(session_mode: str, model_id: str):
-    print(f"""{CYAN}{BOLD}
-   ╔═══════════════════════════════════════════════════════════════╗
-   ║            ANARA GENERAL AI AGENT — CLI RUNNER                ║
-   ║    Unified Multi-Channel · Plan/Build Gate · Anara Skills     ║
-   ╚═══════════════════════════════════════════════════════════════╝{RESET}
-{DIM}• Channel      :{RESET} cli (Terminal Interactive)
-{DIM}• Session Mode :{RESET} {BOLD}{session_mode}{RESET}
-{DIM}• Model AI     :{RESET} {CYAN}{model_id}{RESET}
-{DIM}• Commands     :{RESET} /model, /mode, /status, /memory, /skills, /exit
-""")
+    terminal_ui.print_banner(session_mode=session_mode)
 
 
 async def run_cli_interactive(initial_mode: str = "conversational", single_prompt: Optional[str] = None):
@@ -67,27 +77,74 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
     model_id = get_active_model_id()
     terminal_id = f"cli_{os.getpid()}"
 
-    print_banner(session_mode, model_id)
+    # Resolve speaker from profile if available
+    user_name = "Agnan"
+    try:
+        prof = file_memory.get_user_profile()
+        for line in prof.splitlines():
+            if "name" in line.lower() and ":" in line:
+                val = line.split(":", 1)[1].strip()
+                if val:
+                    user_name = val.split()[0]
+                    break
+    except Exception:
+        pass
 
     # Initial session
-    session_id = memory_engine.create_session(
-        speaker_name="Agnan",
+    new_sess = memory_engine.create_session(
+        speaker_name=user_name,
         title="Anara CLI Session",
         session_type="code" if session_mode == "explicit_plan_build" else "chat",
         channel="cli",
         session_mode=session_mode
-    )["id"]
+    )
+    session_id = new_sess["id"]
+    session_key = new_sess.get("session_key", "")
+
+    if not single_prompt:
+        print_banner(session_mode, model_id)
+
+    # Initialize prompt_toolkit session with persistent history and fuzzy completer
+    history_dir = os.path.expanduser("~/.anara")
+    os.makedirs(history_dir, exist_ok=True)
+    history_file = os.path.join(history_dir, "cli_history")
+
+    session = PromptSession(
+        history=FileHistory(history_file),
+        auto_suggest=AutoSuggestFromHistory(),
+        completer=AnaraCliCompleter(ROOT_DIR),
+    )
 
     async def _handle_input(user_text: str):
-        nonlocal session_mode, session_id
+        nonlocal session_mode, session_id, session_key
 
         cmd = user_text.strip()
         if not cmd:
             return True
 
-        if cmd.lower() in ["/exit", "exit", "quit", ":q"]:
-            print(f"\n{CYAN}Goodbye, Agnan! Anara is ready whenever you need.{RESET}")
+        if cmd.lower() in ["/exit", "exit", "/quit", "quit", ":q"]:
+            terminal_ui.console.print(f"\n[bold cyan]Goodbye, {user_name}! Anara is ready whenever you need.[/bold cyan]\n")
             return False
+
+        if cmd.lower() == "/help":
+            terminal_ui.render_help()
+            return True
+
+        if cmd.lower() == "/clear":
+            terminal_ui.console.clear()
+            return True
+
+        if cmd.lower() == "/diff":
+            import subprocess
+            try:
+                diff_out = subprocess.check_output("git diff", shell=True, text=True, errors="replace", cwd=ROOT_DIR)
+                if diff_out.strip():
+                    terminal_ui.render_diff("Workspace Unstaged Changes", "", diff_out)
+                else:
+                    terminal_ui.console.print("  [dim]Working tree clean. No unstaged changes.[/dim]\n")
+            except Exception as e_diff:
+                terminal_ui.console.print(f"  [red]Error running git diff: {e_diff}[/red]\n")
+            return True
 
         if cmd.lower().startswith("/model") or cmd.lower().startswith("/models"):
             from providers.discovery import get_all_dynamic_models
@@ -105,48 +162,66 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
                     matched = [m["id"] for m in configured if arg.lower() in m["id"].lower() or arg.lower() in m.get("name", "").lower()]
                     target_m = matched[0] if matched else arg
                 set_active_model_id(target_m)
-                print(f"\n{GREEN}✓ Active AI model switched to: {BOLD}{target_m}{RESET}\n")
+                terminal_ui.console.print(f"\n[bold green]✓ Active AI model switched to:[/bold green] [bold cyan]{target_m}[/bold cyan]\n")
             else:
                 cur_m = get_active_model_id()
-                print(f"\n{CYAN}{BOLD}=== SELECT AI MODEL (Current: {cur_m}) ==={RESET}")
+                terminal_ui.console.print(f"\n[bold cyan]=== SELECT AI MODEL (Current: {cur_m}) ===[/bold cyan]")
                 for idx, m in enumerate(configured[:12], 1):
-                    indicator = f"{GREEN}● (Active){RESET}" if m["id"] == cur_m else f"{DIM}○{RESET}"
-                    print(f" {idx:2d}. {indicator} {BOLD}{m.get('name', m['id'])}{RESET} [{m.get('provider', '').upper()}]")
-                    print(f"     {DIM}ID: {m['id']}{RESET}")
-                print(f"\n{YELLOW}Usage: /model <number_or_id> to switch model.{RESET}\n")
+                    indicator = "[bold green]● (Active)[/bold green]" if m["id"] == cur_m else "[dim]○[/dim]"
+                    terminal_ui.console.print(f" {idx:2d}. {indicator} [bold]{m.get('name', m['id'])}[/bold] [dim][{m.get('provider', '').upper()}][/dim]")
+                    terminal_ui.console.print(f"     [dim]ID: {m['id']}[/dim]")
+                terminal_ui.console.print(f"\n[yellow]Usage: /model <number_or_id> to switch model.[/yellow]\n")
             return True
 
         if cmd.lower() == "/status":
             cur_m = get_active_model_id()
             stats = memory_engine.get_brain_stats()
-            print(f"\n{CYAN}{BOLD}=== ANARA SYSTEM STATUS ==={RESET}")
-            print(f"• Channel        : cli (Terminal)")
-            print(f"• Session Mode   : {session_mode}")
-            print(f"• Active AI Model : {cur_m}")
-            print(f"• Fact Memories  : {stats.get('memories_count', 0)} nodes")
-            print(f"• Notes/Tasks    : {stats.get('notes_count', 0)} items")
-            print(f"• Agent Skills   : {stats.get('skills_count', 0)} skills")
-            print(f"• Core Status    : OPTIMAL & Ready to operate.\n")
+            import subprocess
+            branch = "unknown"
+            try:
+                branch = subprocess.check_output("git branch --show-current", shell=True, text=True, cwd=ROOT_DIR).strip()
+            except Exception:
+                pass
+
+            data = {
+                "Channel": "CLI (Interactive Terminal)",
+                "Session Mode": session_mode,
+                "Session ID": f"#{session_id} ({session_key})" if session_key else f"#{session_id}",
+                "Active AI Model": cur_m,
+                "Workspace Root": ROOT_DIR,
+                "Git Branch": branch or "main",
+                "Fact Memories": f"{stats.get('memories_count', 0)} nodes",
+                "Skills Library": f"{stats.get('skills_count', 0)} registered",
+            }
+            terminal_ui.render_status_hud(data)
             return True
 
         if cmd.lower() == "/mode":
             session_mode = "explicit_plan_build" if session_mode == "conversational" else "conversational"
-            print(f"\n{YELLOW}Mode switched to: {BOLD}{session_mode}{RESET}")
+            terminal_ui.console.print(f"\n[yellow]Operational mode switched to:[/yellow] [bold cyan]{session_mode}[/bold cyan]\n")
             return True
 
         if cmd.lower() == "/memory":
-            print(f"\n{CYAN}{BOLD}=== USER.md (PROFILE) ==={RESET}")
-            print(file_memory.get_user_profile())
-            print(f"\n{CYAN}{BOLD}=== MEMORY.md (FACTS) ==={RESET}")
-            print(file_memory.get_memory_facts())
+            terminal_ui.console.print(f"\n[bold cyan]=== USER.md (PROFILE) ===[/bold cyan]")
+            terminal_ui.console.print(file_memory.get_user_profile())
+            terminal_ui.console.print(f"\n[bold cyan]=== MEMORY.md (FACTS) ===[/bold cyan]")
+            terminal_ui.console.print(file_memory.get_memory_facts())
+            terminal_ui.console.print()
             return True
 
         if cmd.lower() == "/skills":
             skills = skill_library.list_skills()
-            print(f"\n{CYAN}{BOLD}=== SKILL LIBRARY ({len(skills)} Registered) ==={RESET}")
+            terminal_ui.console.print(f"\n[bold cyan]=== SKILL LIBRARY ({len(skills)} Registered) ===[/bold cyan]")
             for s in skills:
-                status_color = GREEN if s["status"] == "active" else YELLOW
-                print(f" • {s['name']} ({s['category']}) [{status_color}{s['status']}{RESET}]: {s['description']}")
+                color = "green" if s["status"] == "active" else "yellow"
+                terminal_ui.console.print(f" • [bold]{s['name']}[/bold] ({s['category']}) [[{color}]{s['status']}[/{color}]]: [dim]{s['description']}[/dim]")
+            terminal_ui.console.print()
+            return True
+
+        if cmd.lower().startswith("/daemon"):
+            parts = cmd.split(maxsplit=1)
+            act = parts[1].strip() if len(parts) > 1 else "status"
+            await manage_cli_daemon(act)
             return True
 
         # Process standard request
@@ -155,39 +230,87 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
             channel="cli",
             channel_id=terminal_id,
             user_id="agnan",
-            sender_name="Agnan",
+            sender_name=user_name,
             trigger_type="interactive"
         )
 
-        def _prog_cb(msg: str):
-            print(f"{DIM}  {msg}{RESET}")
+        streamed_any = False
 
-        print()
-        res = await process_channel_request(req, progress_callback=_prog_cb)
+        def _prog_cb(msg: str):
+            clean = msg.strip()
+            if any(clean.startswith(prefix) for prefix in ("⚡", "⚙️", "Running", "Executing")):
+                clean_no_ico = clean.replace("⚡", "").replace("⚙️", "").strip()
+                if ":" in clean_no_ico:
+                    parts = clean_no_ico.split(":", 1)
+                    t_name = parts[0].strip()
+                    detail = parts[1].strip()
+                else:
+                    t_name = clean_no_ico
+                    detail = ""
+                terminal_ui.spinner.start_tool(t_name, detail)
+            else:
+                terminal_ui.spinner.update_detail(clean)
+
+        def _stream_cb(token: str):
+            nonlocal streamed_any
+            if not streamed_any:
+                streamed_any = True
+                terminal_ui.spinner.finish_tool(True)
+                terminal_ui.streamer.start(speaker_name="Anara")
+            terminal_ui.streamer.feed(token)
+
+        try:
+            res = await process_channel_request(
+                req,
+                progress_callback=_prog_cb,
+                token_callback=_stream_cb
+            )
+        finally:
+            terminal_ui.spinner.finish_tool(True)
 
         if res.plan_pending and res.plan_id:
             # Plan Mode Gate triggered
-            print(f"{YELLOW}{BOLD}📋 ACTION PLAN COMPOSED:{RESET}")
-            print(f"{YELLOW}{res.text}{RESET}\n")
+            terminal_ui.render_plan_approval_card(res.text)
 
             try:
-                choice = input(f"{BOLD}Approve the plan above for execution? [Y/n]: {RESET}").strip().lower()
+                choice = session.prompt("Approve the plan above for execution? [Y/n]: ").strip().lower()
             except (KeyboardInterrupt, EOFError):
                 choice = "n"
 
             if choice in ["y", "yes", "ok", ""]:
-                print(f"\n{GREEN}Build Mode execution starting...{RESET}")
-                build_res = await _execute_build_mode(
-                    session_id=res.session_id,
-                    user_prompt=f"Execute plan: {cmd}",
-                    req=req,
-                    progress_callback=_prog_cb
-                )
-                print(f"\n{CYAN}{BOLD}Anara:{RESET}\n{build_res.text}\n")
+                terminal_ui.console.print("\n[bold green]Build Mode execution starting...[/bold green]\n")
+                b_streamed = False
+
+                def _b_stream_cb(token: str):
+                    nonlocal b_streamed
+                    if not b_streamed:
+                        b_streamed = True
+                        terminal_ui.spinner.finish_tool(True)
+                        terminal_ui.streamer.start(speaker_name="Anara")
+                    terminal_ui.streamer.feed(token)
+
+                try:
+                    build_res = await _execute_build_mode(
+                        session_id=res.session_id,
+                        user_prompt=f"Execute plan: {cmd}",
+                        req=req,
+                        progress_callback=_prog_cb,
+                        token_callback=_b_stream_cb
+                    )
+                finally:
+                    terminal_ui.spinner.finish_tool(True)
+
+                if b_streamed:
+                    terminal_ui.streamer.finish()
+                else:
+                    terminal_ui.print_response(build_res.text, speaker_name="Anara")
             else:
-                print(f"\n{RED}Plan cancelled. No changes were made.{RESET}\n")
+                terminal_ui.console.print("\n[bold red]Plan cancelled. No changes were made.[/bold red]\n")
         else:
-            print(f"{CYAN}{BOLD}Anara:{RESET}\n{res.text}\n")
+            if streamed_any:
+                terminal_ui.streamer.finish()
+            else:
+                terminal_ui.print_response(res.text, speaker_name="Anara")
 
         return True
 
@@ -196,16 +319,26 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
         await _handle_input(single_prompt)
         return
 
-    # REPL interactive loop
+    # REPL interactive loop with prompt_toolkit
     while True:
         try:
-            prompt_symbol = f"{GREEN}Agnan{RESET} ({DIM}{session_mode}{RESET}) > "
-            user_input = input(prompt_symbol)
+            prompt_text = f"{user_name} ({session_mode}) > "
+            user_input = session.prompt(prompt_text)
+
+            # Support multiline trailing backslash continuation
+            while user_input.endswith("\\"):
+                user_input = user_input[:-1] + "\n"
+                continuation = session.prompt("... ")
+                user_input += continuation
+
             should_continue = await _handle_input(user_input)
             if not should_continue:
                 break
-        except (KeyboardInterrupt, EOFError):
-            print(f"\n{CYAN}Exiting CLI Runner.{RESET}")
+        except KeyboardInterrupt:
+            terminal_ui.console.print("\n[dim]Turn cancelled (Ctrl+C). Type /exit to quit.[/dim]\n")
+            continue
+        except EOFError:
+            terminal_ui.console.print("\n[bold cyan]Exiting CLI Runner.[/bold cyan]")
             break
 
 

@@ -472,7 +472,8 @@ async def _auto_dispatch_artifacts_to_channel(channel: str, channel_id: str, art
 
 async def process_channel_request(
     req: ChannelRequest,
-    progress_callback: Optional[Callable[[str], Any]] = None
+    progress_callback: Optional[Callable[[str], Any]] = None,
+    token_callback: Optional[Callable[[str], Any]] = None,
 ) -> ChannelResponse:
     """
     Main omnichannel ingress pipeline: Normalizes, validates, and dispatches.
@@ -497,9 +498,9 @@ async def process_channel_request(
         session_id = get_or_create_channel_session(req)
         if is_stop_req:
             # Hermes Cancel Fence Parity: /stop must execute immediately without blocking behind session lock
-            return await _process_channel_request_core(req, progress_callback)
+            return await _process_channel_request_core(req, progress_callback, token_callback)
         async with session_state_manager.get_session_lock(str(session_id)):
-            return await _process_channel_request_core(req, progress_callback)
+            return await _process_channel_request_core(req, progress_callback, token_callback)
     finally:
         if current_task and not is_stop_req:
             session_state_manager.unregister_active_task(req.channel, req.channel_id, current_task)
@@ -558,7 +559,8 @@ async def _enrich_message_with_vision(user_text: str, attachments: List[Dict[str
 
 async def _process_channel_request_core(
     req: ChannelRequest,
-    progress_callback: Optional[Callable[[str], Any]] = None
+    progress_callback: Optional[Callable[[str], Any]] = None,
+    token_callback: Optional[Callable[[str], Any]] = None,
 ) -> ChannelResponse:
     # 1. Resolve Session
     session_id = get_or_create_channel_session(req)
@@ -947,6 +949,7 @@ async def _process_channel_request_core(
             temperature=0.7,
             read_only=False,
             progress_cb=_track_tool,
+            token_cb=token_callback,
             intercept_mutating_tools=requires_plan,
             platform=req.channel,
         )
@@ -1148,6 +1151,7 @@ async def _execute_build_mode(
     progress_callback: Optional[Callable[[str], Any]] = None,
     pending_tool_call: Optional[Dict[str, Any]] = None,
     plan: Optional[Dict[str, Any]] = None,
+    token_callback: Optional[Callable[[str], Any]] = None,
     **kwargs: Any,
 ) -> ChannelResponse:
     """Executes the approved plan in Build Mode with system-reminder mode injection."""
@@ -1169,6 +1173,7 @@ async def _execute_build_mode(
             progress_callback=progress_callback,
             pending_tool_call=pending_tool_call,
             plan=plan,
+            token_callback=token_callback,
             **kwargs
         )
     finally:
@@ -1184,6 +1189,7 @@ async def _execute_build_mode_core(
     progress_callback: Optional[Callable[[str], Any]] = None,
     pending_tool_call: Optional[Dict[str, Any]] = None,
     plan: Optional[Dict[str, Any]] = None,
+    token_callback: Optional[Callable[[str], Any]] = None,
     **kwargs: Any,
 ) -> ChannelResponse:
     from core.agent import anara_agent
@@ -1332,6 +1338,7 @@ async def _execute_build_mode_core(
         temperature=0.6,
         read_only=False,
         progress_cb=_track_tool,
+        token_cb=token_callback,
         intercept_mutating_tools=False,
         platform=req.channel,
     )

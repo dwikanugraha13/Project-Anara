@@ -4,5 +4,20 @@ platforms/terminal.py — Terminal platform adapter alias and rich terminal rend
 
 from .cli import CliPlatformAdapter as TerminalPlatformAdapter
 from .cli import CliPlatformAdapter
+from .terminal_ui import (
+    terminal_ui,
+    AnaraTerminalUI,
+    ToolActivitySpinner,
+    StreamTokenRenderer,
+    AnaraCliCompleter,
+)
 
-__all__ = ["TerminalPlatformAdapter", "CliPlatformAdapter"]
+__all__ = [
+    "TerminalPlatformAdapter",
+    "CliPlatformAdapter",
+    "terminal_ui",
+    "AnaraTerminalUI",
+    "ToolActivitySpinner",
+    "StreamTokenRenderer",
+    "AnaraCliCompleter",
+]
