@@ -4,13 +4,14 @@ import json
 import logging
 import os
 import sqlite3
+import threading
 from typing import Optional, Dict, Any, List, Tuple, Callable
 
 from constants import get_anara_db_path
 
 logger = logging.getLogger(__name__)
 
-# DB Path resolves to canonical ANARA_HOME/anara_brain.db (Hermes Parity)
+# DB Path resolves to canonical ANARA_HOME/anara_brain.db (Anara Standard)
 DB_PATH = get_anara_db_path()
 
 MAX_VOICE_SAMPLES = 30          # sample counter cap per profile (voiceprint considered mature)
@@ -22,6 +23,7 @@ class BaseMemoryEngine:
 
     def __init__(self, db_path: str = DB_PATH):
         self.db_path = db_path
+        self._lock = threading.RLock()
         self._pending_proposals: Dict[str, Dict[str, Any]] = {}
         self._mutation_listeners: List[Callable[[str, Dict[str, Any]], Any]] = []
         self._last_adapt_ts: Dict[int, float] = {}
@@ -30,30 +32,48 @@ class BaseMemoryEngine:
 
     def register_mutation_listener(self, listener: Callable[[str, Dict[str, Any]], Any]):
         """Registers a callback for real-time memory/todo mutations (for live WebSocket sync)."""
-        if listener not in self._mutation_listeners:
-            self._mutation_listeners.append(listener)
+        with self._lock:
+            if listener not in self._mutation_listeners:
+                self._mutation_listeners.append(listener)
 
     def _emit_mutation(self, event_type: str, data: Dict[str, Any]):
         """Invokes all registered mutation listeners safely and invalidates prompt context cache."""
-        self._prompt_context_cache.clear()
-        for listener in self._mutation_listeners:
+        with self._lock:
+            self._prompt_context_cache.clear()
+            listeners = list(self._mutation_listeners)
+
+        for listener in listeners:
             try:
                 res = listener(event_type, data)
                 if asyncio.iscoroutine(res):
                     try:
                         loop = asyncio.get_running_loop()
-                        loop.create_task(res)
+                        if loop.is_running():
+                            loop.create_task(res)
+                        else:
+                            res.close()
                     except RuntimeError:
-                        res.close()
+                        try:
+                            loop = asyncio.get_event_loop()
+                            if loop.is_running():
+                                asyncio.run_coroutine_threadsafe(res, loop)
+                            else:
+                                res.close()
+                        except Exception:
+                            res.close()
             except Exception as e:
                 logger.warning(f"[MemoryMutation] Error in listener callback: {e}")
 
     @contextlib.contextmanager
     def _get_connection(self):
+        dir_name = os.path.dirname(os.path.abspath(self.db_path))
+        os.makedirs(dir_name, exist_ok=True)
         conn = sqlite3.connect(self.db_path, timeout=15.0)
         conn.row_factory = sqlite3.Row
         try:
             conn.execute("PRAGMA busy_timeout=15000;")
+            conn.execute("PRAGMA foreign_keys=ON;")
+            conn.execute("PRAGMA synchronous=NORMAL;")
             with conn:
                 yield conn
         finally:
@@ -61,15 +81,23 @@ class BaseMemoryEngine:
 
     def _init_db(self):
         """Initializes full database schema with WAL mode & unique constraints."""
+        dir_name = os.path.dirname(os.path.abspath(self.db_path))
+        os.makedirs(dir_name, exist_ok=True)
+        init_conn = None
         try:
             init_conn = sqlite3.connect(self.db_path, timeout=15.0)
             init_conn.execute("PRAGMA journal_mode=WAL;")
             init_conn.execute("PRAGMA synchronous=NORMAL;")
             init_conn.execute("PRAGMA busy_timeout=15000;")
             init_conn.commit()
-            init_conn.close()
         except Exception as e:
             logger.warning(f"[DB] Could not set WAL mode: {e}")
+        finally:
+            if init_conn:
+                try:
+                    init_conn.close()
+                except Exception:
+                    pass
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -81,6 +109,8 @@ class BaseMemoryEngine:
                     name TEXT UNIQUE COLLATE NOCASE,
                     voice_embedding TEXT,
                     sample_count INTEGER DEFAULT 1,
+                    voice_snapshots_json TEXT,
+                    preferred_tone TEXT DEFAULT 'balanced',
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
@@ -121,6 +151,7 @@ class BaseMemoryEngine:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS conversations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id INTEGER,
                     speaker_name TEXT,
                     speaker_id INTEGER,
                     user_text TEXT,
@@ -187,6 +218,13 @@ class BaseMemoryEngine:
                     message_count INTEGER DEFAULT 0,
                     is_archived INTEGER DEFAULT 0,
                     is_pinned INTEGER DEFAULT 0,
+                    workspace_info_json TEXT,
+                    pending_plan_json TEXT,
+                    run_type TEXT DEFAULT 'interactive',
+                    trust_level TEXT DEFAULT 'supervised',
+                    session_type TEXT DEFAULT 'chat',
+                    channel TEXT DEFAULT 'web',
+                    session_mode TEXT DEFAULT 'conversational',
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
@@ -354,6 +392,7 @@ class BaseMemoryEngine:
                     prompt_tokens INTEGER DEFAULT 0,
                     completion_tokens INTEGER DEFAULT 0,
                     total_tokens INTEGER DEFAULT 0,
+                    cached_tokens INTEGER DEFAULT 0,
                     estimated_cost REAL DEFAULT 0.0,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
@@ -381,6 +420,14 @@ class BaseMemoryEngine:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_media_history_speaker
                 ON media_history(speaker_name);
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist
+                ON playlist_tracks(playlist_id);
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_token_usage_session
+                ON token_usage_logs(session_id);
             """)
 
             # ── Dynamic Column Migrations for Existing Databases ──
@@ -426,6 +473,10 @@ class BaseMemoryEngine:
                 pass
             try:
                 cursor.execute("ALTER TABLE chat_sessions ADD COLUMN session_mode TEXT DEFAULT 'conversational'")
+            except Exception:
+                pass
+            try:
+                cursor.execute("ALTER TABLE token_usage_logs ADD COLUMN cached_tokens INTEGER DEFAULT 0")
             except Exception:
                 pass
             try:
@@ -589,7 +640,7 @@ class BaseMemoryEngine:
         conn.commit()
 
     def _seed_default_skills(self, conn: sqlite3.Connection):
-        """Hermes Parity: Skills are managed directly from filesystem skills/ (agentskills.io standard)."""
+        """Anara Standard: Skills are managed directly from filesystem skills/ (agentskills.io standard)."""
         pass
 
     def get_brain_stats(self) -> Dict[str, Any]:
@@ -603,7 +654,14 @@ class BaseMemoryEngine:
             skills_c = cursor.execute("SELECT COUNT(*) FROM agent_skills").fetchone()[0]
             spk_c = cursor.execute("SELECT COUNT(*) FROM speakers").fetchone()[0]
 
-        size_b = os.path.getsize(self.db_path) if os.path.exists(self.db_path) else 0
+        size_b = 0
+        for suffix in ("", "-wal", "-shm"):
+            p = self.db_path + suffix
+            if os.path.exists(p):
+                try:
+                    size_b += os.path.getsize(p)
+                except Exception:
+                    pass
         return {
             "memories_count": mem_c,
             "notes_count": notes_c,

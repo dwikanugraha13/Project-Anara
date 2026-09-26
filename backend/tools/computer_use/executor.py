@@ -1,6 +1,6 @@
 """
 executor.py — Universal Desktop Automation Execution Engine for Project Anara.
-Hermes Agent Parity (tools/computer_use/tool.py & cua_backend.py).
+Anara Standard (tools/computer_use/tool.py & cua_backend.py).
 Interfaces directly with cua-driver with graceful fallbacks.
 """
 from __future__ import annotations
@@ -84,7 +84,7 @@ def _get_cursor_pos() -> Tuple[int, int]:
     return 0, 0
 
 
-# ── Action Implementations (Hermes Parity) ──
+# ── Action Implementations (Anara Standard) ──
 
 async def execute_capture(
     text: Optional[str] = None,
@@ -95,7 +95,7 @@ async def execute_capture(
 ) -> Dict[str, Any]:
     """
     Captures desktop or target window state.
-    Hermes Parity: records screenshot artifact and emits HUD visual projection.
+    Anara Standard: records screenshot artifact and emits HUD visual projection.
     """
     timestamp = int(time.time())
     filename = f"screen_{timestamp}.png"
@@ -146,7 +146,7 @@ async def execute_capture(
         except Exception as e:
             return {"status": "error", "message": f"Failed to capture screenshot: {e}"}
 
-    # Register turn artifact for auto-delivery across Telegram, WhatsApp, etc. (Hermes Parity)
+    # Register turn artifact for auto-delivery across Telegram, WhatsApp, etc. (Anara Standard)
     register_turn_artifact(filepath, filename, mime_type="image/png")
 
     title_text = text or f"Desktop Screenshot ({w}x{h})"
@@ -178,7 +178,7 @@ async def execute_capture(
 
 
 async def execute_list_windows(filter_query: Optional[str] = None) -> Dict[str, Any]:
-    """Lists all open windows with PIDs, titles, and geometries (Hermes Parity)."""
+    """Lists all open windows with PIDs, titles, and geometries (Anara Standard)."""
     if is_cua_driver_available():
         res = run_cua_call("list_windows", {"on_screen_only": True})
         if res and not res.get("isError"):
@@ -234,7 +234,7 @@ _STICKY_TITLE: Optional[str] = None
 
 async def _discover_and_launch_app(app_name: str) -> Optional[Dict[str, Any]]:
     """
-    Dynamically discovers and launches an unopened Windows desktop, web, or UWP application (Hermes Parity).
+    Dynamically discovers and launches an unopened Windows desktop, web, or UWP application (Anara Standard).
     Tier 1: cua-driver list_apps matching name / bundle_id / launch_path -> launch_app
     Tier 2: SystemTools executable resolution (Registry App Paths, system PATH, %LOCALAPPDATA%\\Programs)
     Tier 3: os.startfile / ShellExecute
@@ -364,7 +364,7 @@ async def execute_launch_app(
 
 
 async def execute_focus_app(app: str, raise_window: bool = True) -> Dict[str, Any]:
-    """Brings target application window to foreground, auto-spawning it if not yet running (Hermes Parity)."""
+    """Brings target application window to foreground, auto-spawning it if not yet running (Anara Standard)."""
     global _STICKY_PID, _STICKY_WID, _STICKY_TITLE
     clean_target = (app or "").strip()
     if not clean_target:
@@ -433,7 +433,7 @@ async def _resolve_app_input_coordinates(
     app_name: str,
 ) -> Tuple[Optional[int], Optional[int], Optional[Tuple[int, int]]]:
     """
-    Dynamically resolves target input area coordinates for ANY application via Accessibility Tree (Hermes Parity).
+    Dynamically resolves target input area coordinates for ANY application via Accessibility Tree (Anara Standard).
     Works universally across text editors (Notepad, Word), code editors (VSCode, OpenCode),
     chat apps (Telegram, Slack, Discord, WhatsApp), terminals, and web browsers.
     Returns: (target_x, target_y, send_button_coords)
@@ -580,7 +580,7 @@ async def execute_type(
 ) -> Dict[str, Any]:
     """
     Types text into target application window with focus targeting and closed-loop verification.
-    Hermes Parity: Ensures target window is frontmost before typing and verifies outcome.
+    Anara Standard: Ensures target window is frontmost before typing and verifies outcome.
     Supports sticky target window tracking, dynamic accessibility element targeting,
     Clipboard Paste (Ctrl+V) for Electron/Chromium widgets, and automatic Enter keypress.
     """
@@ -610,7 +610,7 @@ async def execute_type(
                 await execute_focus_app(focused_title)
                 await asyncio.sleep(0.15)
 
-    # 1.1 Resolve coordinates or dynamic auto-target input area (Hermes Parity)
+    # 1.1 Resolve coordinates or dynamic auto-target input area (Anara Standard)
     target_x = x
     target_y = y
     send_button_coords: Optional[Tuple[int, int]] = None
@@ -669,7 +669,7 @@ async def execute_type(
             if res and not res.get("isError") and res.get("code") != "background_unavailable":
                 typed_ok = True
             elif res and res.get("code") == "background_unavailable":
-                # Auto-escalate to foreground for Chromium/Electron surfaces (Hermes Parity)
+                # Auto-escalate to foreground for Chromium/Electron surfaces (Anara Standard)
                 logger.info("[ComputerUse] Surface dropped background input, auto-escalating to foreground mode.")
                 cua_args["delivery_mode"] = "foreground"
                 if focused_title:
@@ -769,7 +769,7 @@ async def execute_key(
     delivery_mode: str = "foreground",
     capture_after: bool = False,
 ) -> Dict[str, Any]:
-    """Presses a single key or hotkey combination via cua-driver with focus targeting (Hermes Parity)."""
+    """Presses a single key or hotkey combination via cua-driver with focus targeting (Anara Standard)."""
     raw_key = (key or "").strip().lower()
     if not raw_key:
         return {"status": "error", "message": "Parameter 'key' or 'keys' is required."}
@@ -881,7 +881,7 @@ async def execute_click(
     pid: Optional[int] = None,
     window_id: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Performs mouse click via cua-driver with coordinate or SOM element targeting (Hermes Parity)."""
+    """Performs mouse click via cua-driver with coordinate or SOM element targeting (Anara Standard)."""
     target_x = x
     target_y = y
     if coordinate and len(coordinate) >= 2:
@@ -969,7 +969,7 @@ async def execute_send_text(
     **kwargs: Any,
 ) -> Dict[str, Any]:
     """
-    Hermes & Claude Code Parity: Deterministic 1-Step GUI Text Submission.
+    Anara Enterprise Architecture: Deterministic 1-Step GUI Text Submission.
     Executes the entire end-to-end typing workflow in one single deterministic call:
     1. Locates and brings target window (e.g. OpenCode) to foreground with Windows AttachThreadInput.
     2. Auto-targets the chat input field or uses custom (x, y) coordinates.
@@ -1007,7 +1007,7 @@ async def execute_send_text(
     )
 
     if type_res.get("status") == "success":
-        # Closed-Loop Universal Dual Submit & Verification (Hermes Parity)
+        # Closed-Loop Universal Dual Submit & Verification (Anara Standard)
         if should_submit:
             await asyncio.sleep(0.2)
             # Universal check: if an active Send/Submit button is present, click it to guarantee submission
@@ -1051,7 +1051,7 @@ async def execute_send_text(
     return type_res
 
 
-# ── Unified Central Dispatcher (Hermes Parity) ──
+# ── Unified Central Dispatcher (Anara Standard) ──
 
 async def dispatch_computer_use(args: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
     """
@@ -1060,7 +1060,7 @@ async def dispatch_computer_use(args: Dict[str, Any], **kwargs: Any) -> Dict[str
     """
     action = (args.get("action") or "capture").strip().lower()
 
-    # Normalize action aliases (Hermes Parity: _ACTION_SUGGESTIONS)
+    # Normalize action aliases (Anara Standard: _ACTION_SUGGESTIONS)
     aliases = {
         "screenshot": "capture", "screen": "capture", "get_desktop_state": "capture", "get_window_state": "capture",
         "type_text": "type", "keyboard_type": "type", "input_text": "type",

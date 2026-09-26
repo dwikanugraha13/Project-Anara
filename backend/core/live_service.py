@@ -245,6 +245,11 @@ class GeminiLiveService:
 
                             # ── 3. Agent Tool Call Handling (Native Function Calling from Gemini Live) ──
                             tool_calls_to_process = []
+                            # Check response-level tool_call (Google GenAI SDK v1.0+ standard)
+                            root_tc = getattr(response, "tool_call", None)
+                            if root_tc and getattr(root_tc, "function_calls", None):
+                                tool_calls_to_process.extend(root_tc.function_calls)
+
                             if getattr(sc, "tool_call", None) and getattr(sc.tool_call, "function_calls", None):
                                 tool_calls_to_process.extend(sc.tool_call.function_calls)
                             if sc.model_turn:
@@ -388,8 +393,30 @@ class GeminiLiveService:
     async def _handle_and_send_tool_call(self, fn_name: str, call_id: str, fn_args: Dict[str, Any]):
         """Executes a function call from Gemini Live and queues the response back to the session."""
         try:
+            from core.session_manager import session_state_manager
+            session_state_manager.persist_tool_call_start(
+                session_id=0,
+                channel="live_service",
+                channel_id="live_audio",
+                tool_name=fn_name,
+                tool_args=fn_args,
+                call_id=call_id
+            )
+        except Exception:
+            pass
+
+        try:
             exec_res = await dispatch_tool_call(fn_name, fn_args)
             logger.info(f"[Agent Live] Tool '{fn_name}' execution result: {exec_res.get('status')}")
+            try:
+                from core.session_manager import session_state_manager
+                session_state_manager.persist_tool_call_result(
+                    call_id=call_id,
+                    result_summary=exec_res,
+                    is_error=False
+                )
+            except Exception:
+                pass
             resp_obj = types.FunctionResponse(
                 name=fn_name,
                 id=call_id,
@@ -399,6 +426,16 @@ class GeminiLiveService:
             await self._send_queue.put({"kind": "tool_response", "data": tool_resp_client})
         except Exception as e:
             logger.error(f"[Agent Live] Tool execution error in '{fn_name}': {e}", exc_info=True)
+            try:
+                from core.session_manager import session_state_manager
+                session_state_manager.persist_tool_call_result(
+                    call_id=call_id,
+                    result_summary=None,
+                    is_error=True,
+                    error_message=str(e)
+                )
+            except Exception:
+                pass
             err_resp = types.FunctionResponse(
                 name=fn_name,
                 id=call_id,
@@ -449,18 +486,38 @@ class GeminiLiveService:
             await self._send_queue.put({"kind": "context", "data": text})
 
     async def interrupt(self):
-        """Signal interrupt (currently handled by Gemini VAD automatically)."""
-        logger.info("Interrupt requested")
+        """Hermes Barge-in: Signal user interruption, cancel in-flight audio, and advance generation ID."""
+        logger.info("[LiveService] User interruption signal triggered.")
+        self._active_generation_id = getattr(self, "_active_generation_id", 0) + 1
+        while not self._send_queue.empty():
+            try:
+                self._send_queue.get_nowait()
+            except Exception:
+                break
+        if self._on_interrupted:
+            try:
+                await self._on_interrupted()
+            except Exception:
+                pass
 
     async def stop(self):
         """Stop the session cleanly."""
         self._is_running = False
         self._mic_buffer.clear()
+        if self.session:
+            try:
+                if hasattr(self.session, "close"):
+                    await self.session.close()
+                elif hasattr(self.session, "_ws") and self.session._ws:
+                    await self.session._ws.close()
+            except Exception:
+                pass
+            self.session = None
+        self._session_ready.clear()
         while not self._send_queue.empty():
             try:
                 self._send_queue.get_nowait()
             except asyncio.QueueEmpty:
                 break
         await self._send_queue.put(None)  # sentinel to stop _send_loop
-        self.session = None
         logger.info("Gemini Live session stopped")

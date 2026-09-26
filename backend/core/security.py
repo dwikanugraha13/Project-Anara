@@ -8,31 +8,59 @@ Protections:
 2. Approver Authorization Matrix: Enforces strict user ID validation so only authorized
    owners/admins can approve plans or trigger mutating build actions in public channels.
 """
+import hashlib
+import hmac
 import logging
 import os
 import re
+import secrets
+import time
+import unicodedata
 from typing import Dict, List, Optional, Tuple, Any
 
 logger = logging.getLogger(__name__)
 
-# Hermes Agent Parity: Conversational inputs are not censored via naive keyword blacklists.
-# Security boundaries are enforced at the OS execution layer (WorkspaceSentinel & command_sandbox AST).
+# Anara Agent Threat Patterns Parity: Invisible & Bidi Trojan Source Characters
+INVISIBLE_CHARS = frozenset(
+    "\u200b\u200c\u200d\u2060\u2062\u2063\u2064\ufeff"
+    "\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069"
+)
+
+# Core prompt injection & system instruction override patterns
+INJECTION_THREAT_PATTERNS = [
+    re.compile(r"(?i)\b(?:ignore|disregard|forget)\s+(?:all\s+)?(?:previous|prior|above)\s+(?:instructions|directives|rules|prompts)\b"),
+    re.compile(r"(?i)\b(?:system\s+prompt\s+override|you\s+are\s+now\s+in\s+developer\s+mode|dan\s+mode)\b"),
+    re.compile(r"(?i)<\s*(?:system|override|jailbreak)\s*>"),
+]
+
 
 def check_prompt_injection(text: str) -> Tuple[bool, Optional[str]]:
     """
-    Hermes Agent Parity: Inbound prompts are permitted without lexical blacklists.
+    Anara Standard: Inbound prompts are scanned for structural Trojan Source characters,
+    unicode homoglyph spoofing, and explicit instruction hijack patterns (tools/threat_patterns.py).
     Technical security analysis (e.g. ransomware, DDoS mitigation, bypass methods)
     is not falsely flagged.
-    Guards against corrupt binary/control payloads while delegating physical execution
-    safety to WorkspaceSentinel and Sandbox AST evaluation.
     """
     clean_text = (text or "").strip()
     if not clean_text:
         return True, None
 
-    # Structural guard against non-printable binary control payloads
-    if any(ord(c) < 32 and c not in "\r\n\t" for c in clean_text):
+    # 1. Structural guard against invisible or bidirectional Trojan Source unicode (Anara Standard)
+    if any(c in INVISIBLE_CHARS for c in clean_text):
+        return False, "Input rejected: invisible or bidirectional unicode override characters detected."
+
+    # 2. Structural guard against non-printable binary control payloads
+    allowed_control_codes = {10, 13, 9}
+    if any(ord(c) < 32 and ord(c) not in allowed_control_codes for c in clean_text):
         return False, "Input rejected: non-printable control characters detected."
+
+    # 3. Unicode NFKC normalization to defeat homograph / full-width obfuscation
+    normalized = unicodedata.normalize("NFKC", clean_text[:65536])
+
+    # 4. Explicit prompt injection and instruction override checks
+    for patt in INJECTION_THREAT_PATTERNS:
+        if patt.search(normalized):
+            return False, "Input rejected: adversarial prompt injection or instruction override attempt detected."
 
     return True, None
 
@@ -53,13 +81,17 @@ def is_authorized_approver(user_id: str, plan_owner_id: str, channel: str = "tel
     """
     Validates whether the user attempting to approve a plan is authorized (Section 12.2 & 12.5).
     Rules:
-    1. The original plan requester is always authorized to approve their own plan.
-    2. Any user ID explicitly listed in telegram_admin_ids is authorized.
-    3. If no admin whitelist is configured and it's a direct private chat (not a group),
-       owner ID match suffices.
+    1. Empty user_id or empty plan_owner_id is NEVER authorized (fixes CWE-287 bypass).
+    2. The original plan requester is authorized to approve their own plan.
+    3. Any user ID explicitly listed in telegram_admin_ids is authorized.
     """
-    clean_user = str(user_id).strip()
-    clean_owner = str(plan_owner_id).strip()
+    clean_user = str(user_id or "").strip()
+    clean_owner = str(plan_owner_id or "").strip()
+
+    # Absolute security gate: reject unauthenticated empty strings
+    if not clean_user or not clean_owner:
+        logger.warning("[SecurityAuthorization] Approval rejected: empty user_id or plan_owner_id.")
+        return False
 
     # Rule 1: The user who requested the plan is authorized
     if clean_user == clean_owner:
@@ -83,7 +115,8 @@ _GATEWAY_SALT = "anara_gateway_salt_v2"
 
 def hash_gateway_password(password: str) -> str:
     clean = (password or "").strip()
-    return hashlib.sha256(f"{clean}:{_GATEWAY_SALT}".encode()).hexdigest()
+    salt = _GATEWAY_SALT.encode("utf-8")
+    return hashlib.pbkdf2_hmac("sha256", clean.encode("utf-8"), salt, 100_000).hex()
 
 
 def get_configured_gateway_password_hash() -> str:
@@ -102,7 +135,11 @@ def verify_gateway_password(input_password: str) -> bool:
     if not clean_in:
         return False
     configured_hash = get_configured_gateway_password_hash()
-    return hmac.compare_digest(hash_gateway_password(clean_in), configured_hash)
+    pbkdf2_hash = hash_gateway_password(clean_in)
+    if hmac.compare_digest(pbkdf2_hash, configured_hash):
+        return True
+    legacy_hash = hashlib.sha256(f"{clean_in}:{_GATEWAY_SALT}".encode()).hexdigest()
+    return hmac.compare_digest(legacy_hash, configured_hash)
 
 
 def set_gateway_password(new_password: str) -> bool:
@@ -119,8 +156,7 @@ def set_gateway_password(new_password: str) -> bool:
 
 
 def generate_gateway_session_token() -> str:
-    import uuid
-    token = uuid.uuid4().hex
+    token = secrets.token_urlsafe(32)
     try:
         from memory import memory_engine
         memory_engine.set_app_setting(f"gateway_session_{token}", str(time.time()))

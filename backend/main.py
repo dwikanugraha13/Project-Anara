@@ -46,7 +46,7 @@ from core.logger import setup_anara_logging
 from constants import load_universal_env
 load_universal_env()
 
-# Initialize enterprise rotating file & console logger (Hermes Parity)
+# Initialize enterprise rotating file & console logger (Anara Standard)
 setup_anara_logging()
 
 logger = logging.getLogger("anara.main")
@@ -60,6 +60,7 @@ memory_engine.register_mutation_listener(broadcast_brain_sync)
 async def lifespan(app: FastAPI):
     """Starts background services, initializes provider keys, and manages graceful shutdown."""
     logger.info(f"[Anara] Backend code loaded — build {ANARA_BUILD}")
+    _install_signal_handlers()
     try:
         from core.lifecycle import record_process_start, record_process_exit
         record_process_start("backend", os.getpid())
@@ -76,7 +77,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[Startup] Capability warmup skipped: {e}")
 
-    # Universal .env to SQLite accounts synchronization (Hermes Parity)
+    # Universal .env to SQLite accounts synchronization (Anara Standard)
     try:
         from providers.accounts import sync_env_to_accounts
         sync_env_to_accounts()
@@ -102,7 +103,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[Startup] Provider seed check: {e}")
 
-    # Synchronize bundled in-tree skills to active user runtime skills (Hermes Parity)
+    # Synchronize bundled in-tree skills to active user runtime skills (Anara Standard)
     try:
         from core.skills_sync import sync_bundled_skills
         from core.skill_library import skill_library
@@ -133,15 +134,48 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[Startup] WhatsApp bridge start skipped: {e}")
 
-    # Ensure native CUA driver daemon is active on startup (Hermes Parity)
+    # Ensure native CUA driver daemon is active on startup (Anara Standard)
     try:
         from tools.computer_use.driver import ensure_cua_driver_daemon_running
         ensure_cua_driver_daemon_running()
     except Exception as e:
         logger.debug(f"[Startup] CUA driver daemon init note: {e}")
 
+    # Discover and connect to configured native Model Context Protocol (MCP) servers (Anara Standard)
+    try:
+        from integrations.mcp import mcp_manager
+        asyncio.create_task(mcp_manager.connect_all_servers())
+    except Exception as e:
+        logger.debug(f"[Startup] MCP discovery task launch note: {e}")
+
     yield
 
+    # 1. Cleanly close active WebSocket connections (Anara Standard)
+    from shared_state import active_websockets
+    for ws in list(active_websockets):
+        try:
+            await ws.close(code=1001, reason="Server shutting down")
+        except Exception:
+            pass
+    active_websockets.clear()
+
+    # 2. Stop Cloudflare Quick Tunnel if running
+    try:
+        from core.tunnel_manager import stop_tunnel
+        stop_tunnel()
+    except Exception:
+        pass
+
+    # 3. Stop background process registry daemons
+    try:
+        from core.process_registry import process_registry
+        for p in process_registry.list_processes():
+            if p.get("process_id"):
+                process_registry.stop_process(p["process_id"])
+    except Exception:
+        pass
+
+    # 4. Stop platform bridges and autonomous scheduler
     try:
         from integrations.whatsapp import stop_whatsapp_bridge
         stop_whatsapp_bridge()
@@ -160,9 +194,26 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
+    # Stop native MCP server connections
     try:
-        from core.lifecycle import record_process_exit
+        from integrations.mcp import mcp_manager
+        await mcp_manager.shutdown()
+    except Exception:
+        pass
+
+    # 5. Flush SQLite WAL Checkpoint
+    try:
+        with memory_engine._get_connection() as conn:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            logger.info("[Shutdown] SQLite WAL checkpoint flushed.")
+    except Exception:
+        pass
+
+    # 6. Scavenge sentinels & record exit
+    try:
+        from core.lifecycle import record_process_exit, cleanup_stale_processes
         record_process_exit("backend")
+        cleanup_stale_processes(prune_dead=True)
     except Exception:
         pass
 
@@ -176,30 +227,72 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS Configuration
+# ── Enterprise Security & Sandbox Middlewares (Anara Enterprise Architecture) ──
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        if request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+# CORS Configuration (Restricted explicit origins with dynamic tunnel matching)
+raw_origins = os.getenv("ALLOWED_ORIGINS", "")
+allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()] or [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
+    allow_origin_regex=r"^https?://([a-zA-Z0-9-]+\.)?(trycloudflare\.com|anara\.my\.id)(:\d+)?$",
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["Authorization", "Content-Type", "X-Session-Token", "X-Client-Version"],
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import uuid
+    from fastapi.responses import JSONResponse
+    error_id = f"err_{uuid.uuid4().hex[:8]}"
+    logger.error(f"[UnhandledException] ID: {error_id} — {request.method} {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "status": "error",
+            "error_id": error_id,
+            "message": "Internal server error occurred.",
+            "path": request.url.path
+        }
+    )
 
 # Health check & system overview endpoint
 @app.get("/")
 async def health_check():
-    """Health check & status endpoint."""
+    """Health check & minimal status endpoint."""
     time_info = get_current_indonesian_time_str()
-    stats = memory_engine.get_brain_stats()
     return {
         "status": "ok",
         "service": "Project Anara",
-        "active_sessions": len(active_sessions),
-        "brain_stats": stats,
+        "version": "3.0.0",
+        "build": ANARA_BUILD,
         "time": time_info
     }
 
-# ── Mount Modular APIRouters (Hermes Security Parity: Per-Route Gateway Auth) ──
+# ── Mount Modular APIRouters (Anara Security Architecture: Per-Route Gateway Auth) ──
 # Public gateway router (for login and remote status check)
 app.include_router(gateway_router)
 
@@ -235,14 +328,57 @@ def _assert_port_free(port: int):
         )
         raise SystemExit(1)
 
+def _install_signal_handlers():
+    """Installs native signal and Windows console control handlers (Anara Enterprise Architecture)."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            HandlerRoutine = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
+
+            def _console_ctrl_handler(ctrl_type: int) -> bool:
+                CTRL_C_EVENT = 0
+                CTRL_BREAK_EVENT = 1
+                CTRL_CLOSE_EVENT = 2
+                CTRL_LOGOFF_EVENT = 5
+                CTRL_SHUTDOWN_EVENT = 6
+
+                if ctrl_type in (CTRL_C_EVENT, CTRL_BREAK_EVENT, CTRL_CLOSE_EVENT, CTRL_SHUTDOWN_EVENT):
+                    logger.info(f"[Lifecycle] Windows Console Ctrl Event {ctrl_type} caught. Initiating clean exit...")
+                    import _thread
+                    _thread.interrupt_main()
+                    return True
+                return False
+
+            global _global_ctrl_handler_ref
+            _global_ctrl_handler_ref = HandlerRoutine(_console_ctrl_handler)
+            ctypes.windll.kernel32.SetConsoleCtrlHandler(_global_ctrl_handler_ref, True)
+            logger.debug("[Lifecycle] Native Win32 SetConsoleCtrlHandler registered.")
+        except Exception as e:
+            logger.debug(f"[Lifecycle] Win32 ConsoleCtrlHandler registration note: {e}")
+    else:
+        import signal
+        def _posix_handler(sig, frame):
+            logger.info(f"[Lifecycle] POSIX Signal {sig} caught. Initiating clean exit...")
+            raise KeyboardInterrupt
+        try:
+            signal.signal(signal.SIGINT, _posix_handler)
+            signal.signal(signal.SIGTERM, _posix_handler)
+        except Exception:
+            pass
+
+
 if __name__ == "__main__":
-    _assert_port_free(8000)
+    _install_signal_handlers()
+    port = int(os.getenv("PORT", os.getenv("ANARA_PORT", "8000")))
+    _assert_port_free(port)
     dev_reload = os.getenv("ANARA_RELOAD", "false").lower() in ("true", "1", "yes")
     try:
         uvicorn.run(
             "main:app",
             host="0.0.0.0",
-            port=8000,
+            port=port,
             log_level="info",
             reload=dev_reload
         )

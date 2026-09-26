@@ -1,5 +1,5 @@
 """
-platforms/slack.py — Slack Platform Adapter for Project Anara (Hermes Parity).
+platforms/slack.py — Slack Platform Adapter for Project Anara (Anara Standard).
 """
 
 from __future__ import annotations
@@ -145,6 +145,42 @@ class SlackPlatformAdapter(BasePlatformAdapter):
                 return {"status": "error", "message": str(e)}
 
         return {"status": "error", "reason": "not_configured"}
+
+    async def send_media(
+        self,
+        target_id: str,
+        file_path: str,
+        caption: Optional[str] = None,
+        media_type: str = "document",
+        **kwargs: Any
+    ) -> Dict[str, Any]:
+        """Dispatches media file to Slack channel via files.upload (Anara Standard)."""
+        if not file_path or not os.path.isfile(file_path):
+            return {"status": "error", "message": f"File not found: {file_path}"}
+
+        token = self.token
+        effective_channel = target_id if (target_id and not target_id.startswith("default")) else self.default_channel
+
+        if not token or not effective_channel:
+            return {"status": "error", "reason": "not_configured"}
+
+        f_name = os.path.basename(file_path)
+        try:
+            headers = {"Authorization": f"Bearer {token}", "User-Agent": "AnaraAgent/1.0"}
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                with open(file_path, "rb") as f:
+                    files = {"file": (f_name, f)}
+                    data = {
+                        "channels": effective_channel,
+                        "initial_comment": caption or "",
+                    }
+                    resp = await client.post("https://slack.com/api/files.upload", headers=headers, data=data, files=files)
+                res_data = resp.json()
+                if res_data.get("ok"):
+                    return {"status": "success", "platform": "slack", "file": f_name}
+                return {"status": "error", "detail": res_data.get("error", "upload_failed")}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
 
     def render_approval(self, narration: str, action: Any) -> Dict[str, Any]:
         return {"text": f"{narration}\n*(Reply 'approve' or 'cancel')*", "reply_markup": None}

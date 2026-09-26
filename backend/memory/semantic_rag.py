@@ -1,9 +1,10 @@
 import json
 import logging
 import re
+import threading
 import time
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, Set
 
 import numpy as np
 
@@ -11,13 +12,23 @@ from .voice_biometrics import canonicalize_speaker_name
 
 logger = logging.getLogger(__name__)
 
+_CACHE_LOCK = threading.Lock()
 _DYNAMIC_ENTITY_CACHE: Dict[str, Dict[str, Any]] = {}
 _EMBEDDING_CACHE: Dict[str, List[float]] = {}
 
 
+def _redact_api_keys(text: Any) -> str:
+    """Anara Enterprise Architecture: Redacts API keys from error messages and logs."""
+    s = str(text or "")
+    s = re.sub(r"(?:key|token|auth)=([a-zA-Z0-9_\-\.]{10,})", r"key=[REDACTED]", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bAIza[0-9A-Za-z-_]{35}\b", "[REDACTED_KEY]", s)
+    s = re.sub(r"\bsk-[a-zA-Z0-9_-]{20,}\b", "[REDACTED_KEY]", s)
+    return s
+
+
 def compute_local_hash_embedding(text: str, dim: int = 512) -> List[float]:
     """
-    Deterministic Offline Vector Embedding Generator (Hermes Parity).
+    Deterministic Offline Vector Embedding Generator (Anara Standard).
     Generates a 512-dimensional normalized dense vector using character n-grams and word tokens.
     Requires zero network calls, zero external API keys, and runs in sub-millisecond time.
     """
@@ -41,7 +52,7 @@ def compute_local_hash_embedding(text: str, dim: int = 512) -> List[float]:
 
 def get_text_embedding(text: str, allow_local_fallback: bool = True) -> Optional[List[float]]:
     """
-    Hermes & Claude Code Parity: Hybrid Dense Vector Embeddings.
+    Anara Enterprise Architecture: Hybrid Dense Vector Embeddings.
     Primary: Gemini gemini-embedding-001 (3072-dimensional semantic vectors).
     Fallback: Local 512-dimensional subword n-gram vector (offline / zero-key resilience).
     Caches vectors in process RAM to eliminate redundant calculations.
@@ -99,7 +110,7 @@ def cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:
         return 0.0
 
 
-def get_current_indonesian_time_str(offset_minutes: Optional[int] = None, tz_name: Optional[str] = None) -> Dict[str, str]:
+def get_current_time_str(offset_minutes: Optional[int] = None, tz_name: Optional[str] = None) -> Dict[str, str]:
     """
     Returns real-time day, date, and clock time with automatic timezone resolution
     (works globally across WIB, WITA, WIT, JST, UTC, EST, etc. using local OS or client offset).
@@ -116,12 +127,15 @@ def get_current_indonesian_time_str(offset_minutes: Optional[int] = None, tz_nam
     minutes = (abs(total_seconds) % 3600) // 60
     offset_str = f"UTC{sign}{hours:02d}:{minutes:02d}"
 
-    id_labels = {
-        "+07:00": "WIB",
-        "+08:00": "WITA",
-        "+09:00": "WIT",
-    }
-    short_label = id_labels.get(f"{sign}{hours:02d}:{minutes:02d}", offset_str)
+    if tz_name and tz_name.strip():
+        short_label = tz_name.strip()
+    else:
+        id_labels = {
+            "+07:00": "WIB",
+            "+08:00": "WITA",
+            "+09:00": "WIT",
+        }
+        short_label = id_labels.get(f"{sign}{hours:02d}:{minutes:02d}", offset_str)
 
     # Format time and date cleanly
     day_name = now.strftime("%A")
@@ -141,6 +155,9 @@ def get_current_indonesian_time_str(offset_minutes: Optional[int] = None, tz_nam
         "tz_offset": offset_str,
         "iso": now.isoformat()
     }
+
+
+get_current_indonesian_time_str = get_current_time_str
 
 
 def _exec_universal_llm(prompt: str, max_tokens: Optional[int] = None) -> Optional[str]:
@@ -262,7 +279,7 @@ class SemanticRAGMixin:
     """Semantic brain search, proactive anticipation, facts association, and system prompt generation."""
 
     def _init_embeddings_table(self) -> None:
-        """Initializes SQLite memory_embeddings table for persistent vector RAG (Hermes Parity)."""
+        """Initializes SQLite memory_embeddings table for persistent vector RAG (Anara Standard)."""
         try:
             with self._get_connection() as conn:
                 conn.execute("""
@@ -274,19 +291,23 @@ class SemanticRAGMixin:
                         content TEXT NOT NULL,
                         embedding_json TEXT NOT NULL,
                         updated_at REAL NOT NULL,
-                        UNIQUE(source_type, source_id) ON CONFLICT REPLACE
+                        UNIQUE(source_type, source_id, speaker_name) ON CONFLICT REPLACE
                     );
                 """)
                 conn.execute("""
                     CREATE INDEX IF NOT EXISTS idx_mem_emb_source
                     ON memory_embeddings(source_type, source_id);
                 """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_mem_emb_speaker
+                    ON memory_embeddings(speaker_name);
+                """)
                 conn.commit()
         except Exception as e:
             logger.debug(f"[SemanticRAG] Embeddings table init error: {e}")
 
     def index_embedding(self, source_type: str, source_id: str, content: str, speaker_name: Optional[str] = None) -> bool:
-        """Computes and stores a vector embedding for a memory entity in SQLite (Hermes Parity)."""
+        """Computes and stores a vector embedding for a memory entity in SQLite (Anara Standard)."""
         self._init_embeddings_table()
         vec = get_text_embedding(content)
         if not vec:
@@ -310,7 +331,7 @@ class SemanticRAGMixin:
 
     def semantic_search_brain(self, query: str, speaker_name: Optional[str] = None, top_k: int = 4) -> List[Dict[str, Any]]:
         """
-        Hermes Parity: Hybrid Dense+Sparse Semantic Memory & Episodic RAG Search.
+        Anara Standard: Hybrid Dense+Sparse Semantic Memory & Episodic RAG Search.
         Blends 3072-dimensional vector cosine similarity (dense) with BM25 token matching (sparse)
         across memories, projects, notes, and past conversations.
         """
@@ -547,11 +568,11 @@ class SemanticRAGMixin:
             else:
                 speaker_id = row["id"]
 
-            root_prefix = norm_key.split("_")[0]
+            # Only prune explicit temporal variants of this exact key (Anara Standard)
             cursor.execute("""
                 DELETE FROM memories
-                WHERE speaker_id = ? AND key != ? AND (key LIKE ? OR key LIKE ?)
-            """, (speaker_id, norm_key, f"{root_prefix}%", "%_baru%"))
+                WHERE speaker_id = ? AND key IN (?, ?, ?)
+            """, (speaker_id, f"{norm_key}_baru", f"{norm_key}_current", f"{norm_key}_latest"))
 
             cursor.execute("""
                 INSERT INTO memories (speaker_id, category, key, value, updated_at)
@@ -566,7 +587,7 @@ class SemanticRAGMixin:
                 "value": val_clean,
                 "category": category
             })
-            # Asynchronously index vector embedding for semantic search (Hermes Parity: Gap 4)
+            # Asynchronously index vector embedding for semantic search (Anara Standard: Gap 4)
             try:
                 self.index_embedding(
                     source_type="memory",
@@ -604,19 +625,32 @@ class SemanticRAGMixin:
             return [dict(r) for r in cursor.fetchall()]
 
     def delete_memory_by_id(self, memory_id: int) -> bool:
-        """Deletes a memory by its primary key ID."""
+        """Deletes a memory by its primary key ID and purges its vector embedding atomically."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            cursor.execute("SELECT m.key, s.name as speaker_name FROM memories m LEFT JOIN speakers s ON m.speaker_id = s.id WHERE m.id = ?", (memory_id,))
+            r = cursor.fetchone()
+            k = r["key"] if r else None
+            spk = r["speaker_name"] if r else None
             cursor.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+            deleted = cursor.rowcount > 0
+            if k:
+                try:
+                    cursor.execute("""
+                        DELETE FROM memory_embeddings
+                        WHERE source_type = 'memory' AND source_id = ? AND (speaker_name = ? OR speaker_name IS NULL)
+                    """, (k, spk))
+                except Exception:
+                    pass
             conn.commit()
-            ok = cursor.rowcount > 0
-            if ok:
+            if deleted:
                 self._emit_mutation("memory_deleted", {"memory_id": memory_id})
-            return ok
+            return deleted
 
     def delete_memory(self, speaker_name: str, key: str) -> bool:
-        """Deletes a specific memory key for a speaker."""
+        """Deletes a specific memory key for a speaker and purges its vector embedding."""
         norm_key = self.normalize_memory_key(key)
+        clean_speaker = speaker_name.strip().title()
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -624,14 +658,23 @@ class SemanticRAGMixin:
                 WHERE (key = ? OR key = ?) AND speaker_id IN (
                     SELECT id FROM speakers WHERE name = ?
                 )
-            """, (norm_key, key.strip().lower(), speaker_name.strip().title()))
+            """, (norm_key, key.strip().lower(), clean_speaker))
+            deleted = cursor.rowcount > 0
+            if norm_key:
+                try:
+                    cursor.execute("""
+                        DELETE FROM memory_embeddings
+                        WHERE source_type = 'memory' AND source_id = ? AND (speaker_name = ? OR speaker_name IS NULL)
+                    """, (norm_key, clean_speaker))
+                except Exception:
+                    pass
             conn.commit()
-            logger.info(f"[AnaraMemory] Deleted memory key '{key}' for {speaker_name}")
+            logger.info(f"[AnaraMemory] Deleted memory key '{key}' for {clean_speaker}")
             self._emit_mutation("memory_deleted", {
-                "speaker_name": speaker_name.strip().title(),
+                "speaker_name": clean_speaker,
                 "key": norm_key
             })
-            return True
+            return deleted
 
     def store_knowledge(
         self,
@@ -677,7 +720,7 @@ class SemanticRAGMixin:
             return [dict(r) for r in cursor.fetchall()]
 
     def search_knowledge(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
-        """Multilingual Unicode tokenized search across stored voice notes (Hermes Parity)."""
+        """Multilingual Unicode tokenized search across stored voice notes (Anara Standard)."""
         q = (query or "").strip().lower()
         if not q:
             return []
@@ -714,7 +757,7 @@ class SemanticRAGMixin:
             f"Time / Waktu: {time_info['time_str']} ({time_info['tz_offset']})\n\n"
         )
 
-        target_speaker = canonicalize_speaker_name(speaker_name) if speaker_name else (self.get_last_active_speaker_name() or "Agnan")
+        target_speaker = canonicalize_speaker_name(speaker_name) if speaker_name else (self.get_last_active_speaker_name() or "User")
         cache_key = (target_speaker, is_chat_mode)
         now = time.time()
         if cache_key in self._prompt_context_cache:
@@ -776,7 +819,16 @@ class SemanticRAGMixin:
         proj_section = f"[ACTIVE PROJECTS FOR {target_speaker.upper()}]:\n{proj_str}\n\n" if proj_str else ""
 
         m_rows = self.get_memories_for_speaker(target_speaker)
-        mem_str = "\n".join([f"- {r['key'].replace('_', ' ').title()} ({r['category']}): {r['value']}" for r in m_rows]) if m_rows else f"- Name: {target_speaker} (Active user profile in Anara database)."
+        MAX_MEMORY_CHARS = 2200
+        mem_lines = []
+        current_chars = 0
+        for r in m_rows:
+            entry = f"- {r['key'].replace('_', ' ').title()} ({r['category']}): {r['value']}"
+            if current_chars + len(entry) > MAX_MEMORY_CHARS:
+                break
+            mem_lines.append(entry)
+            current_chars += len(entry)
+        mem_str = "\n".join(mem_lines) if mem_lines else f"- Name: {target_speaker} (Active user profile in Anara database)."
 
         tone_guidance = "Adapt your response language naturally to the user's active language. Respond warmly, naturally, and concisely."
 
@@ -811,5 +863,6 @@ class SemanticRAGMixin:
             f"3. LANGUAGE SOVEREIGNTY: Seamlessly adapt and respond in the exact language used by the user (English, Indonesian, Japanese, Spanish, etc.).\n"
         )
 
-        self._prompt_context_cache[cache_key] = (now, context_body)
+        with self._lock:
+            self._prompt_context_cache[cache_key] = (now, context_body)
         return time_header + context_body

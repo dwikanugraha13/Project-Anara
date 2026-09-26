@@ -1,6 +1,6 @@
 """
 computer_use_tool.py — Top-level discovery shim for tools.computer_use package.
-Hermes Agent Parity (tools/computer_use_tool.py).
+Anara Standard (tools/computer_use_tool.py).
 Delegates all desktop automation to native cua-driver with closed-loop verification.
 """
 from typing import Any, Dict, List, Optional, Tuple

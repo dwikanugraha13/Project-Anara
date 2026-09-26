@@ -1,6 +1,6 @@
 """
 driver.py — Native cua-driver resolution, verification, and RPC caller.
-Hermes Agent Parity (tools/computer_use/cua_backend_driver.py).
+Anara Standard (tools/computer_use/cua_backend_driver.py).
 """
 import json
 import logging
@@ -19,7 +19,7 @@ _CUA_INSTALL_SH_URL = "https://raw.githubusercontent.com/trycua/cua/main/libs/cu
 
 
 def _candidate_driver_paths() -> List[str]:
-    """Candidate binary paths in order of resolution (matching Hermes standard)."""
+    """Candidate binary paths in order of resolution (matching Anara Engineering Standards)."""
     env_override = os.environ.get("CUA_DRIVER_CMD") or os.environ.get("HERMES_CUA_DRIVER_CMD", "")
     if env_override.strip():
         return [env_override.strip()]
@@ -69,7 +69,7 @@ def is_cua_driver_available() -> bool:
 
 def install_cua_driver(upgrade: bool = False) -> bool:
     """
-    Downloads and installs the official cua-driver binary from upstream (Hermes Parity).
+    Downloads and installs the official cua-driver binary from upstream (Anara Standard).
     Uses the canonical trycua/cua installer.
     """
     is_win = sys.platform == "win32"
@@ -115,7 +115,7 @@ def install_cua_driver(upgrade: bool = False) -> bool:
 
 def ensure_cua_driver_daemon_running() -> bool:
     """
-    Ensures cua-driver daemon is active on the host with self-healing kick (Hermes Parity).
+    Ensures cua-driver daemon is active on the host with self-healing kick (Anara Standard).
     Prevents silent CUA input failures across restarts and background sessions.
     """
     driver_cmd = resolve_cua_driver_cmd()

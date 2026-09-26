@@ -86,17 +86,35 @@ async def get_brain_overview():
 
 @router.get("/api/proxy-image")
 async def proxy_image_endpoint(url: str):
-    """Proxies real image requests to bypass browser referrer and CORS restrictions."""
-    if not url or not url.startswith("http"):
+    """Proxies real image requests with SSRF security filter (Anara Standard)."""
+    if not url or not url.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="Invalid URL")
+
+    # SSRF Protection: block private IPs, loopback, and cloud metadata endpoints
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower().strip()
+        if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0") or host.startswith(
+            ("10.", "192.168.", "169.254.", "172.16.", "172.17.", "172.18.", "172.19.",
+             "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.", "172.26.",
+             "172.27.", "172.28.", "172.29.", "172.30.", "172.31.")
+        ):
+            raise HTTPException(status_code=403, detail="Access to private or local network resources is forbidden.")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid target URL.")
+
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
             "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
             "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
         }
-        client = get_shared_http_client()
-        resp = await client.get(url, headers=headers)
+        import httpx
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=False) as client:
+            resp = await client.get(url, headers=headers)
         if resp.status_code == 200:
             c_type = resp.headers.get("content-type", "image/jpeg")
             if "image" not in c_type:
@@ -270,10 +288,12 @@ async def get_system_status():
     k_preview = None
     cur_k = key_manager.get_active_key()
     if cur_k:
-        k_preview = cur_k[:8] + "..." + cur_k[-4:]
+        k_preview = f"****...{cur_k[-4:]}" if len(cur_k) >= 4 else "****"
+    from providers import get_active_model_id
+    active_m = get_active_model_id()
     return {
         "core_status": "OPTIMAL",
-        "ai_model": os.getenv("GEMINI_MODEL", "gemini-3.1-flash-live-preview"),
+        "ai_model": active_m,
         "key_pool_total": key_manager.total_keys,
         "active_key_preview": k_preview,
         "memory_nodes": db_stat.get("memories_count", 0),

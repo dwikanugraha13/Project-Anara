@@ -1,11 +1,29 @@
 import logging
 import os
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
-from .constants import PROVIDER_METADATA, _DYNAMIC_CACHE
+from .constants import PROVIDER_METADATA, _DYNAMIC_CACHE, _DYNAMIC_CACHE_LOCK
 
 logger = logging.getLogger(__name__)
+
+_ROTATION_LOCK = threading.RLock()
+_PROVIDER_ROTATION_INDEX: Dict[str, int] = {}
+
+
+def _sanitize_account_for_client(acc: Dict[str, Any]) -> Dict[str, Any]:
+    """Anara Enterprise Architecture: Masks raw API key before sending account data to client."""
+    safe = dict(acc)
+    raw_key = safe.pop("api_key", None)
+    if raw_key:
+        if len(raw_key) > 8:
+            safe["masked_key"] = f"{raw_key[:4]}...{raw_key[-4:]}"
+        else:
+            safe["masked_key"] = "••••••••"
+    else:
+        safe["masked_key"] = "(none)"
+    return safe
 
 
 def disconnect_provider_api_key(provider: str) -> bool:
@@ -20,6 +38,10 @@ def disconnect_provider_api_key(provider: str) -> bool:
         "anthropic": "anthropic_api_key",
         "codex": "codex_api_key",
         "openai": "openai_api_key",
+        "openrouter": "openrouter_api_key",
+        "groq": "groq_api_key",
+        "deepseek": "deepseek_api_key",
+        "xai": "xai_api_key",
     }
     db_key_name = setting_key_map.get(prov)
     if db_key_name:
@@ -30,8 +52,9 @@ def disconnect_provider_api_key(provider: str) -> bool:
 
     memory_engine.set_app_setting(f"provider_disconnected_{prov}", "true")
 
-    _DYNAMIC_CACHE.pop(prov, None)
-    _DYNAMIC_CACHE.pop("custom_providers", None)
+    with _DYNAMIC_CACHE_LOCK:
+        _DYNAMIC_CACHE.pop(prov, None)
+        _DYNAMIC_CACHE.pop("custom_providers", None)
     logger.info(f"[ModelRouter] Disconnected provider '{prov}' and marked as disconnected")
     
     if prov == "gemini":
@@ -41,7 +64,7 @@ def disconnect_provider_api_key(provider: str) -> bool:
 
 
 def get_provider_key(provider: str) -> Optional[str]:
-    """Resolves provider active API key from SQLite ai_accounts pool, then app_settings/env."""
+    """Resolves provider active API key with round-robin pool rotation, cooldown awareness, and fallback."""
     from memory import memory_engine
     prov = provider.strip().lower()
     
@@ -51,21 +74,51 @@ def get_provider_key(provider: str) -> Optional[str]:
     accounts = memory_engine.get_ai_accounts(prov)
     if not accounts and prov == "codex":
         accounts = memory_engine.get_ai_accounts("openai")
+    if not accounts and prov == "openai":
+        accounts = memory_engine.get_ai_accounts("codex")
+
     enabled_accounts = [a for a in accounts if a.get("is_enabled", 1) == 1]
     if enabled_accounts:
         now = time.time()
-        for acc in enabled_accounts:
-            if acc.get("status") != "invalid" and (acc.get("cooldown_until") or 0.0) <= now:
-                return acc["api_key"]
-        return enabled_accounts[0]["api_key"]
+        healthy_accounts = [
+            a for a in enabled_accounts
+            if a.get("status") != "invalid" and (a.get("cooldown_until") or 0.0) <= now
+        ]
+        if healthy_accounts:
+            with _ROTATION_LOCK:
+                idx = _PROVIDER_ROTATION_INDEX.get(prov, 0)
+                selected = healthy_accounts[idx % len(healthy_accounts)]
+                _PROVIDER_ROTATION_INDEX[prov] = (idx + 1) % len(healthy_accounts)
+            return selected["api_key"]
+
+        # All accounts in cooldown — select key recovering soonest if within 60s
+        soonest = min(enabled_accounts, key=lambda a: a.get("cooldown_until") or 0.0)
+        if (soonest.get("cooldown_until") or 0.0) - now <= 60.0:
+            return soonest["api_key"]
+        return None
     elif accounts:
         return None
+
+    # Check custom providers table
+    try:
+        custom_nodes = memory_engine.get_custom_providers()
+        for c in custom_nodes:
+            if c.get("prefix", "").lower() == prov and c.get("is_active", 1):
+                k = c.get("api_key")
+                if k and k.strip():
+                    return k.strip()
+    except Exception:
+        pass
 
     setting_key_map = {
         "gemini": "gemini_api_key",
         "anthropic": "anthropic_api_key",
         "codex": "codex_api_key",
         "openai": "openai_api_key",
+        "openrouter": "openrouter_api_key",
+        "groq": "groq_api_key",
+        "deepseek": "deepseek_api_key",
+        "xai": "xai_api_key",
     }
     db_key_name = setting_key_map.get(prov)
     if db_key_name:
@@ -78,6 +131,10 @@ def get_provider_key(provider: str) -> Optional[str]:
         "anthropic": "ANTHROPIC_API_KEY",
         "codex": "OPENAI_API_KEY",
         "openai": "OPENAI_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+        "groq": "GROQ_API_KEY",
+        "deepseek": "DEEPSEEK_API_KEY",
+        "xai": "XAI_API_KEY",
     }
     env_name = env_key_map.get(prov)
     if env_name:
@@ -130,7 +187,7 @@ def has_any_active_provider() -> bool:
 
 def sync_env_to_accounts() -> None:
     """
-    Universal .env -> SQLite Account Synchronizer (Hermes Parity):
+    Universal .env -> SQLite Account Synchronizer (Anara Standard):
     Ensures that any keys or custom providers specified by any user in their .env
     are automatically discovered, loaded, and registered into SQLite (ai_accounts & custom_providers).
     Allows ANY user to simply provide a .env and have Anara work immediately out of the box.
@@ -144,6 +201,8 @@ def sync_env_to_accounts() -> None:
         "anthropic": os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY"),
         "groq": os.getenv("GROQ_API_KEY"),
         "deepseek": os.getenv("DEEPSEEK_API_KEY"),
+        "openrouter": os.getenv("OPENROUTER_API_KEY"),
+        "xai": os.getenv("XAI_API_KEY"),
     }
 
     for prov, key_val in env_keys.items():
@@ -217,7 +276,7 @@ def get_active_model_id() -> str:
 def get_fallback_model_id() -> str:
     """
     Returns the fallback model ID dynamically configured in config or settings.
-    Hermes Parity: Model fallback ladder is opt-in and dynamic.
+    Anara Standard: Multi-tier fallback ladder across healthy configured providers.
     """
     from memory import memory_engine
     saved = memory_engine.get_app_setting("fallback_ai_model")
@@ -225,12 +284,25 @@ def get_fallback_model_id() -> str:
         return saved.strip()
     try:
         from config import cfg_get
-        conf = cfg_get("model.fallback") or cfg_get("model.default")
+        conf = cfg_get("model.fallback")
         if conf and str(conf).strip():
             return str(conf).strip()
     except Exception:
         pass
-    return get_active_model_id()
+
+    active_mid = get_active_model_id()
+    ladder_candidates = [
+        ("anthropic", "claude-3-5-sonnet-latest"),
+        ("gemini", "gemini-2.5-flash"),
+        ("openai", "gpt-4o"),
+        ("groq", "groq/llama-3.3-70b-versatile"),
+        ("deepseek", "deepseek/deepseek-chat"),
+    ]
+    for p_id, default_m in ladder_candidates:
+        if is_provider_configured(p_id) and default_m != active_mid:
+            return default_m
+
+    return active_mid
 
 
 def set_active_model_id(model_id: str) -> bool:
@@ -258,8 +330,9 @@ def add_provider_account(provider: str, account_label: str, api_key: str) -> Opt
         conn.commit()
 
     res = memory_engine.add_ai_account(provider=prov, account_label=account_label, api_key=clean_key)
-    _DYNAMIC_CACHE.pop(prov, None)
-    _DYNAMIC_CACHE.pop("custom_providers", None)
+    with _DYNAMIC_CACHE_LOCK:
+        _DYNAMIC_CACHE.pop(prov, None)
+        _DYNAMIC_CACHE.pop("custom_providers", None)
     
     if prov == "gemini":
         from core import key_manager
@@ -273,8 +346,9 @@ def toggle_provider_account(provider: str, account_id: int) -> Optional[int]:
     from memory import memory_engine
     prov = provider.strip().lower()
     res = memory_engine.toggle_ai_account(account_id)
-    _DYNAMIC_CACHE.pop(prov, None)
-    _DYNAMIC_CACHE.pop("custom_providers", None)
+    with _DYNAMIC_CACHE_LOCK:
+        _DYNAMIC_CACHE.pop(prov, None)
+        _DYNAMIC_CACHE.pop("custom_providers", None)
     if prov == "gemini":
         from core import key_manager
         key_manager.reload_keys()
@@ -286,8 +360,9 @@ def delete_provider_account(provider: str, account_id: int) -> bool:
     from memory import memory_engine
     prov = provider.strip().lower()
     ok = memory_engine.delete_ai_account(account_id)
-    _DYNAMIC_CACHE.pop(prov, None)
-    _DYNAMIC_CACHE.pop("custom_providers", None)
+    with _DYNAMIC_CACHE_LOCK:
+        _DYNAMIC_CACHE.pop(prov, None)
+        _DYNAMIC_CACHE.pop("custom_providers", None)
     
     if prov == "gemini":
         from core import key_manager
@@ -305,7 +380,7 @@ def save_provider_api_key(provider: str, api_key: str) -> bool:
 
 
 async def get_providers_status_list_async(force_refresh: bool = False) -> List[Dict[str, Any]]:
-    """Returns all standard & custom providers with live connection status, account list, credits, and models."""
+    """Returns all standard & custom providers with live connection status, sanitized account list, credits, and models."""
     from memory import memory_engine
     from .discovery import get_all_dynamic_models
     all_models = await get_all_dynamic_models(force_refresh)
@@ -322,7 +397,7 @@ async def get_providers_status_list_async(force_refresh: bool = False) -> List[D
             "is_connected": configured,
             "models_count": len(prov_models),
             "accounts_count": len(accounts),
-            "accounts": accounts,
+            "accounts": [_sanitize_account_for_client(a) for a in accounts],
             "models": prov_models,
             "credit_info": None,
             "is_custom": False,
@@ -333,6 +408,9 @@ async def get_providers_status_list_async(force_refresh: bool = False) -> List[D
     for c_node in custom_nodes:
         c_prefix = c_node["prefix"]
         prov_models = [m for m in all_models if m["provider"] == c_prefix]
+        c_safe = dict(c_node)
+        c_safe.pop("api_key", None)
+        c_safe["api_key"] = c_node.get("masked_key", "(none)")
         result.append({
             "id": c_prefix,
             "name": c_node["name"],
@@ -352,7 +430,7 @@ async def get_providers_status_list_async(force_refresh: bool = False) -> List[D
             }] if c_node.get("api_key") else [],
             "models": prov_models,
             "is_custom": True,
-            "custom_data": c_node,
+            "custom_data": c_safe,
         })
 
     return result

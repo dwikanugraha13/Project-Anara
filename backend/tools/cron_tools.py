@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def _parse_schedule_to_seconds(schedule: str) -> int:
     """
-    Parses machine-standard schedule expressions into interval seconds (Hermes Parity).
+    Parses machine-standard schedule expressions into interval seconds (Anara Standard).
     Accepts:
     - Pure integer seconds: "3600", "1800"
     - Standard cron expressions: "0 9 * * *", "*/15 * * * *"
@@ -160,6 +160,14 @@ async def _tool_cronjob_manage(
             "execution_result": run_res
         }
 
+    elif act in ("runs", "history", "logs"):
+        runs = autonomous_engine.get_task_runs(task_id=task_id.strip() if task_id else None, limit=20)
+        return {
+            "status": "success",
+            "total_runs": len(runs),
+            "runs": runs,
+        }
+
     elif act in ("remove", "delete"):
         if not task_id:
             return {"status": "error", "message": "Parameter 'task_id' is required to delete a task."}
@@ -172,5 +180,5 @@ async def _tool_cronjob_manage(
     else:
         return {
             "status": "error",
-            "message": f"Unknown action '{act}'. Supported actions: 'create', 'list', 'pause', 'resume', 'run', 'remove'."
+            "message": f"Unknown action '{act}'. Supported actions: 'create', 'list', 'runs', 'pause', 'resume', 'run', 'remove'."
         }

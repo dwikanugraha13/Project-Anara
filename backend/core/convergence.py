@@ -1,5 +1,5 @@
 """
-convergence.py — Mission-Level Cognitive Convergence & Stagnation Detector (Hermes & Claude Code Parity).
+convergence.py — Mission-Level Cognitive Convergence & Stagnation Detector (Anara Enterprise Architecture).
 
 Monitors agent trajectory across turns to detect:
 1. Goal Satisfaction: File modified + ground-truth tests verified -> conclude immediately without wandering.
@@ -25,6 +25,11 @@ def _is_verifiable_code_target(target_path: str) -> bool:
     clean_p = target_path.strip().replace("\\", "/")
     if not clean_p:
         return False
+
+    # Filter out raw CLI command strings that might have entered modified_targets
+    if " " in clean_p and not os.path.exists(clean_p):
+        return False
+
     from core.prompt_loader import load_config_yaml
     rules = load_config_yaml("convergence/verifier_rules.yaml", default={})
     non_code_exts = set(rules.get("non_code_extensions") or [])
@@ -49,6 +54,11 @@ def _is_verification_command(cmd: str) -> bool:
     if not clean_cmd:
         return False
 
+    # Exclude non-test inspection commands like 'git checkout', 'cat test.py', etc.
+    non_test_prefixes = ("git ", "cat ", "type ", "echo ", "head ", "tail ", "less ", "more ", "grep ", "find ")
+    if any(clean_cmd.startswith(p) for p in non_test_prefixes):
+        return False
+
     # 1. Match against dynamically detected repository test commands
     try:
         from core.agent import anara_agent
@@ -65,7 +75,7 @@ def _is_verification_command(cmd: str) -> bool:
         pass
 
     # 2. Semantic execution intent: check if command invokes a test/check/spec/lint sub-action
-    return bool(re.search(r"\b(test|tests|check|spec|specs|lint)\b", clean_cmd))
+    return bool(re.search(r"\b(test|tests|check|spec|specs|lint|pytest|vitest|cargo\s+test|npm\s+test)\b", clean_cmd))
 
 
 @dataclass
@@ -76,6 +86,7 @@ class ActionRecord:
     risk: str
     is_error: bool
     summary: str
+    args_hash: str = ""
 
 
 @dataclass
@@ -155,6 +166,11 @@ class ConvergenceDetector:
 
             target = self.extract_canonical_target(t_name, t_args)
 
+            try:
+                args_hash = hashlib.sha256(json.dumps(t_args, sort_keys=True).encode()).hexdigest()[:8]
+            except Exception:
+                args_hash = ""
+
             record = ActionRecord(
                 step=step,
                 tool_name=t_name,
@@ -162,6 +178,7 @@ class ConvergenceDetector:
                 risk=risk,
                 is_error=is_err,
                 summary=summary,
+                args_hash=args_hash,
             )
             self.history.append(record)
 
@@ -204,13 +221,14 @@ class ConvergenceDetector:
     def detect_multi_tool_cycles(self) -> Optional[int]:
         """
         Detects repeating N-cycles of length 2, 3, or 4 in the action history.
+        Includes args_hash so purposeful iterative edits across cycles are not false-positived.
         Returns the cycle length if a repeating pattern is found, or None.
         """
         if len(self.history) < 6:
             return None
 
-        # Signatures of recent actions: (tool_name, target)
-        sigs = [(a.tool_name, a.target) for a in self.history]
+        # Signatures of recent actions: (tool_name, target, args_hash)
+        sigs = [(a.tool_name, a.target, getattr(a, "args_hash", "")) for a in self.history]
 
         for cycle_len in (2, 3, 4):
             if len(sigs) < cycle_len * 2:
@@ -230,7 +248,7 @@ class ConvergenceDetector:
         return None
 
     def evaluate(self, current_step: int) -> ConvergenceStatus:
-        """Evaluates convergence across all 4 heuristics (Hermes & Claude Code Parity)."""
+        """Evaluates convergence across all 4 heuristics (Anara Enterprise Architecture)."""
         from core.prompt_loader import load_config_yaml
         g_cfg = load_config_yaml("convergence/guidance.yaml", default={})
 
@@ -360,7 +378,7 @@ class ConvergenceDetector:
 
     def evaluate_final_stop_gate(self, agent_mode: str = "build") -> Optional[str]:
         """
-        Negative Verification Stop-Gate (Hermes Parity: turn_stop_gates.py & Claude Code Parity):
+        Negative Verification Stop-Gate (Anara Standard: turn_stop_gates.py & Anara Standard):
         Intercepts attempts to conclude a task with narrative text if code files were modified
         but no passing ground-truth verification test evidence was observed in this session.
         Returns: Synthetic nudge message if verification is missing, else None.

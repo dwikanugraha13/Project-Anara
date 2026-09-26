@@ -90,7 +90,7 @@ def compact_tool_payload(
     """
     Normalizes and compacts any tool execution payload (dict, str, or list)
     recursively preserving structured metadata while preventing token bloat.
-    Handles giant lists (e.g. 500+ files from glob/find) and nested collections (Hermes Standard).
+    Handles giant lists (e.g. 500+ files from glob/find) and nested collections (Anara Engineering Standards).
     """
     if payload is None or _depth > 4:
         return payload
@@ -132,7 +132,7 @@ def compact_tool_payload(
         compacted = dict(payload)
         for k, v in compacted.items():
             if isinstance(v, str):
-                # Claude Code Parity: File reading tools self-bound their pagination via offset/limit.
+                # Anara Standard: File reading tools self-bound their pagination via offset/limit.
                 # Do not truncate legitimate source code views.
                 is_file_read_content = (k == "content" and any(fn in str(tool_name).lower() for fn in ("read_local_file", "read_file", "file_read")))
                 if not is_file_read_content and (k in ("output", "stdout", "stderr", "content", "message", "result", "diff", "raw", "summary") or len(v) > max_chars):

@@ -26,12 +26,13 @@ logger = logging.getLogger(__name__)
 # Patterns identifying sensitive environment variables to scrub
 SENSITIVE_ENV_PATTERNS = [
     r"(?i).*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|CREDENTIAL|PRIVATE).*",
-    r"(?i).*(?:GEMINI|OPENAI|ANTHROPIC|GROQ|TELEGRAM|DISCORD|WHATSAPP|GITHUB).*",
+    r"(?i).*(?:GEMINI|OPENAI|ANTHROPIC|GROQ|TELEGRAM|DISCORD|WHATSAPP|GITHUB|HERMES|CLAW).*",
+    r"(?i).*(?:DATABASE_URL|SSH_AUTH_SOCK|KUBECONFIG|AWS_ACCESS|AWS_SECRET).*",
 ]
 
 # High-risk system takeover commands strictly blocked
 HOST_TAKEOVER_PATTERNS = [
-    r"\brm\s+-[rf]{1,2}\s+[/~]",
+    r"\brm\s+-(?:[a-z]*r[a-z]*\s+-[a-z]*f[a-z]*|[a-z]*f[a-z]*\s+-[a-z]*r[a-z]*|[rf]{1,2}|-(?:recursive|force))\s+[/~]",
     r"\bformat\s+[a-z]:",
     r"\bdiskpart\b",
     r"\bdrop\s+database\b",
@@ -39,7 +40,7 @@ HOST_TAKEOVER_PATTERNS = [
     r"\bshutdown\b",
     r"\breboot\b",
     # Protect core repository internal database & credentials from deletion
-    r"(?:rm|del|remove-item|rmdir)\b.*(?:[\/\\]|\s+)(?:\.git|anara_brain\.db|\.env)\b",
+    r"(?:rm|del|remove-item|rmdir)\b.*(?:[\/\\]|\s+)(?:\.git|anara_brain\.db|\.env(?:[\.\w]*))\b",
     # Registry & system security tampering
     r"\breg\s+(?:add|delete|copy|restore|import)\b",
     r"\bset-mppreference\b",
@@ -49,6 +50,8 @@ HOST_TAKEOVER_PATTERNS = [
     r"(?:iex|invoke-expression)\s*\(?(?:new-object|curl|iwr|invoke-webrequest)",
     r"curl\s+.*\|\s*(?:iex|bash|sh|powershell)",
     r"wget\s+.*\|\s*(?:iex|bash|sh|powershell)",
+    # Destructive interpreter commands
+    r"\bpython\s+-c\s+['\"].*(?:shutil\.rmtree|os\.remove).*(?:/|[a-z]:\\).*['\"]",
 ]
 
 
@@ -101,6 +104,8 @@ def check_command_safety(command: str) -> Tuple[bool, Optional[str]]:
 
 class CommandSandbox:
     """Executes commands inside an isolated environment with resource control and timeouts."""
+
+    check_command_safety = staticmethod(check_command_safety)
 
     @staticmethod
     def is_docker_available() -> bool:

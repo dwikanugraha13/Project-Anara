@@ -1,6 +1,6 @@
 """
 skills_sync.py — Manifest-based Seeding & Synchronization for Bundled Skills.
-Hermes Agent Parity (tools/skills_sync.py):
+Anara Standard (tools/skills_sync.py):
 1. In-tree repository skills (backend/skills/) act as pristine master templates.
 2. Active user runtime skills (ANARA_HOME/skills/) are decoupled from Git.
 3. Tracks origin hashes in .bundled_manifest:
@@ -14,6 +14,7 @@ import hashlib
 import logging
 import os
 import shutil
+import stat
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -25,16 +26,31 @@ MANIFEST_FILENAME = ".bundled_manifest"
 IGNORED_PATTERNS = {"__pycache__", ".git", ".pytest_cache", ".DS_Store", "desktop.ini"}
 
 
+def _rmtree_writable(path: Path) -> None:
+    """Removes a directory tree, resetting read-only attributes on Windows if needed (Anara Standard)."""
+    def _on_error(func, fpath, exc_info):
+        try:
+            os.chmod(fpath, stat.S_IRWXU)
+            func(fpath)
+        except Exception:
+            pass
+
+    try:
+        shutil.rmtree(path, onerror=_on_error)
+    except Exception:
+        shutil.rmtree(path, ignore_errors=True)
+
+
 def _dir_hash(directory: Path) -> str:
-    """Calculates MD5 hash of skill directory content excluding runtime caches."""
+    """Calculates deterministic MD5 hash of skill directory content excluding runtime caches."""
     hasher = hashlib.md5()
     if not directory.is_dir():
         return ""
 
     for root, dirs, files in os.walk(directory):
-        dirs[:] = [d for d in dirs if d not in IGNORED_PATTERNS]
+        dirs[:] = sorted([d for d in dirs if d not in IGNORED_PATTERNS and not d.endswith(".bak")])
         for f in sorted(files):
-            if f in IGNORED_PATTERNS:
+            if f in IGNORED_PATTERNS or f.endswith((".pyc", ".pyo", ".tmp")):
                 continue
             fpath = Path(root) / f
             rel_p = str(fpath.relative_to(directory)).replace("\\", "/")
@@ -47,12 +63,12 @@ def _dir_hash(directory: Path) -> str:
 
 
 def _read_manifest(manifest_path: Path) -> Dict[str, str]:
-    """Reads .bundled_manifest format '{slug}:{hash}' into a dictionary."""
+    """Reads .bundled_manifest format '{slug}:{hash}' into a dictionary, stripping UTF-8 BOM."""
     if not manifest_path.is_file():
         return {}
     entries: Dict[str, str] = {}
     try:
-        lines = manifest_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        lines = manifest_path.read_text(encoding="utf-8-sig", errors="replace").splitlines()
         for line in lines:
             line = line.strip()
             if not line or line.startswith("#"):
@@ -68,18 +84,20 @@ def _read_manifest(manifest_path: Path) -> Dict[str, str]:
 
 
 def _write_manifest(manifest_path: Path, entries: Dict[str, str]) -> None:
-    """Writes sorted entries to .bundled_manifest."""
+    """Writes sorted entries atomically to .bundled_manifest."""
     try:
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         lines = [f"{k}:{v}\n" for k, v in sorted(entries.items())]
-        manifest_path.write_text("".join(lines), encoding="utf-8", errors="replace")
+        tmp_path = manifest_path.with_suffix(".tmp")
+        tmp_path.write_text("".join(lines), encoding="utf-8", errors="replace")
+        os.replace(tmp_path, manifest_path)
     except Exception as e:
         logger.warning(f"[SkillsSync] Failed to write manifest {manifest_path}: {e}")
 
 
 def sync_bundled_skills() -> Dict[str, int]:
     """
-    Synchronizes in-tree bundled skills into active user runtime skills (Hermes Parity).
+    Synchronizes in-tree bundled skills into active user runtime skills (Anara Standard).
     Preserves user customizations and agent-learned skills.
     """
     bundled_dir = get_bundled_skills_dir()
@@ -102,11 +120,14 @@ def sync_bundled_skills() -> Dict[str, int]:
     manifest = _read_manifest(manifest_file)
     updated_manifest = dict(manifest)
 
-    # Discover all bundled skills (directories containing SKILL.md)
+    # Discover all bundled skills (directories containing SKILL.md) recursively
     bundled_skills: List[Tuple[str, Path]] = []
-    for item in bundled_dir.iterdir():
-        if item.is_dir() and (item / "SKILL.md").is_file():
-            bundled_skills.append((item.name, item))
+    for skill_md in bundled_dir.rglob("SKILL.md"):
+        skill_folder = skill_md.parent
+        if any(part in IGNORED_PATTERNS for part in skill_folder.parts):
+            continue
+        slug = skill_folder.name
+        bundled_skills.append((slug, skill_folder))
 
     stats["total_bundled"] = len(bundled_skills)
 
@@ -115,6 +136,11 @@ def sync_bundled_skills() -> Dict[str, int]:
         target_path = runtime_dir / slug
 
         if not target_path.exists():
+            # If skill was previously tracked in manifest, user deliberately deleted it -> respect user choice!
+            if slug in manifest:
+                stats["unchanged"] += 1
+                continue
+
             # Case 1: Skill does not exist in runtime -> Seed it
             try:
                 shutil.copytree(source_path, target_path, ignore=shutil.ignore_patterns(*IGNORED_PATTERNS))
@@ -134,13 +160,19 @@ def sync_bundled_skills() -> Dict[str, int]:
             elif user_hash == origin_hash:
                 # User has NOT modified the skill
                 if b_hash != origin_hash:
-                    # Upstream was updated -> Safe to apply update
+                    # Upstream was updated -> Safe to apply update via .bak staging (Anara Standard)
+                    bak_path = target_path.with_suffix(".bak")
                     try:
-                        shutil.rmtree(target_path, ignore_errors=True)
+                        if bak_path.exists():
+                            _rmtree_writable(bak_path)
+                        shutil.move(str(target_path), str(bak_path))
                         shutil.copytree(source_path, target_path, ignore=shutil.ignore_patterns(*IGNORED_PATTERNS))
                         updated_manifest[slug] = b_hash
                         stats["updated"] += 1
+                        _rmtree_writable(bak_path)
                     except Exception as e:
+                        if bak_path.exists() and not target_path.exists():
+                            shutil.move(str(bak_path), str(target_path))
                         logger.warning(f"[SkillsSync] Failed to update skill '{slug}': {e}")
                 else:
                     stats["unchanged"] += 1

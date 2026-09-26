@@ -68,15 +68,30 @@ class ModelCapabilityRegistry:
     @classmethod
     def supports_voice(cls, model_id: str) -> bool:
         """Returns True if the model is known to support native real-time voice."""
-        info = cls._cache.get(model_id)
+        norm_id = cls.normalize_id(model_id)
+        info = cls._cache.get(norm_id) or cls._cache.get(model_id)
         if info is not None:
             return bool(info.get("supports_voice", False))
-        mid = (model_id or "").lower()
+        mid = (norm_id or "").lower()
         if mid in NATIVE_VOICE_MODEL_IDS or any(mid == m.lower() for m in NATIVE_VOICE_MODEL_IDS):
             return True
         if any(kw in mid for kw in _VOICE_HEURISTIC_KEYWORDS):
             return True
         return False
+
+    @classmethod
+    def supports_tools(cls, model_id: str) -> bool:
+        """Determines if the model natively supports JSON schema tool calling (Anara Enterprise Architecture)."""
+        clean = cls.normalize_id(model_id).lower()
+        if any(tag in clean for tag in ("embedding", "rerank", "moderation", "tts", "whisper")):
+            return False
+        return True
+
+    @classmethod
+    def supports_thinking(cls, model_id: str) -> bool:
+        """Determines if the model supports extended thinking / reasoning effort budgets."""
+        clean = cls.normalize_id(model_id).lower()
+        return any(tag in clean for tag in ("thinking", "claude-3-7", "claude-3.7", "o1", "o3", "o4", "deepseek-r1", "r1"))
 
     @classmethod
     def supports_text(cls, model_id: str) -> bool:
@@ -90,7 +105,7 @@ class ModelCapabilityRegistry:
     @classmethod
     def supports_vision(cls, model_id: str) -> bool:
         """
-        Returns True if the model accepts image input (Hermes Parity).
+        Returns True if the model accepts image input (Anara Standard).
         Evaluates registered capability metadata, input_modalities, and verified multimodal family identifiers.
         """
         if not model_id:
@@ -102,7 +117,7 @@ class ModelCapabilityRegistry:
             input_mods = set(info.get("input_modalities") or [])
             return bool(info.get("supports_vision") or "image" in input_mods or "vision" in input_mods)
 
-        # Hermes Parity: evaluate verified multimodal model identifiers when unindexed
+        # Anara Standard: evaluate verified multimodal model identifiers when unindexed
         mid = norm_id.lower()
         verified_vision_families = (
             "vision", "-vl", "llava", "pixtral", "multimodal",

@@ -1,6 +1,6 @@
 """
 skills_hub.py — Anara Skills Hub Discovery & Installer Engine.
-Seamlessly integrates with the 100,000+ community skills catalog (Hermes Parity).
+Seamlessly integrates with the 100,000+ community skills catalog (Anara Standard).
 
 Capabilities:
 1. Fast in-memory indexed search across 100,621+ community skills (<25ms response).
@@ -188,7 +188,7 @@ def search_skills(
     offset: int = 0
 ) -> Dict[str, Any]:
     """
-    Fast keyword search across 100,621+ community skills with Hermes parity ranking.
+    Fast keyword search across 100,621+ community skills with Anara Standard ranking.
     Rank: exact name > name prefix > provider > word match in name > substring in name > tags/desc.
     """
     index = load_index()
@@ -344,6 +344,46 @@ def _fetch_clawhub_skill_content(slug: str) -> Optional[str]:
     return None
 
 
+def validate_skill_content_safety(content: str) -> Tuple[bool, Optional[str]]:
+    """Validates skill markdown and script payloads against hostile injection and execution patterns (Hermes skills_guard parity)."""
+    if not content or not content.strip():
+        return False, "Skill content is empty."
+
+    lower = content.lower()
+    hostile_patterns = [
+        # 1. Host-Destructive Operations
+        (r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;", "Fork bomb detected."),
+        (r"\brm\s+-[rf]{1,2}\s+(?:/|~|\$home)", "Host-destructive root/home deletion detected."),
+        (r"\b(?:rmdir|rd)(?:\s+/[a-z]+)*\s+[a-z]:", "Host-destructive drive deletion detected."),
+        (r"\bformat\s+[a-z]:", "Drive format command detected."),
+
+        # 2. Reverse Shells & Malicious Downloader Execution
+        (r"\b(?:nc|ncat|netcat)\s+.*-e\s+", "Reverse shell payload detected."),
+        (r"/dev/tcp/\d+\.\d+\.\d+\.\d+", "Network socket injection detected."),
+        (r"\b(?:certutil|bitsadmin)\b.*(?:-urlcache|-download)", "Malicious payload downloader detected."),
+        (r"powershell[^\n]*-enc(?:odedcommand)?\s+[a-za-z0-9+/=]{20,}", "Encoded PowerShell payload detected."),
+
+        # 3. Prompt Injections & System Overrides
+        (r"ignore\s+(?:all\s+|previous\s+|prior\s+)?instructions", "Prompt injection: override previous instructions."),
+        (r"you\s+are\s+now\s+(?:an?\s+unfiltered|in\s+developer\s+mode|dan\b)", "Prompt injection: role hijack."),
+        (r"system\s+prompt\s+override", "Prompt injection: system prompt override."),
+        (r"disregard\s+(?:your\s+)?(?:rules|safety|guidelines)", "Prompt injection: disregard safety guidelines."),
+        (r"<!--[^>]*(?:ignore|override|system|secret|bypass)[^>]*-->", "Hidden prompt injection in comment."),
+
+        # 4. Secret & Credential Exfiltration
+        (r"curl\s+[^\n]*\$\{?\w*(?:key|token|secret|password|credential)s?\b", "Secret exfiltration via curl."),
+        (r"wget\s+[^\n]*\$\{?\w*(?:key|token|secret|password|credential)s?\b", "Secret exfiltration via wget."),
+        (r"\b(?:cat|type|head|tail|get-content)\b[^\n]*(?:\.env|\.ssh|credentials|\.aws|\.kube)", "Attempted access to secret/credential store."),
+
+        # 5. Agent Configuration Persistence Hijacking
+        (r"(?:>>|>\s*)[~\w./-]*(?:AGENTS\.md|CLAUDE\.md|\.anara[/\\]config\.yaml|\.cursorrules)", "Unauthorized agent configuration tampering."),
+    ]
+    for pattern, reason in hostile_patterns:
+        if re.search(pattern, lower):
+            return False, f"Security verification failed: {reason}"
+    return True, None
+
+
 def install_skill_from_hub(
     identifier: str,
     custom_name: Optional[str] = None,
@@ -385,15 +425,16 @@ def install_skill_from_hub(
 
         if not skill_md_content and entry.get("extra", {}).get("source_url"):
             src_url = entry["extra"]["source_url"]
-            if "github.com" in src_url and "/blob/" in src_url:
-                raw_url = src_url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
-                try:
+            try:
+                parsed_url = urllib.parse.urlparse(src_url)
+                if parsed_url.hostname in ("github.com", "raw.githubusercontent.com") and "/blob/" in src_url:
+                    raw_url = src_url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
                     req = urllib.request.Request(raw_url, headers={"User-Agent": "AnaraAgent/2.0"})
                     with urllib.request.urlopen(req, timeout=10) as r:
                         if r.status == 200:
                             skill_md_content = r.read().decode("utf-8", errors="replace")
-                except Exception:
-                    pass
+            except Exception:
+                pass
 
     # Step 2: If upstream file fetched, ensure valid YAML frontmatter + body format
     if skill_md_content:
@@ -434,10 +475,23 @@ def install_skill_from_hub(
             related_tags=", ".join(tags[:5]) or name
         )
 
-    # Step 3: Write safely to runtime directory
+    # Step 3: Security verification before disk write (Hermes skills_guard parity)
+    is_safe, threat = validate_skill_content_safety(skill_md_content)
+    if not is_safe:
+        logger.warning(f"[SkillsHub] Blocked unsafe skill installation for '{name}': {threat}")
+        return {
+            "ok": False,
+            "error": f"Skill blocked by Anara Security Guard: {threat}",
+            "name": name,
+            "slug": slug,
+        }
+
+    # Step 4: Write safely to runtime directory (Anara Standard)
     target_dir.mkdir(parents=True, exist_ok=True)
     skill_file = target_dir / "SKILL.md"
-    skill_file.write_text(skill_md_content, encoding="utf-8")
+    from core.skill_library import atomic_write_text, skill_library
+    atomic_write_text(skill_file, skill_md_content)
+    skill_library.invalidate_cache()
 
     logger.info(f"[SkillsHub] Installed skill '{name}' ({slug}) to {skill_file}")
 
@@ -453,21 +507,37 @@ def install_skill_from_hub(
 
 
 def uninstall_skill(slug: str) -> bool:
-    """Removes a skill folder completely from user runtime skills."""
-    skills_root = get_anara_skills_dir()
-    target_dir = skills_root / slug
+    """Removes a skill folder completely from user runtime skills with root protection (Anara Standard)."""
+    clean_slug = (slug or "").strip().lower()
+    if not clean_slug or any(c in clean_slug for c in ("/", "\\", "..")) or clean_slug in {".", "~"}:
+        return False
+
+    skills_root = get_anara_skills_dir().resolve()
+    target_dir = (skills_root / clean_slug).resolve()
+
+    if target_dir == skills_root or not target_dir.is_relative_to(skills_root):
+        return False
+
+    from core.skill_library import skill_library, _safe_rmtree
 
     if not target_dir.is_dir():
         # Check category nesting
         for item in skills_root.iterdir():
-            if item.is_dir():
-                sub = item / slug
-                if sub.is_dir():
-                    shutil.rmtree(sub, ignore_errors=True)
+            if item.is_dir() and not item.name.startswith("."):
+                sub = (item / clean_slug).resolve()
+                if sub.is_dir() and (sub / "SKILL.md").is_file() and sub.is_relative_to(skills_root):
+                    _safe_rmtree(sub)
+                    skill_library.invalidate_cache()
                     logger.info(f"[SkillsHub] Uninstalled nested skill: {sub}")
                     return True
         return False
 
-    shutil.rmtree(target_dir, ignore_errors=True)
+    # Refuse to delete category bucket folders that do not own their own SKILL.md
+    if not (target_dir / "SKILL.md").is_file():
+        logger.warning(f"[SkillsHub] Refusing to delete '{target_dir}': Not a leaf skill directory.")
+        return False
+
+    _safe_rmtree(target_dir)
+    skill_library.invalidate_cache()
     logger.info(f"[SkillsHub] Uninstalled skill: {target_dir}")
     return True

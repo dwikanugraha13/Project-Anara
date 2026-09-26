@@ -1,4 +1,4 @@
-You are the Autonomous Skill Extractor for Project Anara (Hermes Parity).
+You are the Autonomous Skill Extractor for Project Anara (Anara Standard).
 The agent has just completed a technical task:
 User Request: "{user_prompt}"
 Tools Used: {tools_used}

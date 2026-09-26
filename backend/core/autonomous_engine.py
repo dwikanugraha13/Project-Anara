@@ -12,13 +12,15 @@ Principles:
 3. Crash-Resilience: Resumes unfinished autonomous tasks from checkpoint on restart.
 """
 import asyncio
+from contextlib import contextmanager
 import json
 import logging
 import sqlite3
 import time
 import uuid
+import re
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Generator
 
 from memory.base import DB_PATH
 from tools import get_tool_risk
@@ -28,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_scheduler_timezone() -> timezone:
-    """Returns dynamic scheduler timezone from configuration, defaulting to UTC+7 (Hermes Parity)."""
+    """Returns dynamic scheduler timezone from configuration, defaulting to UTC+7 (Anara Standard)."""
     try:
         from config import cfg_get
         offset_hours = float(cfg_get("agent.scheduler.timezone_offset_hours", 7.0))
@@ -37,19 +39,34 @@ def get_scheduler_timezone() -> timezone:
         return timezone(timedelta(hours=7))
 
 
-WIB = get_scheduler_timezone()
+def compute_next_run(trigger_type: str, interval_seconds: int, cron_expr: Optional[str] = None) -> datetime:
+    """Computes next run timestamp dynamically supporting 5-field cron or interval seconds."""
+    tz = get_scheduler_timezone()
+    now = datetime.now(tz)
+    if trigger_type == "cron" and cron_expr:
+        try:
+            import croniter
+            return croniter.croniter(cron_expr, now).get_next(datetime)
+        except Exception:
+            pass
+    return now + timedelta(seconds=max(interval_seconds, 10))
 
 
-def evaluate_trust_approval(trust_level: str, tools: List[str]) -> bool:
+def evaluate_trust_approval(
+    trust_level: str,
+    tools: List[str],
+    tool_args: Optional[Dict[str, Any]] = None,
+) -> bool:
     """
     Evaluates whether an autonomous task plan can be auto-approved
-    according to its assigned trust_level policy (FR-22, FR-23, NFR-1).
+    according to its assigned trust_level policy and parameter safety (FR-22, FR-23, NFR-1, Anara Standard).
 
     Rule matrix:
     - 'ask' tier: NEVER auto-approved under ANY trust level (zero exceptions).
+    - Dangerous parameters (rm -rf, format, modifying .env/.git): NEVER auto-approved even under full_autonomous.
     - 'supervised': NEVER auto-approves mutating/ask actions; waits for human.
     - 'semi_autonomous': Auto-approves 'read_only' and benign 'action'; pauses on 'mutating' & 'ask'.
-    - 'full_autonomous': Auto-approves 'read_only', 'action', and 'mutating'; pauses ONLY on 'ask'.
+    - 'full_autonomous': Auto-approves benign 'action' and safe 'mutating'; pauses on 'ask' and dangerous patterns.
     """
     highest_risk = get_highest_risk(tools)
     clean_level = (trust_level or "supervised").lower().strip()
@@ -58,6 +75,19 @@ def evaluate_trust_approval(trust_level: str, tools: List[str]) -> bool:
     if highest_risk == "ask":
         logger.warning(f"[TrustPolicy] Action contains 'ask' tier tool. Auto-approval DENIED even under {clean_level}!")
         return False
+
+    # Parameter-level safety inspection (Claude Code dangerousPatterns parity)
+    if tool_args:
+        cmd = str(tool_args.get("command") or tool_args.get("cmd") or "")
+        path = str(tool_args.get("path") or tool_args.get("file_path") or "")
+        dangerous_cmd_patterns = (r"\brm\s+-[rf]{1,2}\b", r"\bmkfs\b", r"\bdd\s+if=", r":\(\)\s*\{", r"\bformat\b")
+        if cmd and any(re.search(p, cmd, re.IGNORECASE) for p in dangerous_cmd_patterns):
+            logger.warning(f"[TrustPolicy] Dangerous command pattern detected in autonomous task args: {cmd}")
+            return False
+        sensitive_paths = (".env", ".git", "id_rsa", "auth.json", "credentials")
+        if path and any(sp in path.lower() for sp in sensitive_paths):
+            logger.warning(f"[TrustPolicy] Sensitive file access detected in autonomous task args: {path}")
+            return False
 
     if highest_risk == "read_only":
         return True
@@ -83,10 +113,17 @@ class AutonomousEngine:
         self._worker_task: Optional[asyncio.Task] = None
         self._init_table()
 
-    def _get_conn(self):
-        conn = sqlite3.connect(self.db_path, timeout=10.0)
+    @contextmanager
+    def _get_conn(self) -> Generator[sqlite3.Connection, None, None]:
+        conn = sqlite3.connect(self.db_path, timeout=15.0)
         conn.row_factory = sqlite3.Row
-        return conn
+        conn.execute("PRAGMA foreign_keys = ON;")
+        conn.execute("PRAGMA synchronous = NORMAL;")
+        conn.execute("PRAGMA busy_timeout = 15000;")
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def _init_table(self):
         """Creates the autonomous_tasks SQLite table for persistent task tracking and crash resume."""
@@ -120,7 +157,75 @@ class AutonomousEngine:
                 cursor.execute("ALTER TABLE autonomous_tasks ADD COLUMN failure_count INTEGER DEFAULT 0;")
             except Exception:
                 pass
+
+            # Recover zombie tasks from prior ungraceful shutdowns (Anara Standard)
+            try:
+                cursor.execute("""
+                    UPDATE autonomous_tasks
+                    SET status = 'idle', failure_count = failure_count + 1, updated_at = CURRENT_TIMESTAMP
+                    WHERE status = 'running';
+                """)
+            except Exception:
+                pass
+
+            # Persistent Execution Run Ledger (Hermes cronjob_manage action='runs' parity)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS autonomous_task_runs (
+                    id TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    output TEXT,
+                    error_message TEXT,
+                    execution_time_sec REAL DEFAULT 0.0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_task_runs_task_id
+                ON autonomous_task_runs(task_id, created_at DESC);
+            """)
             conn.commit()
+
+    def record_task_run(
+        self,
+        task_id: str,
+        status: str,
+        output: Optional[str] = None,
+        error_message: Optional[str] = None,
+        execution_time_sec: float = 0.0,
+    ) -> str:
+        """Records an execution attempt into the persistent cron run ledger."""
+        run_id = f"run_{uuid.uuid4().hex[:12]}"
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO autonomous_task_runs (id, task_id, status, output, error_message, execution_time_sec)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (run_id, task_id, status, output or "", error_message or "", execution_time_sec))
+            conn.commit()
+        return run_id
+
+    def get_task_runs(self, task_id: Optional[str] = None, limit: int = 10) -> List[Dict[str, Any]]:
+        """Retrieves history of past task runs for audit inspection."""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            if task_id:
+                cursor.execute("""
+                    SELECT id, task_id, status, output, error_message, execution_time_sec, created_at
+                    FROM autonomous_task_runs
+                    WHERE task_id = ?
+                    ORDER BY rowid DESC
+                    LIMIT ?
+                """, (task_id, limit))
+            else:
+                cursor.execute("""
+                    SELECT id, task_id, status, output, error_message, execution_time_sec, created_at
+                    FROM autonomous_task_runs
+                    ORDER BY rowid DESC
+                    LIMIT ?
+                """, (limit,))
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
 
     def register_task(
         self,
@@ -135,8 +240,7 @@ class AutonomousEngine:
     ) -> Dict[str, Any]:
         """Registers a scheduled or event-driven autonomous task."""
         t_id = task_id or f"task_{uuid.uuid4().hex[:8]}"
-        now = datetime.now(WIB)
-        next_run = now + timedelta(seconds=interval_seconds)
+        next_run = compute_next_run(trigger_type, interval_seconds, prompt if trigger_type == "cron" else None)
 
         with self._get_conn() as conn:
             cursor = conn.cursor()
@@ -198,7 +302,7 @@ class AutonomousEngine:
         """Resumes a paused autonomous task."""
         with self._get_conn() as conn:
             cursor = conn.cursor()
-            now = datetime.now(WIB)
+            now = datetime.now(get_scheduler_timezone())
             cursor.execute("SELECT interval_seconds FROM autonomous_tasks WHERE id = ?", (task_id,))
             row = cursor.fetchone()
             interval = row[0] if row else 3600
@@ -244,6 +348,7 @@ class AutonomousEngine:
 
         # Mark task as running
         self._update_task_status(task_id, "running")
+        t0 = time.time()
 
         req = ChannelRequest(
             text=prompt,
@@ -275,7 +380,7 @@ class AutonomousEngine:
                         req=req
                     )
                     self._update_task_status(task_id, "idle", last_run=True)
-                    # Notify completion across omnichannel transports (Hermes & Claude Code Parity)
+                    # Notify completion across omnichannel transports (Anara Enterprise Architecture)
                     if channel == "telegram":
                         try:
                             await send_telegram_message(
@@ -324,6 +429,12 @@ class AutonomousEngine:
 
             # 3. Direct response (read-only / safe)
             self._update_task_status(task_id, "idle", last_run=True)
+            dur = max(0.001, time.time() - t0)
+            try:
+                self.record_task_run(task_id, status="success", output=res.text, execution_time_sec=dur)
+            except Exception as e_rec:
+                logger.debug(f"[AutonomousEngine] Record run note: {e_rec}")
+
             if channel == "telegram":
                 try:
                     await send_telegram_message(
@@ -345,8 +456,13 @@ class AutonomousEngine:
             return {"status": "success", "result": res.text}
 
         except Exception as e:
+            dur = max(0.001, time.time() - t0)
             logger.error(f"[AutonomousEngine] Task '{name}' execution error: {e}")
             self._update_task_status(task_id, "failed", last_run=True)
+            try:
+                self.record_task_run(task_id, status="failed", error_message=str(e), execution_time_sec=dur)
+            except Exception:
+                pass
             return {"status": "error", "message": str(e)}
 
     def _update_task_status(
@@ -416,23 +532,41 @@ class AutonomousEngine:
             conn.commit()
 
     async def _scheduler_loop(self):
-        """Continuous scheduler tick inspecting pending & due autonomous tasks."""
+        """Continuous scheduler tick inspecting pending & due autonomous tasks (Atomic Kanban Claiming)."""
         logger.info("[AutonomousEngine] Scheduler loop initiated.")
         while self._running:
             try:
                 now_iso = datetime.now(get_scheduler_timezone()).isoformat()
+                due_task_ids = []
                 with self._get_conn() as conn:
                     cursor = conn.cursor()
                     cursor.execute("""
-                        SELECT * FROM autonomous_tasks
+                        SELECT id FROM autonomous_tasks
                         WHERE is_active = 1
                           AND status IN ('idle', 'failed')
                           AND next_run <= ?
                     """, (now_iso,))
-                    due_tasks = [dict(r) for r in cursor.fetchall()]
+                    due_task_ids = [r["id"] for r in cursor.fetchall()]
 
-                for task in due_tasks:
-                    asyncio.create_task(self._execute_autonomous_task(task))
+                for t_id in due_task_ids:
+                    # Atomic claim: only one worker can transition idle/failed -> running
+                    claimed_task = None
+                    with self._get_conn() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            UPDATE autonomous_tasks
+                            SET status = 'running', updated_at = CURRENT_TIMESTAMP
+                            WHERE id = ? AND is_active = 1 AND status IN ('idle', 'failed') AND next_run <= ?
+                        """, (t_id, now_iso))
+                        if cursor.rowcount == 1:
+                            cursor.execute("SELECT * FROM autonomous_tasks WHERE id = ?", (t_id,))
+                            row = cursor.fetchone()
+                            if row:
+                                claimed_task = dict(row)
+                        conn.commit()
+
+                    if claimed_task:
+                        asyncio.create_task(self._execute_autonomous_task(claimed_task))
 
             except Exception as e:
                 logger.debug(f"[AutonomousEngine] Scheduler tick error: {e}")

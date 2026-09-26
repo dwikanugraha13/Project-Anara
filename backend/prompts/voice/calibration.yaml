@@ -1,4 +1,4 @@
-# ── Voice Calibration & Live Directives Configuration (Hermes Parity) ──
+# ── Voice Calibration & Live Directives Configuration (Anara Standard) ──
 # Externalized system directives sent to Gemini Live / Audio pipeline.
 
 cancel_notice: "[SYSTEM INSTRUCTION]: Warmly inform {sp_name} that voice calibration has been cancelled and continue conversation naturally in their active language."

@@ -27,7 +27,7 @@ SUPPORTED_VIDEO_EXTS = {".mp4", ".webm", ".mov", ".mkv", ".avi"}
 
 def _resolve_vision_model() -> str:
     """
-    Dynamically determines the vision model following Model Sovereignty (Hermes Parity):
+    Dynamically determines the vision model following Model Sovereignty (Anara Standard):
     1. Reads user-configured model from config.yaml (model.vision).
     2. Uses the user's actively selected chat model directly.
     Zero static hardcoding to arbitrary models.
@@ -50,16 +50,58 @@ def _resolve_vision_model() -> str:
     return get_active_model_id() or "gpt-4o"
 
 
-def _resolve_fallback_vision_model() -> str:
-    """Dynamically resolves fallback multimodal model for OpenAI/Claude/OpenRouter."""
+def _resolve_anthropic_vision_model() -> str:
+    """
+    Dynamically determines the Anthropic vision model without date lock-in (Anara Standard).
+    1. Respects user-configured model from config.yaml (model.anthropic_vision or model.vision).
+    2. Respects user's active chat model if it is an Anthropic/Claude model.
+    3. Resolves from active Anthropic provider account in SQLite.
+    4. Defaults to canonical 'claude-3-7-sonnet' without hardcoding obsolete version dates.
+    """
     try:
         from config import cfg_get
-        configured = cfg_get("model.vision_fallback")
+        from providers.accounts import get_active_model_id
+
+        configured = cfg_get("model.anthropic_vision") or cfg_get("model.vision")
+        if configured and "claude" in str(configured).lower():
+            clean = str(configured).strip()
+            return clean.split("/")[-1]
+
+        active = get_active_model_id()
+        if active and "claude" in str(active).lower():
+            clean = str(active).strip()
+            return clean.split("/")[-1]
+    except Exception as e:
+        logger.debug(f"[VisionTools] Anthropic vision model resolution note: {e}")
+
+    return "claude-3-7-sonnet"
+
+
+def _resolve_fallback_vision_model() -> str:
+    """
+    Dynamically resolves fallback multimodal model for OpenAI-compatible providers.
+    1. Reads user-configured model from config.yaml (model.vision_fallback or model.vision).
+    2. Respects user's active model if it belongs to an OpenAI-compatible vision family.
+    3. Safe default to 'gpt-4o'.
+    """
+    try:
+        from config import cfg_get
+        from providers.accounts import get_active_model_id
+
+        configured = cfg_get("model.vision_fallback") or cfg_get("model.vision")
         if configured and str(configured).strip():
-            return str(configured).strip()
+            clean = str(configured).strip()
+            return clean.split("/")[-1]
+
+        active = get_active_model_id()
+        if active:
+            act_lower = str(active).lower()
+            if any(p in act_lower for p in ("gpt", "o1", "o3", "o4", "qwen", "llama", "pixtral")):
+                clean = str(active).strip()
+                return clean.split("/")[-1]
     except Exception:
         pass
-    return "gpt-4o-mini"
+    return "gpt-4o"
 
 
 def _resolve_mime_type(file_path: str, is_video: bool = False) -> str:
@@ -234,7 +276,9 @@ async def _tool_vision_analyze(
             # Ensure model name sent to Google GenAI SDK does not contain foreign provider prefixes
             clean_g_model = v_model.split("/")[-1] if ("/" in v_model and not v_model.startswith("models/")) else v_model
             if not clean_g_model.startswith("gemini"):
-                clean_g_model = "gemini-2.5-flash"
+                from core.capabilities import get_fast_auxiliary_model
+                aux_m = get_fast_auxiliary_model()
+                clean_g_model = aux_m if "gemini" in str(aux_m).lower() else "gemini-2.0-flash"
             response = await client.aio.models.generate_content(
                 model=clean_g_model,
                 contents=[image_part, prompt],
@@ -261,7 +305,7 @@ async def _tool_vision_analyze(
     except Exception as e:
         logger.warning(f"[VisionTools] Gemini multimodal failed, attempting auxiliary fallback: {e}")
 
-    # 3. Fallback to OpenAI / Claude base64 multimodal API
+    # 4. Fallback to OpenAI / Claude base64 multimodal API
     try:
         from providers.accounts import get_provider_key
         api_key = get_provider_key("openai") or get_provider_key("codex") or os.getenv("OPENAI_API_KEY")
@@ -294,6 +338,51 @@ async def _tool_vision_analyze(
                         "question": user_query,
                         "analysis": analysis_text
                     }
+
+        # 5. Fallback to Anthropic Claude Vision
+        anthropic_key = get_provider_key("anthropic") or os.getenv("ANTHROPIC_API_KEY")
+        if anthropic_key:
+            b64_str = base64.b64encode(img_bytes).decode("ascii")
+            c_mime = mime_type if mime_type in ("image/jpeg", "image/png", "image/gif", "image/webp") else "image/jpeg"
+            c_headers = {
+                "x-api-key": anthropic_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            }
+            c_model = _resolve_anthropic_vision_model()
+            c_payload = {
+                "model": c_model,
+                "max_tokens": 1500,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": c_mime,
+                                    "data": b64_str
+                                }
+                            },
+                            {"type": "text", "text": user_query}
+                        ]
+                    }
+                ]
+            }
+            async with httpx.AsyncClient(timeout=45.0) as client:
+                res = await client.post("https://api.anthropic.com/v1/messages", headers=c_headers, json=c_payload)
+                if res.status_code == 200:
+                    data = res.json()
+                    analysis_text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+                    if analysis_text:
+                        return {
+                            "status": "success",
+                            "image_target": clean_target,
+                            "mime_type": mime_type,
+                            "question": user_query,
+                            "analysis": analysis_text
+                        }
     except Exception as fb_err:
         logger.error(f"[VisionTools] Fallback vision error: {fb_err}")
 
@@ -348,7 +437,9 @@ async def _tool_video_analyze(
             v_model = _resolve_vision_model()
             clean_v_model = v_model.split("/")[-1] if ("/" in v_model and not v_model.startswith("models/")) else v_model
             if not clean_v_model.startswith("gemini"):
-                clean_v_model = "gemini-2.5-flash"
+                from core.capabilities import get_fast_auxiliary_model
+                aux_m = get_fast_auxiliary_model()
+                clean_v_model = aux_m if "gemini" in str(aux_m).lower() else "gemini-2.0-flash"
             response = await client.aio.models.generate_content(
                 model=clean_v_model,
                 contents=[video_part, prompt],

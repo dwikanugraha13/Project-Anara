@@ -1,4 +1,4 @@
-# ── Failure Tolerant & Idempotent Tools (Hermes Parity) ──
+# ── Failure Tolerant & Idempotent Tools (Anara Standard) ──
 # Tools whose "failure" is normal exploratory observation (empty search, missing file, 0 matches)
 # These never trip execution circuit breakers because not-found is useful signal for the agent.
 

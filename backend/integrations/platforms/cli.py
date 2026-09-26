@@ -1,5 +1,5 @@
 """
-platforms/cli.py — Terminal CLI Platform Adapter for Project Anara (Hermes Parity).
+platforms/cli.py — Terminal CLI Platform Adapter for Project Anara (Anara Standard).
 """
 
 from __future__ import annotations
@@ -22,10 +22,23 @@ class CliPlatformAdapter(BasePlatformAdapter):
         return {"status": "success", "platform": "cli"}
 
     def render_approval(self, narration: str, action: Any) -> Dict[str, Any]:
+        import json
         args = getattr(action, "tool_args", {}) or {}
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except Exception:
+                args = {}
         pending_tc = getattr(action, "pending_tool_call", None) or {}
-        cmd = args.get("command") or pending_tc.get("arguments", {}).get("command")
-        cmd_hint = f"\n  Command: {cmd}" if cmd else (f"\n  File: {args.get('file_path')}" if args.get("file_path") else "")
+        tc_args = pending_tc.get("arguments", {})
+        if isinstance(tc_args, str):
+            try:
+                tc_args = json.loads(tc_args)
+            except Exception:
+                tc_args = {}
+        cmd = (args if isinstance(args, dict) else {}).get("command") or (tc_args if isinstance(tc_args, dict) else {}).get("command")
+        file_p = (args if isinstance(args, dict) else {}).get("file_path") or (tc_args if isinstance(tc_args, dict) else {}).get("file_path")
+        cmd_hint = f"\n  Command: {cmd}" if cmd else (f"\n  File: {file_p}" if file_p else "")
         prompt = f"\n[Approval Confirmation: {getattr(action, 'tool_name', 'action')}]{cmd_hint}\nApprove and execute? [y/N]: "
         return {
             "text": f"{narration}\n{prompt}",

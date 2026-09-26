@@ -1,5 +1,5 @@
 """
-platforms/__init__.py — Omnichannel platform adapters package (Hermes Parity).
+platforms/__init__.py — Omnichannel platform adapters package (Anara Standard).
 """
 
 from .telegram import TelegramPlatformAdapter

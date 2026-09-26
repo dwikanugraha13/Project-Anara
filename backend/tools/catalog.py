@@ -1,6 +1,6 @@
 """
 catalog.py — Central Dynamic Tool Catalog & Execution Dispatcher for Project Anara.
-Hermes Agent Parity:
+Anara Standard:
 1. Dynamic Tool Declarations & Risk Classification derived directly from ToolRegistry (Zero hardcoding).
 2. Pure polymorphic dispatching via ToolRegistry.dispatch (Zero 200-line if-elif ladder).
 3. Parameter normalization and output compaction (ContextMicroCompactor).
@@ -47,7 +47,7 @@ def get_tool_risk(tool_name: str) -> str:
 def is_safe_read_only_cli_command(command: str) -> bool:
     """
     Validates if a CLI command in Plan Mode is purely for safe host/environment inspection
-    using the unified Parameter-Aware AST Dissector in plan_detector.py (Hermes Parity).
+    using the unified Parameter-Aware AST Dissector in plan_detector.py (Anara Standard).
     Zero duplicate regex lists or static keyword branches.
     """
     cmd = (command or "").strip()
@@ -111,7 +111,7 @@ def check_tool_permission(tool_name: str, mode: str = "plan", args: Optional[Dic
 
 
 def get_agent_tools(read_only: bool = False, enabled_set: Optional[Set[str]] = None) -> List[types.Tool]:
-    """Returns dynamic agent tools formatted for Gemini API (Hermes Parity)."""
+    """Returns dynamic agent tools formatted for Gemini API (Anara Standard)."""
     decls = registry.get_all_declarations(read_only=read_only, enabled_set=enabled_set)
     return [types.Tool(function_declarations=decls)]
 
@@ -139,7 +139,7 @@ def _convert_to_standard_json_schema(val: Any) -> Any:
 
 
 def get_native_tools_anthropic(read_only: bool = False, enabled_set: Optional[Set[str]] = None) -> List[Dict[str, Any]]:
-    """Returns dynamic agent tools formatted for Anthropic Messages API (Claude Code Parity)."""
+    """Returns dynamic agent tools formatted for Anthropic Messages API (Anara Standard)."""
     tools = []
     for name, t in registry._tools.items():
         if enabled_set is not None and name not in enabled_set:
@@ -176,12 +176,12 @@ def get_native_tools_openai(read_only: bool = False, enabled_set: Optional[Set[s
 
 
 def get_tools_catalog(enabled_set: Optional[Set[str]] = None) -> List[Dict[str, Any]]:
-    """Returns dynamic tools catalog from ToolRegistry for Web UI (Hermes Parity)."""
+    """Returns dynamic tools catalog from ToolRegistry for Web UI (Anara Standard)."""
     return registry.get_tools_catalog(enabled_set=enabled_set)
 
 
 def _get_tool_expected_params(name: str) -> List[str]:
-    """Dynamically extracts expected parameter names from tool catalog declarations (Hermes Parity)."""
+    """Dynamically extracts expected parameter names from tool catalog declarations (Anara Standard)."""
     canonical = registry.resolve_name(name)
     tool = registry.get_tool(canonical)
     if tool and tool.parameters and "properties" in tool.parameters:
@@ -191,7 +191,7 @@ def _get_tool_expected_params(name: str) -> List[str]:
 
 def _normalize_tool_args(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Dynamically aligns LLM parameter variations to expected tool schema parameters (Hermes Parity).
+    Dynamically aligns LLM parameter variations to expected tool schema parameters (Anara Standard).
     Uses fuzzy schema inspection and semantic stemming rather than hardcoded static lookup.
     """
     if not isinstance(args, dict):
@@ -262,7 +262,7 @@ async def _raw_dispatch_tool_call(
     read_only: bool = False,
     mode: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Routes an incoming function_call dynamically via ToolRegistry (Zero if-elif ladder, Hermes Parity)."""
+    """Routes an incoming function_call dynamically via ToolRegistry (Zero if-elif ladder, Anara Standard)."""
     args = _normalize_tool_args(name, args)
     canonical = registry.resolve_name(name)
     effective_mode = mode if mode else ("plan" if read_only else "build")
@@ -315,7 +315,7 @@ async def generate_text_response_with_tools(
     platform: Optional[str] = None,
 ) -> Any:
     """
-    Unified ReAct turn delegator for Google Gemini model (Hermes Agent Parity).
+    Unified ReAct turn delegator for Google Gemini model (Anara Standard).
     Routes all Gemini turns through the universal agent execution loop in providers/caller.py.
     """
     from providers.caller import call_universal_chat_model

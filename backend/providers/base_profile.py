@@ -12,6 +12,17 @@ class BaseProviderProfile(ABC):
     """Abstract base class for all LLM providers in Project Anara."""
 
     name: str
+    supports_native_tools: bool = True
+    supports_prompt_caching: bool = False
+    supports_thinking: bool = False
+
+    def is_available(self) -> bool:
+        """Returns True if provider keys or credentials are configured."""
+        return True
+
+    def format_tools(self, tools: List[Dict[str, Any]]) -> List[Any]:
+        """Transforms platform tools into provider-specific wire schemas."""
+        return tools
 
     @abstractmethod
     def can_handle(self, model_id: str) -> bool:
@@ -46,5 +57,5 @@ class BaseProviderProfile(ABC):
         platform: Optional[str] = None,
         **kwargs: Any,
     ) -> Any:
-        """Executes a full multi-turn conversational or ReAct tool turn (Hermes Agent Parity)."""
+        """Executes a full multi-turn conversational or ReAct tool turn (Anara Standard)."""
         pass

@@ -57,7 +57,7 @@ async def websocket_endpoint(websocket: WebSocket):
     session_id = str(id(websocket))
     logger.info(f"WebSocket connected: {session_id}")
 
-    initial_primary_speaker = memory_engine.get_last_active_speaker_name() or "Agnan"
+    initial_primary_speaker = memory_engine.get_last_active_speaker_name() or "User"
     current_speaker_name = initial_primary_speaker
     await websocket.send_json({"type": "speaker_identified", "name": initial_primary_speaker})
 
@@ -419,7 +419,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     voice_pipeline.ser_tracker.reset()
                 elif ai_is_speaking:
                     intensity = estimate_audio_intensity(raw_audio)
-                    # Acoustic Barge-in detection (Hermes & Claude Code Parity):
+                    # Acoustic Barge-in detection (Anara Enterprise Architecture):
                     # If user speech clearly exceeds ambient playback bleed, interrupt AI speech immediately!
                     if intensity > 0.045:
                         live_svc = ensure_gemini_service()

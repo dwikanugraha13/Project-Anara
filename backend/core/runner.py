@@ -1,5 +1,5 @@
 """
-runner.py — Unified ReAct Execution Engine for Project Anara (Hermes Parity).
+runner.py — Unified ReAct Execution Engine for Project Anara (Anara Standard).
 Core Execution Loop & Tool Calling Lifecycle Engine:
 1. Dynamic Prompt Assembly & PlatformToolRegistry Progressive Disclosure.
 2. Anti-Stall Guard (AnaraLoopBreaker) to prevent infinite ping-pong/repetitive calls.
@@ -52,7 +52,7 @@ class TurnEvent:
 
 @dataclass
 class AgentTurnResult:
-    """Standardized final response payload from a unified agent conversation turn (Hermes & Claude Code Parity)."""
+    """Standardized final response payload from a unified agent conversation turn (Anara Enterprise Architecture)."""
     text: str
     session_id: int
     agent_mode: str = "plan"
@@ -97,7 +97,7 @@ class AnaraExecutionRunner:
         self._current_task: Optional[asyncio.Task] = None
 
     def interrupt(self, reason: str = "stop_command") -> None:
-        """Interrupts in-flight turn execution immediately (Hermes Parity)."""
+        """Interrupts in-flight turn execution immediately (Anara Standard)."""
         self.is_interrupted = True
         if self._current_task and not self._current_task.done():
             self._current_task.cancel()
@@ -172,7 +172,7 @@ class AnaraExecutionRunner:
             else:
                 agent_mode = "build"
 
-        # 3. Memory Snapshot is injected into system prompt context; autonomous memory tool handles updates (Hermes Parity)
+        # 3. Memory Snapshot is injected into system prompt context; autonomous memory tool handles updates (Anara Standard)
 
         # 4. Context Compaction (Hermes Chronological Alternation)
         try:
@@ -213,11 +213,12 @@ class AnaraExecutionRunner:
 
         full_user_input = f"{compacted_history}User: {clean_text}" if compacted_history else clean_text
         tools_used: List[str] = []
+        turn_tool_records: List[Dict[str, Any]] = []
 
-        # Yield initial thinking / planning status (Hermes Parity)
+        # Yield initial execution context (dynamic without canned deception)
         yield TurnEvent(
             type="thought",
-            content="Formulating strategy..." if agent_mode == "plan" else "Preparing action execution...",
+            content=f"Processing request in {agent_mode.upper()} mode with model {selected_model}...",
             metadata={"mode": agent_mode, "model": selected_model},
         )
 
@@ -226,21 +227,85 @@ class AnaraExecutionRunner:
 
         def _progress_cb(evt: Dict[str, Any]):
             t_name = evt.get("tool_name", "")
+            t_args = evt.get("args") or evt.get("tool_args") or {}
+            t_status = evt.get("status") or ""
+            t_summary = evt.get("summary") or evt.get("detail") or ""
+
             if t_name and t_name != "agent" and t_name not in tools_used:
                 tools_used.append(t_name)
 
-            if evt.get("status") == "running":
+            # Active Anti-Stall Guard (Anara Enterprise Architecture)
+            if t_status == "running" and t_name:
+                try:
+                    self.stall_guard.check(t_name, t_args)
+                except Exception as e_sg:
+                    logger.warning(f"[ExecutionRunner] Stall guard warning: {e_sg}")
+
+            if t_status == "running":
+                call_id = evt.get("call_id") or f"call_{uuid.uuid4().hex[:12]}"
+                evt["call_id"] = call_id
+                try:
+                    session_state_manager.persist_tool_call_start(
+                        session_id=effective_sid,
+                        channel=self.platform,
+                        channel_id=str(effective_sid),
+                        tool_name=t_name,
+                        tool_args=t_args,
+                        call_id=call_id
+                    )
+                except Exception as e_pers:
+                    logger.debug(f"[ExecutionRunner] Tool persist start notice: {e_pers}")
+
+                turn_tool_records.append({
+                    "call_id": call_id,
+                    "tool_name": t_name,
+                    "tool_args": t_args,
+                    "status": "running",
+                    "timestamp": time.time(),
+                })
                 event_queue.put_nowait(TurnEvent(
                     type="tool_start",
                     tool_name=t_name,
+                    tool_args=t_args,
                     content=evt.get("detail") or "",
                     metadata=evt,
                 ))
-            elif evt.get("status") == "done":
+            elif t_status == "done":
+                call_id = evt.get("call_id")
+                if not call_id and turn_tool_records:
+                    for rec in reversed(turn_tool_records):
+                        if rec.get("tool_name") == t_name and rec.get("status") == "running":
+                            call_id = rec.get("call_id")
+                            break
+                if call_id:
+                    try:
+                        session_state_manager.persist_tool_call_result(
+                            call_id=call_id,
+                            result_summary=t_summary,
+                            is_error=bool(evt.get("is_error", False))
+                        )
+                    except Exception as e_pers_res:
+                        logger.debug(f"[ExecutionRunner] Tool persist result notice: {e_pers_res}")
+
+                turn_tool_records.append({
+                    "call_id": call_id,
+                    "tool_name": t_name,
+                    "tool_result": t_summary,
+                    "status": "done",
+                    "timestamp": time.time(),
+                })
+                # Active self-correction tracker
+                try:
+                    self.self_correction_tracker.record_tool_call(t_name, t_args, t_summary)
+                except Exception:
+                    pass
+
                 event_queue.put_nowait(TurnEvent(
                     type="tool_result",
                     tool_name=t_name,
-                    content=evt.get("summary") or "",
+                    tool_args=t_args,
+                    tool_result=t_summary,
+                    content=t_summary,
                     metadata=evt,
                 ))
 
@@ -360,13 +425,38 @@ class AnaraExecutionRunner:
         final_reply = model_res if isinstance(model_res, str) else str(model_res or "")
         duration = round(time.time() - start_time, 2)
 
-        # 8. Record Final AI Response
+        # 8. Negative Verification Stop-Gate (Claude Code stopHooks & Anara Standard)
+        if tools_used and agent_mode == "build":
+            try:
+                from core.convergence import ConvergenceDetector
+                conv_detector = ConvergenceDetector(read_only=False)
+                for rec in turn_tool_records:
+                    conv_detector.record_turn_actions([{
+                        "tool": rec.get("tool_name", ""),
+                        "args": rec.get("tool_args", {}),
+                        "result": rec.get("tool_result", "")
+                    }])
+                stop_gate_nudge = conv_detector.evaluate_final_stop_gate(agent_mode="build")
+                if stop_gate_nudge:
+                    logger.info(f"[ExecutionRunner] Verification stop-gate activated: {stop_gate_nudge[:80]}...")
+                    final_reply = f"{final_reply}\n\n{stop_gate_nudge}"
+            except Exception as e_conv:
+                logger.debug(f"[ExecutionRunner] Stop-gate notice: {e_conv}")
+
+        # 9. Record Final AI Response with Execution Audit (Hermes Persist Parity)
+        turn_visual_data = {
+            "tools_used": tools_used,
+            "tool_records_count": len(turn_tool_records),
+            "mode": agent_mode,
+            "duration": duration,
+        }
         try:
             memory_engine.log_conversation(
                 user_text=clean_text,
                 ai_text=final_reply,
                 speaker_name=effective_speaker,
                 session_id=effective_sid,
+                visual_data=turn_visual_data,
             )
         except Exception as e:
             logger.debug(f"[ExecutionRunner] Conversation log save notice: {e}")
@@ -384,6 +474,18 @@ class AnaraExecutionRunner:
             asyncio.create_task(maybe_auto_title_session(effective_sid, clean_text, final_reply))
         except Exception:
             pass
+
+        # Lifelong Learning Loop: extract reusable procedural skills from successful runs (Anara Standard)
+        if tools_used and agent_mode == "build":
+            try:
+                from core.skill_extractor import SkillExtractor
+                asyncio.create_task(SkillExtractor.extract_and_save_skill_async(
+                    user_prompt=clean_text,
+                    tools_used=tools_used,
+                    final_summary=final_reply,
+                ))
+            except Exception:
+                pass
 
         yield TurnEvent(
             type="final_text",

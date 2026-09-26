@@ -1,11 +1,12 @@
 """
 anara_agent.py
 
-Anara Autonomous Agent Engine (Anara ReAct Loop & Workspace Management).
+Anara Workspace Sentinel & Session File Lifecycle Manager (Anara Standard).
 Provides:
-1. ReAct Autonomous Execution Loop (Thought -> Plan -> Action -> Observation -> Final Answer)
-2. Workspace File & Folder Explorer (Parsing, PDF text extraction, Code preview)
-3. Multi-Step Tool Chaining across OpenRouter, Claude, Groq, and Gemini
+1. Sandboxed session workspace isolation (prevents host codebase leak).
+2. Git tracking, non-destructive commits, and conflict-safe rollbacks.
+3. Checkpoint snapshot and restore subsystem with async I/O offloading.
+4. Workspace tree explorer and post-task skill reflection integration.
 """
 
 import asyncio
@@ -19,6 +20,7 @@ import tempfile
 import time
 from typing import Any, Dict, List, Optional
 import httpx
+from config import cfg_get
 from tools import dispatch_tool_call, _emit_agent_event
 
 logger = logging.getLogger(__name__)
@@ -27,7 +29,7 @@ logger = logging.getLogger(__name__)
 WORKSPACE_DIR = os.path.join(tempfile.gettempdir(), "anara_agent_workspace")
 os.makedirs(WORKSPACE_DIR, exist_ok=True)
 
-# Standard directories excluded from workspace scans and checkpoints (Hermes & Claude Code Parity)
+# Standard directories excluded from workspace scans and checkpoints (Anara Enterprise Architecture)
 WORKSPACE_IGNORED_DIRS = {
     ".git", "node_modules", "venv", ".venv", "__pycache__",
     ".next", "dist", "build", ".vscode", ".idea", ".pytest_cache", ".coverage"
@@ -73,7 +75,7 @@ class AnaraAgent:
 
     @classmethod
     def get_project_repo_root(cls) -> str:
-        """Dynamically locates the root directory of the active project repository (Hermes Parity)."""
+        """Dynamically locates the root directory of the active project repository (Anara Standard)."""
         cwd = os.path.abspath(os.getcwd())
         curr = cwd
         while True:
@@ -90,10 +92,10 @@ class AnaraAgent:
         return cwd
 
     def get_session_dir(self, session_id: Optional[int] = None) -> str:
-        """Returns the active external folder, or isolated temporary directory, strictly for a session."""
+        """Returns the active external folder, or isolated temporary directory, strictly for a session (Anara Standard)."""
         effective_sid = session_id if session_id is not None else self._active_session_id
 
-        if effective_sid is not None:
+        if effective_sid is not None and effective_sid != 0:
             # 1. Check in-memory active path
             active_path = self._session_active_paths.get(effective_sid)
             if active_path and os.path.isdir(active_path):
@@ -114,13 +116,14 @@ class AnaraAgent:
             except Exception:
                 pass
 
-            # 3. Dynamic Hermes Parity: Omni-channel sessions (Telegram, WA, Discord, Web Chat)
-            # automatically connect to the active project repository root rather than an empty isolated void
-            repo_root = self.get_project_repo_root()
-            if os.path.isdir(repo_root):
-                return repo_root
+            # 3. Dynamic Anara Standard: Connects to the active project repository root
+            # if enabled (default True for single-user dev agent), or creates sandboxed workspace
+            if cfg_get("agent.workspace.default_to_repo_root", True):
+                repo_root = self.get_project_repo_root()
+                if os.path.isdir(repo_root):
+                    return repo_root
 
-            # 4. Dedicated clean session workspace folder
+            # 4. Dedicated clean session workspace folder (Hermes Sandboxed Tenant Parity)
             s_dir = os.path.join(self.base_workspace_path, f"session_{effective_sid}")
             os.makedirs(s_dir, exist_ok=True)
             return s_dir
@@ -129,9 +132,10 @@ class AnaraAgent:
         if active_path and os.path.isdir(active_path):
             return active_path
 
-        repo_root = self.get_project_repo_root()
-        if os.path.isdir(repo_root):
-            return repo_root
+        if cfg_get("agent.workspace.default_to_repo_root", True):
+            repo_root = self.get_project_repo_root()
+            if os.path.isdir(repo_root):
+                return repo_root
 
         s_dir = os.path.join(self.base_workspace_path, "default")
         os.makedirs(s_dir, exist_ok=True)
@@ -349,15 +353,16 @@ class AnaraAgent:
                 logger.info(f"[GitRollback] Reverted commit {commit_sha} successfully.")
                 return True
 
-            # Fallback to reset HEAD~1
-            res2 = subprocess.run(
-                ["git", "reset", "--hard", "HEAD~1"],
+            # If git revert fails due to conflict or error, abort revert cleanly (Zero destructive git reset --hard)
+            subprocess.run(
+                ["git", "revert", "--abort"],
                 cwd=target_dir,
                 capture_output=True,
                 text=True,
-                timeout=15
+                timeout=10
             )
-            return res2.returncode == 0
+            logger.warning(f"[GitRollback] git revert failed for {commit_sha}: {res.stderr.strip()}; cleanly aborted revert.")
+            return False
         except Exception as e:
             logger.warning(f"[GitRollback] Rollback error for {commit_sha}: {e}")
             return False
@@ -535,7 +540,7 @@ class AnaraAgent:
 
     async def reflect_and_learn_skill(self, user_mission: str, executed_steps: List[str], final_result: str):
         """
-        Anara Post-Mission Reflection Loop (Hermes Parity).
+        Anara Post-Mission Reflection Loop (Anara Standard).
         Uses SkillExtractor LLM to autonomously evaluate if the executed mission
         can be distilled into a reusable procedural skill without static keyword filters.
         """

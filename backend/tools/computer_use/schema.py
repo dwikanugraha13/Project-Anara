@@ -1,6 +1,6 @@
 """
 schema.py — Universal model-facing schema for computer_use tool.
-Hermes Agent Parity (tools/computer_use/schema.py).
+Anara Standard (tools/computer_use/schema.py).
 """
 from typing import Any, Dict
 

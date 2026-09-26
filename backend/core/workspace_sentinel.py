@@ -1,6 +1,6 @@
 """
 workspace_sentinel.py — Ground-Truth Verification & Workspace Integrity Sentinel for Project Anara.
-Hermes Agent Parity: Subsystem 5.
+Anara Standard: Subsystem 5.
 
 Pillars:
 1. Workspace Integrity & Blast Radius Guard (Pilar A):
@@ -28,18 +28,20 @@ logger = logging.getLogger("anara.core.workspace_sentinel")
 class WorkspaceSentinel:
     """Protects repository filesystem integrity and validates runtime execution correctness."""
 
-    # 1. High-blast-radius destructive shell command patterns
+    # 1. High-blast-radius destructive shell command patterns (Anara Enterprise Architecture)
     DESTRUCTIVE_SHELL_PATTERNS: List[str] = [
-        r"\brm\s+-[rf]{1,2}\s+(?:\*|\.\/\*|\.\s*$)",
+        r"\brm\s+-(?:[a-z]*r[a-z]*\s+-[a-z]*f[a-z]*|[a-z]*f[a-z]*\s+-[a-z]*r[a-z]*|[rf]{1,2}|-(?:recursive|force))\s+(?:--\s+)?(?:\*|\.\/\*|\.\s*$|/|~)",
         r"\bdel\b.*\/[sq].*(?:\*|\.\*)",
         r"\brmdir\b.*\/[sq]\s+(?:\.|\*|[a-zA-Z]:[/\\]?$)",
         r"\bremove-item\b.*-(?:recurse|r)\b.*(?:\*|\.[\/\\]\*|\s\.)",
+        r"\bremove-item\b\s+(?:\*|\.[\/\\]\*)\s+.*-(?:recurse|r)\b",
         r"\bgit\s+clean\s+-[fdx]{1,4}\b",
+        r"\bfind\s+\.\s+-delete\b",
     ]
 
     # 2. Sacred infrastructure directories & files
-    PROTECTED_DIRECTORIES: Set[str] = {".git", ".ssh"}
-    PROTECTED_FILES_DELETE: Set[str] = {".env", ".env.local", "id_rsa", "anara_brain.db"}
+    PROTECTED_DIRECTORIES: Set[str] = {".git", ".ssh", ".aws", ".gnupg", ".docker", ".kube", ".azure"}
+    PROTECTED_FILES_DELETE: Set[str] = {".env", ".env.local", "id_rsa", "anara_brain.db", "state.db", "auth.json"}
 
     def __init__(self, workspace_root: Optional[str] = None):
         self._workspace_root_str = workspace_root
@@ -130,6 +132,14 @@ class WorkspaceSentinel:
         if not clean_p:
             return False, "File path cannot be empty."
 
+        # Hermes NT-Shield Parity: Detect Windows NT and UNC paths before OS path resolution
+        # Calling resolve() on \\?\UNC\... triggers outbound SMB network probes and leaks NTLM hashes
+        if clean_p.startswith(("\\??\\", "\\\\.\\", "\\\\?\\")) or (
+            clean_p.startswith(("\\\\", "//")) and not clean_p.lower().startswith(("\\\\localhost\\", "//localhost/"))
+        ):
+            logger.warning(f"[WorkspaceSentinel] Blocked NT object / UNC namespace traversal: {clean_p}")
+            return False, f"SECURITY RESTRICTION: Windows NT object or UNC network path '{clean_p}' is strictly blocked (Hermes NT Shield Parity)."
+
         root = Path(workspace_root).resolve() if workspace_root else self.workspace_root
         try:
             resolved = (root / clean_p).resolve() if not os.path.isabs(clean_p) else Path(clean_p).resolve()
@@ -169,10 +179,10 @@ class WorkspaceSentinel:
                 except ValueError:
                     pass
 
-        if not is_confined and action in ("write", "edit", "delete"):
+        if not is_confined and (action in ("write", "edit", "delete") or workspace_root is not None):
             return False, (
                 f"SECURITY RESTRICTION: Path '{clean_p}' resolves outside authorized workspace boundaries "
-                f"({root}). Mutating operations outside the project root are forbidden (Hermes Repo-Safety)."
+                f"({root}). Operations outside the project root are forbidden (Hermes Repo-Safety)."
             )
 
         # 2. Sacred infrastructure protection (.git objects, credentials, database)
@@ -184,15 +194,16 @@ class WorkspaceSentinel:
             return False, "SECURITY ERROR: Direct modification of internal '.git' directory is blocked to preserve repository integrity."
 
         # Prevent access to sensitive user credentials directories
-        if any(d in parts for d in (".ssh", ".aws", ".gnupg", ".docker")):
+        sensitive_dirs = (".ssh", ".aws", ".gnupg", ".docker", ".kube", ".azure", ".config")
+        if any(d in parts for d in sensitive_dirs):
             return False, "SECURITY ERROR: Access to sensitive credentials directory is blocked."
 
         # Prevent modification or deletion of sensitive credentials or active SQLite database (Hermes File-Safety Parity)
-        PROTECTED_SACRED_FILES = frozenset({"anara_brain.db", "state.db", "auth.json", ".env", ".env.local"})
-        if target_base in PROTECTED_SACRED_FILES:
+        PROTECTED_SACRED_FILES = frozenset({"anara_brain.db", "state.db", "auth.json", ".env", ".env.local", "id_rsa", ".git-credentials", ".netrc"})
+        if target_base in PROTECTED_SACRED_FILES or (target_base.startswith(".env") and not target_base.endswith(".example")):
             if action in ("write", "edit", "delete"):
                 return False, f"SECURITY ERROR: Direct modification of protected file '{target_base}' is restricted."
-            elif action == "read" and target_base in (".env", ".env.local", "auth.json"):
+            elif action == "read" and target_base in (".env", ".env.local", "auth.json", "id_rsa", ".git-credentials", ".netrc"):
                 return False, f"SECURITY ERROR: Direct reading of sensitive credentials file '{target_base}' is blocked to prevent token exfiltration."
 
         return True, None
@@ -257,7 +268,7 @@ class WorkspaceSentinel:
         session_id: str = "default",
     ) -> Dict[str, Any]:
         """
-        Physical Test Ground-Truth Evaluation (Hermes Parity).
+        Physical Test Ground-Truth Evaluation (Anara Standard).
         Evaluates physical test output to prevent premature 'mission accomplished' hallucinations.
         Automatically synthesizes and commits an Architectural Decision Record (ADR) upon test pass.
         """

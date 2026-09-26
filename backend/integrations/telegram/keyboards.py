@@ -12,7 +12,10 @@ from .client import send_telegram_message, edit_telegram_message, delete_telegra
 
 logger = logging.getLogger(__name__)
 
-_MODEL_ID_SHORTMAP: Dict[str, str] = {}
+from collections import OrderedDict
+
+_MODEL_ID_SHORTMAP: "OrderedDict[str, str]" = OrderedDict()
+_MAX_SHORTMAP_SIZE = 512
 _PENDING_TELEGRAM_QUESTIONS: Dict[str, Dict[str, Any]] = {}
 
 
@@ -21,6 +24,8 @@ def _make_model_callback_data(model_id: str) -> str:
     if len(model_id) <= 50:
         return f"setm:{model_id}"
     short_hash = hashlib.md5(model_id.encode("utf-8")).hexdigest()[:12]
+    if len(_MODEL_ID_SHORTMAP) >= _MAX_SHORTMAP_SIZE:
+        _MODEL_ID_SHORTMAP.popitem(last=False)
     _MODEL_ID_SHORTMAP[short_hash] = model_id
     return f"setms:{short_hash}"
 
@@ -178,11 +183,12 @@ async def send_telegram_plan_proposal(
             parse_mode=rendered.get("parse_mode", "HTML"),
             reply_markup=rendered.get("reply_markup")
         )
+    safe_id = str(plan_id)[:48]
     keyboard = {
         "inline_keyboard": [
             [
-                {"text": "✅ Approve", "callback_data": f"approve:{plan_id}"},
-                {"text": "❌ Deny", "callback_data": f"reject:{plan_id}"}
+                {"text": "✅ Approve", "callback_data": f"approve:{safe_id}"},
+                {"text": "❌ Deny", "callback_data": f"reject:{safe_id}"}
             ]
         ]
     }
@@ -236,7 +242,7 @@ async def render_telegram_question(q_id: str):
         lbl = opt.get("label", str(opt)) if isinstance(opt, dict) else str(opt)
         buttons.append([{"text": lbl, "callback_data": f"qans:{q_id}:{opt_idx}"}])
 
-    # Universal language presentation for questionnaire interface (Hermes Parity)
+    # Universal language presentation for questionnaire interface (Anara Standard)
     dismiss_label = "✖ Dismiss"
     clarification_title = f"📋 <b>CLARIFICATION ({idx+1}/{len(questions)})</b>"
     action_hint = "<i>Tap an option below or type your answer:</i>"

@@ -180,13 +180,32 @@ async def wa_webhook_endpoint(payload: WhatsAppWebhookPayload):
     target_chat_id = payload.jid if (payload.isGroup and payload.jid) else payload.phone
     human_sender_id = payload.participant or payload.phone
 
+    wa_attachments = []
+    if payload.localPath:
+        wa_attachments.append({
+            "type": payload.mediaType or "document",
+            "file_name": payload.fileName or "file",
+            "local_path": payload.localPath,
+            "mime_type": payload.mimeType or "application/octet-stream",
+            "size": payload.fileSize or 0,
+        })
+    elif payload.quotedLocalPath:
+        wa_attachments.append({
+            "type": payload.quotedMediaType or "photo",
+            "file_name": "quoted_media",
+            "local_path": payload.quotedLocalPath,
+            "mime_type": "image/jpeg" if payload.quotedMediaType == "photo" else "application/octet-stream",
+            "size": 0,
+        })
+
     req = ChannelRequest(
         text=clean_text,
         channel="whatsapp",
         channel_id=target_chat_id,
         user_id=human_sender_id,
         sender_name=payload.sender or "WhatsApp User",
-        trigger_type="interactive"
+        trigger_type="interactive",
+        attachments=wa_attachments,
     )
 
     async def _send_prog(msg: str):

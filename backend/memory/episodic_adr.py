@@ -1,6 +1,6 @@
 """
 episodic_adr.py — Episodic Project Memory & Autonomous Architecture Decision Records (ADR).
-Hermes Parity: Pillar 3.
+Anara Standard: Pillar 3.
 Maintains persistent architectural decisions, structural rationales, and test milestones
 in SQLite (anara_brain.db) across coding sessions, preventing architectural drift and
 re-solving already solved engineering decisions.
@@ -9,9 +9,11 @@ re-solving already solved engineering decisions.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
+import re
 import sqlite3
 import time
 import uuid
@@ -30,13 +32,23 @@ class EpisodicADRManager:
         self.db_path = db_path
         self._init_table()
 
-    def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+    @contextlib.contextmanager
+    def _get_connection(self):
+        """Context manager guaranteeing connection closure to prevent descriptor leaks (Anara Standard)."""
+        conn = sqlite3.connect(self.db_path, timeout=15.0)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            conn.execute("PRAGMA busy_timeout = 15000;")
+            conn.execute("PRAGMA foreign_keys = ON;")
+            conn.execute("PRAGMA journal_mode = WAL;")
+            conn.execute("PRAGMA synchronous = NORMAL;")
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def _init_table(self):
-        """Initializes the project_adr schema in anara_brain.db."""
+        """Initializes the project_adr schema in anara_brain.db with composite indexes."""
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -53,8 +65,9 @@ class EpisodicADRManager:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_adr_session ON project_adr(session_id);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_adr_created ON project_adr(created_at);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_adr_session_id ON project_adr(session_id, id DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_adr_created ON project_adr(created_at DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_adr_task ON project_adr(milestone_task);")
                 conn.commit()
         except Exception as e:
             logger.warning(f"[EpisodicADR] Table initialization warning: {e}")
@@ -70,13 +83,34 @@ class EpisodicADRManager:
     ) -> Dict[str, Any]:
         """
         Records a confirmed architectural decision milestone into persistent project memory.
-        Emits an ADR_RECORDED telemetry event for live Code Studio HUD reflection.
+        Enforces 128-bit ADR ID entropy and suppresses redundant duplicate bursts.
         """
-        adr_id = f"adr_{uuid.uuid4().hex[:8]}"
-        files_json = json.dumps(affected_files or [], ensure_ascii=False)
-
+        now = time.time()
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            # Prevent duplicate ADR creation if identical task was recorded in the last 60 seconds
+            cursor.execute(
+                "SELECT adr_id FROM project_adr WHERE milestone_task = ? AND session_id = ? "
+                "AND created_at >= datetime('now', '-60 seconds') LIMIT 1",
+                (str(milestone_task).strip(), str(session_id))
+            )
+            existing = cursor.fetchone()
+            if existing:
+                return {
+                    "adr_id": existing["adr_id"],
+                    "session_id": str(session_id),
+                    "milestone_task": milestone_task,
+                    "architecture_decision": architecture_decision,
+                    "rationale": rationale,
+                    "affected_files": affected_files or [],
+                    "test_exit_code": test_exit_code,
+                    "timestamp": now,
+                    "duplicate": True,
+                }
+
+            adr_id = f"adr_{uuid.uuid4().hex[:16]}"
+            files_json = json.dumps(affected_files or [], ensure_ascii=False)
+
             cursor.execute("""
                 INSERT INTO project_adr (
                     adr_id, session_id, milestone_task, architecture_decision,
@@ -217,7 +251,7 @@ class EpisodicADRManager:
         session_id: str = "default",
     ) -> Optional[Dict[str, Any]]:
         """
-        Pure Model-Driven Milestone Distillation (Hermes Parity).
+        Pure Model-Driven Milestone Distillation (Anara Standard).
         Uses fast auxiliary model with uncapped tokens (max_tokens=None) to extract
         the architectural decision and rationale upon verified test pass (exit_code == 0).
         """
@@ -226,10 +260,11 @@ class EpisodicADRManager:
         from core.prompt_loader import load_prompt
 
         sys_inst = load_prompt("classifiers/adr_synthesizer").strip()
+        test_summary = test_output[-500:].strip() if len(test_output) > 500 else test_output.strip()
         user_p = (
             f"Task: \"{task_prompt}\"\n"
             f"Modified files: {json.dumps(modified_files)}\n"
-            f"Test summary snippet: {test_output[:300]}\n"
+            f"Test summary tail: {test_summary}\n"
             "Output JSON:"
         )
 
@@ -247,30 +282,29 @@ class EpisodicADRManager:
                 timeout=4.0
             )
             if isinstance(res, str) and res.strip():
-                clean_json = res.strip().strip("`")
-                if clean_json.startswith("json"):
-                    clean_json = clean_json[4:].strip()
-                parsed = json.loads(clean_json)
-                decision = parsed.get("architecture_decision", "").strip()
-                rationale = parsed.get("rationale", "").strip()
-                if decision:
-                    return self.record_project_adr(
-                        milestone_task=task_prompt,
-                        architecture_decision=decision,
-                        rationale=rationale or "Physical verification passed 100%.",
-                        affected_files=modified_files,
-                        session_id=session_id,
-                        test_exit_code=0,
-                    )
+                match = re.search(r"\{.*\}", res, re.DOTALL)
+                if match:
+                    parsed = json.loads(match.group(0))
+                    decision = str(parsed.get("architecture_decision", "")).strip()
+                    rationale = str(parsed.get("rationale", "")).strip()
+                    if decision:
+                        return self.record_project_adr(
+                            milestone_task=task_prompt,
+                            architecture_decision=decision,
+                            rationale=rationale or "Physical verification passed 100%.",
+                            affected_files=modified_files,
+                            session_id=session_id,
+                            test_exit_code=0,
+                        )
         except Exception as e:
             logger.debug(f"[EpisodicADR] LLM synthesis fallback notice: {e}")
 
         # Parameter-grounded fallback without hardcoded mock templates
-        aff_str = ", ".join(os.path.basename(f) for f in (modified_files or [])[:3]) or "repositori"
+        aff_str = ", ".join(os.path.basename(f) for f in (modified_files or [])[:3]) or "codebase"
         return self.record_project_adr(
             milestone_task=task_prompt,
-            architecture_decision=f"Penyelesaian {task_prompt[:60]} via {aff_str}",
-            rationale="Verified valid and passed through physical terminal testing.",
+            architecture_decision=f"Verified {task_prompt[:60]} in {aff_str}",
+            rationale="Architectural milestone verified via automated test suite pass.",
             affected_files=modified_files,
             session_id=session_id,
             test_exit_code=0,

@@ -1,12 +1,15 @@
 """
-platforms/telegram.py — Telegram Platform Adapter for Project Anara (Hermes Parity).
+platforms/telegram.py — Telegram Platform Adapter for Project Anara (Anara Standard).
 """
 
 from __future__ import annotations
 
+import html
+import json
 import logging
 from typing import Any, Dict, Optional
 from ..base import BasePlatformAdapter
+from core.logger import redact_sensitive_text
 
 logger = logging.getLogger("anara.integrations.telegram")
 
@@ -15,9 +18,12 @@ class TelegramPlatformAdapter(BasePlatformAdapter):
     name = "telegram"
 
     async def connect(self, is_reconnect: bool = False) -> bool:
-        from ..telegram import start_telegram_polling_daemon, get_stored_telegram_token
+        from ..telegram import start_telegram_polling_daemon, get_stored_telegram_token, get_telegram_status
         token = get_stored_telegram_token()
-        if token:
+        if not token:
+            return False
+        st = await get_telegram_status()
+        if st.get("connected") or st.get("is_configured"):
             start_telegram_polling_daemon()
             return True
         return False
@@ -62,20 +68,34 @@ class TelegramPlatformAdapter(BasePlatformAdapter):
     def render_approval(self, narration: str, action: Any) -> Dict[str, Any]:
         text_parts = [narration.strip()]
         args = getattr(action, "tool_args", {}) or {}
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except Exception:
+                args = {}
         pending_tc = getattr(action, "pending_tool_call", None) or {}
-        cmd = args.get("command") or pending_tc.get("arguments", {}).get("command")
+        tc_args = pending_tc.get("arguments", {})
+        if isinstance(tc_args, str):
+            try:
+                tc_args = json.loads(tc_args)
+            except Exception:
+                tc_args = {}
+        cmd = (args if isinstance(args, dict) else {}).get("command") or (tc_args if isinstance(tc_args, dict) else {}).get("command")
+        file_p = (args if isinstance(args, dict) else {}).get("file_path") or (tc_args if isinstance(tc_args, dict) else {}).get("file_path")
         t_name = getattr(action, "tool_name", "")
         if cmd:
             text_parts.append(f"\n```shell\n{cmd}\n```")
-        elif args.get("file_path"):
-            text_parts.append(f"\n`Target: {args.get('file_path')}`")
+        elif file_p:
+            text_parts.append(f"\n`Target: {file_p}`")
         elif t_name == "computer_use":
             act = args.get("action", "action")
             target_desc = args.get("text") or args.get("key") or args.get("keys") or args.get("app") or (f"({args.get('x')}, {args.get('y')})" if args.get("x") is not None else "")
             text_parts.append(f"\n`Computer Use ({act}): {target_desc}`")
 
         full_text = "\n".join(text_parts)
-        action_id = getattr(action, "action_id", getattr(action, "plan_id", "act"))
+        raw_id = str(getattr(action, "action_id", getattr(action, "plan_id", "act")))
+        # Telegram Bot API enforces 64-byte callback_data ceiling (Anara Standard)
+        action_id = raw_id[:48]
         keyboard = {
             "inline_keyboard": [
                 [

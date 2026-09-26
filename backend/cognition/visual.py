@@ -16,17 +16,24 @@ import json
 import urllib.parse
 import logging
 import re
+import time
+import asyncio
 import httpx
 from typing import Optional, Dict, Any, List
-from google import genai
-from google.genai import types
+
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:
+    genai = None  # type: ignore
+    types = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
 def could_be_visual_request(text: str) -> bool:
     """
-    Deprecated keyword helper retained for backwards compatibility (Hermes Parity).
-    In Hermes Agent, visual intent is driven strictly by model reasoning.
+    Deprecated keyword helper retained for backwards compatibility (Anara Standard).
+    In Anara Agent, visual intent is driven strictly by model reasoning.
     Use asynchronous is_visual_request_semantic instead of static word filtering.
     """
     return False
@@ -34,7 +41,7 @@ def could_be_visual_request(text: str) -> bool:
 
 async def is_visual_request_semantic(user_text: str) -> bool:
     """
-    Pure Model-Driven Semantic Visual Intent Classifier (Hermes Parity).
+    Pure Model-Driven Semantic Visual Intent Classifier (Anara Standard).
     Evaluates whether the user asks to see or project a photo, image, weather, chart, or visual card.
     Operates without hardcoded word sets across any human language.
     """
@@ -43,7 +50,6 @@ async def is_visual_request_semantic(user_text: str) -> bool:
         return False
 
     try:
-        import asyncio
         from providers import call_universal_chat_model
         from core.capabilities import get_fast_auxiliary_model
         from core.prompt_loader import load_prompt
@@ -55,14 +61,15 @@ async def is_visual_request_semantic(user_text: str) -> bool:
                 model_id=get_fast_auxiliary_model(),
                 user_prompt=user_p,
                 system_instruction=sys_p,
-                max_tokens=None,
+                max_tokens=16,
                 temperature=0.0,
                 read_only=True
             ),
             timeout=2.0
         )
-        if isinstance(res, str) and "YES" in res.strip().upper():
-            return True
+        if isinstance(res, str):
+            clean_res = res.strip().upper()
+            return bool(re.search(r"\bYES\b", clean_res)) and not bool(re.search(r"\bNO\b", clean_res))
     except Exception as e:
         logger.debug(f"[VisualClassifier] Semantic check notice: {e}")
 
@@ -189,16 +196,31 @@ async def fetch_real_web_image(query: str) -> Optional[Dict[str, str]]:
     return imgs[0] if imgs else None
 
 
-# In-memory bounded LRU query cache (max 100 entries to prevent memory leak)
+# In-memory bounded LRU query cache with TTL (Anara Standard: max 100 entries, 300s TTL)
 from collections import OrderedDict
-_VISUAL_QUERY_CACHE: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+_VISUAL_CACHE_LOCK = asyncio.Lock()
+_VISUAL_QUERY_CACHE: "OrderedDict[str, tuple[float, Dict[str, Any]]]" = OrderedDict()
 _MAX_VISUAL_CACHE_SIZE = 100
+_VISUAL_CACHE_TTL = 300.0  # 5 minutes
 
 
-def _cache_visual_result(key: str, val: Dict[str, Any]):
-    if len(_VISUAL_QUERY_CACHE) >= _MAX_VISUAL_CACHE_SIZE:
-        _VISUAL_QUERY_CACHE.popitem(last=False)
-    _VISUAL_QUERY_CACHE[key] = val
+async def _cache_visual_result(key: str, val: Dict[str, Any]):
+    async with _VISUAL_CACHE_LOCK:
+        if len(_VISUAL_QUERY_CACHE) >= _MAX_VISUAL_CACHE_SIZE:
+            _VISUAL_QUERY_CACHE.popitem(last=False)
+        _VISUAL_QUERY_CACHE[key] = (time.time(), val)
+
+
+async def _get_cached_visual(key: str) -> Optional[Dict[str, Any]]:
+    async with _VISUAL_CACHE_LOCK:
+        if key in _VISUAL_QUERY_CACHE:
+            ts, val = _VISUAL_QUERY_CACHE[key]
+            # Verify TTL for dynamic data
+            if time.time() - ts < _VISUAL_CACHE_TTL:
+                _VISUAL_QUERY_CACHE.move_to_end(key)
+                return val
+            _VISUAL_QUERY_CACHE.pop(key, None)
+    return None
 
 
 async def generate_visual_projection(
@@ -217,16 +239,17 @@ async def generate_visual_projection(
     - 'todo_list': Dynamic to-do / task checklist card
     """
     clean_key = user_text.lower().strip()
-    if clean_key in _VISUAL_QUERY_CACHE:
+    cached = await _get_cached_visual(clean_key)
+    if cached:
         logger.info(f"[VisualProjection Cache Hit] 0 tokens used: {clean_key!r}")
-        return _VISUAL_QUERY_CACHE[clean_key]
+        return cached
 
     from memory import memory_engine, get_current_indonesian_time_str
     time_info = get_current_indonesian_time_str()
-    stats = memory_engine.get_brain_stats()
+    stats = await asyncio.to_thread(memory_engine.get_brain_stats)
 
     # Retrieve recent conversation context so pronouns/follow-ups (e.g. 'show the photo', 'where is the image', 'yes show it', 'yes', 'sure') resolve to the discussed subject
-    recent_chat = memory_engine.get_recent_conversations(limit=4)
+    recent_chat = await asyncio.to_thread(memory_engine.get_recent_conversations, 4)
     recent_context_lines = []
     if recent_chat:
         for c in recent_chat:
@@ -260,7 +283,7 @@ async def generate_visual_projection(
                 max_output_tokens=1200,
                 temperature=0.3
             )
-            for mdl in [eff_mdl, "gemini-2.5-flash"]:
+            for mdl in [eff_mdl, "gemini-2.0-flash"]:
                 try:
                     res = await asyncio.wait_for(
                         client.aio.models.generate_content(
@@ -275,7 +298,8 @@ async def generate_visual_projection(
                         break
                 except Exception as m_err:
                     logger.debug(f"[VisualEngine] GenAI call note: {m_err}")
-        else:
+
+        if not raw:
             try:
                 from providers import call_universal_chat_model
                 res_str = await asyncio.wait_for(
@@ -292,9 +316,8 @@ async def generate_visual_projection(
                 raw = str(res_str or "").strip()
             except Exception as u_err:
                 logger.debug(f"[VisualEngine] Universal model call note: {u_err}")
-        if "{" in raw and "}" in raw:
-            json_str = raw[raw.find("{"):raw.rfind("}")+1]
-            data = json.loads(json_str)
+        data = _parse_classifier_json(raw)
+        if data and isinstance(data, dict):
             v_type = data.get("visual_type", "none").strip().lower()
             reply_text = data.get("reply_text", "").strip()
 
@@ -320,7 +343,7 @@ async def generate_visual_projection(
                         "images": img_list if img_count > 1 else [primary],
                         "reply_text": reply_text or ""
                     }
-                    _cache_visual_result(clean_key, res_obj)
+                    await _cache_visual_result(clean_key, res_obj)
                     return res_obj
 
             # 2. Holographic Weather HUD
@@ -344,7 +367,7 @@ async def generate_visual_projection(
                     "weather_data": w_data,
                     "reply_text": reply_text or ""
                 }
-                _cache_visual_result(clean_key, res_obj)
+                await _cache_visual_result(clean_key, res_obj)
                 return res_obj
 
             # 3. Holographic Code Box
@@ -362,7 +385,7 @@ async def generate_visual_projection(
                     "code_data": c_data,
                     "reply_text": reply_text or ""
                 }
-                _cache_visual_result(clean_key, res_obj)
+                await _cache_visual_result(clean_key, res_obj)
                 return res_obj
 
             # 4. JARVIS System Telemetry HUD
@@ -382,7 +405,7 @@ async def generate_visual_projection(
                     "system_hud_data": hud_data,
                     "reply_text": reply_text or ""
                 }
-                _cache_visual_result(clean_key, res_obj)
+                await _cache_visual_result(clean_key, res_obj)
                 return res_obj
 
             # 5. Knowledge & Schematic Card
@@ -396,7 +419,7 @@ async def generate_visual_projection(
                 }
                 # Normalize structured recipe/step fields (frontend renders these natively)
                 k_data["ingredients"] = [str(x).strip() for x in (k_data.get("ingredients") or []) if str(x).strip()]
-                k_data["steps"] = [str(x).strip() for x in (k_data.get("steps") or []) if str(x).strip()][:8]
+                k_data["steps"] = [str(x).strip() for x in (k_data.get("steps") or []) if str(x).strip()][:30]
                 if not k_data.get("badge"):
                     k_data["badge"] = "Smart HUD"
                 res_obj = {
@@ -406,12 +429,12 @@ async def generate_visual_projection(
                     "knowledge_card_data": k_data,
                     "reply_text": reply_text or ""
                 }
-                _cache_visual_result(clean_key, res_obj)
+                await _cache_visual_result(clean_key, res_obj)
                 return res_obj
 
             # 6. Dynamic To-Do List HUD
             elif v_type == "todo_list":
-                todos = memory_engine.get_notes_and_todos()
+                todos = await asyncio.to_thread(memory_engine.get_notes_and_todos)
                 res_obj = {
                     "has_visual": True,
                     "wants_image": False,
@@ -419,7 +442,7 @@ async def generate_visual_projection(
                     "todo_data": {"items": todos},
                     "reply_text": reply_text or ""
                 }
-                _cache_visual_result(clean_key, res_obj)
+                await _cache_visual_result(clean_key, res_obj)
                 return res_obj
 
             # Default conversational fallback
@@ -488,9 +511,9 @@ def _parse_classifier_json(raw: str) -> Optional[Dict[str, Any]]:
 
 
 async def generate_smart_hud_card(
-    client: genai.Client,
-    user_text: str,
-    ai_text: str,
+    client: Optional[Any] = None,
+    user_text: str = "",
+    ai_text: str = "",
     speaker_name: Optional[str] = None,
     force: bool = False,
     conversation_context: Optional[List[Dict[str, str]]] = None,
@@ -532,29 +555,49 @@ async def generate_smart_hud_card(
         .replace("{ai_text}", ai_text[:900])
     )
 
-    # Semantic mode may need to self-generate full recipe content -> generous tokens
-    gen_config = types.GenerateContentConfig(max_output_tokens=1200, temperature=0.1)
     timeout_s = 8.0
-    res = None
+    raw = ""
     from core.capabilities import get_fast_auxiliary_model
     aux_m = get_fast_auxiliary_model()
-    for mdl in [aux_m, "gemini-2.5-flash"]:
-        try:
-            res = await asyncio.wait_for(
-                client.aio.models.generate_content(
-                    model=mdl,
-                    contents=prompt,
-                    config=gen_config,
-                ),
-                timeout=timeout_s,
-            )
-            if res and res.text:
-                break
-        except Exception as e_cls:
-            logger.warning(f"[Semantic HUD] Classifier model {mdl} failed: {e_cls}")
-            continue
 
-    raw = res.text.strip() if res and res.text else ""
+    if client and getattr(client, "aio", None) and types is not None:
+        gen_config = types.GenerateContentConfig(max_output_tokens=1200, temperature=0.1)
+        for mdl in [aux_m, "gemini-2.0-flash"]:
+            try:
+                res = await asyncio.wait_for(
+                    client.aio.models.generate_content(
+                        model=mdl,
+                        contents=prompt,
+                        config=gen_config,
+                    ),
+                    timeout=timeout_s,
+                )
+                if res and res.text:
+                    raw = res.text.strip()
+                    break
+            except Exception as e_cls:
+                logger.warning(f"[Semantic HUD] Classifier model {mdl} failed: {e_cls}")
+                continue
+
+    if not raw:
+        try:
+            from providers import call_universal_chat_model
+            res_str = await asyncio.wait_for(
+                call_universal_chat_model(
+                    model_id=aux_m,
+                    user_prompt=prompt,
+                    system_instruction="You are a smart HUD knowledge card generator. Output valid JSON only.",
+                    max_tokens=1200,
+                    temperature=0.1,
+                    read_only=True
+                ),
+                timeout=timeout_s
+            )
+            if res_str:
+                raw = str(res_str).strip()
+        except Exception as e_univ:
+            logger.warning(f"[Semantic HUD] Universal chat model fallback failed: {e_univ}")
+
     data = _parse_classifier_json(raw)
     if not data:
         logger.warning(f"[Semantic HUD] Classifier returned unparseable JSON: {raw[:120]!r}")

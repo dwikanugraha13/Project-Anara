@@ -431,12 +431,15 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                 from cognition.audio import transcribe_audio_file
                 voice_transcript = await transcribe_audio_file(voice_att["local_path"])
                 if voice_transcript and voice_transcript.strip():
-                    text = voice_transcript.strip()
+                    text = f"{voice_transcript.strip()}\n\n{raw_text}".strip() if raw_text else voice_transcript.strip()
                     if att_header:
                         text = f"{text}\n\n{att_header}"
+                elif raw_text:
+                    text = f"{raw_text}\n\n{att_header}" if att_header else raw_text
                 else:
+                    label = "Audio clip" if voice_att.get("type") == "audio" else "Voice message"
                     fallback_audio_msg = (
-                        "🎙️ <i>Voice message could not be transcribed. Please ensure the active model supports audio input or send your request in text.</i>"
+                        f"🎙️ <i>{label} could not be transcribed. Please ensure the active model supports audio input or send your request in text.</i>"
                     )
                     await send_telegram_message(
                         chat_id=chat_id,

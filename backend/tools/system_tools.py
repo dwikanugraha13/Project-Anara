@@ -89,7 +89,7 @@ async def _tool_execute_cli_command(command: str, workdir: Optional[str] = None)
 
 
 async def _tool_manage_memory_and_todos(action: str, title: str, content: Optional[str] = None, category: str = "todo") -> Dict[str, Any]:
-    """Autonomously creates notes or to-do items into Anara's SQLite Brain (Hermes Parity)."""
+    """Autonomously creates notes or to-do items into Anara's SQLite Brain (Anara Standard)."""
     from memory import memory_engine
     act = (action or "add").strip().lower()
     t_clean = (title or "Task").strip()
@@ -255,7 +255,7 @@ async def _tool_session_search(query: str, limit: int = 5) -> Dict[str, Any]:
 
 def _resolve_windows_app_executable(app_name: str) -> Optional[str]:
     """
-    Dynamically locates executable for a Windows application without static hardcoded paths (Hermes Parity).
+    Dynamically locates executable for a Windows application without static hardcoded paths (Anara Standard).
     Checks:
     1. System PATH via shutil.which
     2. Windows Registry App Paths (HKCU & HKLM)
@@ -328,7 +328,7 @@ async def _tool_system_control(
     url: Optional[str] = None,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Controls desktop applications, URLs, and OS functions locally on Windows (Hermes Parity)."""
+    """Controls desktop applications, URLs, and OS functions locally on Windows (Anara Standard)."""
     import shutil
     import webbrowser
 
@@ -344,7 +344,7 @@ async def _tool_system_control(
 
     try:
         if act in ["open", "launch", "start", "run"]:
-            # Case A: URL opening (Hermes Parity: webbrowser.open)
+            # Case A: URL opening (Anara Standard: webbrowser.open)
             if target_url:
                 webbrowser.open(target_url)
                 return {
@@ -354,7 +354,7 @@ async def _tool_system_control(
                     "message": f"URL '{target_url}' opened successfully in browser."
                 }
 
-            # Case B: Desktop Application Launching (Hermes Parity: dynamic resolution)
+            # Case B: Desktop Application Launching (Anara Standard: dynamic resolution)
             exe_path = _resolve_windows_app_executable(tgt)
             if exe_path:
                 cmd_list = [exe_path]
@@ -442,7 +442,7 @@ async def _tool_delegate_subagent(
     **kwargs: Any,
 ) -> Dict[str, Any]:
     """
-    Spawns specialized autonomous subagent worker(s) in background or parallel batch (Hermes Parity).
+    Spawns specialized autonomous subagent worker(s) in background or parallel batch (Anara Standard).
     By default runs synchronously (background=False) to deliver real model findings to the orchestrator.
     """
     from core import subagent_manager

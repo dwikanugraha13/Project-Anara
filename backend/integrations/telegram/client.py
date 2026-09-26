@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 
 from constants import get_anara_staging_dir
+from core.logger import redact_sensitive_text
 from .formatter import (
     format_telegram_html,
     _rich_normalize_linebreaks,
@@ -208,16 +209,18 @@ async def _telegram_api_post(
                 return status_code, data
 
         except (httpx.TimeoutException, httpx.NetworkError, httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout) as net_err:
+            clean_err = redact_sensitive_text(str(net_err or "timeout"))
             if attempt < max_retries - 1:
                 wait_sec = 0.5 * (2 ** attempt)
-                logger.warning(f"[TelegramClient] Network glitch on {endpoint} (attempt {attempt+1}/{max_retries}): {net_err or 'timeout'}. Retrying in {wait_sec}s...")
+                logger.warning(f"[TelegramClient] Network glitch on {endpoint} (attempt {attempt+1}/{max_retries}): {clean_err}. Retrying in {wait_sec}s...")
                 await asyncio.sleep(wait_sec)
             else:
-                logger.error(f"[TelegramClient] Network failure calling {endpoint} after {max_retries} attempts: {net_err or 'timeout'}")
-                return 0, {"ok": False, "error_code": 0, "description": f"Network error: {net_err or 'timeout'}"}
+                logger.error(f"[TelegramClient] Network failure calling {endpoint} after {max_retries} attempts: {clean_err}")
+                return 0, {"ok": False, "error_code": 0, "description": f"Network error: {clean_err}"}
         except Exception as e:
-            logger.error(f"[TelegramClient] Unexpected error calling {endpoint}: {e}")
-            return 0, {"ok": False, "error_code": 0, "description": str(e)}
+            clean_e = redact_sensitive_text(str(e))
+            logger.error(f"[TelegramClient] Unexpected error calling {endpoint}: {clean_e}")
+            return 0, {"ok": False, "error_code": 0, "description": clean_e}
 
     return 0, {"ok": False, "error_code": 0, "description": "Max retries exceeded"}
 
@@ -367,8 +370,7 @@ async def send_telegram_document(
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
-            with open(clean_path, "rb") as f:
-                file_bytes = f.read()
+            file_bytes = await asyncio.to_thread(lambda: open(clean_path, "rb").read())
             files = {"document": (filename, file_bytes)}
             data = {"chat_id": target_chat}
             if caption:
@@ -377,9 +379,9 @@ async def send_telegram_document(
             res = await client.post(url, data=data, files=files)
             if res.status_code == 200 and res.json().get("ok"):
                 return {"status": "ok", "message_id": res.json()["result"]["message_id"], "filename": filename}
-            return {"status": "error", "error_code": "SEND_DOCUMENT_FAILED", "message": res.text[:120]}
+            return {"status": "error", "error_code": "SEND_DOCUMENT_FAILED", "message": redact_sensitive_text(res.text[:120])}
     except Exception as e:
-        return {"status": "error", "error_code": "SEND_DOCUMENT_EXCEPTION", "message": str(e)}
+        return {"status": "error", "error_code": "SEND_DOCUMENT_EXCEPTION", "message": redact_sensitive_text(str(e))}
 
 
 async def send_telegram_voice(
@@ -405,8 +407,7 @@ async def send_telegram_voice(
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
-            with open(clean_path, "rb") as f:
-                file_bytes = f.read()
+            file_bytes = await asyncio.to_thread(lambda: open(clean_path, "rb").read())
             files = {"voice": (filename, file_bytes)}
             data = {"chat_id": target_chat}
             if caption:
@@ -415,9 +416,9 @@ async def send_telegram_voice(
             res = await client.post(url, data=data, files=files)
             if res.status_code == 200 and res.json().get("ok"):
                 return {"status": "ok", "message_id": res.json()["result"]["message_id"], "filename": filename}
-            return {"status": "error", "error_code": "SEND_VOICE_FAILED", "message": res.text[:120]}
+            return {"status": "error", "error_code": "SEND_VOICE_FAILED", "message": redact_sensitive_text(res.text[:120])}
     except Exception as e:
-        return {"status": "error", "error_code": "SEND_VOICE_EXCEPTION", "message": str(e)}
+        return {"status": "error", "error_code": "SEND_VOICE_EXCEPTION", "message": redact_sensitive_text(str(e))}
 
 
 async def send_telegram_photo(
@@ -448,8 +449,7 @@ async def send_telegram_photo(
                 if res.status_code == 200 and res.json().get("ok"):
                     return {"status": "ok", "message_id": res.json()["result"]["message_id"]}
             elif isinstance(photo_target, str) and os.path.isfile(photo_target):
-                with open(photo_target, "rb") as f:
-                    file_bytes = f.read()
+                file_bytes = await asyncio.to_thread(lambda: open(photo_target, "rb").read())
                 files = {"photo": (os.path.basename(photo_target), file_bytes)}
                 data = {"chat_id": target_chat}
                 if caption:
@@ -459,7 +459,7 @@ async def send_telegram_photo(
                     return {"status": "ok", "message_id": res.json()["result"]["message_id"]}
             return {"status": "error", "error_code": "SEND_PHOTO_FAILED", "message": "Failed to send photo: Invalid source or server error."}
     except Exception as e:
-        return {"status": "error", "error_code": "SEND_PHOTO_EXCEPTION", "message": str(e)}
+        return {"status": "error", "error_code": "SEND_PHOTO_EXCEPTION", "message": redact_sensitive_text(str(e))}
 
 
 async def send_telegram_video(
@@ -488,8 +488,7 @@ async def send_telegram_video(
                 if res.status_code == 200 and res.json().get("ok"):
                     return {"status": "ok", "message_id": res.json()["result"]["message_id"]}
             elif isinstance(video, str) and os.path.isfile(video):
-                with open(video, "rb") as f:
-                    file_bytes = f.read()
+                file_bytes = await asyncio.to_thread(lambda: open(video, "rb").read())
                 files = {"video": (os.path.basename(video), file_bytes)}
                 data = {"chat_id": target_chat}
                 if caption:
@@ -499,7 +498,7 @@ async def send_telegram_video(
                     return {"status": "ok", "message_id": res.json()["result"]["message_id"]}
             return {"status": "error", "error_code": "SEND_VIDEO_FAILED", "message": "Failed to send video: Invalid source or server error."}
     except Exception as e:
-        return {"status": "error", "error_code": "SEND_VIDEO_EXCEPTION", "message": str(e)}
+        return {"status": "error", "error_code": "SEND_VIDEO_EXCEPTION", "message": redact_sensitive_text(str(e))}
 
 
 async def answer_telegram_callback_query(callback_query_id: str, text: Optional[str] = None):
@@ -578,8 +577,7 @@ async def download_telegram_attachment(file_id: str, destination_filename: str) 
             dl_url = f"{TELEGRAM_API_BASE}/file/bot{token}/{file_path_on_tg}"
             dl_res = await client.get(dl_url)
             if dl_res.status_code == 200:
-                with open(local_path, "wb") as f:
-                    f.write(dl_res.content)
+                await asyncio.to_thread(lambda: open(local_path, "wb").write(dl_res.content))
                 return local_path
     except Exception as e:
         logger.warning(f"[TelegramService] Download error for {destination_filename}: {e}")

@@ -27,22 +27,33 @@ class SkillExtractor:
         Extracts and registers a new skill if the turn accomplished a meaningful
         and reusable technical workflow (Anara Lifelong Learning loop).
         """
-        # Only trigger if constructive mutating tools were used
-        constructive_tools = {"write_local_file", "edit_file", "generate_file_artifact", "create_zip_archive"}
+        # Only trigger if constructive mutating tools were used (Anara Enterprise Architecture)
+        constructive_tools = {
+            "write_local_file", "edit_file", "execute_cli_command",
+            "execute_code", "generate_file_artifact", "create_zip_archive", "rezip_archive",
+            "write_file", "patch", "terminal"
+        }
         if not any(t in constructive_tools for t in tools_used):
             return None
 
-        # Check existing skills in SQLite database
-        from memory import memory_engine
-        existing_skills = memory_engine.get_all_agent_skills()
-        existing_names = [s["name"].lower() for s in existing_skills]
+        # Check existing skills across filesystem library AND SQLite database (Anara Standard)
+        from core.skill_library import skill_library, slugify
+        existing_slugs = {s["slug"].lower() for s in skill_library.list_skills(status_filter="all")}
+        existing_names = {s["name"].lower() for s in skill_library.list_skills(status_filter="all")}
+        try:
+            from memory import memory_engine
+            for s in memory_engine.get_all_agent_skills():
+                existing_names.add(s["name"].lower())
+                existing_slugs.add(slugify(s["name"]))
+        except Exception:
+            pass
 
         from core.prompt_loader import load_prompt
         prompt = load_prompt(
             "skill_extractor",
             user_prompt=user_prompt,
             tools_used=", ".join(tools_used),
-            final_summary=final_summary[:600]
+            final_summary=final_summary[:2500]
         )
 
         try:
@@ -79,26 +90,41 @@ class SkillExtractor:
                 if isinstance(parsed, dict) and "is_reusable" in parsed:
                     data = parsed
 
-            if not data or not data.get("is_reusable") or not data.get("name"):
+            if not data:
                 return None
 
-            skill_name = data["name"].strip()
-            if skill_name.lower() in existing_names:
-                logger.info(f"[SkillExtractor] Skill '{skill_name}' already exists in database. Skipping duplicate.")
+            raw_reusable = data.get("is_reusable")
+            is_reusable = raw_reusable is True or str(raw_reusable).lower() in ("true", "1")
+            skill_name = str(data.get("name", "")).strip()
+
+            if not is_reusable or not skill_name:
                 return None
+
+            candidate_slug = slugify(skill_name)
+            if skill_name.lower() in existing_names or candidate_slug in existing_slugs:
+                logger.info(f"[SkillExtractor] Skill '{skill_name}' ({candidate_slug}) already exists. Skipping duplicate.")
+                return None
+
+            # Enforce Anara Agent Hardline standard: description <= 60 chars ending with a period
+            desc = str(data.get("description", "")).strip()
+            if len(desc) > 60:
+                desc = desc[:57].rstrip() + "..."
+            if desc and not desc.endswith("."):
+                desc += "."
 
             from core.skill_library import skill_library
             saved = skill_library.save_skill(
                 name=skill_name,
                 category=data.get("category", "coding"),
-                description=data.get("description", ""),
+                description=desc,
                 trigger_keywords=data.get("trigger_keywords", []),
                 procedure_steps=data.get("procedure_steps", []),
                 status="pending",  # FR-16: Stored as pending, requires user review/approval
                 learned=True,
             )
 
-            logger.info(f"[Anara Skill Extractor] Extracted new skill (pending approval): '{skill_name}' at {saved.get('file_path')}")
+            if isinstance(saved, dict) and saved.get("file_path"):
+                logger.info(f"[Anara Skill Extractor] Extracted new skill (pending approval): '{skill_name}' at {saved.get('file_path')}")
             return saved
 
         except Exception as e:

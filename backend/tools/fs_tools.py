@@ -122,7 +122,7 @@ async def _tool_read_local_file(file_path: str, offset: Optional[int] = None, li
                 "content": f"[Observation: {res_msg}]"
             }
 
-        # WorkspaceSentinel Read Access Validation (Claude Code & Hermes Parity)
+        # WorkspaceSentinel Read Access Validation (Anara Enterprise Architecture)
         from core.workspace_sentinel import workspace_sentinel
         is_allowed, denial_reason = workspace_sentinel.validate_file_access(target_file, action="read")
         if not is_allowed:
@@ -252,7 +252,7 @@ async def _tool_edit_file(
         with open(target_file, "w", encoding="utf-8") as f:
             f.write(new_content)
 
-        # Ground-Truth Read-Back Verification (Hermes Parity)
+        # Ground-Truth Read-Back Verification (Anara Standard)
         read_back = workspace_sentinel.verify_read_back(target_file, expected_snippet=new_string[:80] if len(new_string) > 5 else new_string)
         if not read_back.get("verified"):
             logger.warning(f"[WorkspaceSentinel] Post-edit read-back warning for '{target_file}': {read_back.get('error')}")
@@ -408,7 +408,7 @@ async def _tool_write_local_file(file_path: str, content: str) -> Dict[str, Any]
         with open(target_path, "w", encoding="utf-8") as f:
             f.write(content)
 
-        # Ground-Truth Read-Back Verification (Hermes Parity)
+        # Ground-Truth Read-Back Verification (Anara Standard)
         read_back = workspace_sentinel.verify_read_back(target_path, expected_snippet=content[:80] if len(content) > 5 else content)
         if not read_back.get("verified"):
             logger.warning(f"[WorkspaceSentinel] Post-write read-back warning for '{target_path}': {read_back.get('error')}")
@@ -483,7 +483,7 @@ async def _tool_write_local_file(file_path: str, content: str) -> Dict[str, Any]
 async def _tool_delete_local_file(file_path: str) -> Dict[str, Any]:
     """
     Safely deletes a specific target file requested by the user.
-    Strictly protects against wildcards (*), directory wipes, and vital system files (Hermes Parity).
+    Strictly protects against wildcards (*), directory wipes, and vital system files (Anara Standard).
     """
     raw_path = (file_path or "").strip().strip('"\'')
     if not raw_path:
@@ -793,4 +793,128 @@ async def _tool_grep_search_code(pattern: str, path: Optional[str] = None, inclu
         "total_matches": len(matches),
         "matches": matches,
         "output": summary_str
+    }
+
+
+async def _tool_extract_code_outline(file_path: str) -> Dict[str, Any]:
+    """
+    Extracts structural outline of a source code file using AST and symbolic parsing (Anara Standard).
+    Returns classes, functions, methods, line ranges, parameter signatures, and docstrings.
+    Saves context tokens by eliminating the need to read entire large files.
+    """
+    clean_target = (file_path or "").strip().strip('"\'')
+    if not clean_target:
+        return {"status": "error", "message": "file_path cannot be empty."}
+
+    norm_path = os.path.abspath(os.path.expanduser(clean_target))
+    if not os.path.isfile(norm_path):
+        return {"status": "error", "message": f"File not found: {clean_target}"}
+
+    try:
+        with open(norm_path, "r", encoding="utf-8", errors="replace") as f:
+            code_text = f.read()
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to read file: {e}"}
+
+    total_lines = len(code_text.splitlines())
+    ext = os.path.splitext(norm_path)[1].lower()
+    symbols: List[Dict[str, Any]] = []
+
+    # 1. Python AST parsing
+    if ext == ".py":
+        import ast
+        try:
+            tree = ast.parse(code_text, filename=norm_path)
+            for node in tree.body:
+                if isinstance(node, ast.ClassDef):
+                    methods = []
+                    class_doc = ast.get_docstring(node) or ""
+                    first_doc_line = class_doc.splitlines()[0] if class_doc else ""
+                    for sub in node.body:
+                        if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            prefix = "async def " if isinstance(sub, ast.AsyncFunctionDef) else "def "
+                            args_list = [a.arg for a in sub.args.args]
+                            sub_doc = ast.get_docstring(sub) or ""
+                            first_sub_doc = sub_doc.splitlines()[0] if sub_doc else ""
+                            methods.append({
+                                "name": sub.name,
+                                "signature": f"{prefix}{sub.name}({', '.join(args_list)})",
+                                "line_start": sub.lineno,
+                                "line_end": getattr(sub, "end_lineno", sub.lineno),
+                                "docstring": first_sub_doc,
+                            })
+                    symbols.append({
+                        "type": "class",
+                        "name": node.name,
+                        "line_start": node.lineno,
+                        "line_end": getattr(node, "end_lineno", node.lineno),
+                        "docstring": first_doc_line,
+                        "methods": methods,
+                    })
+                elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    prefix = "async def " if isinstance(node, ast.AsyncFunctionDef) else "def "
+                    args_list = [a.arg for a in node.args.args]
+                    fn_doc = ast.get_docstring(node) or ""
+                    first_fn_doc = fn_doc.splitlines()[0] if fn_doc else ""
+                    symbols.append({
+                        "type": "function",
+                        "name": node.name,
+                        "signature": f"{prefix}{node.name}({', '.join(args_list)})",
+                        "line_start": node.lineno,
+                        "line_end": getattr(node, "end_lineno", node.lineno),
+                        "docstring": first_fn_doc,
+                    })
+        except Exception as e:
+            logger.debug(f"[AST] Parsing note: {e}")
+
+    # 2. General regex symbol parsing for JS, TS, Go, Rust, Markdown
+    if not symbols:
+        lines = code_text.splitlines()
+        for idx, line in enumerate(lines, 1):
+            s = line.strip()
+            # JS/TS/Go/Rust functions & classes
+            m = re.match(r"^(?:export\s+)?(?:async\s+)?(?:function|class|interface|type|fn|func|def)\s+([a-zA-Z0-9_]+)", s)
+            if m:
+                symbols.append({
+                    "type": "symbol",
+                    "name": m.group(1),
+                    "signature": s[:100],
+                    "line_start": idx,
+                    "line_end": idx,
+                    "docstring": "",
+                })
+            elif s.startswith(("# ", "## ", "### ")):
+                symbols.append({
+                    "type": "heading",
+                    "name": s,
+                    "signature": s,
+                    "line_start": idx,
+                    "line_end": idx,
+                    "docstring": "",
+                })
+
+    # Format human/LLM readable outline
+    lines_out = [f"File: {clean_target} ({total_lines} lines)"]
+    if not symbols:
+        lines_out.append("(No top-level classes or functions found)")
+    else:
+        for sym in symbols:
+            if sym.get("type") == "class":
+                doc = f" — {sym['docstring']}" if sym.get("docstring") else ""
+                lines_out.append(f"- class {sym['name']} (lines {sym['line_start']}-{sym['line_end']}){doc}")
+                for m in sym.get("methods", []):
+                    m_doc = f" — {m['docstring']}" if m.get("docstring") else ""
+                    lines_out.append(f"    - {m['signature']} (lines {m['line_start']}-{m['line_end']}){m_doc}")
+            else:
+                sig = sym.get("signature") or sym.get("name")
+                doc = f" — {sym['docstring']}" if sym.get("docstring") else ""
+                lines_out.append(f"- {sig} (lines {sym['line_start']}-{sym['line_end']}){doc}")
+
+    outline_str = "\n".join(lines_out)
+    return {
+        "status": "success",
+        "file_path": clean_target,
+        "total_lines": total_lines,
+        "total_symbols": len(symbols),
+        "outline": outline_str,
     }

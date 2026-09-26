@@ -1,7 +1,7 @@
 """
 self_correction.py — Unified Autonomous Self-Correction & Execution Sentinel Engine for Project Anara.
 Consolidates pre-execution loop prevention, dynamic error recovery, context micro-compaction,
-and circuit breakers into a cohesive architecture (Hermes Agent Parity).
+and circuit breakers into a cohesive architecture (Anara Standard).
 
 Pillars:
 1. Pre-Execution Sentinel (AnaraLoopBreaker): Mathematical SHA-256 fingerprinting to prevent
@@ -314,7 +314,7 @@ class ErrorClassifier:
 
 
 # ==============================================================================
-# 4. CIRCUIT BREAKER & SELF-CORRECTION TRACKER (HERMES AGENT PARITY)
+# 4. CIRCUIT BREAKER & SELF-CORRECTION TRACKER (Anara Standard)
 # ==============================================================================
 
 # Tools whose "failure" is normal exploratory observation (empty search, missing file, 0 matches)
@@ -340,7 +340,7 @@ IDEMPOTENT_TOOL_NAMES = FAILURE_TOLERANT_TOOL_NAMES
 class SelfCorrectionTracker:
     """
     Pillar B & D: Tracks autonomous retry budget and enforces Circuit Breaker
-    based on Hermes Agent standard:
+    based on Anara Engineering Standards:
     - Soft Warning on identical attempts >= 2 (provides reflection hints to model).
     - Hard Stop (Diagnostic Card) only on identical attempts >= 5 (prevents true runaway loops).
     - Failure-Tolerant: Exploratory operations (file read / grep 0 match) do not consume system failure quota.
@@ -361,7 +361,7 @@ class SelfCorrectionTracker:
 
     def is_failure_tolerant(self, tool_name: str) -> bool:
         """
-        Dynamically determines if a tool is exploratory/read-only (Hermes Parity).
+        Dynamically determines if a tool is exploratory/read-only (Anara Standard).
         Any tool categorized with risk == 'read_only' in the system catalog is universally
         failure-tolerant because inspection operations (read/grep/glob/stat) do not mutate state.
         """
@@ -447,7 +447,7 @@ def format_recovery_guidance(
     tool_name: str = "tool",
 ) -> str:
     """
-    Action-oriented meta-guidance for recovering from repeated tool failures (Hermes Agent Parity).
+    Action-oriented meta-guidance for recovering from repeated tool failures (Anara Standard).
     Zero hardcoded canned definitions: loaded from backend/prompts/self_correction/recovery_guidance.md.
     """
     from core.prompt_loader import load_prompt
@@ -469,7 +469,7 @@ async def synthesize_diagnostic_explanation(
     original_task: str = "",
 ) -> str:
     """
-    Dynamic Model-Driven Diagnostic Synthesis Pass (Hermes Agent Parity).
+    Dynamic Model-Driven Diagnostic Synthesis Pass (Anara Standard).
     Instead of outputting rigid canned HTML cards, invokes auxiliary LLM to synthesize
     an empathetic, contextual explanation in natural conversational prose.
     """

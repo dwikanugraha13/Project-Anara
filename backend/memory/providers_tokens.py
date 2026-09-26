@@ -7,13 +7,80 @@ from typing import Optional, Dict, Any, List
 logger = logging.getLogger(__name__)
 
 
+def _mask_secret_key(k: Optional[str]) -> str:
+    """Anara Enterprise Architecture: Standardized secret masking."""
+    if not k:
+        return "(none)"
+    k = k.strip()
+    if len(k) <= 8:
+        return "••••••••"
+    return f"{k[:4]}...{k[-4:]}"
+
+
+# ── Token Cost Accounting & Prompt Caching Discount Rates (Per 1M Tokens in USD) ──
+# Structure: (uncached_prompt_rate, cached_prompt_rate, completion_rate)
+MODEL_PRICE_PER_M: Dict[str, Tuple[float, float, float]] = {
+    # Claude models (Anthropic: 90% discount on cache read)
+    "claude-3-7-sonnet": (3.0, 0.30, 15.0),
+    "claude-3-5-sonnet": (3.0, 0.30, 15.0),
+    "claude-3-5-haiku": (0.80, 0.08, 4.0),
+    "claude-3-opus": (15.0, 1.50, 75.0),
+    # OpenAI models (50% discount on cached tokens)
+    "gpt-4o": (2.50, 1.25, 10.0),
+    "gpt-4o-mini": (0.15, 0.075, 0.60),
+    "o1": (15.0, 7.50, 60.0),
+    "o3-mini": (1.10, 0.55, 4.40),
+    # Gemini models (75% discount on cached tokens)
+    "gemini-2.5-pro": (1.25, 0.3125, 5.0),
+    "gemini-2.0-pro": (1.25, 0.3125, 5.0),
+    "gemini-2.5-flash": (0.075, 0.01875, 0.30),
+    "gemini-2.0-flash": (0.075, 0.01875, 0.30),
+    "gemini-1.5-pro": (1.25, 0.3125, 5.0),
+    "gemini-1.5-flash": (0.075, 0.01875, 0.30),
+    # DeepSeek models (90% discount on cache hit)
+    "deepseek-chat": (0.14, 0.014, 0.28),
+    "deepseek-reasoner": (0.55, 0.14, 2.19),
+    # Default fallback
+    "default": (1.0, 0.25, 3.0),
+}
+
+
+def calculate_token_cost(
+    model_id: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    cached_tokens: int = 0
+) -> float:
+    """
+    Computes precise estimated cost in USD based on model pricing and prompt caching discounts.
+    Anara Enterprise Architecture.
+    """
+    m_clean = (model_id or "").strip().lower()
+    rates = None
+    for pattern, price_tuple in MODEL_PRICE_PER_M.items():
+        if pattern in m_clean:
+            rates = price_tuple
+            break
+    if not rates:
+        rates = MODEL_PRICE_PER_M["default"]
+
+    in_rate, cache_rate, out_rate = rates
+    p_tok = max(0, int(prompt_tokens or 0))
+    c_tok = max(0, int(completion_tokens or 0))
+    ca_tok = min(max(0, int(cached_tokens or 0)), p_tok)
+    uncached_tok = max(0, p_tok - ca_tok)
+
+    cost = ((uncached_tok * in_rate) + (ca_tok * cache_rate) + (c_tok * out_rate)) / 1_000_000.0
+    return round(cost, 6)
+
+
 class ProvidersTokensMixin:
     """Agent skills, AI accounts pool, custom model providers, model visibility, and token usage accounting."""
 
     # ── Multi-Account AI Model Pool Methods ──
 
-    def get_ai_accounts(self, provider: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Retrieves stored AI provider API accounts from SQLite."""
+    def get_ai_accounts(self, provider: Optional[str] = None, include_secrets: bool = True) -> List[Dict[str, Any]]:
+        """Retrieves stored AI provider API accounts from SQLite with masked_key metadata."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             if provider:
@@ -29,7 +96,13 @@ class ProvidersTokensMixin:
                     FROM ai_accounts
                     ORDER BY id ASC
                 """)
-            return [dict(r) for r in cursor.fetchall()]
+            rows = [dict(r) for r in cursor.fetchall()]
+            for r in rows:
+                raw_k = r.get("api_key") or ""
+                r["masked_key"] = _mask_secret_key(raw_k)
+                if not include_secrets:
+                    r["api_key"] = r["masked_key"]
+            return rows
 
     def add_ai_account(self, provider: str, account_label: str, api_key: str) -> Optional[Dict[str, Any]]:
         """Adds a new labeled account to the provider pool."""
@@ -50,24 +123,26 @@ class ProvidersTokensMixin:
                 "id": new_id,
                 "provider": clean_prov,
                 "account_label": clean_label,
-                "api_key": clean_key,
+                "api_key": _mask_secret_key(clean_key),
                 "status": "active",
                 "is_enabled": 1,
             }
 
     def toggle_ai_account(self, account_id: int) -> Optional[int]:
-        """Toggles an account's enabled state in the pool."""
+        """Toggles an account's enabled state in the pool atomically."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT is_enabled FROM ai_accounts WHERE id = ?", (account_id,))
-            r = cursor.fetchone()
-            if not r:
-                return None
-            curr = r["is_enabled"] if r["is_enabled"] is not None else 1
-            new_val = 0 if curr == 1 else 1
-            cursor.execute("UPDATE ai_accounts SET is_enabled = ? WHERE id = ?", (new_val, account_id))
+            cursor.execute("""
+                UPDATE ai_accounts
+                SET is_enabled = CASE WHEN is_enabled = 1 THEN 0 ELSE 1 END
+                WHERE id = ?
+            """, (account_id,))
             conn.commit()
-            return new_val
+            if cursor.rowcount > 0:
+                cursor.execute("SELECT is_enabled FROM ai_accounts WHERE id = ?", (account_id,))
+                row = cursor.fetchone()
+                return row["is_enabled"] if row else None
+            return None
 
     def delete_ai_account(self, account_id: int) -> bool:
         """Deletes an account from the pool by ID."""
@@ -225,8 +300,13 @@ class ProvidersTokensMixin:
         except Exception:
             pass
 
-    def get_custom_providers(self) -> List[Dict[str, Any]]:
-        """Returns registered OpenAI/Anthropic-compatible custom providers."""
+    def get_custom_providers(self, include_secrets: bool = True) -> List[Dict[str, Any]]:
+        """
+        Returns registered OpenAI/Anthropic-compatible custom providers.
+        Anara Standard: Merges persistent SQLite custom_providers with declarative
+        YAML configuration from config.yaml (model.custom_providers or custom_providers).
+        """
+        sqlite_providers: List[Dict[str, Any]] = []
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -234,13 +314,52 @@ class ProvidersTokensMixin:
                 FROM custom_providers
                 ORDER BY id ASC
             """)
-            out = []
             for r in cursor.fetchall():
                 d = dict(r)
                 k = d.get("api_key") or ""
-                d["masked_key"] = f"{k[:6]}...{k[-4:]}" if len(k) > 10 else (k if k else "(none)")
-                out.append(d)
-            return out
+                d["masked_key"] = _mask_secret_key(k)
+                if not include_secrets:
+                    d["api_key"] = d["masked_key"]
+                sqlite_providers.append(d)
+
+        # Merge declarative providers from config.yaml (Anara Standard)
+        yaml_providers: List[Dict[str, Any]] = []
+        try:
+            from config import cfg_get
+            raw_list = cfg_get("model.custom_providers") or cfg_get("custom_providers") or []
+            if isinstance(raw_list, list):
+                for idx, item in enumerate(raw_list):
+                    if isinstance(item, dict) and item.get("base_url"):
+                        name = item.get("name") or f"Custom Provider {idx+1}"
+                        prefix = re.sub(r"[^a-zA-Z0-9_-]", "-", str(item.get("prefix") or name).strip().lower()).strip("-")
+                        key_env = str(item.get("key_env") or "").strip()
+                        raw_key = str(item.get("api_key") or (os.getenv(key_env, "") if key_env else "")).strip()
+                        default_model = str(item.get("default_model") or item.get("model") or "").strip()
+                        base_url = str(item.get("base_url")).strip().rstrip("/")
+                        is_active = bool(item.get("is_active", True))
+                        yaml_providers.append({
+                            "id": -(idx + 1),  # Non-positive ID designates declarative YAML config
+                            "name": name,
+                            "prefix": prefix,
+                            "api_type": str(item.get("api_type") or "chat_completions"),
+                            "base_url": base_url,
+                            "api_key": _mask_secret_key(raw_key) if not include_secrets else raw_key,
+                            "masked_key": _mask_secret_key(raw_key),
+                            "default_model": default_model,
+                            "is_active": 1 if is_active else 0,
+                            "source": "config.yaml",
+                        })
+        except Exception:
+            pass
+
+        # Deduplicate by prefix (SQLite-stored overrides take precedence over YAML defaults)
+        existing_prefixes = {p["prefix"].lower() for p in sqlite_providers}
+        for yp in yaml_providers:
+            if yp["prefix"].lower() not in existing_prefixes:
+                sqlite_providers.append(yp)
+                existing_prefixes.add(yp["prefix"].lower())
+
+        return sqlite_providers
 
     def add_custom_provider(
         self,
@@ -251,7 +370,7 @@ class ProvidersTokensMixin:
         api_key: Optional[str] = None,
         default_model: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Creates or updates a custom provider node."""
+        """Creates or updates a custom provider node safely preserving existing key on empty input."""
         clean_name = name.strip()
         clean_prefix = re.sub(r"[^a-zA-Z0-9_-]", "-", prefix.strip().lower()).strip("-")
         clean_url = base_url.strip().rstrip("/")
@@ -267,7 +386,7 @@ class ProvidersTokensMixin:
                     name = excluded.name,
                     api_type = excluded.api_type,
                     base_url = excluded.base_url,
-                    api_key = excluded.api_key,
+                    api_key = CASE WHEN excluded.api_key != '' THEN excluded.api_key ELSE custom_providers.api_key END,
                     default_model = excluded.default_model,
                     is_active = 1,
                     updated_at = CURRENT_TIMESTAMP
@@ -280,7 +399,7 @@ class ProvidersTokensMixin:
                 "prefix": clean_prefix,
                 "api_type": api_type,
                 "base_url": clean_url,
-                "masked_key": f"{clean_key[:6]}...{clean_key[-4:]}" if len(clean_key) > 10 else clean_key,
+                "masked_key": _mask_secret_key(clean_key),
                 "default_model": clean_model,
                 "is_active": 1,
             }
@@ -296,18 +415,21 @@ class ProvidersTokensMixin:
             return cursor.rowcount > 0
 
     def toggle_custom_provider(self, provider_id: int) -> Optional[int]:
-        """Toggles active/disabled state (is_active: 1 or 0) of a custom provider."""
+        """Toggles active/disabled state atomically (Anara Standard)."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT is_active FROM custom_providers WHERE id = ?", (provider_id,))
-            r = cursor.fetchone()
-            if not r:
-                return None
-            curr = r["is_active"] if r["is_active"] is not None else 1
-            new_val = 0 if curr == 1 else 1
-            cursor.execute("UPDATE custom_providers SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (new_val, provider_id))
+            cursor.execute("""
+                UPDATE custom_providers
+                SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (provider_id,))
             conn.commit()
-            return new_val
+            if cursor.rowcount > 0:
+                cursor.execute("SELECT is_active FROM custom_providers WHERE id = ?", (provider_id,))
+                row = cursor.fetchone()
+                return row["is_active"] if row else None
+            return None
 
     def get_hidden_models(self) -> List[Dict[str, str]]:
         """Returns list of hidden models with model_id and provider."""
@@ -356,19 +478,31 @@ class ProvidersTokensMixin:
         prompt_tokens: int,
         completion_tokens: int,
         session_id: Optional[int] = None,
-        estimated_cost: float = 0.0
+        estimated_cost: float = 0.0,
+        cached_tokens: int = 0
     ) -> int:
         """Records token metrics from a single model generation turn into SQLite."""
         p_tok = max(0, int(prompt_tokens or 0))
         c_tok = max(0, int(completion_tokens or 0))
+        ca_tok = max(0, int(cached_tokens or 0))
         t_tok = p_tok + c_tok
+
+        eff_cost = float(estimated_cost or 0.0)
+        if eff_cost <= 0.0 and (p_tok > 0 or c_tok > 0):
+            eff_cost = calculate_token_cost(model_id, p_tok, c_tok, ca_tok)
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO token_usage_logs (session_id, model_id, provider, prompt_tokens, completion_tokens, total_tokens, estimated_cost)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (session_id, model_id.strip(), provider.strip().lower(), p_tok, c_tok, t_tok, estimated_cost))
+            try:
+                cursor.execute("""
+                    INSERT INTO token_usage_logs (session_id, model_id, provider, prompt_tokens, completion_tokens, total_tokens, cached_tokens, estimated_cost)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (session_id, model_id.strip(), provider.strip().lower(), p_tok, c_tok, t_tok, ca_tok, eff_cost))
+            except Exception:
+                cursor.execute("""
+                    INSERT INTO token_usage_logs (session_id, model_id, provider, prompt_tokens, completion_tokens, total_tokens, estimated_cost)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (session_id, model_id.strip(), provider.strip().lower(), p_tok, c_tok, t_tok, eff_cost))
             conn.commit()
             return cursor.lastrowid or 0
 
@@ -376,15 +510,28 @@ class ProvidersTokensMixin:
         """Returns aggregate token usage stats (all-time, today, and by provider)."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT 
-                    COALESCE(SUM(total_tokens), 0) as total_tokens,
-                    COALESCE(SUM(prompt_tokens), 0) as total_prompt,
-                    COALESCE(SUM(completion_tokens), 0) as total_completion,
-                    COALESCE(SUM(estimated_cost), 0.0) as total_cost,
-                    COUNT(*) as total_requests
-                FROM token_usage_logs
-            """)
+            try:
+                cursor.execute("""
+                    SELECT 
+                        COALESCE(SUM(total_tokens), 0) as total_tokens,
+                        COALESCE(SUM(prompt_tokens), 0) as total_prompt,
+                        COALESCE(SUM(completion_tokens), 0) as total_completion,
+                        COALESCE(SUM(cached_tokens), 0) as total_cached_tokens,
+                        COALESCE(SUM(estimated_cost), 0.0) as total_cost,
+                        COUNT(*) as total_requests
+                    FROM token_usage_logs
+                """)
+            except Exception:
+                cursor.execute("""
+                    SELECT 
+                        COALESCE(SUM(total_tokens), 0) as total_tokens,
+                        COALESCE(SUM(prompt_tokens), 0) as total_prompt,
+                        COALESCE(SUM(completion_tokens), 0) as total_completion,
+                        0 as total_cached_tokens,
+                        COALESCE(SUM(estimated_cost), 0.0) as total_cost,
+                        COUNT(*) as total_requests
+                    FROM token_usage_logs
+                """)
             overall = dict(cursor.fetchone() or {})
 
             cursor.execute("""
@@ -428,10 +575,18 @@ class ProvidersTokensMixin:
         """Returns recent individual token usage transaction records."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT id, session_id, model_id, provider, prompt_tokens, completion_tokens, total_tokens, estimated_cost, created_at
-                FROM token_usage_logs
-                ORDER BY id DESC
-                LIMIT ?
-            """, (limit,))
+            try:
+                cursor.execute("""
+                    SELECT id, session_id, model_id, provider, prompt_tokens, completion_tokens, total_tokens, cached_tokens, estimated_cost, created_at
+                    FROM token_usage_logs
+                    ORDER BY id DESC
+                    LIMIT ?
+                """, (limit,))
+            except Exception:
+                cursor.execute("""
+                    SELECT id, session_id, model_id, provider, prompt_tokens, completion_tokens, total_tokens, 0 as cached_tokens, estimated_cost, created_at
+                    FROM token_usage_logs
+                    ORDER BY id DESC
+                    LIMIT ?
+                """, (limit,))
             return [dict(r) for r in cursor.fetchall()]

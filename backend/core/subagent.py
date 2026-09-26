@@ -1,6 +1,6 @@
 """
 subagent.py — High-Performance Sub-Agent Delegation Engine for Project Anara.
-Hermes Agent Parity: Pilar 1.
+Anara Standard: Pilar 1.
 
 Key Architectural Capabilities:
 1. Isolated Fork-and-Join Execution: Subagents run asynchronously in a clean-slate context
@@ -28,6 +28,103 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger("anara.core.subagent")
 
+DEFAULT_MAX_SUMMARY_CHARS: int = 24000
+
+
+def apply_summary_budget(task_id: str, raw_text: str, max_chars: int = DEFAULT_MAX_SUMMARY_CHARS) -> Tuple[str, Optional[str]]:
+    """
+    Applies line-snapped head/tail summary budgeting and disk spilling (Anara Standard).
+    Preserves 75% head and 25% tail, offloading complete text to disk with retrieval instructions.
+    """
+    if len(raw_text) <= max_chars:
+        return raw_text, None
+
+    import tempfile
+    cache_dir = os.path.join(tempfile.gettempdir(), "anara_subagent_summaries")
+    os.makedirs(cache_dir, exist_ok=True)
+    spill_file = os.path.join(cache_dir, f"subagent-summary-{task_id}.txt")
+    try:
+        with open(spill_file, "w", encoding="utf-8") as f:
+            f.write(raw_text)
+    except Exception as e:
+        logger.debug(f"[SubAgent] Failed to spill summary to disk: {e}")
+
+    head_budget = int(max_chars * 0.75)
+    tail_budget = max_chars - head_budget
+
+    head_raw = raw_text[:head_budget]
+    last_nl = head_raw.rfind("\n")
+    head_snapped = head_raw[:last_nl] if last_nl > 0 else head_raw
+
+    tail_raw = raw_text[-tail_budget:]
+    first_nl = tail_raw.find("\n")
+    tail_snapped = tail_raw[first_nl + 1:] if first_nl >= 0 else tail_raw
+
+    summary_with_footer = (
+        f"{head_snapped}\n\n"
+        f"──────── [SUMMARY TRUNCATED — ANARA HEAD/TAIL WINDOW] ────────\n"
+        f"Showing {len(head_snapped):,} chars (head) + {len(tail_snapped):,} chars (tail) of {len(raw_text):,} total — trimmed to protect parent context window.\n"
+        f"Full subagent output saved to: {spill_file}\n"
+        f"To inspect omitted middle: read_local_file(path=\"{spill_file}\", offset=..., limit=...)\n"
+        f"─────────────────────────────────────────────────────────────────\n\n"
+        f"{tail_snapped}"
+    )
+    return summary_with_footer, spill_file
+
+
+def get_role_configuration(role: str) -> Tuple[str, bool]:
+    """
+    Anara Multi-Agent Swarm Architecture: Specialized Sub-Agent Roles.
+    Enforces Principle of Least Privilege and custom role system instructions.
+    Returns (system_instruction, read_only_flag).
+    """
+    r = (role or "leaf").strip().lower()
+    if r in ("explorer", "recon", "searcher"):
+        instruction = (
+            "[ROLE: CODEBASE EXPLORER & RECONNAISSANCE SPECIALIST]\n"
+            "You are an autonomous read-only codebase explorer operating under least-privilege boundaries.\n"
+            "Your goal is to inspect the codebase, trace symbols, locate definitions, extract structural outlines, and uncover relevant implementation details.\n"
+            "You have ONLY read-only tools (search_files, read_file, extract_code_outline, grep_search_code).\n"
+            "Do NOT attempt to modify, edit, or delete files.\n"
+            "Output a structured reconnaissance report with exact file paths (path:line), symbol signatures, and findings.\n"
+            "Do not emit conversational filler, preambles, or avatar roleplay."
+        )
+        return instruction, True
+
+    elif r in ("implementer", "coder", "builder"):
+        instruction = (
+            "[ROLE: IMPLEMENTER & SOFTWARE CRAFTSMAN]\n"
+            "You are an autonomous implementing agent tasked with executing precise code modifications.\n"
+            "Your goal is to implement changes adhering to existing codebase patterns, formatting, and invariants.\n"
+            "Make targeted edits, avoid unnecessary refactoring, add required imports, and preserve backward compatibility.\n"
+            "Verify your edits with extract_code_outline or test commands where applicable.\n"
+            "Do not emit conversational filler, preambles, or avatar roleplay."
+        )
+        return instruction, False
+
+    elif r in ("verifier", "reviewer", "tester", "qa"):
+        instruction = (
+            "[ROLE: ADVERSARIAL VERIFIER & TEST GATEKEEPER]\n"
+            "You are an independent, adversarial reviewer tasked with validating code changes and preventing regressions.\n"
+            "Your goal is to execute test suites, inspect diffs, verify edge cases, and evaluate acceptance criteria.\n"
+            "Be skeptical and objective: never claim success without factual verification output from test execution.\n"
+            "Report an honest status: PASS, FAIL, or BLOCKED with exact error lines and reproduction steps.\n"
+            "Do not emit conversational filler, preambles, or avatar roleplay."
+        )
+        return instruction, True
+
+    else:
+        # Default technical specialist (leaf / orchestrator)
+        is_ro = (r != "orchestrator" and r != "lead")
+        instruction = (
+            "[ROLE: TECHNICAL SPECIALIST SUBAGENT PROTOCOL]\n"
+            "You are an isolated, objective technical specialist worker executing a focused sub-task.\n"
+            "Analyze the given objective thoroughly and produce factual, verifiable results.\n"
+            "Report your factual findings, discovered code references, and concise technical summary.\n"
+            "Do not emit conversational filler, preambles, or avatar roleplay."
+        )
+        return instruction, is_ro
+
 
 class SubagentState(str, enum.Enum):
     PENDING = "PENDING"
@@ -54,7 +151,7 @@ class SubagentResult:
 
 
 class SubAgentTask:
-    """Represents a delegated background mission (Hermes Parity)."""
+    """Represents a delegated background mission (Anara Standard)."""
 
     def __init__(
         self,
@@ -65,6 +162,7 @@ class SubAgentTask:
         depth: int = 1,
         timeout_seconds: float = 120.0,
         platform: Optional[str] = "cli",
+        use_worktree: bool = False,
     ):
         self.task_id = task_id
         self.title = goal[:80]
@@ -74,6 +172,9 @@ class SubAgentTask:
         self.depth = depth
         self.timeout_seconds = timeout_seconds
         self.platform = platform or "cli"
+        self.use_worktree = use_worktree
+        self.worktree_dir: Optional[str] = None
+        self.worktree_branch: Optional[str] = None
         self.state = SubagentState.PENDING
         self.progress_percent = 0
         self.steps_log: List[str] = []
@@ -149,10 +250,11 @@ class SubAgentManager:
         timeout_seconds: Optional[float] = None,
         worker_coro_factory: Optional[Callable[..., Any]] = None,
         platform: Optional[str] = "cli",
+        use_worktree: bool = False,
     ) -> SubAgentTask:
         """
         Spawns an asynchronous background worker in an isolated context.
-        Enforces anti-fork-bomb depth boundaries.
+        Enforces anti-fork-bomb depth boundaries and optional Git worktree isolation.
         """
         effective_goal = title if not mission_prompt else f"{title}: {mission_prompt}"
         if depth > self.DEFAULT_MAX_DEPTH:
@@ -165,7 +267,7 @@ class SubAgentManager:
                 executive_summary=err_msg,
                 error_message=err_msg,
             )
-            failed_task = SubAgentTask(res_fail.task_id, effective_goal, context, role, depth, platform=platform)
+            failed_task = SubAgentTask(res_fail.task_id, effective_goal, context, role, depth, platform=platform, use_worktree=use_worktree)
             failed_task.state = SubagentState.FAILED
             failed_task.result = res_fail
             return failed_task
@@ -180,7 +282,18 @@ class SubAgentManager:
             depth=depth,
             timeout_seconds=effective_timeout,
             platform=platform,
+            use_worktree=use_worktree,
         )
+
+        # Anara Standard: Initialize ephemeral Git worktree if requested
+        if use_worktree:
+            try:
+                from core.worktree import GitWorktreeManager
+                wt = GitWorktreeManager.create_worktree(os.getcwd(), t_id)
+                if wt:
+                    task.worktree_dir, task.worktree_branch = wt
+            except Exception as wt_err:
+                logger.debug(f"[SubAgent] Worktree initialization note: {wt_err}")
 
         # Memory Protection: Prune completed tasks to prevent unbounded memory growth
         if len(self.tasks) > 80:
@@ -212,11 +325,13 @@ class SubAgentManager:
         self,
         tasks: List[Dict[str, Any]],
         shared_context: str = "",
+        depth: int = 1,
         timeout_seconds: Optional[float] = None,
         worker_coro_factory: Optional[Callable[..., Any]] = None,
     ) -> List[SubagentResult]:
         """
         Forks multiple subagents concurrently in parallel and joins all results (Fork-and-Join Pattern).
+        Propagates recursion depth and task role cleanly (Anara Standard).
         """
         if not tasks:
             return []
@@ -225,15 +340,18 @@ class SubAgentManager:
         for t_def in tasks:
             g = t_def.get("goal") or t_def.get("title") or "Subagent Mission"
             c = t_def.get("context") or shared_context
+            r = t_def.get("role") or "leaf"
             sub_task = await self.spawn_subagent_task(
                 title=g,
                 mission_prompt=c,
+                role=r,
+                depth=depth,
                 timeout_seconds=timeout_seconds,
                 worker_coro_factory=worker_coro_factory,
             )
             spawned.append(sub_task)
 
-        # Concurrency throttled centrally by self._concurrency_semaphore in _run_task_pipeline (Hermes Parity)
+        # Concurrency throttled centrally by self._concurrency_semaphore in _run_task_pipeline (Anara Standard)
         await asyncio.gather(*[t._async_task for t in spawned if t._async_task], return_exceptions=True)
 
         results: List[SubagentResult] = []
@@ -346,6 +464,20 @@ class SubAgentManager:
                     "duration_sec": dur,
                 })
                 logger.error(f"[SubAgent] Mission #{task.task_id} FAILED: {e}", exc_info=True)
+            finally:
+                if getattr(task, "worktree_dir", None):
+                    try:
+                        from core.worktree import GitWorktreeManager
+                        if task.state == SubagentState.SUCCEEDED:
+                            GitWorktreeManager.apply_and_merge_worktree(
+                                os.getcwd(), task.worktree_dir, task.worktree_branch
+                            )
+                        else:
+                            GitWorktreeManager.remove_worktree(
+                                os.getcwd(), task.worktree_dir, task.worktree_branch
+                            )
+                    except Exception as wt_cleanup_err:
+                        logger.debug(f"[SubAgent] Worktree teardown notice: {wt_cleanup_err}")
 
     async def _execute_core(
         self,
@@ -364,12 +496,13 @@ class SubAgentManager:
             )
             return
 
+        from config import cfg_get
         from providers import call_universal_chat_model, get_active_model_id
         from cognition import get_soul_prompt
         from core.prompt_loader import load_prompt
 
         task.steps_log.append(f"Analyzing mission context: {task.title}...")
-        task.progress_percent = 40
+        task.progress_percent = 25
 
         sub_prompt = load_prompt(
             "subagent_worker",
@@ -377,20 +510,54 @@ class SubAgentManager:
             context=task.context or "Use available read-only exploration tools in the repository."
         )
 
-        model_id = get_active_model_id()
+        # Dynamic model resolution: prioritize fast_subagent model from config
+        model_id = cfg_get("models.fast_subagent") or cfg_get("subagent.model") or get_active_model_id()
         task.steps_log.append("Executing specialist model reasoning...")
-        task.progress_percent = 70
+        task.progress_percent = 50
 
-        specialist_instruction = load_prompt(
-            "subagent_specialist",
-            default=(
-                "[TECHNICAL SPECIALIST SUBAGENT PROTOCOL]\n"
-                "You are an isolated, objective technical specialist worker executing a focused sub-task.\n"
-                "Analyze the given objective thoroughly using available read-only exploration tools.\n"
-                "Report your factual findings, discovered code references, and concise technical summary.\n"
-                "Do not emit conversational filler, preambles, or avatar roleplay."
-            )
-        )
+        role_instruction, is_read_only = get_role_configuration(task.role)
+        specialist_instruction = load_prompt("subagent_specialist", default=role_instruction)
+        if not specialist_instruction or specialist_instruction.startswith("[TECHNICAL SPECIALIST"):
+            specialist_instruction = role_instruction
+
+        def _subagent_progress_cb(evt: Dict[str, Any]):
+            t_name = evt.get("tool_name", "")
+            status = evt.get("status", "")
+            detail = evt.get("detail", "")
+            if t_name:
+                task.steps_log.append(f"Tool {t_name} [{status}]: {detail}")
+            try:
+                from core.session_manager import session_state_manager
+                if status == "running" and t_name:
+                    cid = evt.get("call_id") or f"sub_{uuid.uuid4().hex[:10]}"
+                    evt["call_id"] = cid
+                    session_state_manager.persist_tool_call_start(
+                        session_id=task.task_id,
+                        channel=task.platform or "subagent",
+                        channel_id=task.task_id,
+                        tool_name=t_name,
+                        tool_args=evt.get("args") or evt.get("tool_args") or {},
+                        call_id=cid
+                    )
+                elif status == "done" and t_name:
+                    cid = evt.get("call_id")
+                    if cid:
+                        session_state_manager.persist_tool_call_result(
+                            call_id=cid,
+                            result_summary=evt.get("summary") or detail,
+                            is_error=bool(evt.get("is_error", False))
+                        )
+            except Exception:
+                pass
+            self._emit("subagent_progress", {
+                "task_id": task.task_id,
+                "tool_name": t_name,
+                "status": status,
+                "detail": detail,
+            })
+
+        def _subagent_token_cb(token: str):
+            pass
 
         res_text = await call_universal_chat_model(
             model_id=model_id,
@@ -398,23 +565,39 @@ class SubAgentManager:
             system_instruction=specialist_instruction,
             max_tokens=None,
             temperature=0.3,
-            read_only=True,
+            read_only=is_read_only,
+            progress_cb=_subagent_progress_cb,
+            token_cb=_subagent_token_cb,
             platform=task.platform or "cli",
         )
 
-        out_summary = str(res_text or "").strip()
+        raw_summary = str(res_text or "").strip()
+        # Apply Hermes summary budget and disk spillover if response exceeds ceiling
+        budgeted_summary, spill_path = apply_summary_budget(task.task_id, raw_summary)
 
-        # Extract referenced files and bulleted findings for structured contract
-        raw_refs = list(set(re.findall(r"(?:[a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9_]{1,6})", out_summary)))
-        clean_refs = [f for f in raw_refs if ("/" in f or "\\" in f or "." in f) and len(f) > 3 and not f.startswith("http")][:10]
-        bullet_findings = [line.strip().lstrip("-*123456789. ") for line in out_summary.splitlines() if line.strip().startswith(("-", "*", "1.", "2.", "3.", "•"))][:6]
+        # Extract verified referenced files and bulleted findings for structured contract
+        raw_refs = list(set(re.findall(r"(?:[a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9_]{1,6})", raw_summary)))
+        from core.agent import anara_agent
+        repo_root = anara_agent.get_project_repo_root()
+        clean_refs = []
+        for f in raw_refs:
+            if "/" in f or "\\" in f:
+                if not f.startswith("http") and not any(f.endswith(ext) for ext in (".com", ".org", ".net", ".io", ".ai")):
+                    if not re.match(r"^v?\d+\.\d+", f):
+                        clean_refs.append(f)
+            elif os.path.exists(os.path.join(repo_root, f)):
+                clean_refs.append(f)
+            if len(clean_refs) >= 10:
+                break
+
+        bullet_findings = [line.strip().lstrip("-*123456789. ") for line in raw_summary.splitlines() if line.strip().startswith(("-", "*", "1.", "2.", "3.", "•"))][:6]
 
         task.result = SubagentResult(
             task_id=task.task_id,
             goal=task.goal,
             status="completed",
-            executive_summary=out_summary,
-            key_findings=bullet_findings or [out_summary[:120]],
+            executive_summary=budgeted_summary,
+            key_findings=bullet_findings or [budgeted_summary[:120]],
             referenced_files=clean_refs,
             execution_time_sec=round(time.time() - task.created_at, 2),
         )

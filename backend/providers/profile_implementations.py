@@ -171,6 +171,16 @@ class GeminiProviderProfile(BaseProviderProfile):
         )
 
 
+def _redact_error(text: str) -> str:
+    """Anara Enterprise Architecture: Redacts keys, tokens, and credentials from HTTP error responses."""
+    if not text:
+        return ""
+    s = re.sub(r'(?:Bearer\s+|api[_-]?key["\']?\s*[:=]\s*["\']?|key=)(sk-[A-Za-z0-9_\-]+|eyJ[A-Za-z0-9_\-\.]+)', r'[REDACTED]', text, flags=re.IGNORECASE)
+    s = re.sub(r'sk-[A-Za-z0-9_\-]{20,}', '[REDACTED]', s)
+    s = re.sub(r'AIza[0-9A-Za-z-_]{35}', '[REDACTED]', s)
+    return s[:300]
+
+
 def _parse_openai_compatible_native_payload(
     raw_text: str,
     token_cb: Optional[Callable[[str], Any]] = None,
@@ -179,7 +189,8 @@ def _parse_openai_compatible_native_payload(
     Parses OpenAI-compatible chat completion responses supporting BOTH
     Server-Sent Events (SSE) data streams (e.g. 9Router, vLLM, OpenRouter)
     and standard JSON payloads.
-    Hermes & Claude Code Parity: Assembles streaming delta tool_calls robustly.
+    Anara Enterprise Architecture: Assembles streaming delta tool_calls robustly
+    and preserves canonical token usage metadata.
     """
     from .native_turn import NativeToolCall, NativeTurnResult
 
@@ -187,10 +198,12 @@ def _parse_openai_compatible_native_payload(
     if not raw_s:
         return NativeTurnResult(text="")
 
-    if raw_s.startswith("data:"):
+    if "data:" in raw_s:
         text_parts: List[str] = []
         tool_calls_map: Dict[int, Dict[str, Any]] = {}
         finish_reason: Optional[str] = None
+        usage_res: Optional[Dict[str, int]] = None
+
         for line in raw_s.splitlines():
             line_s = line.strip()
             if not line_s or not line_s.startswith("data:"):
@@ -200,6 +213,13 @@ def _parse_openai_compatible_native_payload(
                 break
             try:
                 chunk = json.loads(d_str)
+                if chunk.get("usage"):
+                    u = chunk["usage"]
+                    usage_res = {
+                        "prompt_tokens": u.get("prompt_tokens", 0),
+                        "completion_tokens": u.get("completion_tokens", 0),
+                        "total_tokens": u.get("total_tokens", 0),
+                    }
                 choices = chunk.get("choices") or []
                 if choices:
                     ch0 = choices[0]
@@ -212,18 +232,31 @@ def _parse_openai_compatible_native_payload(
                         if token_cb:
                             r = token_cb(c_txt)
                             if asyncio.iscoroutine(r):
-                                asyncio.create_task(r)
+                                try:
+                                    loop = asyncio.get_running_loop()
+                                    loop.create_task(r)
+                                except RuntimeError:
+                                    pass
                     for tc in delta.get("tool_calls") or []:
-                        t_idx = tc.get("index", len(tool_calls_map))
+                        t_idx = tc.get("index")
+                        if t_idx is None:
+                            t_idx = 0
                         if t_idx not in tool_calls_map:
                             tool_calls_map[t_idx] = {
                                 "id": tc.get("id") or f"call_{t_idx}",
                                 "name": tc.get("function", {}).get("name", ""),
                                 "arguments": "",
                             }
+                        elif tc.get("id"):
+                            tool_calls_map[t_idx]["id"] = tc["id"]
                         fn_info = tc.get("function") or {}
                         if fn_info.get("name"):
-                            tool_calls_map[t_idx]["name"] = fn_info["name"]
+                            curr_name = tool_calls_map[t_idx]["name"]
+                            new_name = fn_info["name"]
+                            if not curr_name:
+                                tool_calls_map[t_idx]["name"] = new_name
+                            elif not curr_name.endswith(new_name):
+                                tool_calls_map[t_idx]["name"] += new_name
                         if fn_info.get("arguments"):
                             tool_calls_map[t_idx]["arguments"] += fn_info["arguments"]
             except Exception:
@@ -240,6 +273,7 @@ def _parse_openai_compatible_native_payload(
                 call_id=tc_item["id"],
                 name=tc_item["name"],
                 arguments=p_args if isinstance(p_args, dict) else {},
+                raw_arguments=arg_s if not isinstance(p_args, dict) else None,
             ))
 
         full_txt = "".join(text_parts)
@@ -254,12 +288,22 @@ def _parse_openai_compatible_native_payload(
             tool_calls=tool_calls,
             raw_response=raw_msg,
             finish_reason=finish_reason,
+            usage=usage_res,
         )
     else:
         try:
             data = json.loads(raw_s)
         except Exception:
             return NativeTurnResult(text=raw_s)
+
+        usage_res = None
+        if data.get("usage"):
+            u = data["usage"]
+            usage_res = {
+                "prompt_tokens": u.get("prompt_tokens", 0),
+                "completion_tokens": u.get("completion_tokens", 0),
+                "total_tokens": u.get("total_tokens", 0),
+            }
 
         choices = data.get("choices") or []
         if not choices:
@@ -270,7 +314,11 @@ def _parse_openai_compatible_native_payload(
         if token_cb and text:
             r = token_cb(text)
             if asyncio.iscoroutine(r):
-                asyncio.create_task(r)
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(r)
+                except RuntimeError:
+                    pass
 
         tool_calls = []
         for tc in msg.get("tool_calls") or []:
@@ -283,7 +331,8 @@ def _parse_openai_compatible_native_payload(
             tool_calls.append(NativeToolCall(
                 call_id=tc.get("id", f"call_{len(tool_calls)}"),
                 name=fn.get("name", ""),
-                arguments=parsed_args if isinstance(parsed_args, dict) else {}
+                arguments=parsed_args if isinstance(parsed_args, dict) else {},
+                raw_arguments=fn_args_str if not isinstance(parsed_args, dict) else None,
             ))
 
         return NativeTurnResult(
@@ -291,6 +340,7 @@ def _parse_openai_compatible_native_payload(
             tool_calls=tool_calls,
             raw_response=msg,
             finish_reason=choice.get("finish_reason"),
+            usage=usage_res,
         )
 
 
@@ -299,7 +349,7 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
 
     def can_handle(self, model_id: str) -> bool:
         clean = model_id.lower()
-        return clean.startswith("codex/") or clean.startswith("openai/") or clean.startswith("gpt-") or clean.startswith("o1") or clean.startswith("o3")
+        return bool(re.match(r'^(codex/|openai/|gpt-|o[1-9]|chatgpt-)', clean))
 
     async def stream_chat(
         self,
@@ -357,7 +407,7 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
             }
             if max_tokens is not None and max_tokens > 0:
                 payload["max_tokens"] = max_tokens
-            if target_model.startswith("o1") or target_model.startswith("o3"):
+            if bool(re.match(r'^o[1-9]', target_model)):
                 payload.pop("temperature", None)
                 payload["messages"] = [{"role": "user", "content": f"{system_instruction}\n\n{user_prompt}"}]
                 if "max_tokens" in payload:
@@ -455,7 +505,7 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
 
         target_model = model_id.replace("codex/", "").replace("openai/", "")
 
-        # 1. Native Structured Tool-Use API Path for standard OpenAI keys (Hermes Parity)
+        # 1. Native Structured Tool-Use API Path for standard OpenAI keys (Anara Standard)
         standard_keys = [k for k in keys_to_try if not k.startswith("eyJ")]
         if standard_keys:
             try:
@@ -480,7 +530,7 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
                         "model": target_model,
                         "messages": history,
                     }
-                    is_reasoning_model = target_model.startswith("o1") or target_model.startswith("o3")
+                    is_reasoning_model = bool(re.match(r'^o[1-9]', target_model))
                     if not is_reasoning_model:
                         payload["temperature"] = temperature
                     if openai_tools:
@@ -508,8 +558,8 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
                             "content": output_str
                         })
 
-                is_reasoning_model = target_model.startswith("o1") or target_model.startswith("o3")
-                sys_role = "developer" if is_reasoning_model else "system"
+                is_reasoning_model = bool(re.match(r'^o[1-9]', target_model))
+                sys_role = "developer" if is_reasoning_model else "system" 
                 initial_history = [
                     {"role": sys_role, "content": system_instruction},
                     {"role": "user", "content": user_prompt}
@@ -538,12 +588,23 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
                     headers = {
                         "Authorization": f"Bearer {key}",
                         "Content-Type": "application/json",
+                        "originator": "codex_cli_rs",
+                        "User-Agent": "codex_cli_rs/0.136.0",
                     }
-                    endpoint_url = "https://chatgpt.com/backend-api/lat/r"
+                    endpoint_url = "https://chatgpt.com/backend-api/codex/responses"
+                    input_msgs = []
+                    for m in chat_msgs:
+                        r = m.get("role", "user")
+                        input_msgs.append({
+                            "type": "message",
+                            "role": r if r in ("user", "assistant") else "user",
+                            "content": [{"type": "input_text", "text": m.get("content", "")}],
+                        })
                     payload = {
                         "model": target_model,
-                        "messages": [{"role": "system", "content": sys_msg}] + chat_msgs,
-                        "temperature": temperature,
+                        "input": input_msgs or [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": user_prompt}]}],
+                        "instructions": sys_msg,
+                        "store": False,
                         "stream": True,
                     }
                     if max_tokens is not None and max_tokens > 0:
@@ -552,6 +613,11 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
                     gen_timeout = float(cfg_get("agent.generation.timeout", 45.0))
                     async with httpx.AsyncClient(timeout=gen_timeout) as client:
                         resp = await client.post(endpoint_url, headers=headers, json=payload)
+                        if resp.status_code == 401 and idx < len(accounts):
+                            new_tok = await refresh_codex_oauth_token_if_needed(accounts[idx]["id"])
+                            if new_tok:
+                                headers["Authorization"] = f"Bearer {new_tok}"
+                                resp = await client.post(endpoint_url, headers=headers, json=payload)
                         if resp.status_code == 200:
                             chunks = []
                             async for line in resp.aiter_lines():
@@ -667,7 +733,7 @@ class AnthropicProviderProfile(BaseProviderProfile):
         usage_out: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[str, None]:
         """
-        Claude Code & Hermes Parity: True Native SSE Token Streaming for Anthropic.
+        Anara Enterprise Architecture: True Native SSE Token Streaming for Anthropic.
         Parses Server-Sent Events (SSE) line-by-line and yields text_delta tokens in real time.
         """
         from memory import memory_engine
@@ -694,7 +760,7 @@ class AnthropicProviderProfile(BaseProviderProfile):
             return
 
         target_model = model_id.replace("anthropic/", "")
-        anthropic_max = max_tokens if (max_tokens is not None and max_tokens > 0) else (64000 if "3-7" in target_model else 8192)
+        anthropic_max = max_tokens if (max_tokens is not None and max_tokens > 0) else (64000 if bool(re.search(r'3[-.]7|claude-[4-9]', target_model)) else 8192)
 
         payload: Dict[str, Any] = {
             "model": target_model,
@@ -710,6 +776,8 @@ class AnthropicProviderProfile(BaseProviderProfile):
         streamed_any = False
         prompt_tokens = 0
         completion_tokens = 0
+        cache_read_tokens = 0
+        cache_write_tokens = 0
 
         for idx, key in enumerate(keys_to_try):
             headers = {
@@ -736,6 +804,8 @@ class AnthropicProviderProfile(BaseProviderProfile):
                                         msg_usage = event.get("message", {}).get("usage", {})
                                         if msg_usage:
                                             prompt_tokens = msg_usage.get("input_tokens", 0)
+                                            cache_read_tokens = msg_usage.get("cache_read_input_tokens", 0) or 0
+                                            cache_write_tokens = msg_usage.get("cache_creation_input_tokens", 0) or 0
 
                                     elif ev_type == "content_block_delta":
                                         delta = event.get("delta", {})
@@ -757,7 +827,9 @@ class AnthropicProviderProfile(BaseProviderProfile):
                                 usage_out["prompt_tokens"] = prompt_tokens
                                 usage_out["completion_tokens"] = completion_tokens
                                 usage_out["total_tokens"] = prompt_tokens + completion_tokens
-                                usage_out["source"] = "actual"
+                                usage_out["cache_read_tokens"] = cache_read_tokens
+                                usage_out["cache_write_tokens"] = cache_write_tokens
+                                usage_out["source"] = "actual" 
 
                             if prompt_tokens or completion_tokens:
                                 memory_engine.record_token_usage(
@@ -826,7 +898,7 @@ class AnthropicProviderProfile(BaseProviderProfile):
 
         target_model = model_id.replace("anthropic/", "")
 
-        # 1. Native Structured Tool-Use API Path (Claude Code Parity)
+        # 1. Native Structured Tool-Use API Path (Anara Standard)
         try:
             from tools.catalog import get_native_tools_anthropic
             from tools.toolsets import PlatformToolRegistry
@@ -847,7 +919,7 @@ class AnthropicProviderProfile(BaseProviderProfile):
                         "X-Timeout": "15",
                         "Content-Type": "application/json"
                     }
-                    anthropic_max = max_tokens if (max_tokens is not None and max_tokens > 0) else (64000 if "3-7" in target_model else 8192)
+                    anthropic_max = max_tokens if (max_tokens is not None and max_tokens > 0) else (64000 if bool(re.search(r'3[-.]7|claude-[4-9]', target_model)) else 8192)
                     payload: Dict[str, Any] = {
                         "model": target_model,
                         "messages": history,
@@ -855,7 +927,7 @@ class AnthropicProviderProfile(BaseProviderProfile):
                         "temperature": temperature,
                     }
                     if system_instruction and system_instruction.strip():
-                        # Anthropic Prompt Caching Parity (Claude Code & Hermes Parity)
+                        # Anthropic Prompt Caching Parity (Anara Enterprise Architecture)
                         payload["system"] = [
                             {
                                 "type": "text",
@@ -892,6 +964,9 @@ class AnthropicProviderProfile(BaseProviderProfile):
 
                                 text_parts = []
                                 tool_calls = []
+                                reasoning_txt = None
+                                thinking_sig = None
+                                thinking_blocks = []
                                 for block in data.get("content", []):
                                     if block.get("type") == "text":
                                         txt = block.get("text", "")
@@ -900,6 +975,12 @@ class AnthropicProviderProfile(BaseProviderProfile):
                                             r = token_cb(txt)
                                             if asyncio.iscoroutine(r):
                                                 await r
+                                    elif block.get("type") == "thinking":
+                                        reasoning_txt = block.get("thinking", "")
+                                        thinking_sig = block.get("signature", "")
+                                        thinking_blocks.append(block)
+                                    elif block.get("type") == "redacted_thinking":
+                                        thinking_blocks.append(block)
                                     elif block.get("type") == "tool_use":
                                         tool_calls.append(NativeToolCall(
                                             call_id=block.get("id", ""),
@@ -907,18 +988,39 @@ class AnthropicProviderProfile(BaseProviderProfile):
                                             arguments=block.get("input", {}) or {},
                                         ))
 
+                                usage_dict = None
+                                if u:
+                                    usage_dict = {
+                                        "prompt_tokens": u.get("input_tokens", 0),
+                                        "completion_tokens": u.get("output_tokens", 0),
+                                        "total_tokens": (u.get("input_tokens", 0) + u.get("output_tokens", 0)),
+                                        "cache_read_tokens": u.get("cache_read_input_tokens", 0),
+                                        "cache_write_tokens": u.get("cache_creation_input_tokens", 0),
+                                    }
+
                                 return NativeTurnResult(
                                     text="".join(text_parts),
                                     tool_calls=tool_calls,
+                                    reasoning=reasoning_txt,
+                                    thinking_signature=thinking_sig,
+                                    thinking_blocks=thinking_blocks if thinking_blocks else None,
                                     raw_response=data,
                                     finish_reason=data.get("stop_reason"),
+                                    usage=usage_dict,
                                 )
-                            elif res.status_code in [429, 403, 401] and len(keys_to_try) > 1:
+                            elif res.status_code in (429, 529):
+                                retry_after = float(res.headers.get("retry-after", "2.0"))
+                                if idx < len(accounts):
+                                    memory_engine.set_ai_account_cooldown(accounts[idx]["id"], max(30.0, retry_after))
+                                if idx == len(keys_to_try) - 1:
+                                    await asyncio.sleep(min(30.0, retry_after))
+                                continue
+                            elif res.status_code in (401, 403) and len(keys_to_try) > 1:
                                 if idx < len(accounts):
                                     memory_engine.set_ai_account_cooldown(accounts[idx]["id"], 120.0)
                                 continue
                             else:
-                                raise RuntimeError(f"Anthropic HTTP {res.status_code}: {res.text}")
+                                raise RuntimeError(f"Anthropic HTTP {res.status_code}: {_redact_error(res.text)}")
                     except Exception as e:
                         if idx == len(keys_to_try) - 1:
                             raise e
@@ -967,7 +1069,7 @@ class AnthropicProviderProfile(BaseProviderProfile):
                     "X-Timeout": "15",
                     "Content-Type": "application/json"
                 }
-                anthropic_max = max_tokens if (max_tokens is not None and max_tokens > 0) else (64000 if "3-7" in target_model else 8192)
+                anthropic_max = max_tokens if (max_tokens is not None and max_tokens > 0) else (64000 if bool(re.search(r'3[-.]7|claude-[4-9]', target_model)) else 8192)
                 payload = {
                     "model": target_model,
                     "system": sys_msg,
@@ -992,12 +1094,19 @@ class AnthropicProviderProfile(BaseProviderProfile):
                             if idx < len(accounts):
                                 memory_engine.increment_ai_account_usage(accounts[idx]["id"])
                             return data["content"][0]["text"]
-                        elif res.status_code in [429, 403, 401] and len(keys_to_try) > 1:
+                        elif res.status_code in (429, 529):
+                            retry_after = float(res.headers.get("retry-after", "2.0"))
+                            if idx < len(accounts):
+                                memory_engine.set_ai_account_cooldown(accounts[idx]["id"], max(30.0, retry_after))
+                            if idx == len(keys_to_try) - 1:
+                                await asyncio.sleep(min(30.0, retry_after))
+                            continue
+                        elif res.status_code in (401, 403) and len(keys_to_try) > 1:
                             if idx < len(accounts):
                                 memory_engine.set_ai_account_cooldown(accounts[idx]["id"], 120.0)
                             continue
                         else:
-                            raise RuntimeError(f"Anthropic HTTP {res.status_code}: {res.text}")
+                            raise RuntimeError(f"Anthropic HTTP {res.status_code}: {_redact_error(res.text)}")
                 except Exception as e:
                     if idx == len(keys_to_try) - 1:
                         raise e
@@ -1043,7 +1152,7 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
         platform: Optional[str] = None,
     ) -> Optional[Any]:
         """
-        Hermes & Claude Code Parity: Native Structured Tool-Use API for OpenAI-Compatible Endpoints.
+        Anara Enterprise Architecture: Native Structured Tool-Use API for OpenAI-Compatible Endpoints.
         Sends tools schema in request, extracts tool_calls from choice.message,
         and executes through _execute_native_agent_loop with full safety guards.
         """
@@ -1118,6 +1227,39 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
             pass
         return False
 
+    def _resolve_endpoint_and_headers(self, model_id: str) -> Tuple[str, Dict[str, str], str]:
+        for prov_name, base_url in self.NATIVE_OPEN_ENDPOINTS.items():
+            if model_id.startswith(f"{prov_name}/"):
+                target_model = model_id.replace(f"{prov_name}/", "")
+                api_key = get_provider_key(prov_name) or ""
+                headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}"
+                }
+                if prov_name == "openrouter":
+                    headers["HTTP-Referer"] = "https://project-anara.local"
+                    headers["X-Title"] = "Project Anara"
+                return f"{base_url}/chat/completions", headers, target_model
+
+        from memory import memory_engine
+        try:
+            custom_nodes = memory_engine.get_custom_providers()
+            for c in custom_nodes:
+                prefix = (c.get("prefix") or "").lower()
+                if prefix and model_id.lower().startswith(f"{prefix}/"):
+                    target_model = model_id[len(prefix) + 1:]
+                    base_url = c.get("base_url", "").rstrip("/")
+                    api_key = c.get("api_key") or ""
+                    headers = {
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {api_key}"
+                    }
+                    return f"{base_url}/chat/completions", headers, target_model
+        except Exception:
+            pass
+
+        return "https://api.openai.com/v1/chat/completions", {"Content-Type": "application/json"}, model_id
+
     async def stream_chat(
         self,
         model_id: str,
@@ -1127,35 +1269,68 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
         temperature: float = 0.7,
         usage_out: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[str, None]:
-        q: asyncio.Queue[Optional[str]] = asyncio.Queue()
+        """
+        True SSE streaming consumer for OpenAI-compatible providers (Anara Enterprise Architecture).
+        Yields text deltas token-by-token directly from upstream HTTP SSE stream.
+        """
+        endpoint, headers, target_model = self._resolve_endpoint_and_headers(model_id)
+        payload: Dict[str, Any] = {
+            "model": target_model,
+            "messages": [
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": temperature,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        if max_tokens is not None and max_tokens > 0:
+            payload["max_tokens"] = max_tokens
 
-        def _on_token(token: str):
-            if token:
-                q.put_nowait(token)
+        streamed_any = False
+        custom_timeout = float(cfg_get("agent.generation.custom_timeout", 120.0))
+        try:
+            async with httpx.AsyncClient(timeout=custom_timeout) as client:
+                async with client.stream("POST", endpoint, headers=headers, json=payload) as resp:
+                    if resp.status_code == 200:
+                        async for line in resp.aiter_lines():
+                            if not line or not line.startswith("data:"):
+                                continue
+                            d = line[5:].strip()
+                            if d == "[DONE]":
+                                break
+                            try:
+                                data = json.loads(d)
+                                if usage_out is not None and data.get("usage"):
+                                    usage_out.update(data["usage"])
+                                delta = data.get("choices", [{}])[0].get("delta", {})
+                                content = delta.get("content") or delta.get("reasoning_content") or ""
+                                if content:
+                                    streamed_any = True
+                                    yield content
+                            except json.JSONDecodeError:
+                                pass
+                    else:
+                        err_b = await resp.aread()
+                        logger.warning(f"[OpenAICompatible] Stream HTTP {resp.status_code}: {_redact_error(err_b.decode('utf-8', errors='replace'))}")
+        except Exception as e_stream:
+            logger.warning(f"[OpenAICompatible] Streaming error: {e_stream}")
 
-        async def _run_task():
+        if not streamed_any:
+            # Fallback to non-streaming read-only turn
             try:
-                await self.generate_chat(
+                res = await self.generate_chat(
                     model_id=model_id,
                     user_prompt=user_prompt,
                     system_instruction=system_instruction,
                     max_tokens=max_tokens,
                     temperature=temperature,
-                    read_only=False,
-                    token_cb=_on_token,
+                    read_only=True,
                 )
-            except Exception as e:
-                logger.error(f"[OpenAICompatible] stream_chat error: {e}")
-            finally:
-                q.put_nowait(None)
-
-        task = asyncio.create_task(_run_task())
-        while True:
-            chunk = await q.get()
-            if chunk is None:
-                break
-            yield chunk
-        await task
+                if res and isinstance(res, str):
+                    yield res
+            except Exception as e_fb:
+                logger.error(f"[OpenAICompatible] Fallback error: {e_fb}")
 
     async def generate_chat(
         self,
@@ -1189,7 +1364,7 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                     headers["HTTP-Referer"] = "https://project-anara.local"
                     headers["X-Title"] = "Project Anara"
 
-                # 1. Native Structured Tool-Use API Path (Hermes Parity)
+                # 1. Native Structured Tool-Use API Path (Anara Standard)
                 try:
                     native_res = await self._try_native_agent_loop(
                         endpoint_url=f"{base_url}/chat/completions",
@@ -1302,7 +1477,7 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                 if api_key:
                     headers["Authorization"] = f"Bearer {api_key}"
 
-                # 1. Native Structured Tool-Use API Path (Hermes Parity)
+                # 1. Native Structured Tool-Use API Path (Anara Standard)
                 try:
                     native_res = await self._try_native_agent_loop(
                         endpoint_url=f"{base_url}/chat/completions",

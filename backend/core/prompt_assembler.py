@@ -19,30 +19,35 @@ class PromptAssembler:
     @classmethod
     def probe_git_worktree_snapshot(cls, root_path: str) -> str:
         """
-        Extracts live, real-time Git status and worktree facts bounded by strict timeouts (Hermes Agent Parity).
+        Extracts live, real-time Git status and worktree facts bounded by strict timeouts (Anara Standard).
         Provides the ground truth of changed and untracked files so the agent is never blind to local edits.
+        Supports standard repositories, submodules, and linked Git worktrees.
         """
         if not root_path or not os.path.isdir(root_path):
             return ""
 
-        git_dir = os.path.join(root_path, ".git")
-        if not os.path.isdir(git_dir):
+        git_path = os.path.join(root_path, ".git")
+        if not os.path.exists(git_path):
             return ""
 
         import subprocess
         lines = []
+
+        # 1. Branch name
         try:
-            # 1. Branch name
             b_res = subprocess.run(
                 ["git", "-C", root_path, "rev-parse", "--abbrev-ref", "HEAD"],
                 capture_output=True,
                 text=True,
-                timeout=0.5
+                timeout=0.6
             )
             branch = b_res.stdout.strip() if b_res.returncode == 0 else "main"
             lines.append(f"- Git Branch: {branch}")
+        except Exception:
+            lines.append("- Git Branch: main")
 
-            # 2. Live Git Status
+        # 2. Live Git Status
+        try:
             st_res = subprocess.run(
                 ["git", "-C", root_path, "status", "--short"],
                 capture_output=True,
@@ -59,19 +64,25 @@ class PromptAssembler:
                     lines.append(f"- Changed Files Status (Live Ground Truth):\n    {preview_st}{more_msg}")
                 else:
                     lines.append("- Working Tree Status: Clean")
+        except Exception:
+            pass
 
-            # 3. Recent commits
+        # 3. Recent commits
+        try:
             log_res = subprocess.run(
                 ["git", "-C", root_path, "log", "-3", "--oneline"],
                 capture_output=True,
                 text=True,
-                timeout=0.5
+                timeout=0.6
             )
             if log_res.returncode == 0 and log_res.stdout.strip():
                 log_lines = "\n    ".join(log_res.stdout.strip().splitlines())
                 lines.append(f"- Recent Commits:\n    {log_lines}")
+        except Exception:
+            pass
 
-            # 4. Dynamic Project Verification Commands Discovery (Hermes & Claude Code Parity)
+        # 4. Dynamic Project Verification Commands Discovery (Anara Enterprise Architecture)
+        try:
             verify_cmds = []
             if os.path.isfile(os.path.join(root_path, "pytest.ini")) or os.path.isfile(os.path.join(root_path, "pyproject.toml")) or os.path.isdir(os.path.join(root_path, "tests")) or os.path.isdir(os.path.join(root_path, "backend", "tests")):
                 verify_cmds.append("pytest")
@@ -195,15 +206,29 @@ class PromptAssembler:
                 doc_p = os.path.join(root_path, custom_doc)
                 if os.path.isfile(doc_p):
                     try:
-                        with open(doc_p, "r", encoding="utf-8", errors="ignore") as f:
-                            doc_content = f.read(12000).strip()
-                            if doc_content:
-                                slot7_project += f"\n\n[PROJECT REPOSITORY RULES ({custom_doc})]:\n{doc_content}"
-                                break
+                        with open(doc_p, "r", encoding="utf-8-sig", errors="ignore") as f:
+                            raw_content = f.read()
+                        if raw_content:
+                            # 70% head / 20% tail truncation snapped to line boundaries for oversized instruction files (Anara Standard)
+                            if len(raw_content) > 12000:
+                                head_budget = int(12000 * 0.7)
+                                tail_budget = int(12000 * 0.2)
+                                head_nl = raw_content.rfind("\n", 0, head_budget)
+                                head_text = raw_content[:head_nl].strip() if head_nl > 100 else raw_content[:head_budget].strip()
+                                tail_start = len(raw_content) - tail_budget
+                                tail_nl = raw_content.find("\n", tail_start)
+                                tail_text = raw_content[tail_nl:].strip() if (tail_nl != -1 and tail_nl < len(raw_content) - 50) else raw_content[-tail_budget:].strip()
+                                doc_content = f"{head_text}\n\n[... truncated {len(raw_content) - len(head_text) - len(tail_text)} chars of repo rules ...]\n\n{tail_text}"
+                            else:
+                                doc_content = raw_content.strip()
+                            slot7_project += f"\n\n[PROJECT REPOSITORY RULES ({custom_doc})]:\n{doc_content}"
+                            break
                     except Exception:
                         pass
 
-        # Inject Episodic Architecture Decision Records (Hermes Parity: Pilar 3)
+        # Inject Episodic Architecture Decision Records into Tier 3 (Anara Standard: Pillar 3)
+        # Working memory and recent decision records sit strictly in Tier 3 (Volatile Tail), capped at 1,500 chars
+        slot_adr = ""
         try:
             from memory.episodic_adr import episodic_adr_manager
             recent_adrs = episodic_adr_manager.get_recent_project_adrs(limit=4)
@@ -212,19 +237,30 @@ class PromptAssembler:
                     f"- [{a['created_at'][:10] if a.get('created_at') else 'ADR'}] {a['architecture_decision']} (Rationale: {a['rationale']})"
                     for a in recent_adrs
                 ]
-                slot7_project += f"\n\n[HISTORICAL ARCHITECTURE DECISIONS (EPISODIC ADR)]:\n" + "\n".join(adr_lines)
+                rendered_adr = "[HISTORICAL ARCHITECTURE DECISIONS (EPISODIC ADR)]:\n" + "\n".join(adr_lines)
+                if len(rendered_adr) > 1500:
+                    rendered_adr = rendered_adr[:1450] + "\n[... truncated ADR records ...]"
+                slot_adr = rendered_adr.strip()
         except Exception:
             pass
 
-        slots = [slot1_identity, slot2_mode, slot3_tools, slot4_memory]
-        if slot5_scratchpad:
-            slots.append(slot5_scratchpad)
+        # Anara 3-Tier Prefix Caching Architecture:
+        # Tier 1 — Stable Prefix (Tokens 0..N remain byte-identical across turns): Identity, Mode, Tools
+        # Tier 2 — Semi-Static Project Context: Skills Manifest, Workspace Snapshot & AGENTS.md
+        # Tier 3 — Volatile Tail: Long-Term Memory, Episodic ADR, Working Memory / Scratchpad State
+        slots = [slot1_identity, slot2_mode, slot3_tools]
         if slot6_skills:
             slots.append(slot6_skills)
         if slot7_project:
             slots.append(slot7_project)
+        if slot4_memory:
+            slots.append(slot4_memory)
+        if slot_adr:
+            slots.append(slot_adr)
+        if slot5_scratchpad:
+            slots.append(slot5_scratchpad)
 
-        # Token-aware slot assembly (Hermes/Claude Code Parity)
+        # Token-aware slot assembly (Hermes/Anara Standard)
         # Reserves ~6000 tokens for tool catalog + conversation history injected by caller.py
         from core.token_budget import budget_aware_slot_assembly
         return budget_aware_slot_assembly(

@@ -1,5 +1,5 @@
 """
-platforms/voice.py — Voice / Audio Platform Adapter for Project Anara (Hermes Parity).
+platforms/voice.py — Voice / Audio Platform Adapter for Project Anara (Anara Standard).
 """
 
 from __future__ import annotations

@@ -6,9 +6,10 @@ ensuring uninterrupted 24/7 operation with unlimited free-tier pool.
 """
 
 import asyncio
-import os
-import time
 import logging
+import os
+import threading
+import time
 from typing import List, Dict, Optional, Callable, Any, Awaitable
 from dotenv import load_dotenv
 from google import genai
@@ -26,6 +27,7 @@ class GeminiKeyManager:
         self._keys: List[str] = []
         self._cooldowns: Dict[str, float] = {}  # key -> timestamp when cooldown expires
         self._current_index: int = 0
+        self._thread_lock = threading.Lock()
         self.reload_keys()
 
     def reload_keys(self):
@@ -48,7 +50,7 @@ class GeminiKeyManager:
             # Legacy app_settings fallback
             db_gemini_val = memory_engine.get_app_setting("gemini_api_key")
             if db_gemini_val:
-                for line in db_gemini_val.replace("\r", "").split("\n"):
+                for line in db_gemini_val.splitlines():
                     for part in line.split(","):
                         k = part.strip().strip("'\"")
                         if (k.startswith("AIzaSy") or k.startswith("AQ.")) and k not in parsed:
@@ -58,14 +60,15 @@ class GeminiKeyManager:
         except Exception as e_db:
             logger.debug(f"[KeyManager] Error reading ai_accounts from DB: {e_db}")
 
-        # 2. Secondary Source: Environment variables (optional backward compatibility)
-        env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
-        if os.path.exists(env_file):
-            load_dotenv(env_file, override=False)
+        # 2. Secondary Source: Environment variables (check root .env and backend/.env)
+        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        for candidate_env in [os.path.join(root_dir, ".env"), os.path.join(root_dir, "backend", ".env")]:
+            if os.path.exists(candidate_env):
+                load_dotenv(candidate_env, override=False)
 
         for env_k, env_v in os.environ.items():
             if "GEMINI" in env_k.upper() and ("KEY" in env_k.upper() or "TOKEN" in env_k.upper()):
-                for line in env_v.replace("\r", "").split("\n"):
+                for line in env_v.splitlines():
                     for part in line.split(","):
                         k = part.strip().strip("'\"")
                         if (k.startswith("AIzaSy") or k.startswith("AQ.") or len(k) > 20) and k not in parsed and not k.startswith("http"):
@@ -79,7 +82,11 @@ class GeminiKeyManager:
         except Exception:
             pass
 
-        self._keys = parsed
+        with self._thread_lock:
+            self._keys = parsed
+            if self._keys and self._current_index >= len(self._keys):
+                self._current_index = 0
+
         if not self._keys:
             logger.info("[KeyManager] Google AI Studio has no active account. Add an account via Anara Brain Console (Providers tab).")
         else:
@@ -95,27 +102,32 @@ class GeminiKeyManager:
 
     def get_active_key(self) -> str:
         """
-        Returns the currently active healthy API key.
+        Returns the currently active healthy API key without side-effect rotation.
         If all keys are in cooldown, picks the one whose cooldown expires soonest.
         """
         if not self._keys:
             return ""
 
         now = time.time()
-        # Find first healthy key starting from current_index with true round-robin advancement
-        for offset in range(len(self._keys)):
-            idx = (self._current_index + offset) % len(self._keys)
-            key = self._keys[idx]
-            cooldown_until = self._cooldowns.get(key, 0.0)
-            if now >= cooldown_until:
-                self._current_index = (idx + 1) % len(self._keys)
-                return key
+        with self._thread_lock:
+            # Check if current key is healthy
+            if 0 <= self._current_index < len(self._keys):
+                curr = self._keys[self._current_index]
+                if now >= self._cooldowns.get(curr, 0.0):
+                    return curr
 
-        # If all in cooldown, fallback to the one expiring soonest
-        soonest_key = min(self._keys, key=lambda k: self._cooldowns.get(k, 0.0))
-        self._current_index = (self._keys.index(soonest_key) + 1) % len(self._keys)
-        logger.warning(f"[KeyManager] All keys in cooldown, falling back to earliest available key ({len(self._keys)} in pool)")
-        return soonest_key
+            # Otherwise find the next available healthy key
+            for offset in range(len(self._keys)):
+                idx = (self._current_index + offset) % len(self._keys)
+                key = self._keys[idx]
+                cooldown_until = self._cooldowns.get(key, 0.0)
+                if now >= cooldown_until:
+                    self._current_index = idx
+                    return key
+
+            # If all in cooldown, fallback to the one expiring soonest
+            soonest_key = min(self._keys, key=lambda k: self._cooldowns.get(k, 0.0))
+            return soonest_key
 
     def mark_key_dead(self, key: str, reason: str = "permission_denied"):
         """Permanently blacklists an invalid/revoked key (24h cooldown) and persists to SQLite."""
@@ -139,26 +151,27 @@ class GeminiKeyManager:
             return ""
 
         now = time.time()
-        if failed_key and failed_key in self._keys:
-            # If permission denied, ban for 24 hours
-            if any(w in reason.lower() for w in ["permission_denied", "403", "unauthenticated", "401"]):
-                cooldown_seconds = 86400.0
-                try:
-                    from memory import memory_engine
-                    with memory_engine._get_connection() as conn:
-                        conn.execute("UPDATE ai_accounts SET is_enabled = 0 WHERE api_key = ?", (failed_key,))
-                except Exception:
-                    pass
-            self._cooldowns[failed_key] = now + cooldown_seconds
-            k_preview = f"{failed_key[:8]}...{failed_key[-4:]}" if len(failed_key) > 12 else failed_key
-            logger.warning(f"[KeyManager] API Key [{k_preview}] put in {cooldown_seconds:.0f}s cooldown ({reason}).")
+        with self._thread_lock:
+            if failed_key and failed_key in self._keys:
+                # If permission denied, ban for 24 hours
+                if any(w in reason.lower() for w in ["permission_denied", "403", "unauthenticated", "401"]):
+                    cooldown_seconds = 86400.0
+                    try:
+                        from memory import memory_engine
+                        with memory_engine._get_connection() as conn:
+                            conn.execute("UPDATE ai_accounts SET is_enabled = 0 WHERE api_key = ?", (failed_key,))
+                    except Exception:
+                        pass
+                self._cooldowns[failed_key] = now + cooldown_seconds
+                k_preview = f"{failed_key[:8]}...{failed_key[-4:]}" if len(failed_key) > 12 else failed_key
+                logger.warning(f"[KeyManager] API Key [{k_preview}] put in {cooldown_seconds:.0f}s cooldown ({reason}).")
 
-        # Advance to next key
-        self._current_index = (self._current_index + 1) % len(self._keys)
-        new_key = self.get_active_key()
-        k_new_prev = f"{new_key[:8]}...{new_key[-4:]}" if len(new_key) > 12 else new_key
-        logger.info(f"[KeyManager] Switched active key to: [{k_new_prev}] (Key #{self._current_index + 1}/{len(self._keys)})")
-        return new_key
+            # Advance to next key
+            self._current_index = (self._current_index + 1) % len(self._keys)
+            new_key = self._keys[self._current_index]
+            k_new_prev = f"{new_key[:8]}...{new_key[-4:]}" if len(new_key) > 12 else new_key
+            logger.info(f"[KeyManager] Switched active key to: [{k_new_prev}] (Key #{self._current_index + 1}/{len(self._keys)})")
+            return new_key
 
     def get_client(self) -> genai.Client:
         """Creates a genai.Client using the currently active healthy API key."""
@@ -177,8 +190,8 @@ class GeminiKeyManager:
         if not self._keys:
             raise ValueError("Google AI Studio API Key not configured. Add an account in the Providers tab of Anara Brain Console.")
 
-        # Try up to ALL keys in pool so no key is left unattempted
-        attempts = max_attempts or len(self._keys)
+        # Try up to ALL keys in pool so no key is left unattempted, at least 3 attempts for single key retry
+        attempts = max_attempts or max(3, len(self._keys))
         last_exception = None
 
         for attempt in range(attempts):

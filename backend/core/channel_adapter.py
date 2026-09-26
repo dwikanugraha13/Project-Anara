@@ -24,7 +24,7 @@ from core.context_compactor import ContextCompactor
 from core.prompt_assembler import PromptAssembler
 from core.skill_library import skill_library
 from core.security import check_prompt_injection
-from core.session_manager import session_state_manager, PendingAction
+from core.session_manager import session_state_manager, PendingAction, ActionState
 from providers import call_universal_chat_model, get_active_model_id
 from integrations.dedup import MessageDeduplicator
 
@@ -90,7 +90,7 @@ def split_message_chunks(
     platform: Optional[str] = None
 ) -> List[str]:
     """
-    Omnichannel fence-aware message chunker (Hermes Parity).
+    Omnichannel fence-aware message chunker (Anara Standard).
     Splits long messages along paragraph and newline boundaries without breaking markdown code blocks.
     Balances code fences across chunk boundaries so syntax highlighting never breaks.
     """
@@ -133,8 +133,8 @@ def split_message_chunks(
         current_text = current_text[split_idx:]
 
         if ends_inside_code:
-            m_lang = re.search(r"```([a-zA-Z0-9_-]*)\n", chunk_part)
-            last_lang = m_lang.group(1) if m_lang else ""
+            matches = list(re.finditer(r"```([a-zA-Z0-9_-]*)\n", chunk_part))
+            last_lang = matches[-1].group(1) if matches else ""
             chunk_part = chunk_part + "\n```"
             current_text = f"```{last_lang}\n" + current_text
 
@@ -152,6 +152,10 @@ def split_message_chunks(
     for idx, chunk in enumerate(raw_chunks, start=1):
         if is_discord:
             header = f"📄 **[Part {idx}/{total_parts}]**\n\n"
+        elif platform in ("whatsapp", "slack"):
+            header = f"📄 *[Part {idx}/{total_parts}]*\n\n"
+        elif platform == "cli":
+            header = f"[Part {idx}/{total_parts}]\n\n"
         else:
             header = f"📄 <b>[Part {idx}/{total_parts}]</b>\n\n"
         final_chunks.append(header + chunk)
@@ -168,7 +172,7 @@ class BaseChannelPresenter(ABC):
 
 class UniversalChannelAdapter:
     """
-    Unified channel adapter facade delegating to central PlatformRegistry (Hermes Parity).
+    Unified channel adapter facade delegating to central PlatformRegistry (Anara Standard).
     Single Source of Truth: All platforms, media dispatchers, and presenters live in integrations/platform_registry.py.
     """
 
@@ -208,7 +212,7 @@ class UniversalChannelAdapter:
 
 async def synthesize_action_rationale(tool_name: str, tool_args: Dict[str, Any], prompt: str = "") -> str:
     """
-    Pure Model-Driven Rationale Synthesis (Hermes Parity).
+    Pure Model-Driven Rationale Synthesis (Anara Standard).
     Queries the fast auxiliary model (e.g. gemini-3.1-flash / < 400ms) to formulate a natural,
     contextual 1-sentence conversational explanation of WHY this tool is being invoked for this prompt.
     Eliminates hardcoded if-else dictionaries and regexes.
@@ -304,7 +308,7 @@ async def synthesize_channel_notice(
     user_id: str = "",
 ) -> str:
     """
-    Pure Model-Driven Channel Notice Synthesizer (Hermes Parity).
+    Pure Model-Driven Channel Notice Synthesizer (Anara Standard).
     Generates contextual, platform-tailored, zero-canned conversational notices
     (e.g., expiry, rejection, authorization denial, cancellation, or runtime failure)
     using the fast auxiliary model with graceful dynamic fallbacks.
@@ -313,7 +317,15 @@ async def synthesize_channel_notice(
     from core.capabilities import get_fast_auxiliary_model
     from core.prompt_loader import load_prompt
 
-    sys_inst = load_prompt("channel/channel_notice")
+    sys_inst = load_prompt(
+        "channel/channel_notice",
+        default=(
+            "You are Anara delivering a concise 1-sentence channel status notice to the user.\n"
+            "If status is 'rejected' or 'cancelled', clearly state that the action has been cancelled as requested (use words like 'dibatalkan', 'batal', or 'cancelled').\n"
+            "If status is 'expired', clearly state that the action has expired (use words like 'kedaluwarsa' or 'expired').\n"
+            "Match the language of the task context and keep it to 1 short sentence."
+        ),
+    )
     user_prompt = (
         f"Channel: {channel}\n"
         f"Status: {notice_type}\n"
@@ -341,7 +353,7 @@ async def synthesize_channel_notice(
     except Exception as e:
         logger.debug(f"[ChannelNotice] Auxiliary synthesis notice: {e}")
 
-    # Universal fallbacks formatted dynamically based on situation (Hermes Parity)
+    # Universal fallbacks formatted dynamically based on situation (Anara Standard)
     task_info = f" '{task_description}'" if task_description else ""
     err_info = f": {error_detail}" if error_detail else ""
     if notice_type == "expired":
@@ -388,7 +400,7 @@ class ChannelResponse(BaseModel):
 
 
 def get_or_create_channel_session(req: ChannelRequest) -> int:
-    """Binds an incoming channel request to an isolated persistent chat session (Hermes Parity)."""
+    """Binds an incoming channel request to an isolated persistent chat session (Anara Standard)."""
     speaker = req.sender_name or "User"
     cid = str(req.channel_id or "default").strip()
     session_tag = f"[{req.channel}:{cid}]"
@@ -420,7 +432,7 @@ def get_or_create_channel_session(req: ChannelRequest) -> int:
 
 
 async def _auto_dispatch_artifacts_to_channel(channel: str, channel_id: str, artifacts: List[Dict[str, Any]]):
-    """Auto-dispatches generated documents and media directly to target channel via ChannelManager (Hermes Parity)."""
+    """Auto-dispatches generated documents and media directly to target channel via ChannelManager (Anara Standard)."""
     if not artifacts or not channel_id or channel_id.startswith("default"):
         return
     from integrations.manager import channel_manager
@@ -483,6 +495,9 @@ async def process_channel_request(
 
     try:
         session_id = get_or_create_channel_session(req)
+        if is_stop_req:
+            # Hermes Cancel Fence Parity: /stop must execute immediately without blocking behind session lock
+            return await _process_channel_request_core(req, progress_callback)
         async with session_state_manager.get_session_lock(str(session_id)):
             return await _process_channel_request_core(req, progress_callback)
     finally:
@@ -493,7 +508,7 @@ async def process_channel_request(
 
 async def _enrich_message_with_vision(user_text: str, attachments: List[Dict[str, Any]]) -> str:
     """
-    Universal Inbound Vision Enrichment (Hermes Parity: gateway/run_inbound.py lines 1866-1909).
+    Universal Inbound Vision Enrichment (Anara Standard: gateway/run_inbound.py lines 1866-1909).
     Auto-analyzes user-attached images with vision_analyze and prepends descriptions to prompt context.
     Works dynamically for ALL platforms (Telegram, WhatsApp, Discord, Slack, Web Studio, CLI).
     """
@@ -555,8 +570,9 @@ async def _process_channel_request_core(
     # 2. Content Moderation & Prompt Injection Defense (FR-20)
     clean_text = req.text.strip()
 
-    # Deduplication protection (Hermes Parity: gateway/run_inbound.py)
-    msg_key = f"{req.channel}:{req.channel_id}:{clean_text}"
+    # Deduplication protection (Anara Standard: gateway/run_inbound.py)
+    msg_id = (req.metadata or {}).get("message_id") or (req.metadata or {}).get("update_id")
+    msg_key = f"{req.channel}:{req.channel_id}:{msg_id}" if msg_id else f"{req.channel}:{req.channel_id}:{clean_text}"
     if clean_text and _channel_message_dedup.is_duplicate(msg_key):
         logger.info(f"[ChannelGateway] Dropping duplicate message on {req.channel}: '{clean_text[:40]}'")
         return ChannelResponse(
@@ -566,7 +582,7 @@ async def _process_channel_request_core(
             status="duplicate_dropped"
         )
 
-    # 2b. Inbound Vision Auto-Enrichment (Hermes Parity)
+    # 2b. Inbound Vision Auto-Enrichment (Anara Standard)
     if req.attachments:
         clean_text = await _enrich_message_with_vision(clean_text, req.attachments)
 
@@ -771,7 +787,7 @@ async def _process_channel_request_core(
         session_state_manager.store_pending(pending_act)
         _PENDING_PLANS[session_plan_key] = pending_act.to_dict()
 
-        # Fallback narration formulation matching Hermes Parity
+        # Fallback narration formulation matching Anara Standard
         narration_text = plan_text
         if not narration_text:
             try:
@@ -832,7 +848,7 @@ async def _process_channel_request_core(
     prior_turns = []
     for h in all_history:
         ai_t = (h.get("ai_text") or "").strip()
-        # Hermes parity: close interrupted/unclosed tool sequence in past transcript to prevent continuation hallucination
+        # Anara Standard: close interrupted/unclosed tool sequence in past transcript to prevent continuation hallucination
         is_tool_invocation = '"action": "tool_call"' in ai_t or '<tool_call>' in ai_t
         is_unclosed = ('<tool_call>' in ai_t and '</tool_call>' not in ai_t) or (
             '"action": "tool_call"' in ai_t and not ai_t.rstrip().endswith(('}', '```', '</tool_call>'))
@@ -870,6 +886,32 @@ async def _process_channel_request_core(
         t_name = evt.get("tool_name")
         if t_name and t_name not in tools_used:
             tools_used.append(t_name)
+        status = evt.get("status")
+        if status == "running" and t_name:
+            cid = evt.get("call_id") or f"ch_{uuid.uuid4().hex[:10]}"
+            evt["call_id"] = cid
+            try:
+                session_state_manager.persist_tool_call_start(
+                    session_id=session_id,
+                    channel=req.channel,
+                    channel_id=req.channel_id,
+                    tool_name=t_name,
+                    tool_args=evt.get("args") or evt.get("tool_args") or {},
+                    call_id=cid
+                )
+            except Exception:
+                pass
+        elif status == "done" and t_name:
+            cid = evt.get("call_id")
+            if cid:
+                try:
+                    session_state_manager.persist_tool_call_result(
+                        call_id=cid,
+                        result_summary=evt.get("summary") or evt.get("detail") or "",
+                        is_error=bool(evt.get("is_error", False))
+                    )
+                except Exception:
+                    pass
         if progress_callback:
             msg = _format_tool_progress_message(evt)
             try:
@@ -993,21 +1035,54 @@ async def _process_channel_request_core(
         )
 
     if isinstance(reply, str) and reply.strip():
-        # ── ANTI-LEAK GATE (Hermes Parity) ──
+        # ── ANTI-LEAK GATE (Anara Standard) ──
         # Ensure raw tool-call JSON blocks are NEVER presented as chat text to user
         from providers.caller import _clean_model_chat_text, _format_empty_model_notice
         if '"action": "tool_call"' in reply or '<tool_call>' in reply or not _clean_model_chat_text(reply):
             from providers.caller import _extract_and_parse_tool_call
             leaked_payload, lead, _ = _extract_and_parse_tool_call(reply)
             if leaked_payload:
-                logger.info(f"[ChannelAdapter] Anti-leak caught unexecuted tool call '{leaked_payload.get('tool')}'. Auto-dispatching...")
-                return await _execute_build_mode(
-                    session_id=session_id,
-                    user_prompt=clean_text,
-                    req=req,
-                    progress_callback=progress_callback,
-                    pending_tool_call=leaked_payload,
-                )
+                from tools import get_tool_risk
+                leaked_tool = str(leaked_payload.get("tool") or "")
+                t_risk = get_tool_risk(leaked_tool)
+                if t_risk in ("mutating", "ask"):
+                    # Anara Standard: NEVER auto-execute mutating tools unvetted! Route to Approval State Machine
+                    logger.info(f"[ChannelAdapter] Anti-leak caught mutating tool call '{leaked_tool}'. Routing to approval gate...")
+                    import uuid
+                    plan_id = f"plan_{uuid.uuid4().hex[:8]}"
+                    t_args = leaked_payload.get("arguments") or {}
+                    pending_act = PendingAction(
+                        plan_id=plan_id,
+                        session_id=session_id,
+                        channel=req.channel,
+                        channel_id=req.channel_id,
+                        tool_name=leaked_tool,
+                        tool_args=t_args,
+                        original_prompt=clean_text,
+                        state=ActionState.PENDING,
+                        ttl_seconds=300.0,
+                        user_id=req.user_id,
+                    )
+                    session_state_manager.set_pending_action(req.channel, req.channel_id, pending_act)
+                    rationale = await synthesize_action_rationale(leaked_tool, t_args, clean_text)
+                    plan_disp = f"Proposed Action: `{leaked_tool}`\n{rationale}\n\nPlease confirm to execute."
+                    return ChannelResponse(
+                        text=plan_disp,
+                        session_id=session_id,
+                        mode="plan",
+                        plan_pending=True,
+                        plan_id=plan_id,
+                        pending_action=pending_act.to_dict(),
+                    )
+                else:
+                    logger.info(f"[ChannelAdapter] Anti-leak caught harmless read-only tool call '{leaked_tool}'. Auto-dispatching...")
+                    return await _execute_build_mode(
+                        session_id=session_id,
+                        user_prompt=clean_text,
+                        req=req,
+                        progress_callback=progress_callback,
+                        pending_tool_call=leaked_payload,
+                    )
             else:
                 cleaned = _clean_model_chat_text(reply)
                 if not cleaned or '"action": "tool_call"' in cleaned or '<tool_call>' in cleaned:
@@ -1147,6 +1222,32 @@ async def _execute_build_mode_core(
         t_name = evt.get("tool_name")
         if t_name and t_name not in tools_used:
             tools_used.append(t_name)
+        status = evt.get("status")
+        if status == "running" and t_name:
+            cid = evt.get("call_id") or f"bld_{uuid.uuid4().hex[:10]}"
+            evt["call_id"] = cid
+            try:
+                session_state_manager.persist_tool_call_start(
+                    session_id=session_id,
+                    channel=req.channel,
+                    channel_id=req.channel_id,
+                    tool_name=t_name,
+                    tool_args=evt.get("args") or evt.get("tool_args") or {},
+                    call_id=cid
+                )
+            except Exception:
+                pass
+        elif status == "done" and t_name:
+            cid = evt.get("call_id")
+            if cid:
+                try:
+                    session_state_manager.persist_tool_call_result(
+                        call_id=cid,
+                        result_summary=evt.get("summary") or evt.get("detail") or "",
+                        is_error=bool(evt.get("is_error", False))
+                    )
+                except Exception:
+                    pass
         if progress_callback:
             msg = _format_tool_progress_message(evt)
             try:
@@ -1168,6 +1269,13 @@ async def _execute_build_mode_core(
         t_name = pending_tool_call.get("tool", "")
         t_args = pending_tool_call.get("arguments", {}) or {}
         from tools import dispatch_tool_call
+        cid = session_state_manager.persist_tool_call_start(
+            session_id=session_id,
+            channel=req.channel,
+            channel_id=req.channel_id,
+            tool_name=t_name,
+            tool_args=t_args,
+        )
         if progress_callback:
             msg = _format_tool_progress_message({"tool_name": t_name, "status": "running", "detail": str(t_args)[:80]})
             try:
@@ -1179,6 +1287,13 @@ async def _execute_build_mode_core(
                 pass
 
         tool_res = await dispatch_tool_call(t_name, t_args, read_only=False)
+        is_err = isinstance(tool_res, dict) and tool_res.get("status") == "error"
+        summary_str = (tool_res.get("message") or tool_res.get("summary") or "") if isinstance(tool_res, dict) else str(tool_res)
+        session_state_manager.persist_tool_call_result(
+            call_id=cid,
+            result_summary=summary_str,
+            is_error=is_err
+        )
         if t_name not in tools_used:
             tools_used.append(t_name)
 
@@ -1314,7 +1429,7 @@ async def dispatch_channel_approval_resolution(
     progress_callback: Optional[Callable[[str], Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Unified Omnichannel Approval Dispatcher (Hermes Parity).
+    Unified Omnichannel Approval Dispatcher (Anara Standard).
     Centrally validates approver authorization, updates FSM state, executes build mode,
     dispatches clean responses, and sends generated artifacts.
     Shared across Telegram, WhatsApp, Discord, Slack, and Web Studio (Zero Code Duplication).
@@ -1324,7 +1439,16 @@ async def dispatch_channel_approval_resolution(
     from integrations.manager import channel_manager
 
     clean_chan = (channel or "telegram").lower().strip()
-    norm_action = "approve" if (action or "").strip().lower() in ("approve", "yes") else "reject"
+    clean_action = (action or "").strip()
+
+    # Dynamic model-driven intent classification (Anara Enterprise Architecture: zero static keyword gates)
+    if clean_action.lower() in ("approve", "1", "yes", "y"):
+        norm_action = "approve"
+    elif clean_action.lower() in ("reject", "deny", "cancel", "0", "n", "no"):
+        norm_action = "reject"
+    else:
+        from core.plan_detector import is_explicit_plan_approval
+        norm_action = "approve" if is_explicit_plan_approval(clean_action) else "reject"
 
     pending_act = session_state_manager.get_pending_by_id(plan_id)
     plan_dict = pending_act.to_dict() if pending_act else _PENDING_PLANS.get(f"{clean_chan}_{channel_id}")

@@ -1,4 +1,4 @@
-# ── Convergence & Stagnation Guidance Configuration (Hermes & Claude Code Parity) ──
+# ── Convergence & Stagnation Guidance Configuration (Anara Enterprise Architecture) ──
 # Adaptive guidance messages injected during ReAct agent loops to steer agent convergence.
 
 goal_satisfaction: "[MISSION CONVERGED]: You have applied the required modifications and verified correctness with physical tests. Do not run further exploration tools. Deliver your complete, helpful report to the user now."

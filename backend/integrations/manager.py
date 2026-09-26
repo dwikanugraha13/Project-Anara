@@ -1,6 +1,6 @@
 """
 manager.py — Backward-compatible Channel Manager proxy delegating to PlatformRegistry.
-Hermes Agent Parity: Central Platform Registry as Single Source of Truth.
+Anara Standard: Central Platform Registry as Single Source of Truth.
 """
 
 import logging

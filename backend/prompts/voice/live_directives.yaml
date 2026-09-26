@@ -1,4 +1,4 @@
-# ── Live Voice & Media Runtime Directives (Hermes Parity) ──
+# ── Live Voice & Media Runtime Directives (Anara Standard) ──
 # System notifications and context directives injected into Gemini Live voice sessions.
 
 action_approved: "[SYSTEM NOTIFICATION]: The user approved the action '{target_desc}'. Acknowledge the approval concisely in 1 sentence matching the user's active language, then execute."

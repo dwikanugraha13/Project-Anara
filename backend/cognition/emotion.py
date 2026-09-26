@@ -13,6 +13,7 @@ import logging
 import re
 import sqlite3
 import os
+import threading
 from typing import Optional, Dict, Any, List
 
 from constants import get_anara_db_path
@@ -30,13 +31,23 @@ class EmotionEngine:
 
     def __init__(self, db_path: str = DB_PATH):
         self.db_path = db_path
+        self._lock = threading.RLock()
         self._behaviors: List[Dict[str, Any]] = []
+        self._init_db_pragmas()
         self.reload_behaviors()
 
     def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=15.0)
         conn.row_factory = sqlite3.Row
         return conn
+
+    def _init_db_pragmas(self):
+        try:
+            with self._get_connection() as conn:
+                conn.execute("PRAGMA journal_mode=WAL;")
+                conn.execute("PRAGMA synchronous=NORMAL;")
+        except Exception as e:
+            logger.debug(f"[EmotionEngine] WAL pragma notice: {e}")
 
     def reload_behaviors(self):
         """Loads or refreshes all animation profiles from SQLite."""
@@ -159,7 +170,7 @@ class EmotionEngine:
 
     def _matches_behavior(self, text_lower: str, behavior: Dict[str, Any]) -> bool:
         """
-        Deprecated in Hermes Agent Parity: Avatar animations and emotional gestures
+        Deprecated in Anara Standard: Avatar animations and emotional gestures
         are driven strictly by autonomous model reasoning via the trigger_avatar_animation tool,
         rather than brittle keyword substring regex matches.
         """
@@ -172,15 +183,37 @@ class EmotionEngine:
         if not text or not text.strip():
             return None
 
-        clean = text.strip()
+        # Strip thought / reasoning / think blocks completely (Anara Enterprise Architecture)
+        clean = re.sub(r"(?is)<(?:thought|think|thinking)>[\s\S]*?</(?:thought|think|thinking)>", "", text).strip()
+        if not clean:
+            return None
+
+        with self._lock:
+            behaviors = list(self._behaviors)
 
         # Dynamic behavior mapping using loaded SQLite animation profiles
-        if self._behaviors:
-            # Check for matches against dynamic keywords loaded from SQLite
-            tokens = set(re.findall(r"\w+", clean.lower()))
-            for b in self._behaviors:
+        if behaviors:
+            # Check for matches against dynamic keywords loaded from SQLite (Anara Standard: word-boundary matching)
+            tokens = set(re.findall(r"\b\w+\b", clean.lower()))
+            for b in behaviors:
+                if not allow_dance and b.get("category") == "dance":
+                    continue
+
                 b_kws = b.get("keywords") or []
-                if any(kw in tokens or kw in clean.lower() for kw in b_kws if len(kw) >= 3):
+                matched = False
+                for kw in b_kws:
+                    kw_clean = kw.lower().strip()
+                    if not kw_clean or len(kw_clean) < 2:
+                        continue
+                    if " " in kw_clean:
+                        if re.search(rf"\b{re.escape(kw_clean)}\b", clean.lower()):
+                            matched = True
+                            break
+                    elif kw_clean in tokens:
+                        matched = True
+                        break
+
+                if matched:
                     return {
                         "animation_name": b.get("name") or b.get("animation_name", "talking"),
                         "emotion": b.get("emotion", "neutral"),
@@ -189,7 +222,7 @@ class EmotionEngine:
                     }
 
             if clean.endswith("?") or "¿" in clean:
-                q_beh = next((b for b in self._behaviors if b.get("emotion") == "curious" or b.get("gesture") in ("question", "thinking")), None)
+                q_beh = next((b for b in behaviors if b.get("emotion") == "curious" or b.get("gesture") in ("question", "thinking")), None)
                 if q_beh:
                     return {
                         "animation_name": q_beh.get("name") or q_beh.get("animation_name", "thinking"),
@@ -198,7 +231,7 @@ class EmotionEngine:
                         "intensity": q_beh.get("intensity", 0.70),
                     }
             if clean.endswith("!"):
-                e_beh = next((b for b in self._behaviors if b.get("emotion") in ("enthusiastic", "happy")), None)
+                e_beh = next((b for b in behaviors if b.get("emotion") in ("enthusiastic", "happy")), None)
                 if e_beh:
                     return {
                         "animation_name": e_beh.get("name") or e_beh.get("animation_name", "happy"),

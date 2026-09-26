@@ -28,7 +28,10 @@ def float32_to_pcm16(float32_array: list[float]) -> bytes:
 
 def pcm16_to_float32(pcm_bytes: bytes) -> list[float]:
     """Convert PCM16 bytes to float32 list (for debugging/visualization)."""
-    arr = np.frombuffer(pcm_bytes, dtype=np.int16)
+    if not pcm_bytes:
+        return []
+    clean = pcm_bytes[:len(pcm_bytes) - (len(pcm_bytes) % 2)]
+    arr = np.frombuffer(clean, dtype=np.int16)
     return (arr / 32767.0).tolist()
 
 
@@ -40,7 +43,8 @@ def estimate_audio_intensity(pcm_bytes: bytes) -> float:
     """
     if not pcm_bytes:
         return 0.0
-    arr = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32)
+    clean = pcm_bytes[:len(pcm_bytes) - (len(pcm_bytes) % 2)]
+    arr = np.frombuffer(clean, dtype=np.int16).astype(np.float32)
     rms = np.sqrt(np.mean(arr ** 2))
     # Normalize to 0-1 range (max PCM16 value is 32767)
     return float(np.clip(rms / 32767.0, 0.0, 1.0))
@@ -78,7 +82,8 @@ def analyze_speech_emotion(pcm_bytes: bytes, sample_rate: int = 16000) -> dict:
             "tone_description": "Relaxed tone / neutral conversation"
         }
         
-    arr = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+    clean_bytes = pcm_bytes[:len(pcm_bytes) - (len(pcm_bytes) % 2)]
+    arr = np.frombuffer(clean_bytes, dtype=np.int16).astype(np.float32) / 32768.0
     
     # 1. Overall RMS Energy & Voiced Segment Separation
     frame_len = int(0.03 * sample_rate)  # 30ms frames
@@ -94,7 +99,7 @@ def analyze_speech_emotion(pcm_bytes: bytes, sample_rate: int = 16000) -> dict:
         
         # 2. Harmonic Pitch Estimation (only for voiced frames with adequate energy)
         if f_rms > 0.015:
-            # Normalized Autocorrelation
+            # Normalized Autocorrelation with Hanning tapering
             windowed = frame * np.hanning(len(frame))
             corr = np.correlate(windowed, windowed, mode='full')
             corr = corr[len(corr)//2:]
@@ -107,13 +112,13 @@ def analyze_speech_emotion(pcm_bytes: bytes, sample_rate: int = 16000) -> dict:
                 peak_sub = corr[min_lag:max_lag]
                 if len(peak_sub) > 0 and np.max(peak_sub) > 0.3 * (corr[0] + 1e-9):
                     peak_idx = min_lag + np.argmax(peak_sub)
-                    # Parabolic interpolation for sub-sample accuracy
+                    # Parabolic interpolation for sub-sample accuracy (Anara Standard: correct vertex delta)
                     if 0 < peak_idx < len(corr) - 1:
                         alpha = corr[peak_idx - 1]
                         beta = corr[peak_idx]
                         gamma = corr[peak_idx + 1]
                         denom = 2 * (2 * beta - alpha - gamma)
-                        delta = (alpha - gamma) / denom if denom != 0 else 0
+                        delta = (gamma - alpha) / denom if denom != 0 else 0
                         refined_lag = peak_idx + delta
                     else:
                         refined_lag = peak_idx
@@ -136,19 +141,33 @@ def analyze_speech_emotion(pcm_bytes: bytes, sample_rate: int = 16000) -> dict:
         pitch_hz = 0.0
         pitch_std = 0.0
 
-    # 4. Zero-Crossing Rate (ZCR)
-    zcr = float(np.mean(np.abs(np.diff(np.sign(arr)))) / 2.0)
+    # 4. Zero-Crossing Rate (ZCR) with strict polarity shift check
+    zcr = float(np.mean(np.diff(arr >= 0) != 0))
     
-    # 5. Spectral Centroid via FFT
-    fft_vals = np.abs(np.fft.rfft(arr))
+    # 5. Spectral Centroid via Hanning-windowed FFT
+    win_arr = arr * np.hanning(len(arr))
+    fft_vals = np.abs(np.fft.rfft(win_arr))
     freqs = np.fft.rfftfreq(len(arr), 1.0 / sample_rate)
     sum_fft = np.sum(fft_vals)
     spectral_centroid = float(np.sum(freqs * fft_vals) / (sum_fft + 1e-9))
 
-    # 6. Robust Multi-Feature Acoustic Classifier with Realistic Human Ranges
+    # 6. Silence & Low Energy Guard (Anara Standard: silence is never clinical sadness)
+    if overall_rms < 0.006 or voiced_rms < 0.006 or len(pitch_estimates) == 0:
+        return {
+            "emotion": "neutral",
+            "confidence": 0.85,
+            "pitch_hz": 0.0,
+            "pitch_variance": 0.0,
+            "rms": round(overall_rms, 3),
+            "spectral_centroid_hz": round(spectral_centroid, 1),
+            "tone_description": "Relaxed tone / ambient quietness"
+        }
+
+    # 7. Robust Multi-Feature Acoustic Classifier with Realistic Human Ranges
     # Sad / Low Energy / Depressed Tone:
-    # Requires VERY low overall energy + flat pitch variation + low brightness
+    # Requires actual human speech with VERY low overall energy + flat pitch variation + low brightness
     is_sad = (
+        voiced_rms >= 0.006 and
         voiced_rms < 0.022 and 
         overall_rms < 0.020 and 
         spectral_centroid < 1550 and 
@@ -281,14 +300,14 @@ class AcousticSERTracker:
         return raw_res
 
 
-# ── Acoustic Noise & STT Hallucination Filter (Hermes Parity: Zero-Text-Blacklist) ──
+# ── Acoustic Noise & STT Hallucination Filter (Anara Standard: Zero-Text-Blacklist) ──
 STT_HALLUCINATED_PHRASES: tuple = ()
 
 
 def is_stt_hallucination(text: str) -> bool:
     """
     Returns True if the transcribed text is an acoustic noise artifact, 
-    stutter loop, or empty transcription, using language-agnostic heuristics (Hermes Parity).
+    stutter loop, or empty transcription, using language-agnostic heuristics (Anara Standard).
     Preserves legitimate human short greetings, acknowledgments, and commands in any language.
     """
     clean = (text or "").strip()
@@ -323,7 +342,7 @@ def is_stt_hallucination(text: str) -> bool:
 
 async def transcribe_audio_file(audio_path: str) -> Optional[str]:
     """
-    Dynamic Tiered Audio Transcription Engine (Hermes Parity):
+    Dynamic Tiered Audio Transcription Engine (Anara Standard):
     Tier 1: Directly probes user's active provider (e.g. 9router with input_audio, OpenAI multimodal, etc.).
     Tier 2: Discovers secondary configured audio providers in SQLite (Google AI Studio gemini-3.6-flash, etc.).
     Tier 3: Graceful fallback without hardcoding or unhandled exceptions.
@@ -341,8 +360,7 @@ async def transcribe_audio_file(audio_path: str) -> Optional[str]:
     ext = os.path.splitext(audio_path)[1].lower()
     clean_fmt = ext.lstrip(".") or "ogg"
 
-    with open(audio_path, "rb") as f:
-        audio_bytes = f.read()
+    audio_bytes = await asyncio.to_thread(lambda: open(audio_path, "rb").read())
 
     # ── TIER 1: User's Active Provider Probe (Dynamic & Zero-Hardcode) ──
     try:
@@ -414,14 +432,26 @@ async def transcribe_audio_file(audio_path: str) -> Optional[str]:
         from core import key_manager
         from google.genai import types
 
-        mime_map = {".ogg": "audio/ogg", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4"}
+        mime_map = {
+            ".ogg": "audio/ogg",
+            ".mp3": "audio/mpeg",
+            ".wav": "audio/wav",
+            ".m4a": "audio/mp4",
+            ".webm": "audio/webm",
+        }
         mime = mime_map.get(ext, "audio/ogg")
 
         async def _transcribe_call(client: Any) -> str:
             audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime)
             from core.prompt_loader import load_prompt
+            from core.capabilities import get_fast_auxiliary_model
             prompt = load_prompt("voice/stt_tier_transcription").strip()
-            for m_candidate in ["gemini-3.6-flash", "gemini-3.0-flash", "gemini-2.5-flash"]:
+            aux_m = get_fast_auxiliary_model()
+            candidates = [aux_m] if "gemini" in str(aux_m).lower() else []
+            for fallback_m in ("gemini-2.5-flash", "gemini-2.0-flash"):
+                if fallback_m not in candidates:
+                    candidates.append(fallback_m)
+            for m_candidate in candidates:
                 try:
                     response = await client.aio.models.generate_content(
                         model=m_candidate,
@@ -442,12 +472,44 @@ async def transcribe_audio_file(audio_path: str) -> Optional[str]:
     except Exception as e_t2:
         _log.debug(f"[AudioSTT] Tier 2 Google GenAI fallback notice: {e_t2}")
 
+    # ── TIER 3: Universal Audio Transcription Fallback (OpenAI / Groq Whisper) ──
+    try:
+        from providers.accounts import get_provider_key
+        openai_key = get_provider_key("openai") or os.getenv("OPENAI_API_KEY")
+        groq_key = get_provider_key("groq") or os.getenv("GROQ_API_KEY")
+        target_ep = None
+        target_key = None
+        target_model = None
+
+        if groq_key:
+            target_ep = "https://api.groq.com/openai/v1/audio/transcriptions"
+            target_key = groq_key
+            target_model = "whisper-large-v3"
+        elif openai_key:
+            target_ep = "https://api.openai.com/v1/audio/transcriptions"
+            target_key = openai_key
+            target_model = "whisper-1"
+
+        if target_ep and target_key:
+            headers = {"Authorization": f"Bearer {target_key}"}
+            files = {"file": (os.path.basename(norm_path), audio_bytes, mime)}
+            data = {"model": target_model}
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                res = await client.post(target_ep, headers=headers, files=files, data=data)
+                if res.status_code == 200:
+                    whisper_text = (res.json().get("text") or "").strip()
+                    if whisper_text and not is_stt_hallucination(whisper_text):
+                        _log.info(f"[AudioSTT] Successfully transcribed via Whisper ({target_model}): '{whisper_text}'")
+                        return whisper_text
+    except Exception as e_t3:
+        _log.debug(f"[AudioSTT] Tier 3 Whisper fallback notice: {e_t3}")
+
     return None
 
 
 def filter_tts_speech_text(text: str) -> str:
     """
-    Cleans text intended for Text-to-Speech (TTS) / Gemini Live voice synthesis (Hermes Parity).
+    Cleans text intended for Text-to-Speech (TTS) / Gemini Live voice synthesis (Anara Standard).
     Strips raw code blocks, file paths, URLs, markdown symbols, and technical syntax
     so that voice synthesis speaks pure conversational narration without reading out code.
     """
@@ -456,6 +518,9 @@ def filter_tts_speech_text(text: str) -> str:
 
     import re
     s = text
+
+    # 0. Remove thought / reasoning / think blocks completely (Anara Enterprise Architecture)
+    s = re.sub(r"(?is)<(?:thought|think|thinking)>[\s\S]*?</(?:thought|think|thinking)>", "", s)
 
     # 1. Remove entire fenced code blocks (```shell ... ```)
     s = re.sub(r"```[\s\S]*?```", "", s)
@@ -469,7 +534,7 @@ def filter_tts_speech_text(text: str) -> str:
     # 4. Remove URLs
     s = re.sub(r"https?://\S+", "", s)
 
-    # 5. Normalize long file paths to essential filename (language-neutral Hermes Parity)
+    # 5. Normalize long file paths to essential filename (language-neutral Anara Standard)
     def _extract_basename(m):
         raw = m.group(0).replace("\\", "/").rstrip("/.")
         parts = [p for p in raw.split("/") if p]
@@ -493,16 +558,21 @@ def filter_tts_speech_text(text: str) -> str:
     return s
 
 
-_VOICE_RESOLUTION_CACHE: Dict[str, str] = {}
+from collections import OrderedDict
+import threading
+
+_VOICE_CACHE_LOCK = threading.Lock()
+_VOICE_RESOLUTION_CACHE: "OrderedDict[str, str]" = OrderedDict()
+_MAX_VOICE_CACHE = 256
 
 
 async def resolve_tts_voice_model_driven(text: str) -> str:
     """
-    Pure Model-Driven TTS Voice Resolution (Hermes Parity).
-    Uses the auxiliary fast LLM to semantically detect the language of the text
+    Pure Model-Driven TTS Voice Resolution with Fast Heuristics (Anara Standard).
+    Uses fast script detection and auxiliary fast LLM to detect the language of the text
     and select the optimal Microsoft Edge-TTS neural voice identifier dynamically.
     Eliminates developer maintenance of manual language/voice dictionaries.
-    Caches results by language fingerprint for 0ms conversational latency.
+    Caches results with bounded LRU eviction for 0ms conversational latency.
     """
     from config import cfg_get
     default_fallback_voice = str(cfg_get("voice.default", "en-US-AvaNeural"))
@@ -511,8 +581,22 @@ async def resolve_tts_voice_model_driven(text: str) -> str:
         return default_fallback_voice
 
     cache_key = sample[:60].lower()
-    if cache_key in _VOICE_RESOLUTION_CACHE:
-        return _VOICE_RESOLUTION_CACHE[cache_key]
+    with _VOICE_CACHE_LOCK:
+        if cache_key in _VOICE_RESOLUTION_CACHE:
+            _VOICE_RESOLUTION_CACHE.move_to_end(cache_key)
+            return _VOICE_RESOLUTION_CACHE[cache_key]
+
+    # Fast script heuristics (<0.1ms) before network LLM call (Anara Standard)
+    if re.search(r"[\u4e00-\u9fff]", sample):
+        return "zh-CN-XiaoxiaoNeural"
+    if re.search(r"[\u3040-\u30ff]", sample):
+        return "ja-JP-NanamiNeural"
+    if re.search(r"[\uac00-\ud7af]", sample):
+        return "ko-KR-SunHiNeural"
+    if re.search(r"[\u0400-\u04ff]", sample):
+        return "ru-RU-SvetlanaNeural"
+    if re.search(r"[\u0600-\u06ff]", sample):
+        return "ar-SA-ZariyahNeural"
 
     try:
         import asyncio
@@ -528,17 +612,20 @@ async def resolve_tts_voice_model_driven(text: str) -> str:
                 model_id=model_id,
                 user_prompt=user_p,
                 system_instruction=sys_p,
-                max_tokens=None,
+                max_tokens=32,
                 temperature=0.0,
                 read_only=True,
             ),
-            timeout=4.0
+            timeout=2.5
         )
         if isinstance(res, str) and "Neural" in res:
             resolved = res.strip().strip('"\'`')
             for token in resolved.split():
                 if token.endswith("Neural"):
-                    _VOICE_RESOLUTION_CACHE[cache_key] = token
+                    with _VOICE_CACHE_LOCK:
+                        _VOICE_RESOLUTION_CACHE[cache_key] = token
+                        if len(_VOICE_RESOLUTION_CACHE) > _MAX_VOICE_CACHE:
+                            _VOICE_RESOLUTION_CACHE.popitem(last=False)
                     return token
     except Exception as e:
         import logging
@@ -554,7 +641,7 @@ async def synthesize_speech_audio(
 ) -> Optional[str]:
     """
     Synthesizes conversational text into high-quality audio file for Telegram voice notes,
-    WhatsApp PTT, Discord, and Slack (Hermes Parity).
+    WhatsApp PTT, Discord, and Slack (Anara Standard).
     Uses Model-Driven Neural Voice resolution with automatic failover to omnilingual Gemini Audio.
     """
     clean = filter_tts_speech_text(text)
@@ -596,7 +683,7 @@ async def synthesize_speech_audio(
         if client:
             from google.genai import types
             audio_resp = await client.aio.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-2.0-flash",
                 contents=f"Speak this text naturally, matching its language, accent, and tone: {clean}",
                 config=types.GenerateContentConfig(
                     response_modalities=["AUDIO"],
@@ -609,8 +696,7 @@ async def synthesize_speech_audio(
             )
             for part in audio_resp.candidates[0].content.parts:
                 if getattr(part, "inline_data", None) and part.inline_data.data:
-                    with open(target_path, "wb") as fh:
-                        fh.write(part.inline_data.data)
+                    await asyncio.to_thread(lambda: open(target_path, "wb").write(part.inline_data.data))
                     return target_path
     except Exception as e_genai:
         import logging

@@ -1,6 +1,6 @@
 """
 test_skills_hub.py — Unit Tests for Anara 100k+ Skills Hub & Toggle Management.
-Hermes Agent Parity.
+Anara Standard.
 """
 
 import os

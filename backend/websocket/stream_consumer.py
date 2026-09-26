@@ -1,6 +1,6 @@
 """
 agent_runner.py — Autonomous WebSocket Agent Runner for Project Anara.
-Hermes Agent Parity:
+Anara Standard:
 Delegates multi-step ReAct turn execution directly to AnaraExecutionRunner,
 streaming TurnEvents (chunks, thoughts, tool progress, approval prompts)
 directly over WebSocket to the Web Studio & 3D Avatar frontend.
@@ -146,7 +146,7 @@ class AgentRunner:
                 else:
                     agent_mode = "build"
 
-            # 4. Core ReAct Turn Execution via AnaraExecutionRunner (Hermes Parity)
+            # 4. Core ReAct Turn Execution via AnaraExecutionRunner (Anara Standard)
             reply_text = ""
             runner = AnaraExecutionRunner(
                 session_id=sid,

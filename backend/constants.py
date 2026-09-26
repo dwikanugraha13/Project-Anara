@@ -109,7 +109,7 @@ def get_anara_workspace_dir(subdir: str = "") -> Path:
 
 
 def get_anara_skills_dir(subdir: str = "") -> Path:
-    """Returns active user runtime skills directory under ANARA_HOME (Hermes Parity)."""
+    """Returns active user runtime skills directory under ANARA_HOME (Anara Standard)."""
     sd = get_anara_home() / "skills"
     if subdir:
         sd = sd / subdir
@@ -162,7 +162,7 @@ def prune_stale_staging_files(max_age_days: int = 7) -> int:
 
 def get_anara_env_file() -> Optional[Path]:
     """
-    Universal .env discovery (Hermes Parity):
+    Universal .env discovery (Anara Standard):
     1. User Runtime .env: %LOCALAPPDATA%/anara/.env (or ~/.anara/.env)
     2. In-tree backend/.env
     3. Workspace root .env

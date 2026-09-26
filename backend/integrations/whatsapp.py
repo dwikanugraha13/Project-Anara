@@ -5,6 +5,7 @@ import subprocess
 import atexit
 from typing import Any, Dict, List, Optional
 import httpx
+from core.logger import redact_sensitive_text
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +116,7 @@ async def logout_whatsapp() -> Dict[str, Any]:
             if res.status_code == 200:
                 return res.json()
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": redact_sensitive_text(str(e))}
     return {"status": "error", "message": "Failed to connect to WhatsApp bridge."}
 
 
@@ -226,11 +227,11 @@ async def send_whatsapp_message(to: str, message: str) -> Dict[str, Any]:
             else:
                 try:
                     err_json = res.json()
-                    return {"status": "error", "message": err_json.get("message", res.text)}
+                    return {"status": "error", "message": redact_sensitive_text(err_json.get("message", res.text))}
                 except Exception:
-                    return {"status": "error", "message": f"HTTP {res.status_code}: {res.text}"}
+                    return {"status": "error", "message": redact_sensitive_text(f"HTTP {res.status_code}: {res.text}")}
     except Exception as e:
-        return {"status": "error", "message": f"Connection error: {str(e)}"}
+        return {"status": "error", "message": redact_sensitive_text(f"Connection error: {str(e)}")}
 
 
 async def send_whatsapp_document(to: str, file_path: str, caption: Optional[str] = None) -> Dict[str, Any]:
@@ -253,8 +254,8 @@ async def send_whatsapp_document(to: str, file_path: str, caption: Optional[str]
             else:
                 try:
                     err_json = res.json()
-                    return {"status": "error", "message": err_json.get("message", res.text)}
+                    return {"status": "error", "message": redact_sensitive_text(err_json.get("message", res.text))}
                 except Exception:
-                    return {"status": "error", "message": f"HTTP {res.status_code}: {res.text}"}
+                    return {"status": "error", "message": redact_sensitive_text(f"HTTP {res.status_code}: {res.text}")}
     except Exception as e:
-        return {"status": "error", "message": f"Koneksi WhatsApp bridge error: {str(e)}"}
+        return {"status": "error", "message": redact_sensitive_text(f"Koneksi WhatsApp bridge error: {str(e)}")}

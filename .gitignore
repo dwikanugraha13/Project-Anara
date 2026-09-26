@@ -29,3 +29,5 @@ scratch/
 .test_home/
 .pytest_cache/
 *.log
+.hermes/
+.anara/

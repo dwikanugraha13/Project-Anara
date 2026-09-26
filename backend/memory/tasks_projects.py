@@ -12,11 +12,13 @@ class TasksProjectsMixin:
     def save_contact(self, name: str, phone_number: str, platform: str = "whatsapp", notes: Optional[str] = None) -> Dict[str, Any]:
         """Saves or updates a contact mapping."""
         clean_name = (name or "").strip().title()
-        clean_phone = re.sub(r"[^0-9]", "", str(phone_number))
-        if clean_phone.startswith("08"):
-            clean_phone = "628" + clean_phone[2:]
-        elif clean_phone.startswith("8"):
-            clean_phone = "628" + clean_phone[1:]
+        raw_phone = str(phone_number).strip()
+        clean_phone = re.sub(r"[^0-9]", "", raw_phone)
+        if not raw_phone.startswith("+"):
+            if clean_phone.startswith("08"):
+                clean_phone = "628" + clean_phone[2:]
+            elif clean_phone.startswith("8") and len(clean_phone) in (9, 10, 11, 12):
+                clean_phone = "628" + clean_phone[1:]
 
         if not clean_name or len(clean_phone) < 8:
             return {"status": "error", "message": "Name or phone number is invalid."}
@@ -76,10 +78,11 @@ class TasksProjectsMixin:
         raw = target.strip()
         digits = re.sub(r"[^0-9]", "", raw)
         if len(digits) >= 9:
-            if digits.startswith("08"):
-                return "628" + digits[2:]
-            elif digits.startswith("8"):
-                return "628" + digits[1:]
+            if not raw.startswith("+"):
+                if digits.startswith("08"):
+                    return "628" + digits[2:]
+                elif digits.startswith("8") and len(digits) in (9, 10, 11, 12):
+                    return "628" + digits[1:]
             return digits
 
         c = self.get_contact(raw, platform="whatsapp")
@@ -186,6 +189,27 @@ class TasksProjectsMixin:
                 self._emit_mutation("todo_toggled", {"id": note_id})
             return ok
 
+    def toggle_note_completion(self, note_id: int) -> bool:
+        """Canonical alias for brain_routes."""
+        return self.toggle_todo(note_id)
+
+    def update_todo_status(self, note_id: int, status: str) -> bool:
+        """Idempotently updates todo completion status (Anara Standard)."""
+        clean_status = (status or "").strip().lower()
+        is_comp = 1 if clean_status in ("completed", "done", "finish", "finished", "success") else 0
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE notes_and_todos
+                SET is_completed = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (is_comp, note_id))
+            conn.commit()
+            ok = cursor.rowcount > 0
+            if ok:
+                self._emit_mutation("todo_updated", {"id": note_id, "is_completed": is_comp})
+            return ok
+
     def delete_note_or_todo(self, note_id: int) -> bool:
         """Deletes a note or to-do by its ID."""
         with self._get_connection() as conn:
@@ -196,6 +220,10 @@ class TasksProjectsMixin:
             if ok:
                 self._emit_mutation("todo_deleted", {"id": note_id})
             return ok
+
+    def delete_note(self, note_id: int) -> bool:
+        """Canonical alias for brain_routes."""
+        return self.delete_note_or_todo(note_id)
 
     def create_or_update_project(
         self,
@@ -224,10 +252,10 @@ class TasksProjectsMixin:
                 proj_id = existing["id"]
                 cursor.execute("""
                     UPDATE projects
-                    SET tech_stack = COALESCE(NULLIF(?, ''), tech_stack),
-                        goal = COALESCE(NULLIF(?, ''), goal),
-                        status = COALESCE(NULLIF(?, ''), status),
-                        notes = COALESCE(NULLIF(?, ''), notes),
+                    SET tech_stack = ?,
+                        goal = ?,
+                        status = ?,
+                        notes = ?,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                 """, (tech_stack.strip(), goal.strip(), status.strip().lower(), notes.strip(), proj_id))
@@ -246,6 +274,25 @@ class TasksProjectsMixin:
                 "status": status.strip().lower()
             })
             return proj_id
+
+    def save_project(
+        self,
+        name: str,
+        speaker_name: Optional[str] = None,
+        tech_stack: str = "",
+        goal: str = "",
+        status: str = "active",
+        notes: str = ""
+    ) -> int:
+        """Canonical alias for brain_routes."""
+        return self.create_or_update_project(
+            name=name,
+            speaker_name=speaker_name,
+            tech_stack=tech_stack,
+            goal=goal,
+            status=status,
+            notes=notes
+        )
 
     def get_projects_for_speaker(self, speaker_name: Optional[str] = None) -> List[Dict[str, Any]]:
         """Retrieves active projects for a speaker."""
@@ -267,12 +314,20 @@ class TasksProjectsMixin:
             return [dict(r) for r in cursor.fetchall()]
 
     def delete_project(self, project_id: int) -> bool:
-        """Deletes a project by its primary key."""
+        """Deletes a project by its primary key and purges its vector embeddings."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            cursor.execute("SELECT name FROM projects WHERE id = ?", (project_id,))
+            p_row = cursor.fetchone()
+            p_name = p_row["name"] if p_row else None
             cursor.execute("DELETE FROM projects WHERE id = ?", (project_id,))
-            conn.commit()
             ok = cursor.rowcount > 0
+            if p_name:
+                try:
+                    cursor.execute("DELETE FROM memory_embeddings WHERE source_type = 'project' AND source_id = ?", (p_name,))
+                except Exception:
+                    pass
+            conn.commit()
             if ok:
                 self._emit_mutation("project_deleted", {"id": project_id})
             return ok

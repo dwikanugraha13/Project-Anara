@@ -18,8 +18,12 @@ _HEADERS = {
     "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
+import asyncio
+
+_MEDIA_CACHE_LOCK = asyncio.Lock()
 _MEDIA_CACHE: Dict[str, List[Dict[str, Any]]] = {}
 _MEDIA_CACHE_MAX = 64
+_VIDEO_ID_REGEX = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
 
 def _parse_duration_text(item: Dict[str, Any]) -> str:
@@ -30,12 +34,18 @@ def _parse_duration_text(item: Dict[str, Any]) -> str:
             txt = node.get("simpleText")
             if txt:
                 return str(txt)
+            runs = node.get("runs") or []
+            if runs:
+                return "".join(r.get("text", "") for r in runs if isinstance(r, dict))
     overlays = item.get("thumbnailOverlays") or []
     for ov in overlays:
         st = (ov or {}).get("thumbnailOverlayTimeStatusRenderer") or {}
         txt = (st.get("text") or {}).get("simpleText")
         if txt:
             return str(txt)
+        runs = (st.get("text") or {}).get("runs") or []
+        if runs:
+            return "".join(r.get("text", "") for r in runs if isinstance(r, dict))
     return ""
 
 
@@ -62,14 +72,35 @@ def _duration_to_seconds(text: str) -> int:
 
 
 def _extract_renderers(html: str) -> List[Dict[str, Any]]:
-    m = re.search(r"var ytInitialData\s*=\s*(\{.*?\});</script>", html, re.DOTALL)
-    if not m:
-        m = re.search(r'ytInitialData"\]\s*=\s*(\{.*?\});', html, re.DOTALL)
-    if not m:
+    """Balanced bracket JSON extractor (avoids ReDoS on multi-MB strings, Anara Standard)."""
+    marker = "var ytInitialData ="
+    idx = html.find(marker)
+    if idx == -1:
+        marker = 'ytInitialData"] ='
+        idx = html.find(marker)
+    if idx == -1:
         return []
+
+    start = html.find("{", idx)
+    if start == -1:
+        return []
+
+    brace_count = 0
+    end = -1
+    for i in range(start, min(start + 2500000, len(html))):
+        if html[i] == "{":
+            brace_count += 1
+        elif html[i] == "}":
+            brace_count -= 1
+            if brace_count == 0:
+                end = i + 1
+                break
+    if end == -1:
+        return []
+
     try:
-        data = json.loads(m.group(1))
-    except json.JSONDecodeError:
+        data = json.loads(html[start:end])
+    except Exception:
         return []
 
     renderers: List[Dict[str, Any]] = []
@@ -79,9 +110,13 @@ def _extract_renderers(html: str) -> List[Dict[str, Any]]:
             if "videoRenderer" in node and isinstance(node["videoRenderer"], dict):
                 renderers.append(node["videoRenderer"])
             for v in node.values():
+                if len(renderers) >= 25:
+                    break
                 walk(v)
         elif isinstance(node, list):
             for v in node:
+                if len(renderers) >= 25:
+                    break
                 walk(v)
 
     walk(data)
@@ -90,7 +125,7 @@ def _extract_renderers(html: str) -> List[Dict[str, Any]]:
 
 def _renderer_to_track(vr: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     video_id = vr.get("videoId")
-    if not video_id:
+    if not video_id or not _VIDEO_ID_REGEX.match(str(video_id)):
         return None
 
     title = ""
@@ -141,8 +176,9 @@ async def search_youtube(query: str, kind: str = "music", limit: int = 5) -> Lis
 
     search_query = f"{q} official audio" if kind == "music" else q
     cache_key = f"{kind}::{search_query.lower()}"
-    if cache_key in _MEDIA_CACHE:
-        return _MEDIA_CACHE[cache_key][:limit]
+    async with _MEDIA_CACHE_LOCK:
+        if cache_key in _MEDIA_CACHE:
+            return _MEDIA_CACHE[cache_key][:limit]
 
     url = (
         "https://www.youtube.com/results?search_query="
@@ -184,9 +220,15 @@ async def search_youtube(query: str, kind: str = "music", limit: int = 5) -> Lis
             break
 
     if tracks:
-        if len(_MEDIA_CACHE) >= _MEDIA_CACHE_MAX:
-            _MEDIA_CACHE.clear()
-        _MEDIA_CACHE[cache_key] = tracks
+        async with _MEDIA_CACHE_LOCK:
+            if len(_MEDIA_CACHE) >= _MEDIA_CACHE_MAX:
+                # FIFO / LRU eviction: pop oldest entry instead of clearing entire cache
+                try:
+                    oldest_k = next(iter(_MEDIA_CACHE))
+                    _MEDIA_CACHE.pop(oldest_k, None)
+                except Exception:
+                    _MEDIA_CACHE.clear()
+            _MEDIA_CACHE[cache_key] = tracks
         logger.info(f"[MediaEngine] Found {len(tracks)} {kind} result(s) for {q!r} — top: {tracks[0]['title']!r}")
     else:
         logger.warning(f"[MediaEngine] No {kind} results parsed for {q!r}")

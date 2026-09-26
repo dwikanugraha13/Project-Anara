@@ -49,35 +49,25 @@ async def sse_telemetry_stream(session_id: str):
 
 @router.websocket("/ws/telemetry/{session_id}")
 async def websocket_telemetry(websocket: WebSocket, session_id: str):
-    """Two-way WebSocket streaming endpoint for live HUD widgets."""
+    """Two-way WebSocket streaming endpoint for live HUD widgets (decoupled telemetry & ping pump)."""
     await websocket.accept()
     clean_sid = str(session_id or "default")
     queue = telemetry_bus.subscribe(clean_sid)
 
-    try:
+    async def _send_pump():
         await websocket.send_json({"event_type": "connected", "session_id": clean_sid})
         while True:
-            # Wait for either incoming telemetry event or client ping
-            event_task = asyncio.create_task(queue.get())
-            recv_task = asyncio.create_task(websocket.receive_text())
-            done, pending = await asyncio.wait(
-                [event_task, recv_task],
-                return_when=asyncio.FIRST_COMPLETED,
-            )
+            event = await queue.get()
+            await websocket.send_json(event.to_dict())
 
-            for task in pending:
-                task.cancel()
+    async def _recv_pump():
+        while True:
+            msg = await websocket.receive_text()
+            if msg == "ping":
+                await websocket.send_text("pong")
 
-            if event_task in done:
-                event = event_task.result()
-                await websocket.send_json(event.to_dict())
-
-            if recv_task in done:
-                # Client message (ping / acknowledge)
-                client_msg = recv_task.result()
-                if client_msg == "ping":
-                    await websocket.send_text("pong")
-
+    try:
+        await asyncio.gather(_send_pump(), _recv_pump())
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass
     except Exception as e:

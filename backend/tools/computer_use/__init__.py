@@ -1,6 +1,6 @@
 """
 computer_use package — Universal OS Desktop Control via cua-driver.
-Hermes Agent Parity.
+Anara Standard.
 """
 from typing import Any, Dict
 

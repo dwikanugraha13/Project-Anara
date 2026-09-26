@@ -1,5 +1,5 @@
 """
-command_hub.py — Unified System Command Dispatcher for Project Anara (Hermes Parity).
+command_hub.py — Unified System Command Dispatcher for Project Anara (Anara Standard).
 Anara Standard Unified Command Hub:
 1. Single Source of Truth for all slash commands across all surfaces
    (Telegram, WhatsApp, Web Studio, Discord, and CLI Terminal).
@@ -405,6 +405,13 @@ async def _handle_cmd_workspace(ctx: UniversalCommandContext) -> UniversalComman
 async def _handle_cmd_clear(ctx: UniversalCommandContext) -> UniversalCommandResponse:
     from core.session_manager import session_state_manager
     session_state_manager.clear_pending(ctx.channel, ctx.channel_id)
+    if ctx.session_id:
+        try:
+            from memory import memory_engine
+            if hasattr(memory_engine, "clear_session_history"):
+                memory_engine.clear_session_history(ctx.session_id)
+        except Exception:
+            pass
     text = (
         "🧹 <b>Session Cleared!</b>\n\n"
         "Active turn history has been reset and pending plans cleared. "
@@ -426,6 +433,15 @@ async def _handle_cmd_stop(ctx: UniversalCommandContext) -> UniversalCommandResp
         channel_id=ctx.channel_id,
         reason="user_stop"
     )
+    if ctx.session_id:
+        try:
+            await session_state_manager.request_hard_interrupt(
+                channel=ctx.channel,
+                channel_id=str(ctx.session_id),
+                reason="user_stop"
+            )
+        except Exception:
+            pass
 
     try:
         from tools.browser_tools import _tool_browser_close
@@ -546,7 +562,14 @@ async def handle_channel_command(req: Any) -> Optional[Any]:
     if not resp:
         return None
     if resp.handled_silently:
-        return None
+        from core.channel_adapter import ChannelResponse
+        return ChannelResponse(
+            text="",
+            session_id=getattr(req, "session_id", 0) or 0,
+            mode="conversational",
+            status="handled_silently",
+            is_command=True,
+        )
 
     from core.channel_adapter import ChannelResponse
     sess_id = getattr(req, "session_id", 0) or 0

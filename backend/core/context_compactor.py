@@ -12,18 +12,68 @@ logger = logging.getLogger(__name__)
 
 
 def prune_tool_output(content: str, max_chars: int = 1500) -> str:
-    """Anara Standard: Prunes massive code or tool outputs inside context history (language-neutral Hermes Parity)."""
-    if len(content) <= max_chars:
-        return content
-    if "```" in content:
-        return re.sub(r"```[\s\S]*?```", "[... truncated output ...]", content)
-    head = max_chars // 2
-    tail = max_chars - head
-    return content[:head] + "\n[... truncated output ...]\n" + content[-tail:]
+    """
+    Structured head/tail windowing snapped to line boundaries with disk spillover (Anara Enterprise Architecture).
+    Preserves diagnostic stack traces, compiler errors, and exit codes without unverified regex code block wiping.
+    """
+    if not content or len(content) <= max_chars:
+        return content or ""
+
+    raw_text = str(content)
+    raw_len = len(raw_text)
+
+    # Disk spillover for oversized outputs (> 2,000 chars)
+    disk_pointer = ""
+    if raw_len > 2000:
+        try:
+            from constants import get_anara_logs_dir
+            import uuid
+            log_dir = get_anara_logs_dir("tool_logs")
+            log_dir.mkdir(parents=True, exist_ok=True)
+            spill_file = log_dir / f"pruned_{uuid.uuid4().hex[:8]}.log"
+            spill_file.write_text(raw_text, encoding="utf-8", errors="replace")
+            disk_pointer = f" — full output ({raw_len:,} chars, {raw_text.count(chr(10))+1:,} lines) saved to: {spill_file}"
+        except Exception:
+            disk_pointer = f" — {raw_len:,} chars omitted"
+
+    lines = raw_text.splitlines()
+    if len(lines) > 2:
+        # Snap to line boundaries
+        head_budget = int(max_chars * 0.55)
+        tail_budget = max_chars - head_budget
+
+        head_lines = []
+        head_chars = 0
+        for line in lines:
+            if head_chars + len(line) + 1 > head_budget and head_lines:
+                break
+            head_lines.append(line)
+            head_chars += len(line) + 1
+
+        tail_lines = []
+        tail_chars = 0
+        for line in reversed(lines):
+            if tail_chars + len(line) + 1 > tail_budget and tail_lines:
+                break
+            tail_lines.append(line)
+            tail_chars += len(line) + 1
+        tail_lines.reverse()
+
+        omitted_lines = max(0, len(lines) - len(head_lines) - len(tail_lines))
+        head_block = "\n".join(head_lines)
+        tail_block = "\n".join(tail_lines)
+        return f"{head_block}\n[... truncated output ({omitted_lines} lines omitted{disk_pointer}) ...]\n{tail_block}"
+    else:
+        # Single-line or short content truncation
+        head_chars = int(max_chars * 0.6)
+        tail_chars = max_chars - head_chars
+        return f"{raw_text[:head_chars]}\n[... truncated output{disk_pointer} ...]\n{raw_text[-tail_chars:]}"
 
 
 def estimate_tokens(text: str) -> int:
     """Estimates token count. Uses tiktoken if available, otherwise heuristic."""
+    if not text:
+        return 0
     try:
         from core.token_budget import count_tokens
         return count_tokens(text)
@@ -38,7 +88,7 @@ class ContextCompactor:
     @classmethod
     def normalize_history(cls, history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Normalizes conversation history into strictly chronological, cleanly paired turns (Hermes Parity).
+        Normalizes conversation history into strictly chronological, cleanly paired turns (Anara Standard).
         - Detects newest-first SQL results (id descending) and inverts them to chronological order (oldest-first).
         - Re-stitches orphaned half-turns (e.g. user_text without ai_text followed by ai_text without user_text).
         - Discards internal websocket JSON control frames.

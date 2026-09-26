@@ -73,6 +73,48 @@ async def gateway_login(req: GatewayLoginRequest):
 
 
 @router.post("/api/gateway/logout")
-async def gateway_logout():
-    """Logs out from gateway session."""
-    return {"status": "success", "message": "Gateway session closed."}
+async def gateway_logout(request: Request):
+    """Logs out and revokes the gateway session token."""
+    auth_header = request.headers.get("authorization") or ""
+    token = ""
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+    elif request.query_params.get("token"):
+        token = request.query_params.get("token", "").strip()
+
+    if token:
+        try:
+            from memory import memory_engine
+            with memory_engine._get_connection() as conn:
+                conn.execute("DELETE FROM app_settings WHERE key = ?", (f"gateway_session_{token}",))
+                conn.commit()
+            logger.info(f"[Gateway] Revoked session token: {token[:8]}...")
+        except Exception as e:
+            logger.debug(f"[Gateway] Token revocation error: {e}")
+
+    return {"status": "success", "message": "Gateway session closed and token revoked."}
+
+
+# ── Cloudflare Tunnel Management ──
+
+@router.get("/api/gateway/tunnel")
+async def get_gateway_tunnel_endpoint():
+    """Returns the live status of the Cloudflare Quick Tunnel."""
+    from core.tunnel_manager import get_tunnel_status
+    return get_tunnel_status()
+
+
+@router.post("/api/gateway/tunnel/start")
+async def start_gateway_tunnel_endpoint(port: int = 3000):
+    """Starts a Cloudflare Quick Tunnel forwarding to local port."""
+    from core.tunnel_manager import start_quick_tunnel
+    res = await start_quick_tunnel(port=port)
+    return res
+
+
+@router.post("/api/gateway/tunnel/stop")
+async def stop_gateway_tunnel_endpoint():
+    """Terminates active Cloudflare tunnel."""
+    from core.tunnel_manager import stop_tunnel
+    ok = stop_tunnel()
+    return {"status": "success" if ok else "stopped", "is_running": False}

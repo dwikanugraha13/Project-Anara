@@ -26,6 +26,7 @@ class SessionPatchRequest(BaseModel):
     title: Optional[str] = None
     is_pinned: Optional[bool] = None
     is_archived: Optional[bool] = None
+    session_mode: Optional[str] = None
 
 class PlanProposalRequest(BaseModel):
     title: str
@@ -62,8 +63,14 @@ async def get_session_endpoint(session_id: int):
 
 @router.patch("/api/chat/sessions/{session_id}")
 async def patch_session_endpoint(session_id: int, req: SessionPatchRequest):
-    """Renames, pins or archives a thread."""
-    ok = memory_engine.patch_session(session_id, title=req.title, is_pinned=req.is_pinned, is_archived=req.is_archived)
+    """Renames, pins, archives, or switches mode of a thread."""
+    ok = memory_engine.patch_session(
+        session_id,
+        title=req.title,
+        is_pinned=req.is_pinned,
+        is_archived=req.is_archived,
+        session_mode=req.session_mode
+    )
     if not ok:
         raise HTTPException(status_code=400, detail="Session not found or no changes applied")
     return {"status": "success", "session": memory_engine.get_session(session_id)}

@@ -14,6 +14,8 @@ import os
 from pathlib import Path
 import re
 import shutil
+import tempfile
+import threading
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 import yaml
@@ -23,10 +25,52 @@ logger = logging.getLogger(__name__)
 from constants import get_anara_skills_dir, get_bundled_skills_dir
 from core.skills_sync import sync_bundled_skills
 
+WINDOWS_RESERVED_NAMES = {
+    "con", "prn", "aux", "nul",
+    *(f"com{i}" for i in range(1, 10)),
+    *(f"lpt{i}" for i in range(1, 10)),
+}
+MAX_SKILL_FILE_BYTES = 1_048_576  # 1 MiB cap (Anara Standard)
+
+
+def atomic_write_text(path: Path, content: str, encoding: str = "utf-8") -> None:
+    """Writes content atomically to destination path using temporary file replace (Anara Standard)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_fd, temp_path = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.tmp")
+    try:
+        with os.fdopen(temp_fd, "w", encoding=encoding) as f:
+            f.write(content)
+        os.replace(temp_path, str(path))
+    except Exception:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+        raise
+
+
+def _safe_rmtree(path: Path | str) -> None:
+    """Removes a directory tree, resetting read-only attributes on Windows if needed (Anara Standard)."""
+    def _handle_readonly(func, fpath, exc_info):
+        try:
+            import stat
+            os.chmod(fpath, stat.S_IWRITE | stat.S_IWUSR | stat.S_IRWXU)
+            func(fpath)
+        except Exception:
+            pass
+
+    try:
+        shutil.rmtree(path, onexc=lambda fn, p, exc: _handle_readonly(fn, p, (type(exc), exc, None)))
+    except TypeError:
+        shutil.rmtree(path, onerror=_handle_readonly)
+    except Exception:
+        shutil.rmtree(path, ignore_errors=True)
+
 
 def _resolve_skills_root() -> str:
     """
-    Resolves the active user runtime skills directory with auto-seeding (Hermes Parity).
+    Resolves the active user runtime skills directory with auto-seeding (Anara Standard).
     Pristine bundled templates in Git (backend/skills/) are mirrored to runtime (ANARA_HOME/skills/).
     """
     try:
@@ -41,17 +85,21 @@ SKILLS_DIR = _resolve_skills_root()
 
 
 def slugify(text: str) -> str:
-    """Creates a filesystem-safe folder slug from skill name."""
+    """Creates a filesystem-safe folder slug from skill name, avoiding Windows reserved names."""
     s = text.lower().strip()
     s = re.sub(r"[^\w\s-]", "", s)
     s = re.sub(r"[\s_-]+", "-", s)
-    return s.strip("-") or "skill"
+    clean_s = s.strip("-") or "skill"
+    if clean_s in WINDOWS_RESERVED_NAMES:
+        clean_s = f"{clean_s}_skill"
+    return clean_s
 
 
 class SkillLibraryManager:
-    """Manages the agentskills.io folder-based skill repository with progressive disclosure (Hermes Parity)."""
+    """Manages the agentskills.io folder-based skill repository with progressive disclosure (Anara Standard)."""
 
     def __init__(self, root_dir: Optional[str] = None):
+        self._lock = threading.RLock()
         self._root_dir = root_dir
         self._skills_cache: List[Dict[str, Any]] = []
         self._cache_mtime: float = 0.0
@@ -64,12 +112,18 @@ class SkillLibraryManager:
 
     @root_dir.setter
     def root_dir(self, val: str):
-        self._root_dir = val
-        self._invalidate_cache()
+        with self._lock:
+            self._root_dir = val
+            self._invalidate_cache()
 
     def _invalidate_cache(self):
-        self._cache_mtime = 0.0
-        self._skills_cache.clear()
+        with self._lock:
+            self._cache_mtime = 0.0
+            self._skills_cache.clear()
+
+    def invalidate_cache(self):
+        """Public alias for external cache invalidation (skills_hub parity)."""
+        self._invalidate_cache()
 
     def parse_skill_file(self, skill_md_path: str) -> Optional[Dict[str, Any]]:
         """Parses frontmatter and body markdown from a SKILL.md file."""
@@ -159,13 +213,26 @@ Use this skill when requested or when detecting tasks with keywords: {', '.join(
         yaml_str = yaml.dump(frontmatter, sort_keys=False, allow_unicode=True).strip()
         full_content = f"---\n{yaml_str}\n---\n\n{body}"
 
+        # Security verification before saving (Hermes skills_guard parity)
+        from core.skills_hub import validate_skill_content_safety
+        is_safe, threat = validate_skill_content_safety(full_content)
+        if not is_safe:
+            logger.warning(f"[SkillLibrary] Refused to save unsafe skill '{name}': {threat}")
+            return {
+                "ok": False,
+                "error": f"Security verification failed: {threat}",
+                "name": name,
+                "slug": slug,
+            }
+
         skill_file = os.path.join(folder, "SKILL.md")
-        with open(skill_file, "w", encoding="utf-8") as f:
-            f.write(full_content)
+        with self._lock:
+            atomic_write_text(Path(skill_file), full_content)
+            self._invalidate_cache()
 
         logger.info(f"[SkillLibrary] Saved skill '{name}' ({status}) to {skill_file}")
 
-        # Mirror to SQLite database if legacy table exists (Hermes Parity)
+        # Mirror to SQLite database if legacy table exists (Anara Standard)
         try:
             from memory import memory_engine
             if hasattr(memory_engine, "add_agent_skill"):
@@ -190,32 +257,43 @@ Use this skill when requested or when detecting tasks with keywords: {', '.join(
             "file_path": skill_file,
         }
 
+    def _compute_scan_signature(self) -> float:
+        """Computes composite mtime signature across root and all skill directories (Anara Standard)."""
+        try:
+            total_mtime = os.path.getmtime(self.root_dir)
+            for skill_path in Path(self.root_dir).rglob("SKILL.md"):
+                if any(part.startswith(".") for part in skill_path.parts):
+                    continue
+                try:
+                    total_mtime = max(total_mtime, skill_path.stat().st_mtime)
+                except Exception:
+                    pass
+            return total_mtime
+        except Exception:
+            return 0.0
+
     def list_skills(self, status_filter: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Scans runtime skills directory with mtime caching (Hermes Parity)."""
+        """Scans runtime skills directory with dynamic mtime signature caching (Anara Standard)."""
         if not os.path.isdir(self.root_dir):
             return []
 
-        try:
-            curr_mtime = os.path.getmtime(self.root_dir)
-        except Exception:
-            curr_mtime = 0.0
+        with self._lock:
+            curr_sig = self._compute_scan_signature()
+            if self._cache_mtime == curr_sig and self._skills_cache:
+                cached_results = list(self._skills_cache)
+            else:
+                results = []
+                for skill_path in Path(self.root_dir).rglob("SKILL.md"):
+                    # Exclude hidden directories (like .hub, .git)
+                    if any(part.startswith(".") for part in skill_path.parts):
+                        continue
+                    parsed = self.parse_skill_file(str(skill_path))
+                    if parsed:
+                        results.append(parsed)
 
-        if self._cache_mtime == curr_mtime and self._skills_cache:
-            cached_results = self._skills_cache
-        else:
-            results = []
-            from pathlib import Path
-            for skill_path in Path(self.root_dir).rglob("SKILL.md"):
-                # Exclude hidden directories (like .hub, .git)
-                if any(part.startswith(".") for part in skill_path.parts):
-                    continue
-                parsed = self.parse_skill_file(str(skill_path))
-                if parsed:
-                    results.append(parsed)
-
-            self._skills_cache = sorted(results, key=lambda s: s.get("name", ""))
-            self._cache_mtime = curr_mtime
-            cached_results = self._skills_cache
+                self._skills_cache = sorted(results, key=lambda s: s.get("name", ""))
+                self._cache_mtime = curr_sig
+                cached_results = list(self._skills_cache)
 
         if status_filter and status_filter != "all":
             return [s for s in cached_results if s.get("status") == status_filter]
@@ -231,7 +309,7 @@ Use this skill when requested or when detecting tasks with keywords: {', '.join(
 
     def toggle_skill(self, slug: str, enabled: Optional[bool] = None) -> Optional[Dict[str, Any]]:
         """
-        Toggles a skill between 'active' and 'disabled' (Hermes Parity).
+        Toggles a skill between 'active' and 'disabled' (Anara Standard).
         Disabled skills remain safely on disk but are hidden from the agent prompt manifest.
         """
         skill = self.get_skill(slug)
@@ -257,21 +335,30 @@ Use this skill when requested or when detecting tasks with keywords: {', '.join(
         return skill
 
     def get_skill_file(self, skill_name_or_slug: str, relative_file_path: str) -> Optional[Dict[str, Any]]:
-        """Retrieves a sub-resource file with path traversal protection (Claude Code & Hermes Parity)."""
+        """Retrieves a sub-resource file with path traversal and size limits (Anara Enterprise Architecture)."""
+        clean_rel = (relative_file_path or "").strip().replace("\\", "/")
+        if not clean_rel or clean_rel.startswith("/") or ".." in clean_rel.split("/"):
+            logger.warning(f"[SkillLibrary] Blocked path traversal attempt in skill file: {relative_file_path}")
+            return None
+
         skill = self.get_skill(skill_name_or_slug)
         if not skill:
             return None
         folder_path = Path(os.path.dirname(skill["file_path"])).resolve()
-        target_path = Path(os.path.join(str(folder_path), relative_file_path)).resolve()
+        target_path = Path(os.path.join(str(folder_path), clean_rel)).resolve()
         try:
             if not target_path.is_relative_to(folder_path) or not target_path.is_file():
                 return None
         except AttributeError:
             if not str(target_path).startswith(str(folder_path) + os.sep) or not target_path.is_file():
                 return None
+
         try:
+            if target_path.stat().st_size > MAX_SKILL_FILE_BYTES:
+                logger.warning(f"[SkillLibrary] Refused to read file exceeding limit: {target_path}")
+                return None
             with open(target_path, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read()
+                content = f.read(MAX_SKILL_FILE_BYTES)
             return {
                 "skill_name": skill["name"],
                 "file_path": relative_file_path,
@@ -291,30 +378,60 @@ Use this skill when requested or when detecting tasks with keywords: {', '.join(
             return False
 
         parsed["status"] = "active"
-        return self._rewrite_status(skill_file, "active")
+        ok = self._rewrite_status(skill_file, "active")
+        if ok:
+            self._invalidate_cache()
+        return ok
 
     def reject_skill(self, slug: str, delete_folder: bool = True) -> bool:
-        """Rejects and optionally deletes a skill folder."""
-        folder = os.path.join(self.root_dir, slug)
+        """Rejects and optionally deletes a skill folder with root protection (Anara Standard)."""
+        clean_slug = (slug or "").strip().lower()
+        if not clean_slug or any(c in clean_slug for c in ("/", "\\", "..")) or clean_slug in {".", "~"}:
+            return False
+
+        root_p = Path(self.root_dir).resolve()
+        target_dir = (root_p / clean_slug).resolve()
+
+        if target_dir == root_p or not target_dir.is_relative_to(root_p):
+            return False
+
+        folder = str(target_dir)
         if not os.path.isdir(folder):
             return False
+
         if delete_folder:
-            shutil.rmtree(folder, ignore_errors=True)
+            # Refuse to delete category bucket folders that do not own their own SKILL.md
+            if not (target_dir / "SKILL.md").is_file():
+                return False
+            _safe_rmtree(target_dir)
+            self._invalidate_cache()
             logger.info(f"[SkillLibrary] Deleted skill folder: {folder}")
             return True
+
         skill_file = os.path.join(folder, "SKILL.md")
-        return self._rewrite_status(skill_file, "rejected")
+        ok = self._rewrite_status(skill_file, "rejected")
+        if ok:
+            self._invalidate_cache()
+        return ok
 
     def _rewrite_status(self, skill_file: str, new_status: str) -> bool:
+        """Safely updates status in YAML frontmatter block only (Anara Standard)."""
         try:
             with open(skill_file, "r", encoding="utf-8") as f:
                 content = f.read()
-            if re.search(r"(?m)^status:\s*['\"]?\w+['\"]?", content):
-                updated = re.sub(r"(?m)^status:\s*['\"]?\w+['\"]?", f"status: {new_status}", content)
+
+            fm_match = re.match(r"^(---\s*\n)(.*?)(\n---\s*\n)(.*)$", content, re.DOTALL)
+            if fm_match:
+                head, fm_body, sep, body = fm_match.groups()
+                if re.search(r"(?m)^status:\s*.*$", fm_body):
+                    new_fm = re.sub(r"(?m)^status:\s*.*$", f"status: {new_status}", fm_body)
+                else:
+                    new_fm = f"status: {new_status}\n" + fm_body
+                updated = f"{head}{new_fm}{sep}{body}"
             else:
-                updated = re.sub(r"^---\s*\n", f"---\nstatus: {new_status}\n", content)
-            with open(skill_file, "w", encoding="utf-8") as f:
-                f.write(updated)
+                updated = f"---\nstatus: {new_status}\n---\n\n{content}"
+
+            atomic_write_text(Path(skill_file), updated)
             return True
         except Exception as e:
             logger.error(f"[SkillLibrary] Error updating status in {skill_file}: {e}")
@@ -322,7 +439,7 @@ Use this skill when requested or when detecting tasks with keywords: {', '.join(
 
     def get_prompt_manifest(self, user_task: Optional[str] = None) -> str:
         """
-        True Progressive Disclosure Engine (Claude Code & Hermes Parity):
+        True Progressive Disclosure Engine (Anara Enterprise Architecture):
         Provides an active skills catalog index without prompt body stuffing.
         Full instructions are loaded strictly on demand via the skill_view tool.
         """

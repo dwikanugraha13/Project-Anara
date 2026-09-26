@@ -1,5 +1,5 @@
 """
-token_budget.py — Token Budget Tracker for Project Anara (Hermes/Claude Code Parity).
+token_budget.py — Token Budget Tracker for Project Anara (Hermes/Anara Standard).
 
 Provides model-aware token counting and budget enforcement for:
 1. ReAct loop iteration budget (caller.py) — stops before context overflow
@@ -39,7 +39,7 @@ _MODEL_CONTEXT_WINDOWS: List[Tuple[str, int, int]] = [
     ("o3",                     200_000, 100_000),
     ("o4-mini",                200_000, 100_000),
     ("o1",                     200_000, 100_000),
-    ("gpt-4.1",               1_047_576, 32_768),
+    ("gpt-4.1",               1_048_576, 32_768),
     ("gpt-4o",                 128_000, 16_384),
     ("gpt-4-turbo",            128_000, 4_096),
     ("gpt-4",                    8_192, 4_096),
@@ -82,22 +82,32 @@ _DYNAMIC_CONTEXT_CACHE: Dict[str, Tuple[int, int]] = {}
 
 def parse_context_limit_from_error(error_msg: str) -> Optional[int]:
     """
-    Hermes Agent Parity (agent/model_metadata.py:parse_context_limit_from_error):
+    Anara Standard (agent/model_metadata.py:parse_context_limit_from_error):
     Extracts context limit quoted dynamically in a provider error message.
     Handles vLLM, OpenRouter, Google Gemini, Anthropic, and OpenAI error formats.
+    Guards against output generation caps erroneously overwriting context windows.
     """
     if not error_msg:
         return None
     error_lower = str(error_msg).lower()
+
+    # Never mistake an output generation cap for total context window! (Anara Standard)
+    output_cap_signatures = (
+        "output limit", "output tokens", "output token", "completion tokens",
+        "max_output_tokens", "generation limit", "max completion tokens", "output token limit"
+    )
+    if any(sig in error_lower for sig in output_cap_signatures) and not any(k in error_lower for k in ("context", "max_model_len", "model length", "total")):
+        return None
+
     patterns = (
         r'max_model_len\s*(?:is\s*)?[:=(]?\s*(\d{4,})',          # vLLM
         r'maximum model length\s*(?:is\s*)?[:=(]?\s*(\d{4,})',  # vLLM alt
         r'(?:max(?:imum)?|limit)\s*(?:context\s*)?(?:length|size|window)?\s*(?:is|of|:)?\s*(\d{4,})',
         r'context\s*(?:length|size|window)\s*(?:is|of|:)?\s*(\d{4,})',
-        r'(\d{4,})\s*(?:token)?\s*(?:context|limit)',
         r'>\s*(\d{4,})\s*(?:max|limit|token)',                 # "250000 tokens > 200000 maximum"
         r'(\d{4,})\s*(?:max(?:imum)?)\b',                     # "200000 maximum"
         r'supports?\s+(?:only\s+)?up\s+to\s+(\d{4,})',        # Gemini: "only supports up to 32768"
+        r'(\d{4,})\s*(?:token)?\s*(?:context|limit)',
     )
     for pattern in patterns:
         m = re.search(pattern, error_lower)
@@ -116,7 +126,7 @@ def _clean_model_key(model: str, base_url: str = "") -> str:
 
 def save_context_length(model: str, length: int, max_output: Optional[int] = None, base_url: str = "") -> None:
     """
-    Persists a dynamically discovered or error-learned context window limit (Hermes Parity).
+    Persists a dynamically discovered or error-learned context window limit (Anara Standard).
     Zero manual configuration required: model limits are saved across server runs.
     """
     if not model or length <= 0:
@@ -135,10 +145,12 @@ def save_context_length(model: str, length: int, max_output: Optional[int] = Non
         if lengths_dict.get(key) != length:
             lengths_dict[key] = length
             current_cfg["context_lengths"] = lengths_dict
-            import yaml
+            import yaml, tempfile
             os.makedirs(cfg_path.parent, exist_ok=True)
-            with open(cfg_path, "w", encoding="utf-8") as f:
+            tmp_fd, tmp_path = tempfile.mkstemp(dir=cfg_path.parent, prefix="ctx_cache_", suffix=".tmp")
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
                 yaml.safe_dump(current_cfg, f, default_flow_style=False)
+            os.replace(tmp_path, cfg_path)
             logger.info(f"[TokenBudget] Persisted learned context window: {key} -> {length:,} tokens (out={out_cap:,})")
     except Exception as e:
         logger.debug(f"[TokenBudget] Cache persist notice: {e}")
@@ -212,7 +224,7 @@ def _infer_context_from_model_name(clean_model_id: str) -> Optional[Tuple[int, i
 def get_model_context_window(model_id: str, base_url: str = "") -> Tuple[int, int]:
     """
     Returns (context_window_tokens, max_output_tokens) for a model.
-    Hermes & Claude Code Parity 4-Tier Dynamic Resolution:
+    Anara Enterprise Architecture 4-Tier Dynamic Resolution:
     1. Persistent Context Cache (context_length_cache.yaml + live memory)
     2. Model Context Registry prefix match
     3. Model Name Token Heuristics (1m, 128k, etc.)
@@ -301,44 +313,63 @@ def _get_tiktoken_encoding():
     return _tiktoken_encoding
 
 
+_CJK_DENSE_RE = re.compile(
+    r"[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\ufe30-\ufe4f\uff00-\uffef]"
+)
+
+
 def count_tokens(text: str) -> int:
     """
     Counts tokens in a text string.
-    Uses tiktoken cl100k_base if available, otherwise falls back to a calibrated heuristic.
+    Uses tiktoken cl100k_base if available, otherwise falls back to calibrated CJK/byte heuristic (Anara Standard).
     """
     if not text:
         return 0
     enc = _get_tiktoken_encoding()
     if enc is not None:
         try:
-            return len(enc.encode(text, disallowed_special=()))
+            return len(enc.encode(str(text), disallowed_special=()))
         except Exception:
             pass
-    # Heuristic fallback: 1 token ≈ 3.4 characters (tuned for English + code + multilingual)
-    return max(1, int(len(text) / _CHARS_PER_TOKEN_HEURISTIC))
+    # Anara Standard (model_metadata.py:2333-2351)
+    s = str(text)
+    if s.isascii():
+        # Calibrated ASCII estimation: words + length heuristic (~3.4 chars per token)
+        words = len(s.split())
+        char_est = int(len(s) / _CHARS_PER_TOKEN_HEURISTIC)
+        return max(1, max(words, char_est, (len(s) + 3) // 4))
+    stripped = _CJK_DENSE_RE.sub("", s)
+    dense_cjk = len(s) - len(stripped)
+    return max(1, dense_cjk + ((len(stripped.encode("utf-8", "replace")) + 3) // 4))
 
 
 def count_messages_tokens(messages: List[Any]) -> int:
     """
     Estimates total tokens across a list of chat messages.
-    Supports standard OpenAI dicts, Anthropic content-block lists, and Gemini types.Content objects.
+    Supports standard OpenAI dicts with tool_calls, Anthropic content-block lists, and Gemini types.Content objects.
     Includes per-message overhead (role label, formatting tokens).
     """
     total = 0
     for msg in messages:
-        content_str = ""
+        parts_txt = []
         if isinstance(msg, dict):
             c = msg.get("content", "")
             if isinstance(c, str):
-                content_str = c
+                parts_txt.append(c)
             elif isinstance(c, list):
-                content_str = " ".join(
+                parts_txt.append(" ".join(
                     str(b.get("text", "") or b.get("content", ""))
                     for b in c if isinstance(b, dict)
-                )
+                ))
+            # Account for tool_calls payload (Anara Enterprise Architecture)
+            tcalls = msg.get("tool_calls")
+            if isinstance(tcalls, list):
+                for tc in tcalls:
+                    if isinstance(tc, dict):
+                        fn = tc.get("function") or {}
+                        parts_txt.append(f"{fn.get('name', '')} {fn.get('arguments', '')}")
         elif hasattr(msg, "parts") and msg.parts:
             # Gemini types.Content: accurately measure text, function_call, and function_response
-            parts_txt = []
             for p in msg.parts:
                 t = getattr(p, "text", None)
                 if t:
@@ -353,10 +384,10 @@ def count_messages_tokens(messages: List[Any]) -> int:
                     fr_name = getattr(fr, "name", "") or ""
                     fr_resp = getattr(fr, "response", {}) or {}
                     parts_txt.append(f"{fr_name} {json.dumps(fr_resp) if isinstance(fr_resp, dict) else str(fr_resp)}")
-            content_str = " ".join(parts_txt)
         else:
-            content_str = str(msg)
+            parts_txt.append(str(msg))
 
+        content_str = " ".join(parts_txt)
         total += count_tokens(content_str) + 4  # ~4 tokens overhead per message (role + delimiters)
     total += 3  # priming tokens
     return total
@@ -392,7 +423,7 @@ class TokenBudgetTracker:
         )
 
     def update_model_context(self, new_context_length: int, new_max_output: Optional[int] = None) -> None:
-        """Dynamically updates context limits when learned from provider error or endpoint (Hermes Parity)."""
+        """Dynamically updates context limits when learned from provider error or endpoint (Anara Standard)."""
         if new_context_length <= 0:
             return
         self.context_window = new_context_length
@@ -469,7 +500,18 @@ class TokenBudgetTracker:
                 break
 
             msg = messages[idx]
-            content = msg.get("content", "")
+            content = ""
+            if isinstance(msg, dict):
+                c = msg.get("content", "")
+                if isinstance(c, list):
+                    content = "\n".join(str(b.get("text") or b.get("content") or "") for b in c if isinstance(b, dict))
+                else:
+                    content = str(c or "")
+            elif hasattr(msg, "parts"):
+                content = "\n".join(getattr(p, "text", "") for p in msg.parts if getattr(p, "text", None))
+            else:
+                content = str(msg)
+
             if not content or len(content) < 500:
                 continue
 
@@ -492,7 +534,14 @@ class TokenBudgetTracker:
 
             new_tokens = count_tokens(new_content)
             if new_tokens < old_tokens:
-                messages[idx] = {**msg, "content": new_content}
+                if isinstance(msg, dict):
+                    messages[idx] = {**msg, "content": new_content}
+                elif hasattr(msg, "parts"):
+                    try:
+                        from google.genai import types
+                        messages[idx] = types.Content(role=getattr(msg, "role", "model"), parts=[types.Part.from_text(text=new_content)])
+                    except Exception:
+                        pass
                 current -= (old_tokens - new_tokens)
                 compacted = True
 
@@ -561,30 +610,41 @@ def budget_aware_slot_assembly(
     # Measure each slot
     slot_tokens = [count_tokens(s) for s in slots]
 
-    # Prune from the last slot backward (slots 0-1 are always kept: identity + mode)
+    # Immutable slots: Identity (0), Mode (1), Tools (2) are strictly protected (Anara Enterprise Architecture)
+    min_protected = min(3, len(slots))
     pruned_slots = list(slots)
     pruned_tokens = list(slot_tokens)
-    min_protected = 2  # identity + mode always kept
 
     while sum(pruned_tokens) > available and len(pruned_slots) > min_protected:
         removed_slot = pruned_slots.pop()
         removed_tokens = pruned_tokens.pop()
         logger.debug(f"[TokenBudget] Pruned slot ({removed_tokens:,} tokens): {removed_slot[:60]}...")
 
-    # If still over budget, truncate the largest non-identity slot
+    # If still over budget, truncate the largest degradable slot (never touch slots < min_protected)
     current_total = sum(pruned_tokens)
-    if current_total > available and len(pruned_slots) > 1:
-        # Find the largest slot (skip slot 0)
-        largest_idx = max(range(1, len(pruned_slots)), key=lambda i: pruned_tokens[i])
+    if current_total > available and len(pruned_slots) > min_protected:
+        # Find the largest degradable slot
+        degradable_indices = list(range(min_protected, len(pruned_slots)))
+        largest_idx = max(degradable_indices, key=lambda i: pruned_tokens[i])
         overflow = current_total - available
         content = pruned_slots[largest_idx]
 
-        # Truncate to fit
+        # Truncate to fit with newline-snapped head/tail preservation (Anara Standard)
         target_chars = max(200, len(content) - int(overflow * _CHARS_PER_TOKEN_HEURISTIC * 1.2))
-        pruned_slots[largest_idx] = content[:target_chars] + "\n[... truncated for context budget ...]"
+        head_chars = max(100, int(target_chars * 0.7))
+        tail_chars = max(50, target_chars - head_chars)
+
+        head_nl = content.rfind("\n", 0, head_chars)
+        head_part = content[:head_nl].rstrip() if head_nl > 50 else content[:head_chars].rstrip()
+
+        tail_start = len(content) - tail_chars
+        tail_nl = content.find("\n", tail_start)
+        tail_part = content[tail_nl:].lstrip() if (tail_nl != -1 and tail_nl < len(content) - 20) else content[-tail_chars:].lstrip()
+
+        pruned_slots[largest_idx] = f"{head_part}\n\n[... truncated {len(content) - len(head_part) - len(tail_part)} chars for context budget ...]\n\n{tail_part}"
 
         logger.debug(
-            f"[TokenBudget] Truncated slot {largest_idx} from "
+            f"[TokenBudget] Truncated degradable slot {largest_idx} from "
             f"{pruned_tokens[largest_idx]:,} to ~{count_tokens(pruned_slots[largest_idx]):,} tokens"
         )
 

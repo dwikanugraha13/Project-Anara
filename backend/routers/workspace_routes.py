@@ -181,6 +181,12 @@ async def get_agent_workspace_file_content(path: str, session_id: Optional[int] 
     if not os.path.exists(full_p) or not os.path.isfile(full_p):
         raise HTTPException(status_code=404, detail=f"File not found: {path}")
 
+    # Sandbox Path Confinement & Credentials Exfiltration Guard (Anara Standard)
+    from core.workspace_sentinel import workspace_sentinel
+    is_safe, denial_reason = workspace_sentinel.validate_file_access(full_p, action="read", workspace_root=target_dir)
+    if not is_safe:
+        raise HTTPException(status_code=403, detail=f"Access denied: {denial_reason}")
+
     ext = os.path.splitext(full_p)[1].lstrip(".").lower()
     try:
         with open(full_p, "r", encoding="utf-8", errors="replace") as f:
@@ -209,6 +215,12 @@ async def save_agent_workspace_file(req: SaveWorkspaceFileRequest):
             if c and os.path.exists(c) and os.path.isfile(c):
                 full_p = c
                 break
+
+    # Sandbox Path Confinement & Sacred Files Protection (Anara Standard)
+    from core.workspace_sentinel import workspace_sentinel
+    is_safe, denial_reason = workspace_sentinel.validate_file_access(full_p, action="write", workspace_root=target_dir)
+    if not is_safe:
+        raise HTTPException(status_code=403, detail=f"Access denied: {denial_reason}")
 
     os.makedirs(os.path.dirname(full_p), exist_ok=True)
     try:
@@ -258,6 +270,12 @@ async def execute_terminal_command_endpoint(req: TerminalExecRequest):
     cmd = (req.command or "").strip()
     if not cmd:
         return {"status": "error", "message": "Command is empty"}
+
+    # Sandbox Security & Host-Takeover Defense (Anara Standard)
+    from core.sandbox import CommandSandbox
+    is_safe, denial_reason = CommandSandbox.check_command_safety(cmd)
+    if not is_safe:
+        return {"status": "error", "message": denial_reason or "Execution blocked by Anara Sandbox."}
 
     try:
         if os.name == "nt":
@@ -315,6 +333,14 @@ async def stream_terminal_command_endpoint(req: TerminalExecRequest):
         async def empty_stream():
             yield "data: " + json.dumps({"error": "Command is empty"}) + "\n\n"
         return StreamingResponse(empty_stream(), media_type="text/event-stream")
+
+    # Sandbox Security & Host-Takeover Defense (Anara Standard)
+    from core.sandbox import CommandSandbox
+    is_safe, denial_reason = CommandSandbox.check_command_safety(cmd)
+    if not is_safe:
+        async def blocked_stream():
+            yield "data: " + json.dumps({"error": denial_reason or "Execution blocked by Anara Sandbox."}) + "\n\n"
+        return StreamingResponse(blocked_stream(), media_type="text/event-stream")
 
     async def sse_runner():
         try:
@@ -586,3 +612,17 @@ async def trigger_autonomous_task_endpoint(task_id: str):
     from core.autonomous_engine import autonomous_engine
     res = await autonomous_engine.trigger_task_now(task_id)
     return {"status": "success", "result": res}
+
+@router.post("/api/agent/autonomous/tasks/{task_id}/pause")
+async def pause_autonomous_task_endpoint(task_id: str):
+    """Pauses a scheduled autonomous task."""
+    from core.autonomous_engine import autonomous_engine
+    ok = autonomous_engine.pause_task(task_id)
+    return {"status": "success" if ok else "error"}
+
+@router.post("/api/agent/autonomous/tasks/{task_id}/resume")
+async def resume_autonomous_task_endpoint(task_id: str):
+    """Resumes a paused autonomous task."""
+    from core.autonomous_engine import autonomous_engine
+    ok = autonomous_engine.resume_task(task_id)
+    return {"status": "success" if ok else "error"}

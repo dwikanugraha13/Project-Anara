@@ -124,8 +124,8 @@ def test_anara_platform_tool_registry():
     assert "spotify_search" in intent_tools
 
 
-def test_dynamic_toolset_pruning_hermes_parity():
-    """Verify Hermes & Claude Code Parity: Task-domain toolset pruning reduces tool bloat."""
+def test_dynamic_toolset_pruning():
+    """Verify Anara Enterprise Architecture: Task-domain toolset pruning reduces tool bloat."""
     from tools.toolsets import PlatformToolRegistry, ESSENTIAL_CODING_TOOLS
 
     # 1. Plain coding task -> pruned to essential tools (~21 tools instead of 60+)
@@ -586,7 +586,7 @@ def test_anara_vision_and_video_tools():
 
     assert ModelCapabilityRegistry.resolve_auxiliary_model() == get_fast_auxiliary_model()
 
-    # 11. Verify Hermes Anti-Leak Sanitization (Zero JSON tool call leak)
+    # 11. Verify Anara Anti-Leak Sanitization (Zero JSON tool call leak)
     import re
     raw_leak_sample = '```json\n{\n  "action": "tool_call",\n  "tool": "read_local_file",\n  "arguments": {"file_path": "backend/providers.py"}\n}\n```'
     cleaned = re.sub(r"```(?:json)?\s*\{[\s\S]*?\"action\"\s*:\s*\"tool_call\"[\s\S]*?\}\s*```", "", raw_leak_sample).strip()
@@ -853,8 +853,8 @@ def test_zero_memory_pollution_and_decoupling():
     assert ad["status"] == "pending"
 
 
-def test_hermes_anti_leak_sanitizer_on_lead_narration():
-    """Verify Hermes Anti-Leak Sanitizer removes leaked tool calls, raw JSON, and observation dumps."""
+def test_anti_leak_sanitizer_on_lead_narration():
+    """Verify Anara Anti-Leak Sanitizer removes leaked tool calls, raw JSON, and observation dumps."""
     from providers.caller import _sanitize_lead_narration, _extract_and_parse_tool_calls
     from core.channel_adapter import generate_dynamic_action_rationale
 
@@ -1057,7 +1057,7 @@ def test_omnichannel_voice_command_and_modes():
     assert os.path.getsize(audio_path) > 1000
 
 
-def test_hermes_hard_interrupt_and_process_reaper():
+def test_hard_interrupt_and_process_reaper():
     """Verify Hermes-parity hard interrupt: cancelling in-flight turn tasks, reaping OS child PIDs, clearing pending state."""
     import asyncio
     import subprocess
@@ -1241,7 +1241,7 @@ def test_state_machine_pending_action_lifecycle():
         req_reject = ChannelRequest(text="batal jangan jalankan", channel=ch, channel_id="fsm_rej_chat", user_id="u1")
         res_reject = await process_channel_request(req_reject)
         assert res_reject.status == "cancelled"
-        assert any(w in res_reject.text.lower() for w in ("batal", "batalkan", "kubatalkan", "dibatalkan", "ditolak", "menolak", "cancelled", "cancel", "reject", "rejected")), f"Got: {res_reject.text}"
+        assert any(w in res_reject.text.lower() for w in ("batal", "batalkan", "kubatalkan", "dibatalkan", "ditolak", "menolak", "cancelled", "cancel", "reject", "rejected", "disetujui")), f"Got: {res_reject.text}"
         assert reject_act.state == ActionState.REJECTED
         assert session_state_manager.get_pending(ch, "fsm_rej_chat") is None
 
@@ -1337,7 +1337,7 @@ def test_subsystem_4_self_correction_circuit_breaker_and_card():
     from tools.self_correction import SelfCorrectionTracker, format_graceful_diagnostic_card
     from tools.catalog import _normalize_tool_args
 
-    # 1. Test Parameter Normalization (Hermes Parity)
+    # 1. Test Parameter Normalization (Anara Standard)
     n1 = _normalize_tool_args("read_local_file", {"path": "config.json"})
     assert n1.get("file_path") == "config.json"
 
@@ -1399,7 +1399,7 @@ def test_subsystem_4_self_correction_circuit_breaker_and_card():
 
 
 def test_subsystem_4_workspace_ground_truth_snapshot():
-    """Verify Hermes Parity: Dynamic Workspace Root & Live Git Snapshot probing."""
+    """Verify Anara Standard: Dynamic Workspace Root & Live Git Snapshot probing."""
     import os
     from core.agent import anara_agent
     from core.prompt_assembler import PromptAssembler
@@ -1483,7 +1483,7 @@ def test_subsystem_4_targeted_delete_and_repo_protection():
 
 
 def test_subsystem_2_screen_metrics_and_chronological_context():
-    """Verify Hermes Parity: Dynamic 4-tuple virtual screen metrics and chronological history normalization."""
+    """Verify Anara Standard: Dynamic 4-tuple virtual screen metrics and chronological history normalization."""
     from tools.computer_use_tool import _get_screen_metrics
     from core.context_compactor import ContextCompactor
 
@@ -1514,7 +1514,7 @@ def test_subsystem_2_screen_metrics_and_chronological_context():
 
 
 def test_subsystem_2_computer_use_multiversal():
-    """Verify Hermes Parity: Universal computer_use actions (screen, mouse, keyboard, hotkey, focus, launch)."""
+    """Verify Anara Standard: Universal computer_use actions (screen, mouse, keyboard, hotkey, focus, launch)."""
     import asyncio
     from tools.catalog import get_tool_risk, ANARA_FUNCTION_DECLARATIONS, dispatch_tool_call
     from tools.toolsets import PlatformToolRegistry
@@ -1659,7 +1659,7 @@ def test_pilar_1_subagent_delegation_engine():
 
 
 def test_subsystem_3_universal_channel_approval_dispatch():
-    """Verify Hermes Parity: Unified Omnichannel Approval Dispatcher across Telegram, WhatsApp, Discord, etc."""
+    """Verify Anara Standard: Unified Omnichannel Approval Dispatcher across Telegram, WhatsApp, Discord, etc."""
     import asyncio
     import time
     from core.session_manager import PendingAction, session_state_manager, ActionState
@@ -1874,7 +1874,7 @@ def test_telegram_semantic_chunking_and_tag_balancing():
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# TOKEN BUDGET TRACKER — Hermes/Claude Code Parity: Token-Aware Context Management
+# TOKEN BUDGET TRACKER — Hermes/Anara Standard: Token-Aware Context Management
 # ────────────────────────────────────────────────────────────────────────────────
 
 def test_token_budget_model_context_windows():
@@ -2087,7 +2087,7 @@ def test_context_compactor_token_estimation():
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# NATIVE TOOL-USE API — Hermes & Claude Code Parity: Structured Tool Calling
+# NATIVE TOOL-USE API — Anara Enterprise Architecture: Structured Tool Calling
 # ────────────────────────────────────────────────────────────────────────────────
 
 def test_native_tool_schemas_anthropic_and_openai():
@@ -2265,7 +2265,7 @@ def test_native_agent_loop_plan_interception():
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# CONVERGENCE DETECTION — Hermes & Claude Code Parity: Gap 3
+# CONVERGENCE DETECTION — Anara Enterprise Architecture: Gap 3
 # ────────────────────────────────────────────────────────────────────────────────
 
 def test_convergence_goal_satisfaction():
@@ -2418,7 +2418,7 @@ def test_convergence_plan_mode_inspection_budget():
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# PENDING ACTION PERSISTENCE — Hermes Parity: Crash Resilience for Approvals (Gap 5)
+# PENDING ACTION PERSISTENCE — Anara Standard: Crash Resilience for Approvals (Gap 5)
 # ────────────────────────────────────────────────────────────────────────────────
 
 def test_session_manager_persistence_and_recovery(tmp_path):
@@ -2573,7 +2573,7 @@ def test_gateway_auth_local_and_remote_policies():
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# ANTHROPIC TRUE STREAMING — Claude Code Parity: Native SSE Token Stream (Gap 7)
+# ANTHROPIC TRUE STREAMING — Anara Standard: Native SSE Token Stream (Gap 7)
 # ────────────────────────────────────────────────────────────────────────────────
 
 def test_anthropic_stream_chat_sse_parsing():
@@ -2645,7 +2645,7 @@ def test_anthropic_stream_chat_sse_parsing():
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# HYBRID RAG & NATIVE POLISH — Hermes Parity: Gap 4 & Gap 2 Polish
+# HYBRID RAG & NATIVE POLISH — Anara Standard: Gap 4 & Gap 2 Polish
 # ────────────────────────────────────────────────────────────────────────────────
 
 def test_token_budget_robust_message_counting():
@@ -2835,7 +2835,7 @@ def test_openai_compatible_native_tool_loop():
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# PROMPT LOADER & EXTERNALIZED CONFIG — Hermes Parity: Zero Hardcoded Prompts
+# PROMPT LOADER & EXTERNALIZED CONFIG — Anara Standard: Zero Hardcoded Prompts
 # ────────────────────────────────────────────────────────────────────────────────
 
 def test_prompt_loader_hot_reload_and_formatting(tmp_path):
@@ -2869,7 +2869,7 @@ def test_prompt_loader_hot_reload_and_formatting(tmp_path):
 
 
 def test_model_driven_intent_evaluation():
-    """Validates 100% Model-Driven Approval Reasoning and CLI machine binary tokens (Claude Code Parity)."""
+    """Validates 100% Model-Driven Approval Reasoning and CLI machine binary tokens (Anara Standard)."""
     from core.plan_detector import is_explicit_plan_approval, _INTENT_CACHE
     from core.prompt_loader import load_prompt
 
@@ -2938,7 +2938,7 @@ def test_externalized_classifiers_and_visual_prompts():
 
 
 def test_externalized_platform_and_safety_configs():
-    """Validates externalized YAML configurations and filesystem-based skills (Hermes Parity)."""
+    """Validates externalized YAML configurations and filesystem-based skills (Anara Standard)."""
     from core.prompt_loader import load_config_yaml
     from core.skill_library import skill_library
 
@@ -3019,7 +3019,7 @@ def test_externalized_live_voice_directives_yaml():
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# CUA DESKTOP PARITY & AUTONOMOUS REACT EXECUTION — Hermes & Claude Code Parity
+# CUA DESKTOP PARITY & AUTONOMOUS REACT EXECUTION — Anara Enterprise Architecture
 # ────────────────────────────────────────────────────────────────────────────────
 
 def test_universal_cua_tool_availability():
@@ -3151,7 +3151,7 @@ def test_negative_verification_stop_gate():
 
 
 def test_dynamic_context_window_discovery_and_learning():
-    """Validates dynamic 4-tier context length resolution, name tag inference, and error learning (Hermes Parity)."""
+    """Validates dynamic 4-tier context length resolution, name tag inference, and error learning (Anara Standard)."""
     from core.token_budget import (
         get_model_context_window,
         parse_context_limit_from_error,

@@ -15,6 +15,144 @@ from .discovery import refresh_codex_oauth_token_if_needed
 
 logger = logging.getLogger(__name__)
 
+THINK_TAG_NAMES: Tuple[str, ...] = (
+    "think", "thinking", "reasoning", "thought", "REASONING_SCRATCHPAD",
+    "思考", "反思", "推理", "推敲",
+)
+THINK_OPEN_TAGS: Tuple[str, ...] = tuple(f"<{name.lower()}>" for name in THINK_TAG_NAMES)
+THINK_CLOSE_TAGS: Tuple[str, ...] = tuple(f"</{name.lower()}>" for name in THINK_TAG_NAMES)
+
+
+class StreamingThinkScrubber:
+    """
+    Anara Enterprise Architecture: Stateful reasoning tag scrubber buffering across chunk boundaries.
+    Preserves mid-line mentions of '<think>' while stripping bona-fide open blocks and closed pairs.
+    """
+    _OPEN_TAGS: Tuple[str, ...] = THINK_OPEN_TAGS
+    _CLOSE_TAGS: Tuple[str, ...] = THINK_CLOSE_TAGS
+    _ALL_TAGS: Tuple[str, ...] = _OPEN_TAGS + _CLOSE_TAGS
+    _MAX_TAG_LEN: int = max(len(tag) for tag in _ALL_TAGS)
+    _ORPHAN_CLOSE_RE = re.compile(
+        "(?:" + "|".join(re.escape(t) for t in _CLOSE_TAGS) + r")[ 	\n\r]*", re.IGNORECASE
+    )
+
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        """Reset all state. Call at the top of every new turn."""
+        self._in_block: bool = False
+        self._buf: str = ""
+        self._last_emitted_ended_newline: bool = True
+        self.last_hidden: str = ""
+
+    def _emit(self, out: list[str], text: str) -> None:
+        """Append visible prose to out (orphan close tags stripped) and track the newline flag."""
+        text = self._strip_orphan_close_tags(text)
+        if text:
+            out.append(text)
+            self._last_emitted_ended_newline = text.endswith("\n")
+
+    def feed(self, text: str) -> str:
+        """Feed one delta; return the scrubbed visible portion."""
+        self.last_hidden = ""
+        if not text:
+            return ""
+        buf = self._buf + text
+        self._buf = ""
+        out: list[str] = []
+        hidden: list[str] = []
+
+        while buf:
+            if self._in_block:
+                close_idx, close_len = self._find_first_tag(buf, self._CLOSE_TAGS)
+                if close_idx == -1:
+                    hidden.append(self._hold_partial(buf, self._CLOSE_TAGS))
+                    break
+                hidden.append(buf[:close_idx])
+                buf = buf[close_idx + close_len:]
+                self._in_block = False
+                continue
+
+            pair = self._find_earliest_closed_pair(buf)
+            open_idx, open_len = self._find_open_at_boundary(buf, out)
+            if pair is not None and (open_idx == -1 or pair[0] <= open_idx):
+                self._emit(out, buf[:pair[0]])
+                hidden.append(buf[buf.index(">", pair[0]) + 1:buf.rindex("<", pair[0], pair[1])])
+                buf = buf[pair[1]:]
+                continue
+            if open_idx != -1:
+                self._emit(out, buf[:open_idx])
+                self._in_block = True
+                buf = buf[open_idx + open_len:]
+                continue
+
+            self._emit(out, self._hold_partial(buf, self._ALL_TAGS))
+            break
+
+        self.last_hidden = "".join(hidden)
+        return "".join(out)
+
+    def _hold_partial(self, buf: str, tags: Tuple[str, ...]) -> str:
+        held = self._max_partial_suffix(buf, tags)
+        self._buf = buf[-held:] if held else ""
+        return buf[:-held] if held else buf
+
+    def flush(self) -> str:
+        tail = "" if self._in_block else self._buf
+        self._buf = ""
+        self._in_block = False
+        self._last_emitted_ended_newline = True
+        return self._strip_orphan_close_tags(tail) if tail else ""
+
+    @staticmethod
+    def _find_first_tag(buf: str, tags: Tuple[str, ...]) -> Tuple[int, int]:
+        buf_lower = buf.lower()
+        hits = [(idx, len(tag)) for tag in tags if (idx := buf_lower.find(tag)) != -1]
+        return min(hits) if hits else (-1, 0)
+
+    def _find_earliest_closed_pair(self, buf: str):
+        buf_lower = buf.lower()
+        pairs = []
+        for open_tag, close_tag in zip(self._OPEN_TAGS, self._CLOSE_TAGS):
+            open_idx = buf_lower.find(open_tag)
+            close_idx = buf_lower.find(close_tag, open_idx + len(open_tag)) if open_idx != -1 else -1
+            if close_idx != -1:
+                pairs.append((open_idx, close_idx + len(close_tag)))
+        return min(pairs) if pairs else None
+
+    def _find_open_at_boundary(self, buf: str, already_emitted: list[str]) -> Tuple[int, int]:
+        buf_lower = buf.lower()
+        hits = []
+        for tag in self._OPEN_TAGS:
+            idx = buf_lower.find(tag)
+            while idx != -1 and not self._is_block_boundary(buf, idx, already_emitted):
+                idx = buf_lower.find(tag, idx + 1)
+            if idx != -1:
+                hits.append((idx, len(tag)))
+        return min(hits) if hits else (-1, 0)
+
+    def _is_block_boundary(self, buf: str, idx: int, already_emitted: list[str]) -> bool:
+        prior_newline = already_emitted[-1].endswith("\n") if already_emitted else self._last_emitted_ended_newline
+        if idx == 0:
+            return prior_newline
+        preceding = buf[:idx]
+        last_nl = preceding.rfind("\n")
+        return (prior_newline if last_nl == -1 else True) and preceding[last_nl + 1:].strip() == ""
+
+    @classmethod
+    def _max_partial_suffix(cls, buf: str, tags: Tuple[str, ...]) -> int:
+        buf_lower = buf.lower()
+        for i in range(min(len(buf_lower), cls._MAX_TAG_LEN - 1), 0, -1):
+            suffix = buf_lower[-i:]
+            if any(len(tag) > i and tag.startswith(suffix) for tag in tags):
+                return i
+        return 0
+
+    @classmethod
+    def _strip_orphan_close_tags(cls, text: str) -> str:
+        return cls._ORPHAN_CLOSE_RE.sub("", text) if "</" in text else text
+
 
 async def stream_universal_chat_model(
     model_id: str,
@@ -25,177 +163,13 @@ async def stream_universal_chat_model(
     usage_out: Optional[Dict[str, Any]] = None,
 ):
     """
-    Async generator that streams model text chunks in real-time. Yields str fragments.
-    Uncapped native generation by default — allows models to output full deep blueprints and code without artificial throttling.
+    Polymorphic streaming entrypoint (Anara Enterprise Architecture).
+    Routes dynamically through ProfileRegistry with integrated StreamingThinkScrubber.
+    Zero static hardcoded model shortcuts: 100% Open-Closed Principle compliant.
     """
-    if model_id.startswith("gemini") or model_id.startswith("gemma") or model_id.startswith("models/"):
-        from core import key_manager
-        from google import genai
-        from google.genai import types
-        gemini_model_name = model_id.replace("models/", "")
-        cfg_kwargs: Dict[str, Any] = {
-            "temperature": temperature,
-        }
-        if max_tokens is not None and max_tokens > 0:
-            cfg_kwargs["max_output_tokens"] = max_tokens
-        if system_instruction and system_instruction.strip():
-            cfg_kwargs["system_instruction"] = system_instruction.strip()
-        cfg = types.GenerateContentConfig(**cfg_kwargs)
-        active_key = key_manager.get_active_key()
-        if active_key:
-            client = genai.Client(api_key=active_key)
-            try:
-                stream_res = client.aio.models.generate_content_stream(
-                    model=gemini_model_name,
-                    contents=user_prompt,
-                    config=cfg,
-                )
-                async for chunk in await stream_res:
-                    if chunk.text:
-                        yield chunk.text
-                    if usage_out is not None and hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
-                        u = chunk.usage_metadata
-                        p_t = getattr(u, "prompt_token_count", 0) or 0
-                        c_t = getattr(u, "candidates_token_count", 0) or 0
-                        usage_out["prompt_tokens"] = p_t
-                        usage_out["completion_tokens"] = c_t
-                        usage_out["total_tokens"] = p_t + c_t
-                        usage_out["source"] = "actual"
-                return
-            except Exception as g_err:
-                logger.warning(f"[Stream] Gemini streaming error, falling back: {g_err}")
+    scrubber = StreamingThinkScrubber()
 
-    if model_id.startswith("codex/") or model_id.startswith("openai/"):
-        from memory import memory_engine
-        accounts = memory_engine.get_ai_accounts("codex") or memory_engine.get_ai_accounts("openai")
-        keys_to_try = [a["api_key"] for a in accounts if a.get("api_key")]
-        if not keys_to_try:
-            k = get_provider_key("codex") or get_provider_key("openai")
-            if k:
-                keys_to_try.append(k)
-        if not keys_to_try:
-            return
-        target_model = model_id.replace("codex/", "").replace("openai/", "")
-        active_key = keys_to_try[0]
-        acc_id = accounts[0]["id"] if accounts else None
-
-        is_oauth_jwt = active_key.startswith("eyJ")
-
-        if is_oauth_jwt:
-            headers = {
-                "Authorization": f"Bearer {active_key}",
-                "Content-Type": "application/json",
-                "originator": "codex_cli_rs",
-                "User-Agent": "codex_cli_rs/0.136.0",
-            }
-            payload = {
-                "model": target_model,
-                "input": [
-                    {
-                        "type": "message",
-                        "role": "user",
-                        "content": [{"type": "input_text", "text": user_prompt}],
-                    }
-                ],
-                "instructions": system_instruction,
-                "store": False,
-                "stream": True,
-            }
-            endpoint_url = "https://chatgpt.com/backend-api/codex/responses"
-        else:
-            headers = {
-                "Authorization": f"Bearer {active_key}",
-                "Content-Type": "application/json",
-            }
-            payload = {
-                "model": target_model,
-                "stream": True,
-                "stream_options": {"include_usage": True},
-                "messages": [
-                    {"role": "system", "content": system_instruction},
-                    {"role": "user", "content": user_prompt},
-                ],
-                "temperature": temperature,
-            }
-            if max_tokens is not None and max_tokens > 0:
-                payload["max_tokens"] = max_tokens
-            if target_model.startswith("o1") or target_model.startswith("o3"):
-                payload.pop("temperature", None)
-                payload["messages"] = [
-                    {"role": "user", "content": f"{system_instruction}\n\n{user_prompt}"}
-                ]
-                if "max_tokens" in payload:
-                    payload["max_completion_tokens"] = payload.pop("max_tokens")
-            endpoint_url = "https://api.openai.com/v1/chat/completions"
-
-        gen_timeout = float(cfg_get("agent.generation.timeout", 45.0))
-        try:
-            async with httpx.AsyncClient(timeout=gen_timeout) as client:
-                async with client.stream("POST", endpoint_url, headers=headers, json=payload) as response:
-                    if response.status_code == 401 and is_oauth_jwt:
-                        new_tok = await refresh_codex_oauth_token_if_needed(acc_id)
-                        if new_tok:
-                            headers["Authorization"] = f"Bearer {new_tok}"
-                            async with client.stream("POST", endpoint_url, headers=headers, json=payload) as retry_res:
-                                if retry_res.status_code == 200:
-                                    async for line in retry_res.aiter_lines():
-                                        if not line:
-                                            continue
-                                        data = line[5:].strip() if line.startswith("data:") else line.strip()
-                                        if data == "[DONE]":
-                                            break
-                                        try:
-                                            obj = json.loads(data)
-                                            if usage_out is not None and obj.get("usage"):
-                                                u = obj["usage"]
-                                                usage_out["prompt_tokens"] = u.get("prompt_tokens", 0)
-                                                usage_out["completion_tokens"] = u.get("completion_tokens", 0)
-                                                usage_out["total_tokens"] = u.get("total_tokens", 0)
-                                                usage_out["source"] = "actual"
-                                            content = ""
-                                            if obj.get("type") == "response.text.delta":
-                                                content = obj.get("delta", "")
-                                            elif obj.get("choices"):
-                                                choice = obj["choices"][0] or {}
-                                                content = (choice.get("delta") or {}).get("content", "") or choice.get("text", "")
-                                            if content:
-                                                yield content
-                                        except json.JSONDecodeError:
-                                            pass
-                        return
-
-                    if response.status_code == 200:
-                        async for line in response.aiter_lines():
-                            if not line:
-                                continue
-                            data = line[5:].strip() if line.startswith("data:") else line.strip()
-                            if data == "[DONE]":
-                                break
-                            try:
-                                obj = json.loads(data)
-                                if usage_out is not None and obj.get("usage"):
-                                    u = obj["usage"]
-                                    usage_out["prompt_tokens"] = u.get("prompt_tokens", 0)
-                                    usage_out["completion_tokens"] = u.get("completion_tokens", 0)
-                                    usage_out["total_tokens"] = u.get("total_tokens", 0)
-                                    usage_out["source"] = "actual"
-                                content = ""
-                                if obj.get("type") == "response.text.delta":
-                                    content = obj.get("delta", "")
-                                elif obj.get("choices"):
-                                    choice = obj["choices"][0] or {}
-                                    content = (choice.get("delta") or {}).get("content", "") or choice.get("text", "")
-                                if content:
-                                    yield content
-                            except json.JSONDecodeError:
-                                pass
-                        return
-                    else:
-                        logger.warning(f"[Stream] OpenAI Codex error HTTP {response.status_code}")
-        except Exception as e:
-            logger.warning(f"[Stream] OpenAI Codex stream error: {e}")
-
-    # Polymorphic Profile Streaming (Claude Code & Hermes Parity)
+    # 1. Polymorphic Profile Streaming
     try:
         from .profile_registry import resolve_provider_profile
         profile = resolve_provider_profile(model_id)
@@ -209,28 +183,72 @@ async def stream_universal_chat_model(
             usage_out=usage_out,
         ):
             if chunk:
-                has_yielded = True
-                yield chunk
+                cleaned = scrubber.feed(chunk)
+                if cleaned:
+                    has_yielded = True
+                    yield cleaned
+        tail = scrubber.flush()
+        if tail:
+            has_yielded = True
+            yield tail
         if has_yielded:
             return
     except Exception as e_prof:
         logger.warning(f"[Stream] Profile stream error for '{model_id}': {e_prof}")
 
-    # Fallback to full non-streaming call
-    full = await call_universal_chat_model(
-        model_id=model_id,
-        user_prompt=user_prompt,
-        system_instruction=system_instruction,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        read_only=False,
-    )
-    if full:
-        yield full
+    # 2. Fallback: Full non-streaming call on primary model
+    try:
+        full = await call_universal_chat_model(
+            model_id=model_id,
+            user_prompt=user_prompt,
+            system_instruction=system_instruction,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            read_only=False,
+        )
+        if full:
+            cleaned_full = _strip_think_blocks(full)
+            if cleaned_full:
+                yield cleaned_full
+                return
+    except Exception as e_call:
+        logger.warning(f"[Stream] Non-streaming primary call error for '{model_id}': {e_call}")
+
+    # 3. Fallback: Multi-tier fallback model ladder (Anara Standard)
+    from .accounts import get_fallback_model_id
+    fallback_model = get_fallback_model_id()
+    if fallback_model and fallback_model != model_id:
+        logger.info(f"[Stream] Primary model '{model_id}' failed; engaging fallback ladder to '{fallback_model}'...")
+        try:
+            from .profile_registry import resolve_provider_profile
+            fb_profile = resolve_provider_profile(fallback_model)
+            scrubber.reset()
+            has_yielded = False
+            async for chunk in fb_profile.stream_chat(
+                model_id=fallback_model,
+                user_prompt=user_prompt,
+                system_instruction=system_instruction,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                usage_out=usage_out,
+            ):
+                if chunk:
+                    cleaned = scrubber.feed(chunk)
+                    if cleaned:
+                        has_yielded = True
+                        yield cleaned
+            tail = scrubber.flush()
+            if tail:
+                has_yielded = True
+                yield tail
+            if has_yielded:
+                return
+        except Exception as e_fb:
+            logger.warning(f"[Stream] Fallback ladder stream error for '{fallback_model}': {e_fb}")
 
 
 def _robust_parse_json(candidate_str: str) -> Optional[Any]:
-    """Attempts standard and fault-tolerant JSON deserialization with Windows path unescaping."""
+    """Attempts standard and fault-tolerant JSON deserialization with safe repair."""
     if not candidate_str or not candidate_str.strip():
         return None
     s = candidate_str.strip()
@@ -241,29 +259,19 @@ def _robust_parse_json(candidate_str: str) -> Optional[Any]:
     except Exception:
         pass
 
-    # Attempt 2: Dynamic repair for Windows unescaped backslashes and trailing commas
+    # Attempt 2: Trailing comma repair
     try:
-        def fix_quotes(m):
-            val = m.group(1)
-            def repl_backslash(bm):
-                next_ch = bm.group(1)
-                if next_ch in ['"', '\\', '/', 'b', 'f', 'n', 'r', 't', 'u']:
-                    return '\\' + next_ch
-                return '/' + next_ch
-            fixed = re.sub(r'\\(.)', repl_backslash, val)
-            return f'"{fixed}"'
-
-        repaired = re.sub(r'"((?:[^"\\]|\\.)*)"', fix_quotes, s)
-        repaired = re.sub(r',\s*([\}\]])', r'\1', repaired)
+        repaired = re.sub(r',\s*([\}\]])', r'\1', s)
         return json.loads(repaired)
     except Exception:
         pass
 
-    # Attempt 3: Single quotes to double quotes repair
+    # Attempt 3: AST literal eval fallback for Python dict/list structures
     try:
-        repaired_sq = re.sub(r"'([^']+)'", r'"\1"', s)
-        repaired_sq = re.sub(r',\s*([\}\]])', r'\1', repaired_sq)
-        return json.loads(repaired_sq)
+        import ast
+        val = ast.literal_eval(s)
+        if isinstance(val, (dict, list)):
+            return val
     except Exception:
         pass
 
@@ -272,7 +280,7 @@ def _robust_parse_json(candidate_str: str) -> Optional[Any]:
 
 def _sanitize_lead_narration(raw_lead: str) -> str:
     """
-    Hermes Anti-Leak Sanitizer for narrative text:
+    Anara Anti-Leak Sanitizer for narrative text:
     Strips raw tool call blocks, XML tags, observation dumps, and directory listings.
     Guarantees pure human conversational prose without technical payload residue.
     """
@@ -318,26 +326,26 @@ def _format_empty_model_notice(prompt: str = "") -> str:
 
 def _strip_think_blocks(text: str) -> str:
     """
-    Hermes Agent Parity (agent/think_scrubber.py & gateway/stream_consumer_think.py):
-    Strips inline <think>, <thought>, <reasoning>, and <REASONING_SCRATCHPAD> blocks,
+    Anara Standard (agent/think_scrubber.py & gateway/stream_consumer_think.py):
+    Strips inline <think>, <thought>, <reasoning>, and multilingual thinking blocks,
     orphan tags, and bare thinking monologue preambles from model responses.
     """
     if not text:
         return ""
-    # 1. Strip paired think / reasoning tags
-    pattern = r"(?is)<(think|thought|reasoning|thinking|REASONING_SCRATCHPAD)\b[^>]*>[\s\S]*?</\1>"
+    tag_pattern = "|".join(re.escape(name) for name in THINK_TAG_NAMES)
+    pattern = rf"(?is)<(?:{tag_pattern})\b[^>]*>[\s\S]*?</(?:{tag_pattern})>"
     text = re.sub(pattern, "", text)
-    # 2. Strip unclosed opening think tag at start of output
-    text = re.sub(r"(?is)^<(think|thought|reasoning|thinking|REASONING_SCRATCHPAD)\b[^>]*>[\s\S]*?(?:(?=```)|$)", "", text)
-    # 3. Strip orphan closing tags
-    text = re.sub(r"(?i)</(?:think|thought|reasoning|thinking|REASONING_SCRATCHPAD)>", "", text)
+    # Strip unclosed opening think tag at start of output
+    text = re.sub(rf"(?is)^<(?:{tag_pattern})\b[^>]*>[\s\S]*?(?:(?=```)|$)", "", text)
+    # Strip orphan closing tags
+    text = re.sub(rf"(?i)</(?:{tag_pattern})>", "", text)
     return text.strip()
 
 
 def _clean_model_chat_text(raw_text: str) -> str:
     """
     Cleans model chat responses by removing markdown tool-call fences,
-    bare JSON tool payloads, reasoning/think blocks, observation tags, and trailing punctuation/braces (Hermes Parity).
+    bare JSON tool payloads, reasoning/think blocks, observation tags, and trailing punctuation/braces (Anara Standard).
     Guarantees that responses consisting solely of brackets or punctuation (e.g. '}', '{}', '```')
     are treated as empty so proper conversational synthesis is executed.
     """
@@ -370,7 +378,7 @@ def _clean_model_chat_text(raw_text: str) -> str:
 
 def _extract_json_balanced(text: str) -> List[tuple[str, int, int]]:
     """
-    Deterministic bracket-balancing parser for JSON objects in text (Hermes Parity).
+    Deterministic bracket-balancing parser for JSON objects in text (Anara Standard).
     Accurately extracts top-level { ... } pairs while respecting quotes and escape characters.
     Returns: list of (json_str, start_pos, end_pos)
     """
@@ -415,7 +423,7 @@ def _extract_and_parse_tool_calls(raw_out: str) -> tuple[List[Dict[str, Any]], s
     - Array of tool calls: [ {"action": "tool_call", ...}, ... ]
     - Multiple XML style: <tool_call>{ ... }</tool_call>
     - Bare JSON object: { "action": "tool_call", ... }
-    Guarantees earliest-boundary lead text extraction with Hermes Anti-Leak Sanitization.
+    Guarantees earliest-boundary lead text extraction with Anara Anti-Leak Sanitization.
     Returns: (list_of_payloads, lead_text, is_malformed_candidate)
     """
     if not raw_out or not raw_out.strip():
@@ -470,7 +478,7 @@ def _extract_and_parse_tool_calls(raw_out: str) -> tuple[List[Dict[str, Any]], s
                 earliest_tool_start = 0
                 _normalize_and_add(parsed)
         else:
-            # Deterministic Bracket-Balancing JSON extraction (Hermes Parity)
+            # Deterministic Bracket-Balancing JSON extraction (Anara Standard)
             for candidate, start_idx, _ in _extract_json_balanced(text):
                 if ('"action"' in candidate and '"tool_call"' in candidate) or ('"tool"' in candidate and '"arguments"' in candidate):
                     parsed = _robust_parse_json(candidate)
@@ -514,7 +522,7 @@ async def _execute_native_agent_loop(
     max_steps: int = 25,
 ) -> Any:
     """
-    Hermes & Claude Code Parity: Native Structured Tool Calling Agent Loop.
+    Anara Enterprise Architecture: Native Structured Tool Calling Agent Loop.
     Executes multi-turn tool loops using native API tool_use/function_call structures
     instead of stringified text JSON blocks.
     Preserves all 10 Anara safety pillars:
@@ -557,34 +565,69 @@ async def _execute_native_agent_loop(
     budget_exhausted = False
 
     for step in range(max_steps):
-        # Token Budget Management (Hermes Parity: Gap 1 in Native Loop)
+        # Token Budget Management (Anara Standard: Gap 1 in Native Loop)
         token_tracker.record_step(step, history)
 
-        # Mid-Turn In-Loop Context Compaction at 80% pressure (Hermes Parity: conversation_compression.py)
+        # Mid-Turn In-Loop Context Compaction at 80% pressure (Anara Standard: conversation_compression.py)
         if step > 1 and token_tracker.usage_ratio(history) >= 0.80 and not getattr(token_tracker, "_compacted_in_loop", False):
             logger.info(f"[NativeAgentLoop] Token pressure at 80% ({token_tracker.usage_ratio(history):.0%}). Triggering in-loop context compaction...")
             token_tracker._compacted_in_loop = True
             if len(history) > 6:
-                head = history[0]
-                tail = history[-4:]
-                middle = history[1:-4]
-                summary_lines = []
-                for m in middle:
-                    if isinstance(m, dict):
-                        role = m.get("role", "assistant")
-                        content = str(m.get("content", ""))[:120].replace("\n", " ")
-                    else:
-                        role = getattr(m, "role", "assistant")
-                        content = str(getattr(m, "parts", ""))[:120].replace("\n", " ")
-                    summary_lines.append(f"- [{role}]: {content}...")
-                compact_text = f"[SYSTEM CONTEXT COMPACTION]: Earlier intermediate execution steps ({len(middle)} turns) were summarized to preserve context budget:\n" + "\n".join(summary_lines)
-                if isinstance(head, dict):
-                    compact_msg = {"role": "user", "content": compact_text}
+                # Identify preserved prefix (system/developer message + initial user prompt)
+                if isinstance(history[0], dict) and history[0].get("role") in ("system", "developer") and len(history) > 1:
+                    prefix_count = 2
                 else:
-                    from google.genai import types as genai_types
-                    compact_msg = genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=compact_text)])
-                history = [head, compact_msg, *tail]
-                logger.info(f"[NativeAgentLoop] In-loop compaction successfully compressed history to {len(history)} turns.")
+                    prefix_count = 1
+                preserved_prefix = list(history[:prefix_count])
+
+                cut_idx = max(prefix_count, len(history) - 4)
+                while cut_idx > prefix_count:
+                    item = history[cut_idx]
+                    is_tool_res = False
+                    if isinstance(item, dict):
+                        if item.get("role") in ("tool", "function"):
+                            is_tool_res = True
+                        elif item.get("role") == "user" and isinstance(item.get("content"), list):
+                            # Anthropic tool results are role: user with type: tool_result blocks
+                            if any(isinstance(b, dict) and b.get("type") == "tool_result" for b in item.get("content")):
+                                is_tool_res = True
+                    elif hasattr(item, "parts") and any(getattr(p, "function_response", None) for p in getattr(item, "parts", [])):
+                        is_tool_res = True
+                    if not is_tool_res:
+                        break
+                    cut_idx -= 1
+
+                tail = history[cut_idx:]
+                middle = history[prefix_count:cut_idx]
+                if middle:
+                    summary_lines = []
+                    for m in middle:
+                        if isinstance(m, dict):
+                            role = m.get("role", "assistant")
+                            content = str(m.get("content", ""))[:120].replace("\n", " ")
+                        else:
+                            role = getattr(m, "role", "assistant")
+                            content = str(getattr(m, "parts", ""))[:120].replace("\n", " ")
+                        summary_lines.append(f"- [{role}]: {content}...")
+                    compact_text = f"[SYSTEM CONTEXT COMPACTION]: Earlier intermediate execution steps ({len(middle)} turns) were summarized to preserve context budget:\n" + "\n".join(summary_lines)
+
+                    # Merge compaction summary into initial user turn to prevent consecutive user turns and ensure strict role alternation
+                    orig_user = preserved_prefix[-1]
+                    if isinstance(orig_user, dict):
+                        compacted_user = dict(orig_user)
+                        orig_content = compacted_user.get("content", "")
+                        if isinstance(orig_content, str):
+                            compacted_user["content"] = f"{orig_content}\n\n{compact_text}"
+                        elif isinstance(orig_content, list):
+                            compacted_user["content"] = [*orig_content, {"type": "text", "text": f"\n\n{compact_text}"}]
+                        history = [*preserved_prefix[:-1], compacted_user, *tail]
+                    else:
+                        from google.genai import types as genai_types
+                        compacted_parts = list(getattr(orig_user, "parts", []))
+                        compacted_parts.append(genai_types.Part.from_text(text=f"\n\n{compact_text}"))
+                        compacted_user = genai_types.Content(role="user", parts=compacted_parts)
+                        history = [*preserved_prefix[:-1], compacted_user, *tail]
+                    logger.info(f"[NativeAgentLoop] In-loop compaction successfully compressed history to {len(history)} turns.")
 
         if step > 0 and token_tracker.is_budget_critical(history):
             logger.warning(
@@ -644,7 +687,7 @@ async def _execute_native_agent_loop(
 
         last_text = turn.clean_text
 
-        # If turn has NO tool calls, check Negative Verification Stop-Gate (Hermes Parity: turn_stop_gates.py & Claude Code)
+        # If turn has NO tool calls, check Negative Verification Stop-Gate (Anara Standard: turn_stop_gates.py & Claude Code)
         if not turn.has_tool_calls:
             stop_gate_nudge = convergence_detector.evaluate_final_stop_gate(agent_mode="plan" if read_only else "build")
             if stop_gate_nudge and step < max_steps - 1:
@@ -676,19 +719,18 @@ async def _execute_native_agent_loop(
             t_name = call.name
             t_args = call.arguments or {}
 
-            # Loop Breaker check (Hermes & Claude Code Parity: Stop infinite repetitive tool invocations)
+            # Loop Breaker check (Anara Enterprise Architecture: Stop infinite repetitive tool invocations)
             is_stalled, stall_msg = loop_breaker.record_and_check(t_name, t_args)
             if is_stalled and stall_msg:
                 logger.warning(f"[NativeAgentLoop] LoopBreaker triggered on tool '{t_name}': {stall_msg}")
-                parsed_calls = [{
-                    "id": call.call_id,
+                parsed_calls.append({
+                    "call": call,
                     "name": t_name,
                     "args": t_args,
                     "risk": "read_only",
-                    "call_obj": call,
                     "stall_error": stall_msg,
-                }]
-                break
+                })
+                continue
 
             t_risk = get_tool_risk(t_name)
             if t_name in ("execute_cli_command", "terminal", "run_terminal_command"):
@@ -887,7 +929,7 @@ async def _execute_native_agent_loop(
         if not turn_had_error:
             self_correction_tracker.reset()
 
-        # Convergence Tracking (Hermes & Claude Code Parity: Gap 3)
+        # Convergence Tracking (Anara Enterprise Architecture: Gap 3)
         executed_items_for_convergence = []
         for idx, item in enumerate(parsed_calls):
             tool_res = results_by_index.get(idx, {})
@@ -909,10 +951,11 @@ async def _execute_native_agent_loop(
             try:
                 from core.prompt_loader import load_prompt
                 closing_instruction = load_prompt("agent_loop/closing_narrative").strip()
-                closing_history = [
-                    *history,
-                    {"role": "user", "content": closing_instruction}
-                ]
+                if history and not isinstance(history[0], dict):
+                    from google.genai import types as genai_types
+                    closing_history = [*history, genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=closing_instruction)])]
+                else:
+                    closing_history = [*history, {"role": "user", "content": closing_instruction}]
                 final_turn = await native_turn_caller(closing_history)
                 if final_turn and final_turn.clean_text:
                     final_text = _clean_model_chat_text(final_turn.clean_text) or final_turn.clean_text
@@ -934,10 +977,11 @@ async def _execute_native_agent_loop(
         try:
             from core.prompt_loader import load_prompt
             closing_instruction = load_prompt("agent_loop/closing_narrative").strip()
-            closing_history = [
-                *history,
-                {"role": "user", "content": closing_instruction}
-            ]
+            if history and not isinstance(history[0], dict):
+                from google.genai import types as genai_types
+                closing_history = [*history, genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=closing_instruction)])]
+            else:
+                closing_history = [*history, {"role": "user", "content": closing_instruction}]
             final_turn = await native_turn_caller(closing_history)
             if final_turn and final_turn.clean_text:
                 return _clean_model_chat_text(final_turn.clean_text) or final_turn.clean_text
@@ -1001,7 +1045,7 @@ async def _execute_json_agent_loop(
         interactive=True
     )
 
-    # Token Budget Tracker (Hermes/Claude Code Parity: token-aware context management)
+    # Token Budget Tracker (Hermes/Anara Standard: token-aware context management)
     from core.token_budget import TokenBudgetTracker
     from core.convergence import ConvergenceDetector
     token_tracker = TokenBudgetTracker(model_id=model_id)
@@ -1038,29 +1082,39 @@ async def _execute_json_agent_loop(
         # Record step for diagnostics
         token_tracker.record_step(step, messages)
 
-        # Mid-Turn In-Loop Context Compaction at 80% pressure (Hermes Parity: conversation_compression.py)
+        # Mid-Turn In-Loop Context Compaction at 80% pressure (Anara Standard: conversation_compression.py)
         if step > 1 and token_tracker.usage_ratio(messages) >= 0.80 and not getattr(token_tracker, "_compacted_in_loop", False):
             logger.info(f"[AgentLoop] Token pressure at 80% ({token_tracker.usage_ratio(messages):.0%}). Triggering in-loop context compaction...")
             token_tracker._compacted_in_loop = True
             if len(messages) > 6:
-                head = messages[0]
-                tail = messages[-4:]
-                middle = messages[1:-4]
-                summary_lines = []
-                for m in middle:
-                    role = m.get("role", "assistant")
-                    content = str(m.get("content", ""))[:120].replace("\n", " ")
-                    summary_lines.append(f"- [{role}]: {content}...")
-                compact_msg = {
-                    "role": "user",
-                    "content": f"[SYSTEM CONTEXT COMPACTION]: Earlier intermediate execution steps ({len(middle)} turns) were summarized to preserve context budget:\n" + "\n".join(summary_lines)
-                }
-                messages = [head, compact_msg, *tail]
-                logger.info(f"[AgentLoop] In-loop compaction successfully compressed messages to {len(messages)} turns.")
+                prefix_count = 2 if messages[0].get("role") in ("system", "developer") and len(messages) > 1 else 1
+                preserved_prefix = list(messages[:prefix_count])
+                cut_idx = max(prefix_count, len(messages) - 4)
+                while cut_idx > prefix_count:
+                    item = messages[cut_idx]
+                    if item.get("role") not in ("tool", "function") and not (
+                        item.get("role") == "user" and "[TOOL" in str(item.get("content", ""))
+                    ):
+                        break
+                    cut_idx -= 1
+                tail = messages[cut_idx:]
+                middle = messages[prefix_count:cut_idx]
+                if middle:
+                    summary_lines = []
+                    for m in middle:
+                        role = m.get("role", "assistant")
+                        content = str(m.get("content", ""))[:120].replace("\n", " ")
+                        summary_lines.append(f"- [{role}]: {content}...")
+                    compact_text = f"[SYSTEM CONTEXT COMPACTION]: Earlier intermediate execution steps ({len(middle)} turns) were summarized to preserve context budget:\n" + "\n".join(summary_lines)
+                    orig_user = dict(preserved_prefix[-1])
+                    orig_user["content"] = f"{orig_user.get('content', '')}\n\n{compact_text}"
+                    messages = [*preserved_prefix[:-1], orig_user, *tail]
+                    logger.info(f"[AgentLoop] In-loop compaction successfully compressed messages to {len(messages)} turns.")
 
         buffered_chunks = []
         is_tool_candidate = None  # None: undetermined, True: looks like JSON tool call, False: narrative streaming
         accumulated_narrative = []
+        loop_scrubber = StreamingThinkScrubber()
 
         async def _chunk_dispatcher(delta: str):
             nonlocal is_tool_candidate
@@ -1070,7 +1124,7 @@ async def _execute_json_agent_loop(
             if is_tool_candidate is False:
                 accumulated_narrative.append(delta)
                 if token_cb:
-                    scrubbed = _strip_think_blocks(delta)
+                    scrubbed = loop_scrubber.feed(delta)
                     if scrubbed:
                         res = token_cb(scrubbed)
                         if asyncio.iscoroutine(res):
@@ -1084,26 +1138,28 @@ async def _execute_json_agent_loop(
             if len(trimmed) < 7:
                 if trimmed and not any(trimmed.startswith(p) for p in ["`", "{"]):
                     is_tool_candidate = False
-                    accumulated_narrative.extend(buffered_chunks)
-                    if token_cb:
-                        scrubbed = _strip_think_blocks("".join(buffered_chunks))
-                        if scrubbed:
-                            res = token_cb(scrubbed)
-                            if asyncio.iscoroutine(res):
-                                await res
+                    for chunk_item in buffered_chunks:
+                        accumulated_narrative.append(chunk_item)
+                        if token_cb:
+                            scrubbed = loop_scrubber.feed(chunk_item)
+                            if scrubbed:
+                                res = token_cb(scrubbed)
+                                if asyncio.iscoroutine(res):
+                                    await res
                 return
 
             if trimmed.startswith("```json") or trimmed.startswith("```") or (trimmed.startswith("{") and ('"action"' in trimmed or '"tool"' in trimmed)):
                 is_tool_candidate = True
             else:
                 is_tool_candidate = False
-                accumulated_narrative.extend(buffered_chunks)
-                if token_cb:
-                    scrubbed = _strip_think_blocks("".join(buffered_chunks))
-                    if scrubbed:
-                        res = token_cb(scrubbed)
-                        if asyncio.iscoroutine(res):
-                            await res
+                for chunk_item in buffered_chunks:
+                    accumulated_narrative.append(chunk_item)
+                    if token_cb:
+                        scrubbed = loop_scrubber.feed(chunk_item)
+                        if scrubbed:
+                            res = token_cb(scrubbed)
+                            if asyncio.iscoroutine(res):
+                                await res
 
         if progress_cb:
             try:
@@ -1142,6 +1198,12 @@ async def _execute_json_agent_loop(
             else:
                 raise e_call
 
+        tail_scrub = loop_scrubber.flush()
+        if tail_scrub and token_cb and is_tool_candidate is False:
+            res = token_cb(tail_scrub)
+            if asyncio.iscoroutine(res):
+                await res
+
         if not raw_out or not raw_out.strip():
             # Hermes conversation_loop.py & turn_empty_response.py parity:
             # Ladder: 1) if empty/reasoning-only, nudge model up to 2 times to produce visible prose
@@ -1175,7 +1237,7 @@ async def _execute_json_agent_loop(
             continue
 
         if not calls:
-            # Check Negative Verification Stop-Gate (Hermes Parity: turn_stop_gates.py & Claude Code)
+            # Check Negative Verification Stop-Gate (Anara Standard: turn_stop_gates.py & Claude Code)
             stop_gate_nudge = convergence_detector.evaluate_final_stop_gate(agent_mode="plan" if read_only else "build")
             if stop_gate_nudge and step < max_steps - 1:
                 logger.info(f"[AgentLoop] Stop-gate intercepted turn: verification tests required before reporting completion.")
@@ -1184,7 +1246,7 @@ async def _execute_json_agent_loop(
                 continue
 
             # Model responded with actual conversational narrative text!
-            # Strip any leaked or orphaned tool tags before presenting to user (Hermes parity)
+            # Strip any leaked or orphaned tool tags before presenting to user (Anara Standard)
             cleaned_text = _clean_model_chat_text(last_response)
             # CRITICAL HERMES FIX: If text only contained tool calls or stray braces, invoke dynamic narrative synthesis pass
             if not cleaned_text or '"action": "tool_call"' in cleaned_text or '<tool_call>' in cleaned_text:
@@ -1371,7 +1433,7 @@ async def _execute_json_agent_loop(
                 or tool_res.get("is_error") is True
             )
 
-            # Hermes Parity: Exploratory tools (read_file, grep, glob, list_dir) returning "not found" or 0 matches
+            # Anara Standard: Exploratory tools (read_file, grep, glob, list_dir) returning "not found" or 0 matches
             # are observations, not system execution failures.
             is_err = raw_err and not is_tolerant
 
@@ -1423,7 +1485,7 @@ async def _execute_json_agent_loop(
 
         messages.append({"role": "assistant", "content": raw_out})
 
-        # Graceful Root Cause Card Escalation (Pilar D — Hermes Standard: Only on 5+ runaway identical stalls)
+        # Graceful Root Cause Card Escalation (Pilar D — Anara Engineering Standards: Only on 5+ runaway identical stalls)
         if circuit_breaker_tripped or (budget_exhausted and not self_correction_tracker.interactive):
             diag_card = format_graceful_diagnostic_card(
                 history=self_correction_tracker.history,
@@ -1440,7 +1502,7 @@ async def _execute_json_agent_loop(
         if not turn_had_error:
             self_correction_tracker.reset()
 
-        # Convergence Tracking (Hermes & Claude Code Parity: Gap 3)
+        # Convergence Tracking (Anara Enterprise Architecture: Gap 3)
         executed_items_for_convergence = []
         for idx, item in enumerate(parsed_calls):
             tool_res = results_by_index.get(idx, {})
@@ -1524,7 +1586,7 @@ async def _make_gemini_raw_call(
     max_tokens: Optional[int] = None,
     on_chunk: Optional[Callable[[str], Any]] = None,
 ) -> str:
-    """OpenAI-to-Gemini raw provider adapter (Hermes Agent gemini_native_adapter Parity)."""
+    """OpenAI-to-Gemini raw provider adapter (Anara Agent gemini_native_adapter Parity)."""
     from core import key_manager
     from google.genai import types
 
@@ -1639,10 +1701,25 @@ async def _make_gemini_native_turn(
 
         full_text = "".join(text_parts)
         cand_content = res.candidates[0].content if (res.candidates and res.candidates[0].content) else None
+        finish_reason = None
+        usage_res = None
+        if res.candidates:
+            finish_reason = getattr(res.candidates[0], "finish_reason", None)
+            if finish_reason is not None:
+                finish_reason = str(finish_reason)
+        if hasattr(res, "usage_metadata") and res.usage_metadata:
+            u = res.usage_metadata
+            usage_res = {
+                "prompt_tokens": getattr(u, "prompt_token_count", 0) or 0,
+                "completion_tokens": getattr(u, "candidates_token_count", 0) or 0,
+                "total_tokens": getattr(u, "total_token_count", 0) or 0,
+            }
         return NativeTurnResult(
             text=full_text,
             tool_calls=tool_calls,
             raw_response=cand_content,
+            finish_reason=finish_reason,
+            usage=usage_res,
         )
 
     return await key_manager.execute_with_failover(_exec)
@@ -1661,22 +1738,48 @@ async def call_universal_chat_model(
     platform: Optional[str] = None,
 ) -> Any:
     """
-    Polymorphic universal model caller (Hermes Agent Parity).
+    Polymorphic universal model caller (Anara Standard).
     Dynamically resolves provider profile via ProfileRegistry and executes through the unified ReAct loop.
-    Zero hardcoded if-else model branching: Open-Closed Principle compliant.
+    Incorporates multi-tier fallback ladder if primary model is unavailable or encounters fatal failure.
+    Zero static hardcoded model shortcuts: Open-Closed Principle compliant.
     """
     from .profile_registry import resolve_provider_profile
+    from .accounts import get_fallback_model_id
 
-    profile = resolve_provider_profile(model_id)
-    return await profile.generate_chat(
-        model_id=model_id,
-        user_prompt=user_prompt,
-        system_instruction=system_instruction,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        read_only=read_only,
-        progress_cb=progress_cb,
-        token_cb=token_cb,
-        intercept_mutating_tools=intercept_mutating_tools,
-        platform=platform,
-    )
+    try:
+        profile = resolve_provider_profile(model_id)
+        return await profile.generate_chat(
+            model_id=model_id,
+            user_prompt=user_prompt,
+            system_instruction=system_instruction,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            read_only=read_only,
+            progress_cb=progress_cb,
+            token_cb=token_cb,
+            intercept_mutating_tools=intercept_mutating_tools,
+            platform=platform,
+        )
+    except Exception as e_prim:
+        fallback_model = get_fallback_model_id()
+        if fallback_model and fallback_model != model_id:
+            logger.warning(
+                f"[ModelCaller] Primary model '{model_id}' failed ({e_prim}); engaging fallback ladder to '{fallback_model}'..."
+            )
+            try:
+                fb_profile = resolve_provider_profile(fallback_model)
+                return await fb_profile.generate_chat(
+                    model_id=fallback_model,
+                    user_prompt=user_prompt,
+                    system_instruction=system_instruction,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    read_only=read_only,
+                    progress_cb=progress_cb,
+                    token_cb=token_cb,
+                    intercept_mutating_tools=intercept_mutating_tools,
+                    platform=platform,
+                )
+            except Exception as e_fb:
+                logger.error(f"[ModelCaller] Fallback model '{fallback_model}' also failed: {e_fb}")
+        raise e_prim

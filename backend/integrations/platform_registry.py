@@ -1,6 +1,6 @@
 """
 platform_registry.py — Central Dynamic Platform Registry for Project Anara.
-Hermes Agent Parity (gateway/platform_registry.py):
+Anara Standard (gateway/platform_registry.py):
 Provides a clean, modular registry connecting all platform adapters (Telegram, WhatsApp,
 Discord, Slack, WebStudio, CLI, Voice).
 """
@@ -28,7 +28,7 @@ logger = logging.getLogger("anara.integrations.registry")
 
 class PlatformRegistry:
     """
-    Central dynamic registry of communication platforms (Hermes Parity).
+    Central dynamic registry of communication platforms (Anara Standard).
     Manages adapters, status, messaging, media dispatch, and presentation rendering in one place.
     """
 
@@ -74,7 +74,7 @@ class PlatformRegistry:
         return sorted(list(self._adapters.keys()))
 
     async def start_all(self):
-        """Connects all configured adapters concurrently (Hermes Parity)."""
+        """Connects all configured adapters concurrently (Anara Standard)."""
         async def _connect_safe(name: str, adapter: BasePlatformAdapter):
             try:
                 await adapter.connect()
@@ -84,7 +84,7 @@ class PlatformRegistry:
         await asyncio.gather(*[_connect_safe(n, a) for n, a in self._adapters.items()], return_exceptions=True)
 
     async def stop_all(self):
-        """Gracefully disconnects all adapters concurrently (Hermes Parity)."""
+        """Gracefully disconnects all adapters concurrently (Anara Standard)."""
         async def _disconnect_safe(name: str, adapter: BasePlatformAdapter):
             try:
                 await adapter.disconnect()
@@ -94,7 +94,7 @@ class PlatformRegistry:
         await asyncio.gather(*[_disconnect_safe(n, a) for n, a in self._adapters.items()], return_exceptions=True)
 
     async def get_all_status(self) -> Dict[str, Any]:
-        """Returns aggregated connectivity status for all platforms concurrently (Hermes Parity)."""
+        """Returns aggregated connectivity status for all platforms concurrently (Anara Standard)."""
         async def _get_status_safe(name: str, adapter: BasePlatformAdapter) -> tuple[str, Dict[str, Any]]:
             try:
                 st = await adapter.get_status()
@@ -135,7 +135,7 @@ class PlatformRegistry:
         if not adapter:
             return {"status": "error", "message": f"Platform '{platform}' not supported."}
         
-        # Verify file path before dispatch (Hermes security parity)
+        # Verify file path before dispatch (Anara Security Architecture)
         clean_path = (file_path or "").strip()
         if not clean_path or not os.path.isfile(clean_path):
             return {"status": "error", "message": f"Media file not found or invalid: '{clean_path}'"}

@@ -1,5 +1,5 @@
 """
-platforms/web_studio.py — Web Studio / HUD Platform Adapter for Project Anara (Hermes Parity).
+platforms/web_studio.py — Web Studio / HUD Platform Adapter for Project Anara (Anara Standard).
 """
 
 from __future__ import annotations

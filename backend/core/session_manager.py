@@ -9,6 +9,7 @@ Anara Standard multi-channel session state management:
 from __future__ import annotations
 
 import asyncio
+from contextlib import contextmanager
 from enum import Enum
 import json
 import logging
@@ -16,7 +17,7 @@ import sqlite3
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Generator
 
 from constants import get_anara_db_path
 from core.plan_detector import is_explicit_plan_approval
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 class ActionState(str, Enum):
-    """Finite State Machine states for a pending action lifecycle (Hermes Parity)."""
+    """Finite State Machine states for a pending action lifecycle (Anara Standard)."""
     PENDING = "pending"          # Awaiting user decision
     APPROVED = "approved"        # Approved (via button or voice)
     REJECTED = "rejected"        # Rejected/cancelled
@@ -37,21 +38,39 @@ class ActionState(str, Enum):
 
 
 class AsyncReentrantLock:
-    """Task-aware reentrant asyncio lock for session turns (Hermes turn_lease parity)."""
+    """Task-aware reentrant asyncio lock for session turns with lease timeouts (Hermes turn_lease parity)."""
 
-    def __init__(self):
+    def __init__(self, lease_timeout: float = 300.0):
         self._lock = asyncio.Lock()
         self._owner: Optional[asyncio.Task] = None
         self._count: int = 0
+        self._acquired_at: Optional[float] = None
+        self._lease_timeout: float = lease_timeout
+
+    def is_locked(self) -> bool:
+        return self._owner is not None and self._count > 0
 
     async def acquire(self) -> bool:
         current_task = asyncio.current_task()
+        now = time.time()
+        # If lock was held longer than lease_timeout by a dead or stuck task, break lease
+        if self._owner is not None and self._acquired_at and (now - self._acquired_at) > self._lease_timeout:
+            logger.warning(f"[AsyncReentrantLock] Turn lease expired after {self._lease_timeout}s. Breaking stale lease.")
+            self._owner = None
+            self._count = 0
+            if self._lock.locked():
+                try:
+                    self._lock.release()
+                except RuntimeError:
+                    pass
+
         if self._owner == current_task:
             self._count += 1
             return True
         await self._lock.acquire()
         self._owner = current_task
         self._count = 1
+        self._acquired_at = time.time()
         return True
 
     def release(self) -> None:
@@ -59,9 +78,15 @@ class AsyncReentrantLock:
         if self._owner != current_task:
             return
         self._count -= 1
-        if self._count == 0:
+        if self._count <= 0:
             self._owner = None
-            self._lock.release()
+            self._count = 0
+            self._acquired_at = None
+            if self._lock.locked():
+                try:
+                    self._lock.release()
+                except RuntimeError:
+                    pass
 
     async def __aenter__(self):
         await self.acquire()
@@ -73,7 +98,7 @@ class AsyncReentrantLock:
 
 @dataclass
 class PendingAction:
-    """Represents a paused mutating action waiting for user confirmation (Hermes Parity)."""
+    """Represents a paused mutating action waiting for user confirmation (Anara Standard)."""
     plan_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
     session_id: int = 0
     channel: str = "cli"
@@ -145,7 +170,7 @@ class PendingAction:
 class SessionStateManager:
     """
     Multi-channel state machine tracking pending action states, active turn tasks,
-    and process lifecycles per chat channel (Hermes Parity).
+    and process lifecycles per chat channel (Anara Standard).
     Includes SQLite crash resilience for pending actions and audit trail tracking.
     """
 
@@ -162,10 +187,17 @@ class SessionStateManager:
         self._init_db()
         self._load_from_db()
 
-    def _get_conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=10.0)
+    @contextmanager
+    def _get_conn(self) -> Generator[sqlite3.Connection, None, None]:
+        conn = sqlite3.connect(self.db_path, timeout=15.0)
         conn.row_factory = sqlite3.Row
-        return conn
+        conn.execute("PRAGMA foreign_keys = ON;")
+        conn.execute("PRAGMA synchronous = NORMAL;")
+        conn.execute("PRAGMA busy_timeout = 15000;")
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def _init_db(self) -> None:
         """Initializes the persistent pending_actions table and indexes in SQLite."""
@@ -194,6 +226,25 @@ class SessionStateManager:
                 conn.execute("""
                     CREATE INDEX IF NOT EXISTS idx_pending_channel_state
                     ON pending_actions(channel, channel_id, state);
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS tool_execution_ledger (
+                        call_id TEXT PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        channel TEXT NOT NULL,
+                        channel_id TEXT NOT NULL,
+                        tool_name TEXT NOT NULL,
+                        tool_args_json TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        result_summary TEXT,
+                        error_message TEXT,
+                        created_at REAL NOT NULL,
+                        completed_at REAL
+                    );
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_tool_ledger_session
+                    ON tool_execution_ledger(session_id, created_at);
                 """)
                 conn.commit()
         except Exception as e:
@@ -362,6 +413,10 @@ class SessionStateManager:
 
     def store_pending(self, action: PendingAction) -> None:
         key = self._make_key(action.channel, action.channel_id)
+        prior = self._pending.get(key)
+        if prior and prior.plan_id != action.plan_id and prior.state == ActionState.PENDING:
+            logger.info(f"[SessionManager] Superseding prior pending action #{prior.plan_id} with new action #{action.plan_id}")
+            self._update_action_state_in_db(prior.plan_id, ActionState.CANCELLED)
         self._pending[key] = action
         self._persist_action(action)
         logger.info(f"[SessionManager] Stored pending action #{action.plan_id} ({action.tool_name}) for key: {key}")
@@ -412,7 +467,7 @@ class SessionStateManager:
     ) -> Optional[PendingAction]:
         """
         Transitions the state of an action (e.g. APPROVED, REJECTED, EXECUTED, FAILED) deterministically.
-        Hermes Parity: terminal states clear active pending queues immediately.
+        Anara Standard: terminal states clear active pending queues immediately.
         """
         key = self._make_key(channel, channel_id)
         action = self._pending.get(key)
@@ -474,7 +529,7 @@ class SessionStateManager:
                 return act
         return None
 
-    # ── TASK & SUBPROCESS SUPERVISOR (Hermes Parity) ──
+    # ── TASK & SUBPROCESS SUPERVISOR (Anara Standard) ──
 
     def register_active_task(self, channel: str, channel_id: str, task: asyncio.Task) -> None:
         key = self._make_key(channel, channel_id)
@@ -525,15 +580,21 @@ class SessionStateManager:
         self._interrupted_sessions.discard(key)
 
     def get_session_lock(self, session_key: str) -> AsyncReentrantLock:
-        """Returns or creates a cooperative reentrant lock for the session (Hermes turn_lease parity)."""
+        """Returns or creates a cooperative reentrant lock for the session with automatic idle pruning (Hermes turn_lease parity)."""
         clean_key = str(session_key).strip().lower()
+        if len(self._session_locks) > 100:
+            for k in list(self._session_locks.keys()):
+                lock_obj = self._session_locks[k]
+                if not lock_obj.is_locked() and k != clean_key:
+                    self._session_locks.pop(k, None)
+
         if clean_key not in self._session_locks:
             self._session_locks[clean_key] = AsyncReentrantLock()
         return self._session_locks[clean_key]
 
     async def request_hard_interrupt(self, channel: str, channel_id: str, reason: str = "stop_command") -> Dict[str, Any]:
         """
-        Hermes Hard Interrupt & Process Reaper:
+        Anara Hard Interrupt & Process Reaper:
         1. Cancels active asyncio turn task.
         2. Kills entire OS child process tree (PID reaper) spawned during this turn.
         3. Clears pending approval state.
@@ -574,21 +635,128 @@ class SessionStateManager:
             "channel_id": channel_id,
         }
 
+    # ── PERSIST-BEFORE-EXECUTE TOOL EXECUTION LEDGER (Anara Standard) ──
+
+    def persist_tool_call_start(
+        self,
+        session_id: Any,
+        channel: str,
+        channel_id: str,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        call_id: Optional[str] = None,
+    ) -> str:
+        """
+        Hermes Persist-Before-Execute Parity:
+        Flushes model tool call intention and arguments to SQLite WAL storage
+        BEFORE dispatching the tool execution.
+        """
+        cid = call_id or f"call_{uuid.uuid4().hex[:12]}"
+        now = time.time()
+        try:
+            with self._get_conn() as conn:
+                conn.execute("""
+                    INSERT INTO tool_execution_ledger (
+                        call_id, session_id, channel, channel_id,
+                        tool_name, tool_args_json, status, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'running', ?)
+                    ON CONFLICT(call_id) DO UPDATE SET
+                        tool_name = excluded.tool_name,
+                        tool_args_json = excluded.tool_args_json,
+                        status = 'running';
+                """, (
+                    cid,
+                    str(session_id or 0),
+                    channel,
+                    str(channel_id),
+                    tool_name,
+                    json.dumps(tool_args, ensure_ascii=False),
+                    now
+                ))
+                conn.commit()
+        except Exception as e:
+            logger.debug(f"[SessionManager] Failed to persist tool call start: {e}")
+        return cid
+
+    def persist_tool_call_result(
+        self,
+        call_id: str,
+        result_summary: Any,
+        is_error: bool = False,
+        error_message: Optional[str] = None
+    ) -> None:
+        """
+        Hermes Persist-Before-Execute Parity:
+        Appends tool observation / execution outcome to SQLite storage
+        immediately upon completion.
+        """
+        now = time.time()
+        status_val = "error" if is_error else "completed"
+        summary_str = str(result_summary) if result_summary is not None else ""
+        if len(summary_str) > 8000:
+            summary_str = summary_str[:8000] + " ... [persisted summary truncated]"
+        try:
+            with self._get_conn() as conn:
+                conn.execute("""
+                    UPDATE tool_execution_ledger
+                    SET status = ?, result_summary = ?, error_message = ?, completed_at = ?
+                    WHERE call_id = ?;
+                """, (
+                    status_val,
+                    summary_str,
+                    error_message,
+                    now,
+                    call_id
+                ))
+                conn.commit()
+        except Exception as e:
+            logger.debug(f"[SessionManager] Failed to persist tool call result: {e}")
+
+    def get_tool_execution_history(
+        self,
+        session_id: Optional[Any] = None,
+        limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """Retrieves audit trail of tool executions from SQLite."""
+        results = []
+        try:
+            with self._get_conn() as conn:
+                cursor = conn.cursor()
+                if session_id is not None:
+                    cursor.execute("""
+                        SELECT * FROM tool_execution_ledger
+                        WHERE session_id = ?
+                        ORDER BY created_at DESC
+                        LIMIT ?
+                    """, (str(session_id), limit))
+                else:
+                    cursor.execute("""
+                        SELECT * FROM tool_execution_ledger
+                        ORDER BY created_at DESC
+                        LIMIT ?
+                    """, (limit,))
+                for r in cursor.fetchall():
+                    results.append(dict(r))
+        except Exception as e:
+            logger.debug(f"[SessionManager] Error fetching tool execution history: {e}")
+        return results
+
     def evaluate_intent(self, text: str, channel: str, channel_id: str) -> Dict[str, Any]:
         """
         Evaluates incoming user message against session state.
         Returns {'has_pending': bool, 'is_approval': bool, 'pending': Optional[PendingAction]}
         Only intercepts when an action is strictly in PENDING state awaiting user decision.
+        Uses pure model-driven semantic intent classification (Anara Enterprise Architecture).
         """
         pending = self.get_pending(channel, channel_id)
         if not pending or pending.state != ActionState.PENDING:
             return {"has_pending": False, "is_approval": False, "pending": None}
 
-        # User sent a message while an action is pending
-        is_app = is_explicit_plan_approval(text)
+        is_approval = is_explicit_plan_approval(text, pending.plan_text or "")
+
         return {
             "has_pending": True,
-            "is_approval": is_app,
+            "is_approval": is_approval,
             "pending": pending
         }
 

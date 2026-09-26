@@ -46,7 +46,8 @@ def extract_voice_embedding(audio_pcm: bytes, sample_rate: int = 16000) -> Optio
         return None
 
     try:
-        audio = np.frombuffer(audio_pcm, dtype=np.int16).astype(np.float32) / 32768.0
+        audio_clean = audio_pcm[:len(audio_pcm) - (len(audio_pcm) % 2)]
+        audio = np.frombuffer(audio_clean, dtype=np.int16).astype(np.float32) / 32768.0
 
         nperseg = int(sample_rate * 0.025)  # 25ms window (400 samples)
         noverlap = int(sample_rate * 0.015) # 10ms step (240 samples overlap)
@@ -117,9 +118,9 @@ def extract_voice_embedding(audio_pcm: bytes, sample_rate: int = 16000) -> Optio
 
         # 4. MFCCs with CMN
         mfccs = _compute_dct_np(log_mel_energies, n_coeffs=20)
-        mfccs -= np.mean(mfccs, axis=1, keepdims=True)
-
-        mfcc_means = np.mean(mfccs, axis=1) # 20
+        # Capture true spectral envelope mean BEFORE temporal zero-centering (Anara Standard)
+        mfcc_means = np.mean(mfccs, axis=1) # 20 true acoustic formant features
+        mfccs -= np.mean(mfccs, axis=1, keepdims=True) # CMN normalization for dynamic features
         mfcc_stds = np.std(mfccs, axis=1)   # 20
 
         # Delta MFCCs
@@ -157,16 +158,19 @@ def extract_voice_embedding(audio_pcm: bytes, sample_rate: int = 16000) -> Optio
                 float(np.max(f0_list) / 500.0) if f0_list else 0.45,
                 float(np.min(f0_list) / 300.0) if f0_list else 0.25,
                 float(np.ptp(f0_list) / 200.0) if f0_list else 0.1,
-                float(np.mean(mel_energies)),
-                float(np.var(mel_energies)),
+                float(np.mean(log_mel_energies)),
+                float(np.var(log_mel_energies)),
                 1.0 # Bias
             ], dtype=np.float32)  # 16
         ]).astype(np.float32)     # Total = 128 dimensions
 
-        # L2-Norm unit vector normalization
+        # L2-Norm unit vector normalization with NaN protection
+        feat_128 = np.nan_to_num(feat_128, nan=0.0, posinf=0.0, neginf=0.0)
         norm = np.linalg.norm(feat_128)
         if norm > 1e-6:
             feat_128 = feat_128 / norm
+        else:
+            return None
         return feat_128
 
     except Exception as e:
@@ -208,6 +212,7 @@ class VoiceBiometricsMixin:
                             old_emb = np.array(json.loads(existing["voice_embedding"]), dtype=np.float32)
                             alpha = max(0.10, 1.0 / min(count, 10))
                             merged = ((1.0 - alpha) * old_emb) + (alpha * emb)
+                            merged = np.nan_to_num(merged, nan=0.0, posinf=0.0, neginf=0.0)
                             norm = np.linalg.norm(merged)
                             if norm > 1e-6:
                                 merged = merged / norm
@@ -318,19 +323,23 @@ class VoiceBiometricsMixin:
                 except Exception as err:
                     logger.warning(f"[Voice Biometrics] Error comparing with {row['name']}: {err}")
 
-            eff_threshold = 0.62
+            eff_threshold = threshold if threshold is not None else 0.62
 
             if best_speaker and best_score >= eff_threshold:
                 try:
                     if best_score >= 0.80 and best_stored_emb is not None and len(best_stored_emb) == len(emb):
                         is_mature = best_count >= MAX_VOICE_SAMPLES
                         now_mono = time.monotonic()
-                        last_adapt = self._last_adapt_ts.get(best_id, 0.0)
-                        adapt_allowed = (not is_mature) or ((now_mono - last_adapt) >= MATURE_ADAPT_INTERVAL)
+                        with self._lock:
+                            last_adapt = self._last_adapt_ts.get(best_id, 0.0)
+                            adapt_allowed = (not is_mature) or ((now_mono - last_adapt) >= MATURE_ADAPT_INTERVAL)
+                            if adapt_allowed:
+                                self._last_adapt_ts[best_id] = now_mono
 
                         if adapt_allowed:
                             alpha = max(0.04, 1.0 / min(best_count + 1, 15))
                             adapted = ((1.0 - alpha) * best_stored_emb) + (alpha * emb)
+                            adapted = np.nan_to_num(adapted, nan=0.0, posinf=0.0, neginf=0.0)
                             adapted_norm = np.linalg.norm(adapted)
                             if adapted_norm > 1e-6:
                                 adapted = adapted / adapted_norm
@@ -372,21 +381,26 @@ class VoiceBiometricsMixin:
             return [dict(r) for r in cursor.fetchall()]
 
     def delete_speaker(self, speaker_name: str) -> bool:
-        """Deletes an entire speaker profile and all associated memories/notes."""
+        """Deletes an entire speaker profile and all associated memories/notes/embeddings."""
+        clean_name = speaker_name.strip().title()
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("PRAGMA foreign_keys = ON")
-            cursor.execute("DELETE FROM memories WHERE speaker_id IN (SELECT id FROM speakers WHERE name = ?)", (speaker_name.strip().title(),))
-            cursor.execute("DELETE FROM notes_and_todos WHERE speaker_id IN (SELECT id FROM speakers WHERE name = ?)", (speaker_name.strip().title(),))
-            cursor.execute("DELETE FROM speakers WHERE name = ?", (speaker_name.strip().title(),))
+            cursor.execute("DELETE FROM memories WHERE speaker_id IN (SELECT id FROM speakers WHERE name = ?)", (clean_name,))
+            cursor.execute("DELETE FROM notes_and_todos WHERE speaker_id IN (SELECT id FROM speakers WHERE name = ?)", (clean_name,))
+            try:
+                cursor.execute("DELETE FROM memory_embeddings WHERE speaker_name = ?", (clean_name,))
+            except Exception:
+                pass
+            cursor.execute("DELETE FROM speakers WHERE name = ?", (clean_name,))
             conn.commit()
-            logger.info(f"[AnaraMemory] Deleted speaker profile and memories for: {speaker_name}")
-            self._emit_mutation("speaker_deleted", {"speaker_name": speaker_name.strip().title()})
+            logger.info(f"[AnaraMemory] Deleted speaker profile and memories for: {clean_name}")
+            self._emit_mutation("speaker_deleted", {"speaker_name": clean_name})
             return True
 
     def normalize_memory_key(self, raw_key: str) -> str:
         """
-        Normalizes memory key format (snake_case) and cleans temporal suffixes (Hermes Parity).
+        Normalizes memory key format (snake_case) and cleans temporal suffixes (Anara Standard).
         Semantic naming is preserved directly from model reasoning without rigid word dictionaries.
         """
         k = raw_key.strip().lower().replace("-", "_").replace(" ", "_")

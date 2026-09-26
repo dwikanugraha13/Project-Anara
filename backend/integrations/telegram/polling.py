@@ -37,19 +37,31 @@ async def _telegram_polling_worker():
     except Exception as e:
         logger.warning(f"[TelegramDaemon] setup_telegram_bot_commands warning: {e}")
 
+    # Explicit webhook teardown to eliminate HTTP 409 conflict loops (Anara Standard)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as init_client:
+            await init_client.post(
+                f"{TELEGRAM_API_BASE}/bot{token}/deleteWebhook",
+                json={"drop_pending_updates": False}
+            )
+            logger.info("[TelegramDaemon] Preflight webhook teardown completed.")
+    except Exception as e:
+        logger.debug(f"[TelegramDaemon] Preflight deleteWebhook note: {e}")
+
     # Import handler lazily to avoid circular imports
     from .handlers import process_incoming_telegram_update
 
-    while _telegram_daemon_running:
-        token = get_stored_telegram_token()
-        if not token:
-            await asyncio.sleep(10.0)
-            continue
+    # Reuse persistent httpx.AsyncClient with keep-alive across polling ticks
+    async with httpx.AsyncClient(timeout=25.0) as client:
+        while _telegram_daemon_running:
+            token = get_stored_telegram_token()
+            if not token:
+                await asyncio.sleep(10.0)
+                continue
 
-        url = f"{TELEGRAM_API_BASE}/bot{token}/getUpdates"
-        params = {"limit": "20", "offset": str(_last_update_id + 1), "timeout": "15"}
-        try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
+            url = f"{TELEGRAM_API_BASE}/bot{token}/getUpdates"
+            params = {"limit": "20", "offset": str(_last_update_id + 1), "timeout": "15"}
+            try:
                 res = await client.get(url, params=params)
                 if res.status_code == 200:
                     data = res.json()
@@ -63,11 +75,11 @@ async def _telegram_polling_worker():
                 elif res.status_code == 409:
                     logger.warning("[TelegramDaemon] Conflict: another bot instance is polling. Waiting 20s.")
                     await asyncio.sleep(20.0)
-        except Exception as e:
-            logger.debug(f"[TelegramDaemon] Polling tick error: {e}")
-            await asyncio.sleep(3.0)
+            except Exception as e:
+                logger.debug(f"[TelegramDaemon] Polling tick error: {e}")
+                await asyncio.sleep(3.0)
 
-        await asyncio.sleep(0.5)
+            await asyncio.sleep(0.5)
 
 
 def start_telegram_polling_daemon():

@@ -44,7 +44,8 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
             "glob_find_files",
             "grep_search_code",
             "list_directory",
-            "scan_workspace_folder"
+            "scan_workspace_folder",
+            "extract_code_outline"
         ]
     },
     "terminal_processes": {
@@ -396,7 +397,7 @@ def toggle_toolset(toolset_id: str, enabled: Optional[bool] = None) -> bool:
 
 
 def get_enabled_tool_names() -> Set[str]:
-    """Returns the set of tool names whose toolsets are currently enabled (Hermes Parity)."""
+    """Returns the set of tool names whose toolsets are currently enabled (Anara Standard)."""
     from memory import memory_engine
 
     setting_val = memory_engine.get_app_setting("toolsets_enabled_map")
@@ -477,7 +478,7 @@ CORE_TOOLS: List[str] = [
     "delegate_subagent",
 ]
 
-# ── Platform Aliases (Hermes Parity: Externalized YAML) ──
+# ── Platform Aliases (Anara Standard: Externalized YAML) ──
 def _load_platform_aliases() -> Dict[str, str]:
     try:
         from core.prompt_loader import load_config_yaml
@@ -498,7 +499,7 @@ PLATFORM_ALIASES = _load_platform_aliases()
 
 
 class PlatformToolRegistry:
-    """Dynamic tool resolution (Hermes Parity: all platforms share the universal core tool bundle)."""
+    """Dynamic tool resolution (Anara Standard: all platforms share the universal core tool bundle)."""
 
     @classmethod
     def resolve_platform_key(cls, platform: Optional[str]) -> str:
@@ -519,7 +520,7 @@ class PlatformToolRegistry:
         """
         p_key = cls.resolve_platform_key(platform)
 
-        # Hermes Parity: Base shared suite across all platforms
+        # Anara Standard: Base shared suite across all platforms
         active_tools: Set[str] = set(CORE_TOOLS)
 
         # Web Studio / Code Station: Developer workspace affordances
@@ -545,7 +546,7 @@ class PlatformToolRegistry:
                 "project_hud",
             ])
 
-        # Dynamic Toolset Domain Activation (Hermes Parity: Explicit Domain Posture Extension)
+        # Dynamic Toolset Domain Activation (Anara Standard: Explicit Domain Posture Extension)
         if user_task:
             try:
                 clean_task = str(user_task).lower()
@@ -565,6 +566,15 @@ class PlatformToolRegistry:
             except Exception:
                 pass
 
+        # Anara Standard: Inject active Native MCP tools across all platform toolsets
+        try:
+            from integrations.mcp import mcp_manager
+            mcp_tools = mcp_manager.get_registered_mcp_tool_names()
+            if mcp_tools:
+                active_tools.update(mcp_tools)
+        except Exception:
+            pass
+
         if extra_tools:
             active_tools.update(extra_tools)
 
@@ -579,7 +589,7 @@ class PlatformToolRegistry:
         extra_tools: Optional[List[str]] = None,
     ) -> Set[str]:
         """
-        Hermes & Claude Code Parity: Posture-Based Dynamic Toolset Pruning.
+        Anara Enterprise Architecture: Posture-Based Dynamic Toolset Pruning.
         Zero hardcoded keyword dictionaries. Adopts Hermes Coding Posture in software
         workspaces, while dynamically discovering domain tools from ToolRegistry
         when specific domain identifiers are referenced.
@@ -603,7 +613,7 @@ class PlatformToolRegistry:
                 "spotify_search",
             ])
 
-        # 3. Dynamic Toolset Domain Activation (Hermes Parity: Explicit Domain Posture Extension)
+        # 3. Dynamic Toolset Domain Activation (Anara Standard: Explicit Domain Posture Extension)
         if user_task:
             try:
                 GENERIC_DOMAIN_ROOTS = {"task", "home", "code", "file", "system", "document", "session", "memory"}

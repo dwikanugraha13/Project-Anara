@@ -1,6 +1,6 @@
 """
 base.py — Abstract Base Platform Adapter for Project Anara Omnichannel Gateway.
-Anara Standard gateway/platforms/base.py (Hermes Parity):
+Anara Standard gateway/platforms/base.py (Anara Standard):
 Provides a unified polymorphic interface for transport, media dispatch, and UI presentation across all platforms.
 """
 
@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 
 
 class BasePlatformAdapter(ABC):
-    """Abstract base adapter for messaging platforms (Hermes Parity)."""
+    """Abstract base adapter for messaging platforms (Anara Standard)."""
 
     name: str = "generic"
 

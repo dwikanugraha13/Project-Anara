@@ -11,13 +11,14 @@ import hashlib
 import logging
 import re
 import shlex
+import threading
 import time
 from typing import List, Optional, Dict, Any, Set, Tuple
 from tools import get_tool_risk, TOOL_RISK_CLASSIFICATION
 
 logger = logging.getLogger(__name__)
 
-# Persistent worker pool for synchronous approval intent calls (Hermes Parity)
+# Persistent worker pool for synchronous approval intent calls (Anara Standard)
 _SYNC_INTENT_EXECUTOR: Optional[concurrent.futures.ThreadPoolExecutor] = None
 
 
@@ -138,9 +139,10 @@ def classify_single_command_ast(segment: str) -> str:
         if re.search(fp, seg_lower):
             return "ask"
 
-    # Check unquoted shell write redirection (> or >>)
+    # Check unquoted shell write redirection (> or >>), excluding stream joins like 2>&1
     seg_no_quotes = re.sub(r'"[^"]*"|\'[^\']*\'', "", seg)
-    if re.search(r"(?<![-=])>[>]?", seg_no_quotes):
+    seg_no_stream_joins = re.sub(r"\d*>&[0-9-]", "", seg_no_quotes)
+    if re.search(r"(?<![-=])>[>]?", seg_no_stream_joins):
         return "mutating"
 
     # Tokenize arguments
@@ -411,7 +413,7 @@ def get_highest_risk(tools: List[str]) -> str:
 
 def is_significant_action(request_text: str, tools: List[str]) -> bool:
     """
-    Evaluates if an 'action' tier tool has significant external side effects (Hermes Parity).
+    Evaluates if an 'action' tier tool has significant external side effects (Anara Standard).
     Evaluates tool characteristics rather than arbitrary keyword heuristics.
     """
     if not tools:
@@ -422,6 +424,7 @@ def is_significant_action(request_text: str, tools: List[str]) -> bool:
 
 _INTENT_CACHE: Dict[str, Any] = {}
 _INTENT_CACHE_TTL = 90.0  # 90s short TTL to prevent stale or cross-action intent poisoning
+_INTENT_CACHE_LOCK = threading.Lock()
 
 
 def _get_intent_cache_key(user_text: str, context: str = "") -> str:
@@ -431,45 +434,47 @@ def _get_intent_cache_key(user_text: str, context: str = "") -> str:
 
 def _lookup_intent_cache(key: str) -> Optional[str]:
     now = time.time()
-    # Check exact key first
-    if key in _INTENT_CACHE:
-        entry = _INTENT_CACHE[key]
-        if isinstance(entry, tuple):
-            ts, val = entry
-            if now - ts <= _INTENT_CACHE_TTL:
-                return val
-            _INTENT_CACHE.pop(key, None)
-            return None
-        elif isinstance(entry, str):
-            return entry
+    with _INTENT_CACHE_LOCK:
+        # Check exact key first
+        if key in _INTENT_CACHE:
+            entry = _INTENT_CACHE[key]
+            if isinstance(entry, tuple):
+                ts, val = entry
+                if now - ts <= _INTENT_CACHE_TTL:
+                    return val
+                _INTENT_CACHE.pop(key, None)
+                return None
+            elif isinstance(entry, str):
+                return entry
 
-    # Also check base key (for backwards compatibility with unit tests pre-seeding _INTENT_CACHE["gas"] = "approve")
-    base_key = key.split(":::")[0] if ":::" in key else key
-    if base_key in _INTENT_CACHE:
-        entry = _INTENT_CACHE[base_key]
-        if isinstance(entry, tuple):
-            ts, val = entry
-            if now - ts <= _INTENT_CACHE_TTL:
-                return val
-            return None
-        elif isinstance(entry, str):
-            return entry
+        # Also check base key (for backwards compatibility with unit tests pre-seeding _INTENT_CACHE["gas"] = "approve")
+        base_key = key.split(":::")[0] if ":::" in key else key
+        if base_key in _INTENT_CACHE:
+            entry = _INTENT_CACHE[base_key]
+            if isinstance(entry, tuple):
+                ts, val = entry
+                if now - ts <= _INTENT_CACHE_TTL:
+                    return val
+                return None
+            elif isinstance(entry, str):
+                return entry
 
-    return None
+        return None
 
 
 def _store_intent_cache(key: str, val: str):
     now = time.time()
-    if len(_INTENT_CACHE) > 200:
-        expired_keys = [k for k, (ts, _) in _INTENT_CACHE.items() if now - ts > _INTENT_CACHE_TTL]
-        for k in expired_keys:
-            _INTENT_CACHE.pop(k, None)
+    with _INTENT_CACHE_LOCK:
         if len(_INTENT_CACHE) > 200:
-            _INTENT_CACHE.clear()
-    _INTENT_CACHE[key] = (now, val)
+            expired_keys = [k for k, (ts, _) in list(_INTENT_CACHE.items()) if now - ts > _INTENT_CACHE_TTL]
+            for k in expired_keys:
+                _INTENT_CACHE.pop(k, None)
+            if len(_INTENT_CACHE) > 200:
+                _INTENT_CACHE.clear()
+        _INTENT_CACHE[key] = (now, val)
 
 
-# Universal machine-level binary CLI tokens only (Claude Code & Hermes Parity)
+# Universal machine-level binary CLI tokens only (Anara Enterprise Architecture)
 # These represent explicit single-word terminal keypresses [y/N], NOT human slang dictionaries.
 _CLI_MACHINE_CONFIRM_TOKENS = {"y", "yes"}
 _CLI_MACHINE_CANCEL_TOKENS = {"n", "no"}
@@ -477,7 +482,7 @@ _CLI_MACHINE_CANCEL_TOKENS = {"n", "no"}
 
 def is_explicit_plan_approval(user_text: str, pending_action_context: str = "") -> bool:
     """
-    Claude Code & Hermes Parity: 100% Model-Driven Approval Reasoning.
+    Anara Enterprise Architecture: 100% Model-Driven Approval Reasoning.
     Zero language-specific keyword dictionaries. All human language utterances
     (Indonesian, English slang, German, Japanese, etc.) are evaluated semantically
     by the reasoning model to correctly detect nuance, conditionals, and negation.
@@ -514,7 +519,7 @@ def is_explicit_plan_approval(user_text: str, pending_action_context: str = "") 
 
 async def classify_approval_intent(user_text: str, pending_action_context: str = "") -> str:
     """
-    Pure Model-Driven Semantic Intent Classifier (Hermes Parity).
+    Pure Model-Driven Semantic Intent Classifier (Anara Standard).
     Evaluates whether incoming user response is:
     - 'approve': user agrees, affirms, gives green light, or says to proceed.
     - 'reject': user declines, cancels, says no, tells to stop, or rejects the action.
@@ -567,7 +572,7 @@ async def classify_approval_intent(user_text: str, pending_action_context: str =
                     timeout=15.0
                 )
                 if isinstance(res, str):
-                    # Robust multi-format verdict extraction (Hermes Parity)
+                    # Robust multi-format verdict extraction (Anara Standard)
                     verdict = None
                     m_bold = re.findall(r"\*\*(APPROVE|REJECT|OTHER)\*\*", res, re.IGNORECASE)
                     if m_bold:
@@ -606,6 +611,17 @@ async def classify_approval_intent(user_text: str, pending_action_context: str =
     return "other"
 
 
+def _strip_shell_comments(cmd: str) -> str:
+    """Strips shell comment lines to prevent prompt injection inside command strings (Anara Standard)."""
+    lines = []
+    for line in cmd.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
 async def smart_evaluate_command_safety(command: str, description: str = "") -> str:
     """
     Hermes Smart Approval Guardian (approval_smart.py Parity).
@@ -627,8 +643,20 @@ async def smart_evaluate_command_safety(command: str, description: str = "") -> 
         from core.capabilities import get_fast_auxiliary_model
         from core.prompt_loader import load_prompt
 
-        sys_p = load_prompt("classifiers/command_safety", command=cmd, description=description or "Shell execution")
-        user_p = f"<command>\n{cmd}\n</command>\n\nContext: {description or 'Shell execution'}\nVerdict:"
+        cmd_clean = _strip_shell_comments(cmd)
+        # Static policy system prompt to prevent system prompt injection
+        sys_p = load_prompt(
+            "classifiers/command_safety",
+            default=(
+                "You are an isolated security review guardian for system shell commands.\n"
+                "Analyze the command inside <command> tags and assess its blast radius.\n"
+                "Respond strictly with ONE of the following verdict tokens:\n"
+                "APPROVE - Safe read-only or harmless inspection command.\n"
+                "DENY - Mutating action that alters workspace files but stays contained.\n"
+                "ESCALATE - Dangerous, destructive, or system-wide operation requiring explicit user approval."
+            )
+        )
+        user_p = f"<command>\n{cmd_clean}\n</command>\n\nContext: {description or 'Shell execution'}\nVerdict:"
 
         model_id = get_fast_auxiliary_model()
         res = await asyncio.wait_for(
@@ -644,12 +672,15 @@ async def smart_evaluate_command_safety(command: str, description: str = "") -> 
         )
         if isinstance(res, str):
             token = res.strip().upper()
-            if "APPROVE" in token:
-                return "read_only"
-            elif "ESCALATE" in token:
-                return "ask"
-            elif "DENY" in token:
-                return "mutating"
+            m = re.search(r"\b(APPROVE|ESCALATE|DENY)\b", token)
+            if m:
+                v = m.group(1)
+                if v == "APPROVE":
+                    return "read_only"
+                elif v == "ESCALATE":
+                    return "ask"
+                elif v == "DENY":
+                    return "mutating"
     except Exception as e:
         logger.debug(f"[SmartApproval] Guardian LLM pass notice: {e}")
 

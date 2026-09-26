@@ -104,7 +104,7 @@ class VoicePipeline:
         if sp_name == current_speaker:
             return
 
-        new_name = sp_name or "Agnan"
+        new_name = sp_name or "User"
         self.set_current_speaker(new_name)
         if sp_name:
             self.sticky_speaker_name = sp_name
@@ -143,7 +143,11 @@ class VoicePipeline:
             active_client = key_manager.get_client()
             from core.capabilities import get_fast_auxiliary_model
             aux_m = get_fast_auxiliary_model()
-            for mdl in [aux_m, "gemini-2.5-flash"]:
+            candidates = [aux_m] if "gemini" in str(aux_m).lower() else []
+            for fallback_m in ("gemini-2.5-flash", "gemini-2.0-flash"):
+                if fallback_m not in candidates:
+                    candidates.append(fallback_m)
+            for mdl in candidates:
                 try:
                     res = await asyncio.wait_for(
                         active_client.aio.models.generate_content(
@@ -360,7 +364,7 @@ class VoicePipeline:
 
         live_svc = self.get_gemini_service()
 
-        # ── VOICE PASS-THROUGH APPROVAL (Hands-Free Hermes Parity) ──
+        # ── VOICE PASS-THROUGH APPROVAL (Hands-Free Anara Standard) ──
         from core.session_manager import session_state_manager, ActionState
         from core.plan_detector import is_explicit_plan_approval
 

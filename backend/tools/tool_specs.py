@@ -17,6 +17,7 @@ from .fs_tools import (
     _tool_scan_workspace_folder,
     _tool_glob_find_files,
     _tool_grep_search_code,
+    _tool_extract_code_outline,
 )
 from .artifact_tools import (
     _tool_generate_file_artifact,
@@ -295,6 +296,22 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
         "toolset": "file_operations",
         "category": "coding",
         "icon": "folder",
+    },
+    {
+        "name": "extract_code_outline",
+        "description": "Extracts structural outline (classes, functions, methods, line ranges, signatures, docstrings) of a file using AST. Saves context tokens over reading large files.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "file_path": {"type": "STRING", "description": "Workspace file path to outline."}
+            },
+            "required": ["file_path"]
+        },
+        "handler": _tool_extract_code_outline,
+        "risk": "read_only",
+        "toolset": "file_operations",
+        "category": "coding",
+        "icon": "code",
     },
     {
         "name": "edit_file",
@@ -1009,7 +1026,7 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Cron Scheduler ──
     {
         "name": "cronjob_manage",
-        "description": "Manages autonomous scheduled background tasks (Hermes Parity cron). Actions: 'create', 'list', 'pause', 'resume', 'run', 'remove'.",
+        "description": "Manages autonomous scheduled background tasks (Anara Standard cron). Actions: 'create', 'list', 'pause', 'resume', 'run', 'remove'.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
