@@ -4,6 +4,7 @@ platforms/discord.py — Discord Platform Adapter for Project Anara (Hermes Pari
 
 from __future__ import annotations
 
+import asyncio
 import os
 import logging
 from typing import Any, Dict, Optional

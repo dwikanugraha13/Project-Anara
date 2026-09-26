@@ -132,7 +132,10 @@ def compact_tool_payload(
         compacted = dict(payload)
         for k, v in compacted.items():
             if isinstance(v, str):
-                if k in ("output", "stdout", "stderr", "content", "message", "result", "diff", "raw", "summary") or len(v) > max_chars:
+                # Claude Code Parity: File reading tools self-bound their pagination via offset/limit.
+                # Do not truncate legitimate source code views.
+                is_file_read_content = (k == "content" and any(fn in str(tool_name).lower() for fn in ("read_local_file", "read_file", "file_read")))
+                if not is_file_read_content and (k in ("output", "stdout", "stderr", "content", "message", "result", "diff", "raw", "summary") or len(v) > max_chars):
                     compacted[k] = compact_tool_output(
                         v,
                         max_lines=max_lines,

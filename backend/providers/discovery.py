@@ -96,6 +96,16 @@ async def fetch_gemini_models(force_refresh: bool = False) -> List[Dict[str, Any
                     badge, category, icon = _infer_model_badge_and_category(clean_id, disp_name, "gemini")
                     desc = getattr(m, "description", "") or f"Google Gemini model: {disp_name}"
                     
+                    # Hermes & Claude Code Parity: Dynamically harvest context window limits from live SDK
+                    in_limit = getattr(m, "input_token_limit", None)
+                    out_limit = getattr(m, "output_token_limit", None)
+                    if in_limit and isinstance(in_limit, int) and in_limit > 0:
+                        try:
+                            from core.token_budget import save_context_length
+                            save_context_length(clean_id, in_limit, max_output=out_limit if isinstance(out_limit, int) else None)
+                        except Exception:
+                            pass
+
                     models_list.append({
                         "id": clean_id,
                         "name": disp_name,
@@ -361,6 +371,20 @@ async def fetch_custom_providers_models(force_refresh: bool = False) -> List[Dic
                         if m_id:
                             full_mid = f"{prefix}/{m_id}"
                             badge, cat, icon = _infer_model_badge_and_category(m_id, m_id, prefix)
+
+                            # Hermes & Claude Code Parity: Dynamically harvest context window limits from /models endpoint
+                            if isinstance(item, dict):
+                                ctx_len = item.get("context_length") or item.get("max_model_len") or item.get("context_window") or item.get("input_token_limit")
+                                max_out = item.get("max_output_tokens") or item.get("max_tokens") or item.get("output_token_limit")
+                                if ctx_len and isinstance(ctx_len, (int, float)) and int(ctx_len) > 0:
+                                    try:
+                                        from core.token_budget import save_context_length
+                                        out_val = int(max_out) if max_out and isinstance(max_out, (int, float)) else None
+                                        save_context_length(full_mid, int(ctx_len), max_output=out_val, base_url=base_url)
+                                        save_context_length(m_id, int(ctx_len), max_output=out_val, base_url=base_url)
+                                    except Exception:
+                                        pass
+
                             discovered.append({
                                 "id": full_mid,
                                 "name": f"{m_id} ({node['name']})",

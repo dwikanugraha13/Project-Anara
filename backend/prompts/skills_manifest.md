@@ -1,0 +1,2 @@
+[ACTIVE AGENT SKILLS (ANARA BRAIN)]:
+{skill_lines}

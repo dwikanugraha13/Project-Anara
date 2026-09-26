@@ -4,6 +4,7 @@ platforms/whatsapp.py — WhatsApp Platform Adapter for Project Anara (Hermes Pa
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Dict, Optional
 from ..base import BasePlatformAdapter

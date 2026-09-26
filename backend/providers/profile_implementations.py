@@ -4,12 +4,14 @@ Anara Standard provider adapters:
 Decouples inference execution into polymorphic provider profiles.
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import os
 import re
-from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
+from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Set, Tuple
 import httpx
 from config import cfg_get
 
@@ -41,9 +43,6 @@ class GeminiProviderProfile(BaseProviderProfile):
         from google.genai import types
 
         gemini_model_name = model_id.replace("models/", "")
-        if "live-preview" in gemini_model_name or "native-audio" in gemini_model_name:
-            from .accounts import get_fallback_model_id
-            gemini_model_name = get_fallback_model_id()
 
         cfg_kwargs: Dict[str, Any] = {"temperature": temperature}
         if max_tokens is not None and max_tokens > 0:
@@ -95,10 +94,6 @@ class GeminiProviderProfile(BaseProviderProfile):
         from .caller import _make_gemini_raw_call, _execute_json_agent_loop
 
         gemini_model_name = model_id.replace("models/", "")
-        if "live-preview" in gemini_model_name or "native-audio" in gemini_model_name:
-            from .accounts import get_fallback_model_id
-            gemini_model_name = get_fallback_model_id()
-
         active_target_model = gemini_model_name
 
         # 1. Native Structured Tool-Use API Path (Hermes & Gemini Parity)
@@ -484,12 +479,17 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
                     payload: Dict[str, Any] = {
                         "model": target_model,
                         "messages": history,
-                        "temperature": temperature,
                     }
+                    is_reasoning_model = target_model.startswith("o1") or target_model.startswith("o3")
+                    if not is_reasoning_model:
+                        payload["temperature"] = temperature
                     if openai_tools:
                         payload["tools"] = openai_tools
                     if max_tokens is not None and max_tokens > 0:
-                        payload["max_tokens"] = max_tokens
+                        if is_reasoning_model:
+                            payload["max_completion_tokens"] = max_tokens
+                        else:
+                            payload["max_tokens"] = max_tokens
 
                     gen_timeout = float(cfg_get("agent.generation.timeout", 45.0))
                     async with httpx.AsyncClient(timeout=gen_timeout) as client:
@@ -508,8 +508,10 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
                             "content": output_str
                         })
 
+                is_reasoning_model = target_model.startswith("o1") or target_model.startswith("o3")
+                sys_role = "developer" if is_reasoning_model else "system"
                 initial_history = [
-                    {"role": "system", "content": system_instruction},
+                    {"role": sys_role, "content": system_instruction},
                     {"role": "user", "content": user_prompt}
                 ]
                 return await _execute_native_agent_loop(
@@ -853,9 +855,23 @@ class AnthropicProviderProfile(BaseProviderProfile):
                         "temperature": temperature,
                     }
                     if system_instruction and system_instruction.strip():
-                        payload["system"] = system_instruction.strip()
+                        # Anthropic Prompt Caching Parity (Claude Code & Hermes Parity)
+                        payload["system"] = [
+                            {
+                                "type": "text",
+                                "text": system_instruction.strip(),
+                                "cache_control": {"type": "ephemeral"}
+                            }
+                        ]
                     if anthropic_tools:
-                        payload["tools"] = anthropic_tools
+                        # Cache the tools catalog block on the last tool
+                        cached_tools = []
+                        for t_idx, t in enumerate(anthropic_tools):
+                            t_copy = dict(t)
+                            if t_idx == len(anthropic_tools) - 1:
+                                t_copy["cache_control"] = {"type": "ephemeral"}
+                            cached_tools.append(t_copy)
+                        payload["tools"] = cached_tools
 
                     gen_timeout = float(cfg_get("agent.generation.timeout", 30.0))
                     try:
@@ -1111,16 +1127,35 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
         temperature: float = 0.7,
         usage_out: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[str, None]:
-        res = await self.generate_chat(
-            model_id=model_id,
-            user_prompt=user_prompt,
-            system_instruction=system_instruction,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            read_only=False,
-        )
-        if res:
-            yield str(res)
+        q: asyncio.Queue[Optional[str]] = asyncio.Queue()
+
+        def _on_token(token: str):
+            if token:
+                q.put_nowait(token)
+
+        async def _run_task():
+            try:
+                await self.generate_chat(
+                    model_id=model_id,
+                    user_prompt=user_prompt,
+                    system_instruction=system_instruction,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    read_only=False,
+                    token_cb=_on_token,
+                )
+            except Exception as e:
+                logger.error(f"[OpenAICompatible] stream_chat error: {e}")
+            finally:
+                q.put_nowait(None)
+
+        task = asyncio.create_task(_run_task())
+        while True:
+            chunk = await q.get()
+            if chunk is None:
+                break
+            yield chunk
+        await task
 
     async def generate_chat(
         self,
@@ -1236,10 +1271,10 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                             text_out = "".join(full_content)
                             if not text_out.strip() and full_reasoning:
                                 joined_reasoning = "".join(full_reasoning)
-                                # Hermes Parity (conversation_loop.py): Never leak raw CoT/thinking monologues.
-                                # Only forward reasoning if the model placed an actual structured tool_call block inside it.
                                 if '"action": "tool_call"' in joined_reasoning or '"action":"tool_call"' in joined_reasoning or "<tool_call>" in joined_reasoning:
                                     text_out = joined_reasoning
+                                else:
+                                    text_out = joined_reasoning.strip()
                             return text_out
 
                 return await _execute_json_agent_loop(
@@ -1349,10 +1384,10 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                             text_out = "".join(full_content)
                             if not text_out.strip() and full_reasoning:
                                 joined_reasoning = "".join(full_reasoning)
-                                # Hermes Parity (conversation_loop.py): Never leak raw CoT/thinking monologues.
-                                # Only forward reasoning if the model placed an actual structured tool_call block inside it.
                                 if '"action": "tool_call"' in joined_reasoning or '"action":"tool_call"' in joined_reasoning or "<tool_call>" in joined_reasoning:
                                     text_out = joined_reasoning
+                                else:
+                                    text_out = joined_reasoning.strip()
                             return text_out
 
                 return await _execute_json_agent_loop(

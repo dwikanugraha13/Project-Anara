@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import re
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
 import httpx
 from config import cfg_get
 
@@ -31,9 +33,6 @@ async def stream_universal_chat_model(
         from google import genai
         from google.genai import types
         gemini_model_name = model_id.replace("models/", "")
-        if "live-preview" in gemini_model_name or "native-audio" in gemini_model_name:
-            from core.capabilities import get_fast_auxiliary_model
-            gemini_model_name = get_fast_auxiliary_model()
         cfg_kwargs: Dict[str, Any] = {
             "temperature": temperature,
         }
@@ -196,6 +195,27 @@ async def stream_universal_chat_model(
         except Exception as e:
             logger.warning(f"[Stream] OpenAI Codex stream error: {e}")
 
+    # Polymorphic Profile Streaming (Claude Code & Hermes Parity)
+    try:
+        from .profile_registry import resolve_provider_profile
+        profile = resolve_provider_profile(model_id)
+        has_yielded = False
+        async for chunk in profile.stream_chat(
+            model_id=model_id,
+            user_prompt=user_prompt,
+            system_instruction=system_instruction,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            usage_out=usage_out,
+        ):
+            if chunk:
+                has_yielded = True
+                yield chunk
+        if has_yielded:
+            return
+    except Exception as e_prof:
+        logger.warning(f"[Stream] Profile stream error for '{model_id}': {e_prof}")
+
     # Fallback to full non-streaming call
     full = await call_universal_chat_model(
         model_id=model_id,
@@ -227,7 +247,7 @@ def _robust_parse_json(candidate_str: str) -> Optional[Any]:
             val = m.group(1)
             def repl_backslash(bm):
                 next_ch = bm.group(1)
-                if next_ch in ['"', '\\', '/']:
+                if next_ch in ['"', '\\', '/', 'b', 'f', 'n', 'r', 't', 'u']:
                     return '\\' + next_ch
                 return '/' + next_ch
             fixed = re.sub(r'\\(.)', repl_backslash, val)
@@ -342,7 +362,7 @@ def _clean_model_chat_text(raw_text: str) -> str:
 
     # 5. Check if remaining text contains actual words (Unicode word characters)
     words = [w for w in re.findall(r"[\w\d]+", text, re.UNICODE) if w.lower() not in ("json", "action", "tool", "tool_call", "arguments")]
-    if len(words) < 2:
+    if not words:
         return ""
 
     return text
@@ -550,13 +570,19 @@ async def _execute_native_agent_loop(
                 middle = history[1:-4]
                 summary_lines = []
                 for m in middle:
-                    role = m.get("role", "assistant")
-                    content = str(m.get("content", ""))[:120].replace("\n", " ")
+                    if isinstance(m, dict):
+                        role = m.get("role", "assistant")
+                        content = str(m.get("content", ""))[:120].replace("\n", " ")
+                    else:
+                        role = getattr(m, "role", "assistant")
+                        content = str(getattr(m, "parts", ""))[:120].replace("\n", " ")
                     summary_lines.append(f"- [{role}]: {content}...")
-                compact_msg = {
-                    "role": "user",
-                    "content": f"[SYSTEM CONTEXT COMPACTION]: Earlier intermediate execution steps ({len(middle)} turns) were summarized to preserve context budget:\n" + "\n".join(summary_lines)
-                }
+                compact_text = f"[SYSTEM CONTEXT COMPACTION]: Earlier intermediate execution steps ({len(middle)} turns) were summarized to preserve context budget:\n" + "\n".join(summary_lines)
+                if isinstance(head, dict):
+                    compact_msg = {"role": "user", "content": compact_text}
+                else:
+                    from google.genai import types as genai_types
+                    compact_msg = genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=compact_text)])
                 history = [head, compact_msg, *tail]
                 logger.info(f"[NativeAgentLoop] In-loop compaction successfully compressed history to {len(history)} turns.")
 
@@ -594,7 +620,24 @@ async def _execute_native_agent_loop(
                 pass
 
         # Call provider for single turn
-        turn = await native_turn_caller(history)
+        try:
+            turn = await native_turn_caller(history)
+        except Exception as e_call:
+            from core.token_budget import parse_context_limit_from_error, save_context_length
+            err_msg = str(e_call)
+            parsed_limit = parse_context_limit_from_error(err_msg)
+            if parsed_limit and parsed_limit < token_tracker.context_window:
+                logger.warning(
+                    f"[NativeAgentLoop] Discovered context limit ({parsed_limit:,} tokens) from provider error: {e_call}. "
+                    f"Auto-updating context cache and compacting..."
+                )
+                save_context_length(model_id, parsed_limit)
+                token_tracker.update_model_context(parsed_limit)
+                token_tracker.compact_messages_if_needed(history)
+                turn = await native_turn_caller(history)
+            else:
+                raise e_call
+
         if not isinstance(turn, NativeTurnResult):
             # If provider returned raw string or unexpected type, fallback
             return str(turn)
@@ -606,8 +649,13 @@ async def _execute_native_agent_loop(
             stop_gate_nudge = convergence_detector.evaluate_final_stop_gate(agent_mode="plan" if read_only else "build")
             if stop_gate_nudge and step < max_steps - 1:
                 logger.info(f"[NativeAgentLoop] Stop-gate intercepted turn: verification tests required before reporting completion.")
-                history.append({"role": "assistant", "content": turn.clean_text})
-                history.append({"role": "user", "content": stop_gate_nudge})
+                if history and not isinstance(history[0], dict):
+                    from google.genai import types as genai_types
+                    history.append(genai_types.Content(role="model", parts=[genai_types.Part.from_text(text=turn.clean_text)]))
+                    history.append(genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=stop_gate_nudge)]))
+                else:
+                    history.append({"role": "assistant", "content": turn.clean_text})
+                    history.append({"role": "user", "content": stop_gate_nudge})
                 continue
 
             final_text = _clean_model_chat_text(last_text) or last_text
@@ -628,10 +676,19 @@ async def _execute_native_agent_loop(
             t_name = call.name
             t_args = call.arguments or {}
 
-            # Loop Breaker check
+            # Loop Breaker check (Hermes & Claude Code Parity: Stop infinite repetitive tool invocations)
             is_stalled, stall_msg = loop_breaker.record_and_check(t_name, t_args)
             if is_stalled and stall_msg:
-                logger.warning(f"[NativeAgentLoop] LoopBreaker triggered on tool '{t_name}'")
+                logger.warning(f"[NativeAgentLoop] LoopBreaker triggered on tool '{t_name}': {stall_msg}")
+                parsed_calls = [{
+                    "id": call.call_id,
+                    "name": t_name,
+                    "args": t_args,
+                    "risk": "read_only",
+                    "call_obj": call,
+                    "stall_error": stall_msg,
+                }]
+                break
 
             t_risk = get_tool_risk(t_name)
             if t_name in ("execute_cli_command", "terminal", "run_terminal_command"):
@@ -695,7 +752,9 @@ async def _execute_native_agent_loop(
                             pass
 
                 batch_results = await asyncio.gather(*[
-                    dispatch_tool_call(item["name"], item["args"], read_only=read_only)
+                    asyncio.sleep(0, result={"status": "error", "error": item["stall_error"], "is_stalled": True})
+                    if item.get("stall_error")
+                    else dispatch_tool_call(item["name"], item["args"], read_only=read_only)
                     for item in ro_batch
                 ])
 
@@ -776,10 +835,11 @@ async def _execute_native_agent_loop(
             )
             is_err = raw_err and not is_tolerant
 
-            # Ground-Truth Test Verification
+            # Ground-Truth Test Verification (Dynamic Language-Agnostic)
             if tool_name == "execute_cli_command":
                 cmd_str = str(item["args"].get("command", "")).lower()
-                if any(k in cmd_str for k in ("run_tests", "pytest", "npm test", "npm run test", "test_general_agent")):
+                from core.convergence import _is_verification_command
+                if _is_verification_command(cmd_str):
                     from core.workspace_sentinel import workspace_sentinel
                     gt = workspace_sentinel.verify_ground_truth(res_str, tool_res.get("return_code", 0) if isinstance(tool_res, dict) else 0)
                     if not gt.get("verified"):
@@ -949,7 +1009,8 @@ async def _execute_json_agent_loop(
 
     last_response = ""
     empty_turn_retries = 0
-    for step in range(25):
+    max_steps = 25
+    for step in range(max_steps):
         # Token-aware context compaction (replaces old 24-message char-based heuristic)
         token_tracker.compact_messages_if_needed(messages)
 
@@ -1009,7 +1070,7 @@ async def _execute_json_agent_loop(
             if is_tool_candidate is False:
                 accumulated_narrative.append(delta)
                 if token_cb:
-                    scrubbed = _strip_think_blocks("".join(accumulated_narrative))
+                    scrubbed = _strip_think_blocks(delta)
                     if scrubbed:
                         res = token_cb(scrubbed)
                         if asyncio.iscoroutine(res):
@@ -1025,7 +1086,7 @@ async def _execute_json_agent_loop(
                     is_tool_candidate = False
                     accumulated_narrative.extend(buffered_chunks)
                     if token_cb:
-                        scrubbed = _strip_think_blocks("".join(accumulated_narrative))
+                        scrubbed = _strip_think_blocks("".join(buffered_chunks))
                         if scrubbed:
                             res = token_cb(scrubbed)
                             if asyncio.iscoroutine(res):
@@ -1038,7 +1099,7 @@ async def _execute_json_agent_loop(
                 is_tool_candidate = False
                 accumulated_narrative.extend(buffered_chunks)
                 if token_cb:
-                    scrubbed = _strip_think_blocks("".join(accumulated_narrative))
+                    scrubbed = _strip_think_blocks("".join(buffered_chunks))
                     if scrubbed:
                         res = token_cb(scrubbed)
                         if asyncio.iscoroutine(res):
@@ -1058,9 +1119,28 @@ async def _execute_json_agent_loop(
                 pass
 
         try:
-            raw_out = await provider_caller(messages, on_chunk=_chunk_dispatcher)
-        except TypeError:
-            raw_out = await provider_caller(messages)
+            try:
+                raw_out = await provider_caller(messages, on_chunk=_chunk_dispatcher)
+            except TypeError:
+                raw_out = await provider_caller(messages)
+        except Exception as e_call:
+            from core.token_budget import parse_context_limit_from_error, save_context_length
+            err_msg = str(e_call)
+            parsed_limit = parse_context_limit_from_error(err_msg)
+            if parsed_limit and parsed_limit < token_tracker.context_window:
+                logger.warning(
+                    f"[AgentLoop] Discovered context limit ({parsed_limit:,} tokens) from provider error: {e_call}. "
+                    f"Auto-updating context cache and compacting..."
+                )
+                save_context_length(model_id, parsed_limit)
+                token_tracker.update_model_context(parsed_limit)
+                token_tracker.compact_messages_if_needed(messages)
+                try:
+                    raw_out = await provider_caller(messages, on_chunk=_chunk_dispatcher)
+                except TypeError:
+                    raw_out = await provider_caller(messages)
+            else:
+                raise e_call
 
         if not raw_out or not raw_out.strip():
             # Hermes conversation_loop.py & turn_empty_response.py parity:
@@ -1295,10 +1375,11 @@ async def _execute_json_agent_loop(
             # are observations, not system execution failures.
             is_err = raw_err and not is_tolerant
 
-            # Ground-Truth Test Verification (Hermes Parity Subsystem 5)
+            # Ground-Truth Test Verification (Dynamic Language-Agnostic)
             if tool_name == "execute_cli_command":
                 cmd_str = str(item["args"].get("command", "")).lower()
-                if any(k in cmd_str for k in ("run_tests", "pytest", "npm test", "npm run test", "test_general_agent")):
+                from core.convergence import _is_verification_command
+                if _is_verification_command(cmd_str):
                     from core.workspace_sentinel import workspace_sentinel
                     gt = workspace_sentinel.verify_ground_truth(res_str, tool_res.get("return_code", 0) if isinstance(tool_res, dict) else 0)
                     if not gt.get("verified"):

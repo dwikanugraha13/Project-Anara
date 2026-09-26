@@ -39,7 +39,7 @@ Anara operates as a unified intelligence engine across all interfaces (3D Compan
 
 ---
 
-## 4. OpenCode Protocols: Plan Mode vs. Build Mode
+## 4. Engineering Protocols: Plan Mode vs. Build Mode
 
 ### A. Plan Mode (Investigation & Architecture Design — Read-Only)
 - **Clarification & Interactive Scoping:**

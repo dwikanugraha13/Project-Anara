@@ -1,0 +1,37 @@
+# ── Verification Stop-Gate Rules Configuration ──
+# Externalized rules for language-agnostic verification tracking (Claude Code & Hermes Parity).
+# Zero hardcoded extensions or file names in Python source code.
+
+non_code_extensions:
+  - ".md"
+  - ".markdown"
+  - ".mdx"
+  - ".rst"
+  - ".txt"
+  - ".text"
+  - ".adoc"
+  - ".asciidoc"
+  - ".org"
+  - ".log"
+  - ".csv"
+  - ".tsv"
+  - ".png"
+  - ".jpg"
+  - ".jpeg"
+  - ".gif"
+  - ".webp"
+  - ".svg"
+  - ".ico"
+  - ".pdf"
+
+non_code_filenames:
+  - "license"
+  - "licence"
+  - "notice"
+  - "authors"
+  - "contributors"
+  - "changelog"
+  - "codeowners"
+  - "readme"
+
+default_stop_gate_nudge: "[VERIFICATION STOP-GATE]: You modified files ({mutated_list}) during this session, but have not yet executed ground-truth verification tests to confirm they work without regressions. Please run the project's verification command{cmd_suggestion} and inspect the real output before delivering your final completion report."

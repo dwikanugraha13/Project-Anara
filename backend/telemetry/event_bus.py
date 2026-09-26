@@ -9,7 +9,7 @@ import asyncio
 import time
 from dataclasses import dataclass, field, asdict
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 
 class EventType(str, Enum):
@@ -63,16 +63,22 @@ class TelemetryEventBus:
         # Active listener queues per session_id: Dict[str, List[asyncio.Queue]]
         self._listeners: Dict[str, List[asyncio.Queue]] = {}
         self._global_hooks: List[Callable[[AgentEvent], Any]] = []
+        self._active_tasks: Set[asyncio.Task] = set()
 
     def register_hook(self, callback: Callable[[AgentEvent], Any]):
         """Registers a global hook (e.g. terminal logger or metric collector)."""
         if callback not in self._global_hooks:
             self._global_hooks.append(callback)
 
-    def subscribe(self, session_id: str) -> asyncio.Queue:
-        """Subscribes an SSE or WebSocket client queue to a session's telemetry events."""
+    def unregister_hook(self, callback: Callable[[AgentEvent], Any]):
+        """Unregisters a previously registered global telemetry hook (Claude Code Parity)."""
+        if callback in self._global_hooks:
+            self._global_hooks.remove(callback)
+
+    def subscribe(self, session_id: str, max_queue_size: int = 500) -> asyncio.Queue:
+        """Subscribes an SSE or WebSocket client queue to a session's telemetry events with bounded capacity."""
         s_key = str(session_id or "default")
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue = asyncio.Queue(maxsize=max_queue_size)
         if s_key not in self._listeners:
             self._listeners[s_key] = []
         self._listeners[s_key].append(queue)
@@ -104,23 +110,29 @@ class TelemetryEventBus:
             payload=payload,
         )
 
-        # 1. Run global hooks (non-blocking)
-        for hook in self._global_hooks:
+        # 1. Run global hooks with strong-reference task retention (Python 3.11+ GC Parity)
+        for hook in list(self._global_hooks):
             try:
                 res = hook(event)
                 if asyncio.iscoroutine(res):
-                    asyncio.create_task(res)
+                    task = asyncio.create_task(res)
+                    self._active_tasks.add(task)
+                    task.add_done_callback(self._active_tasks.discard)
             except Exception:
                 pass
 
-        # 2. Forward to session queues
+        # 2. Forward to session queues with drop-oldest eviction policy to prevent OOM
         s_key = str(session_id or "default")
         if s_key in self._listeners:
             for q in list(self._listeners[s_key]):
                 try:
                     q.put_nowait(event)
                 except asyncio.QueueFull:
-                    pass
+                    try:
+                        q.get_nowait()
+                        q.put_nowait(event)
+                    except Exception:
+                        pass
 
 
 # Singleton instance

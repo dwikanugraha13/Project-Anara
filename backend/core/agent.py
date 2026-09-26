@@ -27,6 +27,12 @@ logger = logging.getLogger(__name__)
 WORKSPACE_DIR = os.path.join(tempfile.gettempdir(), "anara_agent_workspace")
 os.makedirs(WORKSPACE_DIR, exist_ok=True)
 
+# Standard directories excluded from workspace scans and checkpoints (Hermes & Claude Code Parity)
+WORKSPACE_IGNORED_DIRS = {
+    ".git", "node_modules", "venv", ".venv", "__pycache__",
+    ".next", "dist", "build", ".vscode", ".idea", ".pytest_cache", ".coverage"
+}
+
 
 class AnaraAgent:
     """
@@ -236,7 +242,7 @@ class AnaraAgent:
         cp_dir = os.path.join(tempfile.gettempdir(), "anara_checkpoints", f"sess_{effective_sid or 0}", cp_id)
         os.makedirs(cp_dir, exist_ok=True)
 
-        ignored = {".git", "node_modules", "venv", "__pycache__", ".next", "dist", "build"}
+        ignored = WORKSPACE_IGNORED_DIRS
         copied = 0
         for root, dirs, files in os.walk(target_dir):
             dirs[:] = [d for d in dirs if d not in ignored and "anara_checkpoints" not in d]
@@ -293,7 +299,12 @@ class AnaraAgent:
             # Stage specific file
             subprocess.run(["git", "add", rel_file], cwd=target_dir, capture_output=True, timeout=10)
             # Commit with clean message
-            clean_msg = f"anara(build): {message}"
+            msg_clean = message.strip()
+            conventional_prefixes = ("feat:", "fix:", "chore:", "refactor:", "test:", "docs:", "perf:", "style:", "build:", "ci:")
+            if any(msg_clean.lower().startswith(p) for p in conventional_prefixes):
+                clean_msg = msg_clean
+            else:
+                clean_msg = f"anara(build): {message}"
             subprocess.run(
                 ["git", "commit", "-m", clean_msg],
                 cwd=target_dir,
@@ -385,7 +396,7 @@ class AnaraAgent:
             except Exception:
                 pass
 
-        IGNORED = {".git", "node_modules", "venv", "__pycache__", ".next", "dist", "build", ".vscode", ".idea"}
+        IGNORED = WORKSPACE_IGNORED_DIRS
 
         def build_nested_node(current_path: str, rel_path: str = "") -> List[Dict[str, Any]]:
             nodes = []

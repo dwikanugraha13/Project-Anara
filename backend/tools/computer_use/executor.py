@@ -27,6 +27,16 @@ from .driver import is_cua_driver_available, resolve_cua_driver_cmd, run_cua_cal
 
 logger = logging.getLogger("anara.computer_use.executor")
 
+# Ensure Windows DPI awareness so physical coordinates map 1:1 with screen pixels
+if sys.platform == "win32":
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
 STAGING_DIR = str(get_anara_staging_dir("screenshots"))
 os.makedirs(STAGING_DIR, exist_ok=True)
 
@@ -449,11 +459,13 @@ async def _resolve_app_input_coordinates(
             # Check for any disabled view / modal requiring return (e.g. subagent view or back button)
             restore_btn = next((
                 e for e in elems
-                if any(k in str(e.get("label") or e.get("name") or "").lower() for k in ("kembali ke sesi utama", "back to main", "return to main"))
+                if 0 <= e.get("frame", {}).get("y", -1) < win_h
+                and 0 <= e.get("frame", {}).get("x", -1) < win_w
+                and any(k in str(e.get("label") or e.get("name") or "").lower() for k in ("kembali ke sesi utama", "back to main", "return to main"))
             ), None)
             if restore_btn:
                 r_frame = restore_btn.get("frame", {})
-                if r_frame:
+                if r_frame and 0 <= r_frame.get("y", -1) < win_h and 0 <= r_frame.get("x", -1) < win_w:
                     rx = int(r_frame.get("x", 0) + r_frame.get("w", 0) // 2)
                     ry = int(r_frame.get("y", 0) + r_frame.get("h", 0) // 2)
                     logger.info(f"[ComputerUse] Modal/subagent view detected, clicking restore at ({rx}, {ry})")
@@ -500,13 +512,12 @@ async def _resolve_app_input_coordinates(
                     tx = int(fr.get("x", 0) + min(int(fr.get("w", 0) // 2), 300))
                     ty = int(fr.get("y", 0) + fr.get("h", 0) // 2)
 
-                    # Look for adjacent Send / Submit button
+                    # Look for adjacent Send / Submit button (within 150px vertically)
                     submit_btn = next((
                         e for e in elems
                         if e.get("role") == "Button"
                         and 0 <= e.get("frame", {}).get("y", -1) < win_h
-                        and abs(e.get("frame", {}).get("y", 0) - fr.get("y", 0)) < 80
-                        and e.get("frame", {}).get("x", 0) > fr.get("x", 0)
+                        and abs(e.get("frame", {}).get("y", 0) - fr.get("y", 0)) < 150
                         and any(k in str(e.get("label") or e.get("name") or "").lower() for k in ("send", "kirim", "submit", "enter", "arrow", "post", "search", "cari"))
                     ), None)
                     if submit_btn:
@@ -538,8 +549,8 @@ async def _resolve_app_input_coordinates(
     is_doc = any(k in clean_app for k in ("notepad", "word", "editor", "text", "document", "sublime"))
 
     if is_chat:
-        fallback_x = int(win_x + min(300, win_w // 3))
-        fallback_y = int(win_y + win_h - 120)
+        fallback_x = int(win_x + min(325, win_w // 3))
+        fallback_y = int(win_y + win_h - 105)
     elif is_doc:
         fallback_x = int(win_x + min(100, win_w // 4))
         fallback_y = int(win_y + min(150, win_h // 4))
@@ -633,13 +644,12 @@ async def execute_type(
         if should_use_cb:
             res_c = run_cua_call("clipboard_write", {"text": clean_text})
             if res_c and not res_c.get("isError"):
-                hotkey_args: Dict[str, Any] = {"keys": ["ctrl", "v"], "delivery_mode": "foreground"}
+                hotkey_args: Dict[str, Any] = {"keys": ["ctrl", "v"], "delivery_mode": "foreground", "scope": "desktop"}
                 if target_pid:
-                    hotkey_args["pid"] = int(target_pid)
-                    if target_wid:
-                        hotkey_args["window_id"] = int(target_wid)
-                else:
-                    hotkey_args["scope"] = "desktop"
+                    try:
+                        run_cua_call("bring_to_front", {"pid": int(target_pid), "window_id": int(target_wid or 0)})
+                    except Exception:
+                        pass
                 res_v = run_cua_call("hotkey", hotkey_args)
                 if res_v and not res_v.get("isError"):
                     typed_ok = True
@@ -890,12 +900,16 @@ async def execute_click(
         elif target_x is not None and target_y is not None:
             args["x"] = float(target_x)
             args["y"] = float(target_y)
-            if pid:
-                args["pid"] = int(pid)
-                if window_id:
-                    args["window_id"] = int(window_id)
-            else:
-                args["scope"] = "desktop"
+            # Hermes & CUA Parity: For foreground coordinate clicks, ensure target window is frontmost,
+            # then use scope='desktop' to deliver physical OS cursor movement and click (global_input / SendInput).
+            # This works 100% reliably across Electron, Chromium, Win32, WPF, Qt, and browser interfaces.
+            if pid or window_id:
+                try:
+                    run_cua_call("bring_to_front", {"pid": int(pid or 0), "window_id": int(window_id or 0)})
+                except Exception:
+                    pass
+            args["scope"] = "desktop"
+            args["delivery_mode"] = "foreground"
 
         tool = "double_click" if click_count == 2 else ("right_click" if button == "right" else "click")
         res = run_cua_call(tool, args)
@@ -914,17 +928,23 @@ async def execute_click(
                 result["verification_screenshot"] = cap.get("image_path")
             return result
 
-    # Fallback to user32 SetCursorPos and mouse_event
+    # Fallback to user32 SetCursorPos and mouse_event (with process DPI awareness)
     user32 = getattr(getattr(ctypes, "windll", None), "user32", None)
     if user32 and target_x is not None and target_y is not None:
         user32.SetCursorPos(int(target_x), int(target_y))
-        await asyncio.sleep(0.02)
+        await asyncio.sleep(0.05)
         if button == "right":
             user32.mouse_event(0x0008, 0, 0, 0, 0)
             user32.mouse_event(0x0010, 0, 0, 0, 0)
+        elif button == "middle":
+            user32.mouse_event(0x0020, 0, 0, 0, 0)
+            user32.mouse_event(0x0040, 0, 0, 0, 0)
         else:
-            user32.mouse_event(0x0002, 0, 0, 0, 0)
-            user32.mouse_event(0x0004, 0, 0, 0, 0)
+            for _ in range(click_count):
+                user32.mouse_event(0x0002, 0, 0, 0, 0)
+                user32.mouse_event(0x0004, 0, 0, 0, 0)
+                if click_count > 1:
+                    await asyncio.sleep(0.05)
 
         return {
             "status": "success",

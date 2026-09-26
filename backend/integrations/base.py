@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 class BasePlatformAdapter(ABC):
     """Abstract base adapter for messaging platforms (Hermes Parity)."""
 
-    name: str
+    name: str = "generic"
 
     async def connect(self, is_reconnect: bool = False) -> bool:
         """Connects or initiates the background polling/bridge process."""

@@ -388,17 +388,25 @@ class ChannelResponse(BaseModel):
 
 
 def get_or_create_channel_session(req: ChannelRequest) -> int:
-    """Binds an incoming channel request to an isolated persistent chat session."""
+    """Binds an incoming channel request to an isolated persistent chat session (Hermes Parity)."""
     speaker = req.sender_name or "User"
-    clean_title = f"{req.channel.title()} Chat ({speaker})"
+    cid = str(req.channel_id or "default").strip()
+    session_tag = f"[{req.channel}:{cid}]"
+    clean_title = f"{req.channel.title()} Chat ({speaker}) {session_tag}" if cid != "default" else f"{req.channel.title()} Chat ({speaker})"
 
     # Find existing open session for this specific channel & channel_id
     sessions = memory_engine.get_sessions(speaker_name=speaker, session_type="chat", limit=50)
     for s in sessions:
         if s.get("channel") == req.channel and not s.get("is_archived"):
-            return s["id"]
+            s_title = s.get("title") or ""
+            if cid != "default":
+                if session_tag in s_title:
+                    return s["id"]
+            else:
+                if f"[{req.channel}:" not in s_title:
+                    return s["id"]
 
-    # If none found, create a new one
+    # If none found, create a new isolated session
     new_sess = memory_engine.create_session(
         speaker_name=speaker,
         title=clean_title,
@@ -426,7 +434,7 @@ async def _auto_dispatch_artifacts_to_channel(channel: str, channel_id: str, art
             ext = os.path.splitext(f_name)[1].lower()
             if ext in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"):
                 media_type = "photo"
-                caption = f"📸 Bukti Tangkapan Layar: {f_name}" if "screen" in f_name.lower() or "verify" in f_name.lower() else f"📸 {f_name}"
+                caption = f"📸 Screenshot: {f_name}" if ("screen" in f_name.lower() or "verify" in f_name.lower()) else f"📸 {f_name}"
             elif ext in (".mp4", ".mov", ".avi", ".mkv"):
                 media_type = "video"
                 caption = f"🎬 {f_name}"
@@ -474,7 +482,9 @@ async def process_channel_request(
         session_state_manager.register_active_task(req.channel, req.channel_id, current_task)
 
     try:
-        return await _process_channel_request_core(req, progress_callback)
+        session_id = get_or_create_channel_session(req)
+        async with session_state_manager.get_session_lock(str(session_id)):
+            return await _process_channel_request_core(req, progress_callback)
     finally:
         if current_task and not is_stop_req:
             session_state_manager.unregister_active_task(req.channel, req.channel_id, current_task)
@@ -1040,7 +1050,7 @@ async def _process_channel_request_core(
     )
 
     turn_artifacts = get_turn_artifacts()
-    if turn_artifacts and req.channel in ("telegram", "whatsapp"):
+    if turn_artifacts:
         await _auto_dispatch_artifacts_to_channel(req.channel, req.channel_id, turn_artifacts)
 
     return ChannelResponse(
@@ -1214,10 +1224,11 @@ async def _execute_build_mode_core(
         cleaned = _clean_model_chat_text(reply)
         if not cleaned or '"action": "tool_call"' in cleaned or '<tool_call>' in cleaned:
             try:
+                user_task_prompt = resolved_task or user_prompt or req.text.strip()
                 final_reply = await synthesize_action_rationale(
                     tool_name=t_name if pending_tool_call else "execution",
                     tool_args=t_args if pending_tool_call else {},
-                    prompt=resolved_task or clean_text
+                    prompt=user_task_prompt
                 )
                 final_reply = _clean_model_chat_text(final_reply)
             except Exception:
@@ -1230,14 +1241,14 @@ async def _execute_build_mode_core(
         final_reply = str(reply) if reply else f"Completed action '{resolved_task}'."
 
     memory_engine.log_conversation(
-        user_text=resolved_task or clean_text,
+        user_text=resolved_task or user_prompt or req.text.strip(),
         ai_text=final_reply,
         speaker_name=req.sender_name,
         session_id=session_id
     )
 
     turn_artifacts = get_turn_artifacts()
-    if turn_artifacts and req.channel in ("telegram", "whatsapp"):
+    if turn_artifacts:
         await _auto_dispatch_artifacts_to_channel(req.channel, req.channel_id, turn_artifacts)
 
     return ChannelResponse(
@@ -1402,6 +1413,19 @@ async def dispatch_channel_approval_resolution(
             plan=plan_dict,
         )
         session_state_manager.resolve_action(clean_chan, channel_id, plan_id, ActionState.EXECUTED)
+        try:
+            from core.autonomous_engine import autonomous_engine
+            with autonomous_engine._get_conn() as a_conn:
+                a_conn.execute("""
+                    UPDATE autonomous_tasks SET
+                        status = 'idle',
+                        pending_plan_id = NULL,
+                        last_run = CURRENT_TIMESTAMP
+                    WHERE pending_plan_id = ?
+                """, (plan_id,))
+                a_conn.commit()
+        except Exception:
+            pass
         await channel_manager.send_message(channel=clean_chan, target_id=channel_id, text=build_res.text)
         return {"status": "success", "result": build_res.text}
 

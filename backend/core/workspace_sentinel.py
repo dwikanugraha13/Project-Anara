@@ -184,12 +184,16 @@ class WorkspaceSentinel:
             return False, "SECURITY ERROR: Direct modification of internal '.git' directory is blocked to preserve repository integrity."
 
         # Prevent access to sensitive user credentials directories
-        if any(d in parts for d in (".ssh", ".aws", ".gnupg")):
+        if any(d in parts for d in (".ssh", ".aws", ".gnupg", ".docker")):
             return False, "SECURITY ERROR: Access to sensitive credentials directory is blocked."
 
-        # Prevent deletion of sensitive credentials or active SQLite database
-        if target_base in self.PROTECTED_FILES_DELETE and action == "delete":
-            return False, f"SECURITY ERROR: Deletion of protected file '{target_base}' is restricted (file protected)."
+        # Prevent modification or deletion of sensitive credentials or active SQLite database (Hermes File-Safety Parity)
+        PROTECTED_SACRED_FILES = frozenset({"anara_brain.db", "state.db", "auth.json", ".env", ".env.local"})
+        if target_base in PROTECTED_SACRED_FILES:
+            if action in ("write", "edit", "delete"):
+                return False, f"SECURITY ERROR: Direct modification of protected file '{target_base}' is restricted."
+            elif action == "read" and target_base in (".env", ".env.local", "auth.json"):
+                return False, f"SECURITY ERROR: Direct reading of sensitive credentials file '{target_base}' is blocked to prevent token exfiltration."
 
         return True, None
 
@@ -223,10 +227,11 @@ class WorkspaceSentinel:
 
             file_size = len(disk_content)
             snippet_matched = True
-            if expected_snippet:
+            if expected_snippet and expected_snippet.strip():
                 snippet_matched = (expected_snippet.strip() in disk_content)
-
-            is_verified = snippet_matched and file_size > 0
+                is_verified = snippet_matched and file_size > 0
+            else:
+                is_verified = True  # Existence of physical file confirmed (permits empty files like __init__.py)
             return {
                 "verified": is_verified,
                 "file_path": clean_p,

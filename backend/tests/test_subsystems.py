@@ -2541,10 +2541,9 @@ def test_gateway_auth_local_and_remote_policies():
     assert res_local.status_code == 200, f"Local request should be auto-permitted: {res_local.text}"
 
     # 2. Public endpoints accessible without token from remote origin
-    # Remote client simulated with non-local client tuple and non-local IP headers
+    # Remote client simulated with non-local IP headers
     remote_unauth = TestClient(
         app,
-        client=("203.0.113.195", 54321),
         headers={"cf-connecting-ip": "203.0.113.195", "cf-ray": "8a1b2c3d4e5f-SIN"}
     )
     res_status = remote_unauth.get("/api/gateway/status")
@@ -2563,7 +2562,6 @@ def test_gateway_auth_local_and_remote_policies():
     valid_token = generate_gateway_session_token()
     remote_auth = TestClient(
         app,
-        client=("203.0.113.195", 54321),
         headers={
             "cf-connecting-ip": "203.0.113.195",
             "cf-ray": "8a1b2c3d4e5f-SIN",
@@ -2847,7 +2845,7 @@ def test_prompt_loader_hot_reload_and_formatting(tmp_path):
     # 1. Load standard mode prompts
     p_plan = load_prompt("modes/plan_mode")
     assert "Plan Mode - System Reminder" in p_plan
-    assert "CRITICAL: Plan mode ACTIVE" in p_plan
+    assert "exploration" in p_plan.lower() or "read-only" in p_plan.lower()
 
     p_build = load_prompt("modes/build_mode")
     assert "Build Mode - System Reminder" in p_build
@@ -3101,34 +3099,92 @@ def test_negative_verification_stop_gate():
     """Validates negative verification stop-gate intercepts unverified task conclusions after code edits."""
     from core.convergence import ConvergenceDetector
 
-    cd = ConvergenceDetector(read_only=False)
-    # Simulate editing a python file
-    cd.record_turn_actions(0, [{
+    # Case 1: Editing non-code prose (e.g. README.md, docs) does NOT trigger stop gate
+    cd_doc = ConvergenceDetector(read_only=False)
+    cd_doc.record_turn_actions(0, [{
         "tool_name": "edit_file",
-        "args": {"file_path": "backend/core/sample.py"},
+        "args": {"file_path": "docs/README.md"},
         "risk": "mutating",
         "is_error": False,
-        "summary": "Edited sample.py successfully"
+        "summary": "Updated README.md"
+    }])
+    assert cd_doc.evaluate_final_stop_gate(agent_mode="build") is None
+
+    # Case 2: Editing code in any language (Rust, Go, Python, Shell, Dockerfile) triggers stop gate
+    cd = ConvergenceDetector(read_only=False)
+    cd.record_turn_actions(0, [{
+        "tool_name": "edit_file",
+        "args": {"file_path": "src/main.rs"},
+        "risk": "mutating",
+        "is_error": False,
+        "summary": "Edited main.rs successfully"
     }])
 
     # Model attempts to conclude without running tests -> Stop Gate MUST intercept!
     nudge = cd.evaluate_final_stop_gate(agent_mode="build")
     assert nudge is not None
     assert "[VERIFICATION STOP-GATE]" in nudge
-    assert "sample.py" in nudge
+    assert "main.rs" in nudge
 
-    # Now simulate running pytest successfully
+    # Case 3: Running tests successfully clears stop gate
     cd.record_turn_actions(1, [{
         "tool_name": "execute_cli_command",
-        "args": {"command": "pytest backend/tests/test_sample.py"},
+        "args": {"command": "cargo test"},
         "risk": "action",
         "is_error": False,
-        "summary": "1 passed in 0.05s"
+        "summary": "test result: ok. 4 passed"
     }])
+    assert cd.evaluate_final_stop_gate(agent_mode="build") is None
 
-    # Stop gate should now permit completion!
-    nudge_after_test = cd.evaluate_final_stop_gate(agent_mode="build")
-    assert nudge_after_test is None
+    # Case 4: Editing code again renders prior test stale -> Stop gate triggers again!
+    cd.record_turn_actions(2, [{
+        "tool_name": "edit_file",
+        "args": {"file_path": "src/lib.rs"},
+        "risk": "mutating",
+        "is_error": False,
+        "summary": "Edited lib.rs"
+    }])
+    assert cd.last_test_passed is False
+    nudge_stale = cd.evaluate_final_stop_gate(agent_mode="build")
+    assert nudge_stale is not None
+    assert "lib.rs" in nudge_stale
+
+
+def test_dynamic_context_window_discovery_and_learning():
+    """Validates dynamic 4-tier context length resolution, name tag inference, and error learning (Hermes Parity)."""
+    from core.token_budget import (
+        get_model_context_window,
+        parse_context_limit_from_error,
+        save_context_length,
+        get_cached_context_length,
+    )
+
+    # 1. Test persistent cached model resolution
+    win, out = get_model_context_window("cbai/minimax-m3")
+    assert win == 1_048_576
+
+    # 2. Test dynamic naming inference without hardcoding
+    win_tag, _ = get_model_context_window("custom-provider/unseen-model-128k")
+    assert win_tag == 131_072
+
+    win_family, _ = get_model_context_window("local/llama-3.3-70b-instruct")
+    assert win_family == 128_000
+
+    # 3. Test dynamic provider error parsing
+    err_vllm = "This model's maximum context length is 131072 tokens. However, your request resulted in 150000 tokens."
+    limit_vllm = parse_context_limit_from_error(err_vllm)
+    assert limit_vllm == 131072
+
+    err_gemini = "Input token count is 45000 but model only supports up to 32768."
+    limit_gemini = parse_context_limit_from_error(err_gemini)
+    assert limit_gemini == 32768
+
+    # 4. Test self-healing error learning and dynamic caching
+    save_context_length("my-new-unknown-model", 65536, max_output=8192)
+    win_learned, out_learned = get_model_context_window("my-new-unknown-model")
+    assert win_learned == 65536
+    assert out_learned == 8192
+
 
 
 

@@ -26,7 +26,18 @@ from core.plan_detector import get_highest_risk, detect_tools_from_text
 
 logger = logging.getLogger(__name__)
 
-WIB = timezone(timedelta(hours=7))
+
+def get_scheduler_timezone() -> timezone:
+    """Returns dynamic scheduler timezone from configuration, defaulting to UTC+7 (Hermes Parity)."""
+    try:
+        from config import cfg_get
+        offset_hours = float(cfg_get("agent.scheduler.timezone_offset_hours", 7.0))
+        return timezone(timedelta(hours=offset_hours))
+    except Exception:
+        return timezone(timedelta(hours=7))
+
+
+WIB = get_scheduler_timezone()
 
 
 def evaluate_trust_approval(trust_level: str, tools: List[str]) -> bool:
@@ -105,6 +116,10 @@ class AutonomousEngine:
                 CREATE INDEX IF NOT EXISTS idx_auto_tasks_active
                 ON autonomous_tasks(is_active, next_run);
             """)
+            try:
+                cursor.execute("ALTER TABLE autonomous_tasks ADD COLUMN failure_count INTEGER DEFAULT 0;")
+            except Exception:
+                pass
             conn.commit()
 
     def register_task(
@@ -171,6 +186,34 @@ class AutonomousEngine:
             conn.commit()
             return cursor.rowcount > 0
 
+    def pause_task(self, task_id: str) -> bool:
+        """Pauses a scheduled autonomous task."""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE autonomous_tasks SET is_active = 0, status = 'paused', updated_at = CURRENT_TIMESTAMP WHERE id = ?", (task_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def resume_task(self, task_id: str) -> bool:
+        """Resumes a paused autonomous task."""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            now = datetime.now(WIB)
+            cursor.execute("SELECT interval_seconds FROM autonomous_tasks WHERE id = ?", (task_id,))
+            row = cursor.fetchone()
+            interval = row[0] if row else 3600
+            next_r = now + timedelta(seconds=interval)
+            cursor.execute("""
+                UPDATE autonomous_tasks SET
+                    is_active = 1,
+                    status = 'idle',
+                    next_run = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (next_r.isoformat(), task_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
     async def trigger_task_now(self, task_id: str) -> Dict[str, Any]:
         """Manually triggers execution of an autonomous task immediately."""
         with self._get_conn() as conn:
@@ -232,39 +275,78 @@ class AutonomousEngine:
                         req=req
                     )
                     self._update_task_status(task_id, "idle", last_run=True)
-                    # Notify completion
+                    # Notify completion across omnichannel transports (Hermes & Claude Code Parity)
                     if channel == "telegram":
-                        await send_telegram_message(
-                            text=f"🤖 <b>[Autonomous Run Complete: {name}]</b>\n\n{build_res.text}",
-                            chat_id=channel_id
-                        )
+                        try:
+                            await send_telegram_message(
+                                text=f"🤖 <b>[Autonomous Run Complete: {name}]</b>\n\n{build_res.text}",
+                                chat_id=channel_id
+                            )
+                        except Exception as e_tg:
+                            logger.warning(f"[AutonomousEngine] Telegram notify error: {e_tg}")
+                    else:
+                        try:
+                            from integrations import platform_registry
+                            await platform_registry.send_message(
+                                platform=channel,
+                                target_id=channel_id,
+                                text=f"🤖 [Autonomous Run Complete: {name}]\n\n{build_res.text}"
+                            )
+                        except Exception as e_ch:
+                            logger.warning(f"[AutonomousEngine] Platform notify error ({channel}): {e_ch}")
                     return {"status": "success", "result": build_res.text, "auto_approved": True}
                 else:
                     # Policy demands human review (supervised or high-risk mutating/ask)
                     logger.info(f"[AutonomousEngine] Plan #{res.plan_id} PAUSED for human approval ({trust_level}). Sending proactive notification...")
                     self._update_task_status(task_id, "waiting_approval", plan_id=res.plan_id)
 
-                    # Send proactive plan proposal to Telegram with inline buttons
+                    # Send proactive plan proposal across omnichannel transports
                     if channel == "telegram":
-                        await send_telegram_plan_proposal(
-                            chat_id=channel_id,
-                            plan_text=f"🤖 <b>[Scheduled Task: {name}]</b>\n\n{res.text}",
-                            plan_id=res.plan_id
-                        )
+                        try:
+                            await send_telegram_plan_proposal(
+                                chat_id=channel_id,
+                                plan_text=f"🤖 <b>[Scheduled Task: {name}]</b>\n\n{res.text}",
+                                plan_id=res.plan_id
+                            )
+                        except Exception as e_tg:
+                            logger.warning(f"[AutonomousEngine] Telegram plan proposal error: {e_tg}")
+                    else:
+                        try:
+                            from integrations import platform_registry
+                            await platform_registry.send_message(
+                                platform=channel,
+                                target_id=channel_id,
+                                text=f"🤖 [Scheduled Task Approval Needed: {name}]\nPlan #{res.plan_id}:\n\n{res.text}"
+                            )
+                        except Exception as e_ch:
+                            logger.warning(f"[AutonomousEngine] Platform plan proposal error ({channel}): {e_ch}")
                     return {"status": "waiting_approval", "plan_id": res.plan_id, "plan_text": res.text}
 
             # 3. Direct response (read-only / safe)
             self._update_task_status(task_id, "idle", last_run=True)
             if channel == "telegram":
-                await send_telegram_message(
-                    text=f"🤖 <b>[Autonomous Run: {name}]</b>\n\n{res.text}",
-                    chat_id=channel_id
-                )
+                try:
+                    await send_telegram_message(
+                        text=f"🤖 <b>[Autonomous Run: {name}]</b>\n\n{res.text}",
+                        chat_id=channel_id
+                    )
+                except Exception as e_tg:
+                    logger.warning(f"[AutonomousEngine] Telegram direct response error: {e_tg}")
+            else:
+                try:
+                    from integrations import platform_registry
+                    await platform_registry.send_message(
+                        platform=channel,
+                        target_id=channel_id,
+                        text=f"🤖 [Autonomous Run: {name}]\n\n{res.text}"
+                    )
+                except Exception as e_ch:
+                    logger.warning(f"[AutonomousEngine] Platform direct response error ({channel}): {e_ch}")
             return {"status": "success", "result": res.text}
 
         except Exception as e:
             logger.error(f"[AutonomousEngine] Task '{name}' execution error: {e}")
-            self._update_task_status(task_id, "failed")
+            self._update_task_status(task_id, "failed", last_run=True)
             return {"status": "error", "message": str(e)}
 
     def _update_task_status(
@@ -276,22 +358,53 @@ class AutonomousEngine:
     ):
         with self._get_conn() as conn:
             cursor = conn.cursor()
-            now = datetime.now(WIB)
+            now = datetime.now(get_scheduler_timezone())
             if last_run:
-                # Calculate next run
-                cursor.execute("SELECT interval_seconds FROM autonomous_tasks WHERE id = ?", (task_id,))
+                # Calculate next run or finalize one-shot tasks
+                cursor.execute("SELECT interval_seconds, trigger_type, failure_count FROM autonomous_tasks WHERE id = ?", (task_id,))
                 row = cursor.fetchone()
                 interval = row[0] if row else 3600
-                next_r = now + timedelta(seconds=interval)
-                cursor.execute("""
-                    UPDATE autonomous_tasks SET
-                        status = ?,
-                        pending_plan_id = ?,
-                        last_run = ?,
-                        next_run = ?,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                """, (status, plan_id, now.isoformat(), next_r.isoformat(), task_id))
+                trigger_t = row[1] if row and len(row) > 1 else "interval"
+                fail_cnt = row[2] if row and len(row) > 2 and row[2] is not None else 0
+
+                if status == "idle":
+                    fail_cnt = 0
+                elif status == "failed":
+                    fail_cnt += 1
+
+                # Calculate effective interval with exponential backoff on failure (5m, 10m, 20m, 40m, max 1h)
+                if status == "failed":
+                    backoff = min(3600, 300 * (2 ** min(max(fail_cnt - 1, 0), 4)))
+                    effective_interval = max(interval, backoff)
+                    if fail_cnt >= 5:
+                        status = "paused"
+                        logger.warning(f"[AutonomousEngine] Task {task_id} circuit breaker tripped (paused after {fail_cnt} failures).")
+                else:
+                    effective_interval = interval
+
+                if trigger_t == "once":
+                    cursor.execute("""
+                        UPDATE autonomous_tasks SET
+                            status = 'completed',
+                            is_active = 0,
+                            pending_plan_id = NULL,
+                            failure_count = ?,
+                            last_run = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    """, (fail_cnt, now.isoformat(), task_id))
+                else:
+                    next_r = now + timedelta(seconds=effective_interval)
+                    cursor.execute("""
+                        UPDATE autonomous_tasks SET
+                            status = ?,
+                            pending_plan_id = ?,
+                            failure_count = ?,
+                            last_run = ?,
+                            next_run = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    """, (status, plan_id, fail_cnt, now.isoformat(), next_r.isoformat(), task_id))
             else:
                 cursor.execute("""
                     UPDATE autonomous_tasks SET
@@ -307,7 +420,7 @@ class AutonomousEngine:
         logger.info("[AutonomousEngine] Scheduler loop initiated.")
         while self._running:
             try:
-                now_iso = datetime.now(WIB).isoformat()
+                now_iso = datetime.now(get_scheduler_timezone()).isoformat()
                 with self._get_conn() as conn:
                     cursor = conn.cursor()
                     cursor.execute("""

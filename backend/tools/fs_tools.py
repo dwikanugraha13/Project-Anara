@@ -122,6 +122,18 @@ async def _tool_read_local_file(file_path: str, offset: Optional[int] = None, li
                 "content": f"[Observation: {res_msg}]"
             }
 
+        # WorkspaceSentinel Read Access Validation (Claude Code & Hermes Parity)
+        from core.workspace_sentinel import workspace_sentinel
+        is_allowed, denial_reason = workspace_sentinel.validate_file_access(target_file, action="read")
+        if not is_allowed:
+            return {
+                "status": "denied",
+                "is_error": True,
+                "file_name": os.path.basename(path),
+                "message": denial_reason or f"Read access to '{os.path.basename(path)}' is restricted by security policy.",
+                "content": f"[Security Denial: {denial_reason}]"
+            }
+
         ext = os.path.splitext(target_file)[1].lower()
         if ext == ".pdf":
             content = _extract_text_from_pdf(target_file)
@@ -593,7 +605,6 @@ async def _tool_list_directory(directory_path: Optional[str] = None) -> Dict[str
     except Exception as e:
         logger.warning(f"[AgentTools] List dir error: {e}")
         return {"status": "error", "message": f"Failed to list directory: {e}"}
-        return {"status": "error", "message": str(e)}
 
 
 async def _tool_scan_workspace_folder(folder_path: str) -> Dict[str, Any]:

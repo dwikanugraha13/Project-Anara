@@ -10,6 +10,7 @@ Anara Standard tools/registry.py:
 import asyncio
 import inspect
 import logging
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Set
 from google.genai import types
@@ -38,14 +39,17 @@ class ToolRegistry:
     def __init__(self):
         self._tools: Dict[str, ToolDefinition] = {}
         self._aliases: Dict[str, str] = {}
+        self._lock = threading.RLock()
 
     def register_alias(self, alias_name: str, target_name: str):
         """Registers a backward-compatible alias for an existing tool."""
-        self._aliases[alias_name] = target_name
+        with self._lock:
+            self._aliases[alias_name] = target_name
 
     def resolve_name(self, name: str) -> str:
         """Resolves alias to canonical tool name."""
-        return self._aliases.get(name, name)
+        with self._lock:
+            return self._aliases.get(name, name)
 
     def register(
         self,
@@ -169,29 +173,33 @@ class ToolRegistry:
         return mapping
 
     async def dispatch(self, name: str, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Executes a tool by looking up its handler dynamically (Zero if-elif ladder)."""
+        """Executes a tool by looking up its handler dynamically (Zero if-elif ladder, Hermes worker parity)."""
         tool = self.get_tool(name)
         if not tool:
             return {"status": "error", "message": f"Tool '{name}' is not registered."}
 
         fn = tool.handler
         try:
-            res = fn(**args)
-            if inspect.isawaitable(res):
-                return await res
-            return res
-        except TypeError as te:
-            # Handle possible extra/missing kwargs
+            # 1. Parameter alignment via signature inspection prior to invocation (prevents double execution)
             try:
                 sig = inspect.signature(fn)
-                valid_args = {k: v for k, v in args.items() if k in sig.parameters}
-                res = fn(**valid_args)
+                has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+                if has_var_keyword:
+                    bound_args = args
+                else:
+                    bound_args = {k: v for k, v in args.items() if k in sig.parameters}
+            except Exception:
+                bound_args = args
+
+            # 2. Asynchronous execution / thread-offloading for sync handlers (Hermes worker loop parity)
+            if inspect.iscoroutinefunction(fn):
+                return await fn(**bound_args)
+            else:
+                res = await asyncio.to_thread(fn, **bound_args)
                 if inspect.isawaitable(res):
                     return await res
                 return res
-            except Exception as e:
-                logger.error(f"[ToolRegistry] Error calling {name}: {e}")
-                return {"status": "error", "message": f"Tool call error for '{name}': {str(e)}"}
+
         except Exception as e:
             logger.error(f"[ToolRegistry] Execution error in {name}: {e}", exc_info=True)
             return {"status": "error", "message": f"Error in tool {name}: {str(e)}"}

@@ -59,7 +59,7 @@ class GeminiKeyManager:
             logger.debug(f"[KeyManager] Error reading ai_accounts from DB: {e_db}")
 
         # 2. Secondary Source: Environment variables (optional backward compatibility)
-        env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+        env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
         if os.path.exists(env_file):
             load_dotenv(env_file, override=False)
 
@@ -102,31 +102,38 @@ class GeminiKeyManager:
             return ""
 
         now = time.time()
-        # Find first healthy key starting from current_index
+        # Find first healthy key starting from current_index with true round-robin advancement
         for offset in range(len(self._keys)):
             idx = (self._current_index + offset) % len(self._keys)
             key = self._keys[idx]
             cooldown_until = self._cooldowns.get(key, 0.0)
             if now >= cooldown_until:
-                self._current_index = idx
+                self._current_index = (idx + 1) % len(self._keys)
                 return key
 
         # If all in cooldown, fallback to the one expiring soonest
         soonest_key = min(self._keys, key=lambda k: self._cooldowns.get(k, 0.0))
-        self._current_index = self._keys.index(soonest_key)
-        logger.warning(f"[KeyManager] All keys in cooldown, falling back to earliest available key ({self._current_index + 1}/{len(self._keys)})")
+        self._current_index = (self._keys.index(soonest_key) + 1) % len(self._keys)
+        logger.warning(f"[KeyManager] All keys in cooldown, falling back to earliest available key ({len(self._keys)} in pool)")
         return soonest_key
 
     def mark_key_dead(self, key: str, reason: str = "permission_denied"):
-        """Permanently blacklists an invalid/revoked key (24h cooldown)."""
+        """Permanently blacklists an invalid/revoked key (24h cooldown) and persists to SQLite."""
         if key in self._keys:
             self._cooldowns[key] = time.time() + 86400.0
             k_preview = f"{key[:8]}...{key[-4:]}" if len(key) > 12 else key
             logger.error(f"[KeyManager] API Key [{k_preview}] marked DEAD & banned ({reason}).")
+            try:
+                from memory import memory_engine
+                with memory_engine._get_connection() as conn:
+                    conn.execute("UPDATE ai_accounts SET is_enabled = 0 WHERE api_key = ?", (key,))
+            except Exception:
+                pass
 
     def rotate_key(self, failed_key: Optional[str] = None, reason: str = "quota_exhausted", cooldown_seconds: float = 120.0) -> str:
         """
         Marks the failed key as in cooldown and switches to the next available healthy key.
+        Persists long-term bans (401/403) to SQLite ai_accounts.
         """
         if not self._keys:
             return ""
@@ -136,6 +143,12 @@ class GeminiKeyManager:
             # If permission denied, ban for 24 hours
             if any(w in reason.lower() for w in ["permission_denied", "403", "unauthenticated", "401"]):
                 cooldown_seconds = 86400.0
+                try:
+                    from memory import memory_engine
+                    with memory_engine._get_connection() as conn:
+                        conn.execute("UPDATE ai_accounts SET is_enabled = 0 WHERE api_key = ?", (failed_key,))
+                except Exception:
+                    pass
             self._cooldowns[failed_key] = now + cooldown_seconds
             k_preview = f"{failed_key[:8]}...{failed_key[-4:]}" if len(failed_key) > 12 else failed_key
             logger.warning(f"[KeyManager] API Key [{k_preview}] put in {cooldown_seconds:.0f}s cooldown ({reason}).")
@@ -187,14 +200,23 @@ class GeminiKeyManager:
                     "503", "unavailable", "high demand", "overloaded", "temporarily unavailable"
                 ])
 
-                if (is_quota_error or is_permission_error or is_unavailable_error) and len(self._keys) > 1:
-                    reason = "403_permission_denied" if is_permission_error else ("503_unavailable" if is_unavailable_error else "429_quota_limit")
-                    cooldown = 86400.0 if is_permission_error else (60.0 if is_unavailable_error else 120.0)
-                    k_preview = f"{active_key[:8]}...{active_key[-4:]}" if len(active_key) > 12 else active_key
-                    logger.warning(f"[KeyManager] Failover on key [{k_preview}] attempt {attempt + 1}/{attempts}: {e}. Rotating to next key...")
-                    self.rotate_key(active_key, reason=reason, cooldown_seconds=cooldown)
-                    last_exception = e
-                    continue
+                if is_quota_error or is_permission_error or is_unavailable_error:
+                    if len(self._keys) > 1:
+                        reason = "403_permission_denied" if is_permission_error else ("503_unavailable" if is_unavailable_error else "429_quota_limit")
+                        cooldown = 86400.0 if is_permission_error else (60.0 if is_unavailable_error else 120.0)
+                        k_preview = f"{active_key[:8]}...{active_key[-4:]}" if len(active_key) > 12 else active_key
+                        logger.warning(f"[KeyManager] Failover on key [{k_preview}] attempt {attempt + 1}/{attempts}: {e}. Rotating to next key...")
+                        self.rotate_key(active_key, reason=reason, cooldown_seconds=cooldown)
+                        last_exception = e
+                        continue
+                    elif attempt < attempts - 1 and (is_quota_error or is_unavailable_error):
+                        backoff = min(6.0, 1.5 * (attempt + 1))
+                        logger.warning(f"[KeyManager] Single-key transient error: {e}. Backing off {backoff:.1f}s before retry {attempt + 2}/{attempts}...")
+                        await asyncio.sleep(backoff)
+                        last_exception = e
+                        continue
+                    else:
+                        raise e
                 else:
                     raise e
 

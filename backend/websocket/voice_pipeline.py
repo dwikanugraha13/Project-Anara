@@ -89,6 +89,14 @@ class VoicePipeline:
 
         self.voice_enrollment: Optional[Dict[str, Any]] = None
         self.pending_speaker_ctx: Optional[str] = None
+        self._bg_tasks: set[asyncio.Task] = set()
+
+    def schedule_background_task(self, coro) -> asyncio.Task:
+        """Schedules a coroutine with strong reference retention to prevent Python 3.11+ GC drops."""
+        task = asyncio.create_task(coro)
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+        return task
 
     async def notify_speaker_change(self, sp_name: Optional[str], reason: str = ""):
         """Propagates detected speaker change to frontend and Gemini context."""
@@ -446,15 +454,22 @@ class VoicePipeline:
             self.log_turn(user_text=u_text, ai_text=cancel_msg, speaker_name=current_speaker_name)
             return
 
-        media_resolved = await resolve_media_request(u_text) if hasattr(self, "media_controller") else None
-        if media_resolved and isinstance(media_resolved, dict) and "track" in media_resolved and not self.dance_blocked():
+        media_resolved = None
+        if hasattr(self, "media_controller"):
+            try:
+                from integrations.media import resolve_media_request
+                media_resolved = await resolve_media_request(u_text)
+            except Exception as e_media:
+                logger.debug(f"[Media Router] Resolve notice: {e_media}")
+
+        if media_resolved and isinstance(media_resolved, dict) and media_resolved.get("video_id") and not self.dance_blocked():
             logger.info(f"[Media Router] Matched media: {media_resolved.get('title')}")
             if live_svc:
                 await live_svc.interrupt()
-            track = media_resolved["track"]
+            track = media_resolved
             kind = media_resolved.get("kind", "music")
             await self.media_controller.send_media_play(track, kind=kind)
-            reply = media_resolved.get("reply_text") or f"Playing {track.get('title')}"
+            reply = media_resolved.get("reply_text") or f"Playing {track.get('title', 'media')}"
             await self.websocket.send_json({"type": "transcript", "data": reply, "speaker": "output", "is_final": True})
             if live_svc:
                 from core.prompt_loader import load_config_yaml

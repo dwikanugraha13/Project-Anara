@@ -26,11 +26,16 @@ _PROPERTIES: Dict[str, Any] = {
             "focus_app",
         ],
         "description": (
-            "Action to execute. 'send_text' (RECOMMENDED: 1-step focus/launch, dynamic universal input targeting, type text, and submit with Enter in ANY active or specified application). "
-            "'launch_app' (launches an unopened desktop application, e.g. OpenCode, Notepad, Chrome, etc., and waits for window). "
-            "'capture' takes screenshots / element trees. 'click', 'double_click', 'right_click' clicks elements or coordinates. "
-            "'type' inserts text. 'key' presses keys or hotkeys. 'scroll' scrolls content. 'drag' drags from one point to another. "
-            "'focus_app' brings target window to front (auto-launches if not running). 'list_windows' and 'list_apps' inspect open windows or installed apps on the OS."
+            "Action to execute (Hermes & CUA Parity). "
+            "'capture' (captures desktop screenshot and visual UI element tree). "
+            "'click', 'double_click', 'right_click' (clicks on screen coordinates [x, y] or element index to focus input fields or click buttons). "
+            "'type' (types text into the currently active/focused input field). "
+            "'key' (presses key or hotkeys, e.g. Return, Enter, Tab, Escape, ctrl+c). "
+            "'focus_app' (brings target window to the foreground). "
+            "'send_text' (convenience 1-step focus, input targeting, clipboard typing, and Enter submission). "
+            "'launch_app' (launches an application by name and waits for its window). "
+            "'list_windows' and 'list_apps' (inspect active windows or installed apps). "
+            "'scroll' (scrolls page up/down). 'drag' (drags from coordinate to coordinate)."
         ),
     },
     "mode": {

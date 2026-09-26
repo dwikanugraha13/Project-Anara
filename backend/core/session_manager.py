@@ -8,6 +8,7 @@ Anara Standard multi-channel session state management:
 
 from __future__ import annotations
 
+import asyncio
 from enum import Enum
 import json
 import logging
@@ -28,10 +29,46 @@ class ActionState(str, Enum):
     PENDING = "pending"          # Awaiting user decision
     APPROVED = "approved"        # Approved (via button or voice)
     REJECTED = "rejected"        # Rejected/cancelled
+    CANCELLED = "cancelled"      # Cancelled by user or interrupted
     EXECUTING = "executing"      # Running in sandbox
     EXECUTED = "executed"        # Completed successfully
     FAILED = "failed"            # Failed/exception during execution
     EXPIRED = "expired"          # Wait timeout (TTL 300s) exhausted
+
+
+class AsyncReentrantLock:
+    """Task-aware reentrant asyncio lock for session turns (Hermes turn_lease parity)."""
+
+    def __init__(self):
+        self._lock = asyncio.Lock()
+        self._owner: Optional[asyncio.Task] = None
+        self._count: int = 0
+
+    async def acquire(self) -> bool:
+        current_task = asyncio.current_task()
+        if self._owner == current_task:
+            self._count += 1
+            return True
+        await self._lock.acquire()
+        self._owner = current_task
+        self._count = 1
+        return True
+
+    def release(self) -> None:
+        current_task = asyncio.current_task()
+        if self._owner != current_task:
+            return
+        self._count -= 1
+        if self._count == 0:
+            self._owner = None
+            self._lock.release()
+
+    async def __aenter__(self):
+        await self.acquire()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        self.release()
 
 
 @dataclass
@@ -119,6 +156,7 @@ class SessionStateManager:
         self._active_processes: Dict[str, set[int]] = {}
         self._interrupted_sessions: set[str] = set()
         self._recently_expired: Dict[str, tuple[PendingAction, float]] = {}
+        self._session_locks: Dict[str, asyncio.Lock] = {}
 
         # Initialize SQLite persistence & rehydrate unexpired actions on startup
         self._init_db()
@@ -485,6 +523,13 @@ class SessionStateManager:
     def clear_interrupted(self, channel: str, channel_id: str) -> None:
         key = self._make_key(channel, channel_id)
         self._interrupted_sessions.discard(key)
+
+    def get_session_lock(self, session_key: str) -> AsyncReentrantLock:
+        """Returns or creates a cooperative reentrant lock for the session (Hermes turn_lease parity)."""
+        clean_key = str(session_key).strip().lower()
+        if clean_key not in self._session_locks:
+            self._session_locks[clean_key] = AsyncReentrantLock()
+        return self._session_locks[clean_key]
 
     async def request_hard_interrupt(self, channel: str, channel_id: str, reason: str = "stop_command") -> Dict[str, Any]:
         """

@@ -63,8 +63,7 @@ def get_sanitized_environment() -> Dict[str, str]:
         is_sensitive = any(re.match(pattern, key) for pattern in SENSITIVE_ENV_PATTERNS)
         if not is_sensitive:
             clean_env[key] = val
-        else:
-            clean_env[key] = "[SANDBOX_SCRUBBED]"
+        # Sensitive credentials are fully omitted rather than set to truthy dummy strings
 
     # Ensure UTF-8 output encoding for PowerShell / Python in child processes
     clean_env["PYTHONIOENCODING"] = "utf-8"
@@ -73,17 +72,27 @@ def get_sanitized_environment() -> Dict[str, str]:
     return clean_env
 
 
+def _strip_quoted_strings(cmd: str) -> str:
+    """Strips double-quoted and single-quoted string literals to prevent false positives in commit messages/echoes."""
+    s = re.sub(r'"[^"\\]*(?:\\.[^"\\]*)*"', '""', cmd)
+    s = re.sub(r"'[^'\\]*(?:\\.[^'\\]*)*'", "''", s)
+    return s
+
+
 def check_command_safety(command: str) -> Tuple[bool, Optional[str]]:
     """
     Validates command against destructive and host-takeover patterns.
+    Strips quoted literals before pattern matching to avoid false positives on commit messages.
     Returns (is_safe, error_reason).
     """
-    cmd_lower = (command or "").lower().strip()
-    if not cmd_lower:
+    cmd_raw = (command or "").strip()
+    if not cmd_raw:
         return False, "Command string cannot be empty."
 
+    unquoted = _strip_quoted_strings(cmd_raw).lower()
+
     for pattern in HOST_TAKEOVER_PATTERNS:
-        if re.search(pattern, cmd_lower):
+        if re.search(pattern, unquoted):
             logger.warning(f"[SandboxSecurity] Blocked dangerous command pattern: {pattern} in '{command}'")
             return False, f"SANDBOX SECURITY ERROR: Command '{command}' triggered high-risk host takeover restrictions."
 
@@ -169,17 +178,20 @@ class CommandSandbox:
 
         proc: Optional[subprocess.Popen] = None
         try:
-            proc = subprocess.Popen(
-                exec_args,
-                cwd=safe_cwd,
-                env=clean_env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                shell=use_shell
-            )
+            popen_kwargs: Dict[str, Any] = {
+                "cwd": safe_cwd,
+                "env": clean_env,
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.PIPE,
+                "text": True,
+                "encoding": "utf-8",
+                "errors": "replace",
+                "shell": use_shell,
+            }
+            if os.name != "nt":
+                popen_kwargs["start_new_session"] = True
+
+            proc = subprocess.Popen(exec_args, **popen_kwargs)
             if proc.pid:
                 session_state_manager.register_process_pid(channel, channel_id, proc.pid)
 

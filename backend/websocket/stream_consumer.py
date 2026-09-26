@@ -140,14 +140,11 @@ class AgentRunner:
                 if is_approved:
                     agent_mode = "build"
                     logger.info("[Agent Mode] Pending action approved in Conversational Mode -> Switch to BUILD MODE")
+                elif needs_plan(text, session_mode="conversational"):
+                    agent_mode = "plan"
+                    logger.info("[Agent Mode] Complex/mutating request in Conversational Mode -> Switch to PLAN MODE")
                 else:
                     agent_mode = "build"
-
-            # 3. Dance directive
-            if text.startswith("Sistem:") or text.startswith("[SYSTEM"):
-                logger.info(f"[Dance] System speech directive: {text[:60]!r}")
-                await self.activate_dance_llm_turn(text)
-                return
 
             # 4. Core ReAct Turn Execution via AnaraExecutionRunner (Hermes Parity)
             reply_text = ""
@@ -177,6 +174,7 @@ class AgentRunner:
                         await self.websocket.send_json({
                             "type": "transcript_partial",
                             "speaker": "output",
+                            "delta": event.content,
                             "text": "".join(accumulated_chunks),
                             "is_final": False,
                         })
@@ -246,7 +244,10 @@ class AgentRunner:
                     except Exception as em_err:
                         logger.debug(f"[Emotion] analyze error: {em_err}")
 
-                await self.websocket.send_json({"type": "turn_complete"})
+                try:
+                    await self.websocket.send_json({"type": "turn_complete"})
+                except Exception:
+                    pass
                 return
 
             except Exception as turn_err:
@@ -254,8 +255,11 @@ class AgentRunner:
                 chat_diagnostics["active_requests"] = max(0, chat_diagnostics["active_requests"] - 1)
                 chat_diagnostics["last_error"] = str(turn_err)
                 chat_diagnostics["last_stage"] = "error"
-                await self.websocket.send_json({"type": "error", "data": str(turn_err)})
-                await self.websocket.send_json({"type": "turn_complete"})
+                try:
+                    await self.websocket.send_json({"type": "error", "data": str(turn_err)})
+                    await self.websocket.send_json({"type": "turn_complete"})
+                except Exception:
+                    pass
                 return
 
         except asyncio.CancelledError:

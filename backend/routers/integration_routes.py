@@ -108,6 +108,7 @@ class WhatsAppWebhookPayload(BaseModel):
     id: Optional[str] = None
     sender: Optional[str] = "WhatsApp User"
     phone: str
+    participant: Optional[str] = None
     jid: Optional[str] = None
     isGroup: Optional[bool] = False
     text: str
@@ -171,29 +172,33 @@ async def wa_webhook_endpoint(payload: WhatsAppWebhookPayload):
             details.append("pending plans cleared")
         detail_str = f" ({', '.join(details)})" if details else ""
 
+        target_chat_id = payload.jid if (payload.isGroup and payload.jid) else payload.phone
         cancel_reply = f"🛑 *Agent task halted via /stop.*{detail_str}"
-        await send_whatsapp_message(payload.phone, cancel_reply)
+        await send_whatsapp_message(target_chat_id, cancel_reply)
         return {"status": "cancelled", "interrupt_info": interrupt_info}
+
+    target_chat_id = payload.jid if (payload.isGroup and payload.jid) else payload.phone
+    human_sender_id = payload.participant or payload.phone
 
     req = ChannelRequest(
         text=clean_text,
         channel="whatsapp",
-        channel_id=payload.phone,
-        user_id=payload.phone,
+        channel_id=target_chat_id,
+        user_id=human_sender_id,
         sender_name=payload.sender or "WhatsApp User",
         trigger_type="interactive"
     )
 
     async def _send_prog(msg: str):
         try:
-            await send_whatsapp_message(payload.phone, msg)
+            await send_whatsapp_message(target_chat_id, msg)
         except Exception:
             pass
 
     try:
         res = await process_channel_request(req, progress_callback=_send_prog)
         from core.command_hub import get_chat_voice_mode
-        voice_mode = get_chat_voice_mode("whatsapp", payload.phone)  # 'text', 'only', 'both', 'auto'
+        voice_mode = get_chat_voice_mode("whatsapp", target_chat_id)  # 'text', 'only', 'both', 'auto'
         is_voice_turn = (payload.mediaType == "audio")
 
         # ALL slash commands and UI responses are ALWAYS delivered as text, NEVER voice!
@@ -213,14 +218,14 @@ async def wa_webhook_endpoint(payload: WhatsAppWebhookPayload):
                 voice_file = await synthesize_speech_audio(res.text)
                 if voice_file:
                     from integrations.whatsapp import send_whatsapp_document
-                    await send_whatsapp_document(to=payload.phone, file_path=voice_file, caption="")
+                    await send_whatsapp_document(to=target_chat_id, file_path=voice_file, caption="")
                     voice_sent = True
             except Exception as wa_v_err:
                 logger.warning(f"[WAWebhook] Voice reply error: {wa_v_err}")
 
         should_send_text = (voice_mode != "only") or not voice_sent or is_command_or_ui
         if res.text and should_send_text:
-            await send_whatsapp_message(payload.phone, res.text)
+            await send_whatsapp_message(target_chat_id, res.text)
         return {"status": "processed", "plan_pending": res.plan_pending}
     except Exception as e:
         logger.error(f"[WAWebhook] Error processing message: {e}")

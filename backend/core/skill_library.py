@@ -9,13 +9,14 @@ Standard:
 - Progressive disclosure: index summary enters system prompt; full steps load when relevant.
 - Approval workflow: agent-extracted skills start as 'pending' and require user approval.
 """
-import os
-import re
-import yaml
-import shutil
 import logging
+import os
+from pathlib import Path
+import re
+import shutil
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,8 @@ class SkillLibraryManager:
 
     def __init__(self, root_dir: Optional[str] = None):
         self._root_dir = root_dir
+        self._skills_cache: List[Dict[str, Any]] = []
+        self._cache_mtime: float = 0.0
 
     @property
     def root_dir(self) -> str:
@@ -62,6 +65,11 @@ class SkillLibraryManager:
     @root_dir.setter
     def root_dir(self, val: str):
         self._root_dir = val
+        self._invalidate_cache()
+
+    def _invalidate_cache(self):
+        self._cache_mtime = 0.0
+        self._skills_cache.clear()
 
     def parse_skill_file(self, skill_md_path: str) -> Optional[Dict[str, Any]]:
         """Parses frontmatter and body markdown from a SKILL.md file."""
@@ -183,24 +191,35 @@ Use this skill when requested or when detecting tasks with keywords: {', '.join(
         }
 
     def list_skills(self, status_filter: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Scans all folders and subfolders in runtime skills directory and parses their SKILL.md."""
-        results = []
+        """Scans runtime skills directory with mtime caching (Hermes Parity)."""
         if not os.path.isdir(self.root_dir):
-            return results
+            return []
 
-        from pathlib import Path
-        for skill_path in Path(self.root_dir).rglob("SKILL.md"):
-            # Exclude hidden directories (like .hub, .git)
-            if any(part.startswith(".") for part in skill_path.parts):
-                continue
-            parsed = self.parse_skill_file(str(skill_path))
-            if parsed:
-                if status_filter and status_filter != "all":
-                    if parsed.get("status") != status_filter:
-                        continue
-                results.append(parsed)
+        try:
+            curr_mtime = os.path.getmtime(self.root_dir)
+        except Exception:
+            curr_mtime = 0.0
 
-        return sorted(results, key=lambda s: s.get("name", ""))
+        if self._cache_mtime == curr_mtime and self._skills_cache:
+            cached_results = self._skills_cache
+        else:
+            results = []
+            from pathlib import Path
+            for skill_path in Path(self.root_dir).rglob("SKILL.md"):
+                # Exclude hidden directories (like .hub, .git)
+                if any(part.startswith(".") for part in skill_path.parts):
+                    continue
+                parsed = self.parse_skill_file(str(skill_path))
+                if parsed:
+                    results.append(parsed)
+
+            self._skills_cache = sorted(results, key=lambda s: s.get("name", ""))
+            self._cache_mtime = curr_mtime
+            cached_results = self._skills_cache
+
+        if status_filter and status_filter != "all":
+            return [s for s in cached_results if s.get("status") == status_filter]
+        return cached_results
 
     def get_skill(self, name_or_slug: str) -> Optional[Dict[str, Any]]:
         """Retrieves a skill by name or slug."""
@@ -231,22 +250,27 @@ Use this skill when requested or when detecting tasks with keywords: {', '.join(
         if not ok:
             return None
 
+        self._invalidate_cache()
         skill["status"] = new_status
         skill["enabled"] = (new_status == "active")
         logger.info(f"[SkillLibrary] Toggled skill '{slug}' status: {current_status} -> {new_status}")
         return skill
 
     def get_skill_file(self, skill_name_or_slug: str, relative_file_path: str) -> Optional[Dict[str, Any]]:
-        """Retrieves a sub-resource file (e.g. references/*.md, scripts/*.py) inside a skill folder."""
+        """Retrieves a sub-resource file with path traversal protection (Claude Code & Hermes Parity)."""
         skill = self.get_skill(skill_name_or_slug)
         if not skill:
             return None
-        folder = os.path.dirname(skill["file_path"])
-        target_path = os.path.normpath(os.path.join(folder, relative_file_path))
-        if not target_path.startswith(folder) or not os.path.isfile(target_path):
-            return None
+        folder_path = Path(os.path.dirname(skill["file_path"])).resolve()
+        target_path = Path(os.path.join(str(folder_path), relative_file_path)).resolve()
         try:
-            with open(target_path, "r", encoding="utf-8", errors="ignore") as f:
+            if not target_path.is_relative_to(folder_path) or not target_path.is_file():
+                return None
+        except AttributeError:
+            if not str(target_path).startswith(str(folder_path) + os.sep) or not target_path.is_file():
+                return None
+        try:
+            with open(target_path, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read()
             return {
                 "skill_name": skill["name"],
@@ -298,42 +322,27 @@ Use this skill when requested or when detecting tasks with keywords: {', '.join(
 
     def get_prompt_manifest(self, user_task: Optional[str] = None) -> str:
         """
-        Progressive Disclosure Engine (FR-17):
-        1. Index level: List names & descriptions of active skills.
-        2. Relevant detail: If user task matches keywords of a skill, include its full steps!
+        True Progressive Disclosure Engine (Claude Code & Hermes Parity):
+        Provides an active skills catalog index without prompt body stuffing.
+        Full instructions are loaded strictly on demand via the skill_view tool.
         """
         active_skills = self.list_skills(status_filter="active")
         if not active_skills:
             return ""
 
-        # 1. Compact index manifest with dynamic paths (Hermes Parity)
         lines = [
-            f"## Skills & Execution Architecture ({len(active_skills)} Active Skills):",
-            f"- Active User Runtime Skills: {self.root_dir}",
-            f"- Bundled In-Tree Skills: {get_bundled_skills_dir()}",
-            "- Tools Implementation: backend/tools/ (dispatched via backend/tools/registry.py)",
-            "- Community Skills Hub: 100,000+ indexed skills searchable and installable on-demand via skills_hub engine.",
-            "\nActive Catalog Summary:",
+            f"## Active Skills & Domain Capabilities ({len(active_skills)} Available Skills):",
+            f"- Runtime Skills Directory: {self.root_dir}",
+            "- PROGRESSIVE DISCLOSURE DIRECTIVE: Skills below provide specialized workflows, conventions, and scripts.",
+            "  If your task matches or relates to a skill, call the `skill_view(skill_name)` tool to retrieve its detailed procedure on-demand.",
+            "  Never guess internal skill steps or file paths without loading them first.",
+            "\nAvailable Skills Index:",
         ]
-        for s in active_skills[:12]:
-            lines.append(f"- **{s['name']}** ({s['category']}): {s['description']}")
-
-        # 2. Progressive disclosure: Include full skill instructions when relevant to current task
-        if user_task:
-            task_lower = user_task.lower()
-            task_tokens = set(re.findall(r"\w+", task_lower))
-            matched_skills = []
-            for s in active_skills:
-                skill_name_lower = s["name"].lower()
-                triggers = [t.lower() for t in s.get("trigger_keywords", [])]
-                name_words = set(re.findall(r"\w+", skill_name_lower))
-                if (name_words & task_tokens) or any(t in task_lower for t in triggers) or skill_name_lower in task_lower:
-                    matched_skills.append(s)
-
-            if matched_skills:
-                lines.append("\n## Active Skill Instructions:")
-                for ms in matched_skills[:2]:
-                    lines.append(f"\n### {ms['name']}\n{ms.get('body', '')}")
+        for s in active_skills:
+            desc = (s.get("description") or "").strip()
+            if len(desc) > 200:
+                desc = desc[:197] + "..."
+            lines.append(f"- **{s['name']}** ({s.get('category', 'general')}): {desc}")
 
         return "\n".join(lines).strip()
 

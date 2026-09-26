@@ -64,6 +64,7 @@ class SubAgentTask:
         role: str = "leaf",
         depth: int = 1,
         timeout_seconds: float = 120.0,
+        platform: Optional[str] = "cli",
     ):
         self.task_id = task_id
         self.title = goal[:80]
@@ -72,6 +73,7 @@ class SubAgentTask:
         self.role = role
         self.depth = depth
         self.timeout_seconds = timeout_seconds
+        self.platform = platform or "cli"
         self.state = SubagentState.PENDING
         self.progress_percent = 0
         self.steps_log: List[str] = []
@@ -102,6 +104,7 @@ class SubAgentManager:
     def __init__(self):
         self.tasks: Dict[str, SubAgentTask] = {}
         self._listeners: List[Callable[[Dict[str, Any]], Any]] = []
+        self._concurrency_semaphore = asyncio.Semaphore(4)
 
     def register_listener(self, callback: Callable[[Dict[str, Any]], Any]):
         if callback not in self._listeners:
@@ -122,8 +125,9 @@ class SubAgentManager:
 
         # Broadcast to Telemetry Event Bus
         try:
+            loop = asyncio.get_running_loop()
             from telemetry.event_bus import telemetry_bus, EventType, ActivityProvenance
-            asyncio.create_task(
+            loop.create_task(
                 telemetry_bus.emit(
                     event_type=EventType.TOOL_PROGRESS,
                     provenance=ActivityProvenance.SUBAGENT_WORKER,
@@ -144,6 +148,7 @@ class SubAgentManager:
         depth: int = 1,
         timeout_seconds: Optional[float] = None,
         worker_coro_factory: Optional[Callable[..., Any]] = None,
+        platform: Optional[str] = "cli",
     ) -> SubAgentTask:
         """
         Spawns an asynchronous background worker in an isolated context.
@@ -160,7 +165,7 @@ class SubAgentManager:
                 executive_summary=err_msg,
                 error_message=err_msg,
             )
-            failed_task = SubAgentTask(res_fail.task_id, effective_goal, context, role, depth)
+            failed_task = SubAgentTask(res_fail.task_id, effective_goal, context, role, depth, platform=platform)
             failed_task.state = SubagentState.FAILED
             failed_task.result = res_fail
             return failed_task
@@ -174,7 +179,20 @@ class SubAgentManager:
             role=role,
             depth=depth,
             timeout_seconds=effective_timeout,
+            platform=platform,
         )
+
+        # Memory Protection: Prune completed tasks to prevent unbounded memory growth
+        if len(self.tasks) > 80:
+            now = time.time()
+            expired_ids = [tid for tid, t in self.tasks.items() if t.completed_at and (now - t.completed_at > 1800.0)]
+            for tid in expired_ids:
+                self.tasks.pop(tid, None)
+            if len(self.tasks) > 80:
+                completed_sorted = sorted([t for t in self.tasks.values() if t.completed_at], key=lambda x: x.completed_at or 0)
+                for t in completed_sorted[:25]:
+                    self.tasks.pop(t.task_id, None)
+
         self.tasks[t_id] = task
 
         logger.info(f"[SubAgent] Spawned background mission #{t_id} (depth={depth}): '{task.title}'")
@@ -215,7 +233,7 @@ class SubAgentManager:
             )
             spawned.append(sub_task)
 
-        # Wait for all background tasks to complete
+        # Concurrency throttled centrally by self._concurrency_semaphore in _run_task_pipeline (Hermes Parity)
         await asyncio.gather(*[t._async_task for t in spawned if t._async_task], return_exceptions=True)
 
         results: List[SubagentResult] = []
@@ -237,92 +255,97 @@ class SubAgentManager:
         task: SubAgentTask,
         worker_coro_factory: Optional[Callable[..., Any]] = None,
     ):
-        """Executes subagent reasoning pipeline bounded by timeout."""
+        """Executes subagent reasoning pipeline bounded by timeout and worker concurrency."""
         task.state = SubagentState.RUNNING
         start_t = time.time()
-        task.steps_log.append("Starting background task execution...")
-        task.progress_percent = 15
+        task.steps_log.append("Queued for worker execution...")
 
-        try:
-            await asyncio.wait_for(
-                self._execute_core(task, worker_coro_factory),
-                timeout=task.timeout_seconds,
-            )
-            task.state = SubagentState.SUCCEEDED
-            task.completed_at = time.time()
-            task.progress_percent = 100
-            dur = round(task.completed_at - start_t, 2)
+        async with self._concurrency_semaphore:
+            task.steps_log.append("Starting background task execution...")
+            task.progress_percent = 15
 
-            self._emit("subagent_task_completed", {
-                "task_id": task.task_id,
-                "title": task.title,
-                "status": "completed",
-                "duration_sec": dur,
-                "summary": task.result.executive_summary if task.result else "",
-            })
-            logger.info(f"[SubAgent] Mission #{task.task_id} COMPLETED in {dur}s: '{task.title}'")
+            try:
+                await asyncio.wait_for(
+                    self._execute_core(task, worker_coro_factory),
+                    timeout=task.timeout_seconds,
+                )
+                task.state = SubagentState.SUCCEEDED
+                task.completed_at = time.time()
+                task.progress_percent = 100
+                dur = round(task.completed_at - start_t, 2)
 
-        except asyncio.TimeoutError:
-            task.state = SubagentState.TIMED_OUT
-            task.completed_at = time.time()
-            dur = round(task.completed_at - start_t, 2)
-            task.result = SubagentResult(
-                task_id=task.task_id,
-                goal=task.goal,
-                status="timed_out",
-                executive_summary=f"Subagent execution timed out after {task.timeout_seconds}s limit.",
-                execution_time_sec=dur,
-                error_message="Execution timeout exceeded.",
-            )
-            self._emit("subagent_task_failed", {
-                "task_id": task.task_id,
-                "title": task.title,
-                "error": "Timeout exceeded",
-                "status": "timed_out",
-                "duration_sec": dur,
-            })
-            logger.warning(f"[SubAgent] Mission #{task.task_id} TIMED OUT after {dur}s")
+                self._emit("subagent_task_completed", {
+                    "task_id": task.task_id,
+                    "title": task.title,
+                    "status": "completed",
+                    "duration_sec": dur,
+                    "summary": task.result.executive_summary if task.result else "",
+                })
+                logger.info(f"[SubAgent] Mission #{task.task_id} COMPLETED in {dur}s: '{task.title}'")
 
-        except asyncio.CancelledError:
-            task.state = SubagentState.CANCELLED
-            task.completed_at = time.time()
-            dur = round(task.completed_at - start_t, 2)
-            task.result = SubagentResult(
-                task_id=task.task_id,
-                goal=task.goal,
-                status="cancelled",
-                executive_summary="Subagent execution cancelled by orchestrator.",
-                execution_time_sec=dur,
-                error_message="Cancelled by host.",
-            )
-            self._emit("subagent_task_failed", {
-                "task_id": task.task_id,
-                "title": task.title,
-                "error": "Cancelled",
-                "status": "cancelled",
-                "duration_sec": dur,
-            })
+            except asyncio.TimeoutError:
+                task.state = SubagentState.TIMED_OUT
+                task.completed_at = time.time()
+                dur = round(task.completed_at - start_t, 2)
+                task.result = SubagentResult(
+                    task_id=task.task_id,
+                    goal=task.goal,
+                    status="timed_out",
+                    executive_summary=f"Subagent execution timed out after {task.timeout_seconds}s limit.",
+                    execution_time_sec=dur,
+                    error_message="Execution timeout exceeded.",
+                )
+                self._emit("subagent_task_failed", {
+                    "task_id": task.task_id,
+                    "title": task.title,
+                    "error": "Timeout exceeded",
+                    "status": "timed_out",
+                    "duration_sec": dur,
+                })
+                logger.warning(f"[SubAgent] Mission #{task.task_id} TIMED OUT after {dur}s")
 
-        except Exception as e:
-            task.state = SubagentState.FAILED
-            task.completed_at = time.time()
-            dur = round(task.completed_at - start_t, 2)
-            task.result = SubagentResult(
-                task_id=task.task_id,
-                goal=task.goal,
-                status="failed",
-                executive_summary=f"Subagent execution failed: {str(e)}",
-                execution_time_sec=dur,
-                error_message=str(e),
-            )
-            self._emit("subagent_task_failed", {
-                "task_id": task.task_id,
-                "title": task.title,
-                "error": str(e),
-                "status": "failed",
-                "duration_sec": dur,
-            })
-            logger.error(f"[SubAgent] Mission #{task.task_id} FAILED: {e}", exc_info=True)
+            except asyncio.CancelledError:
+                task.state = SubagentState.CANCELLED
+                task.completed_at = time.time()
+                dur = round(task.completed_at - start_t, 2)
+                task.result = SubagentResult(
+                    task_id=task.task_id,
+                    goal=task.goal,
+                    status="cancelled",
+                    executive_summary="Subagent execution cancelled by orchestrator.",
+                    execution_time_sec=dur,
+                    error_message="Cancelled by host.",
+                )
+                self._emit("subagent_task_failed", {
+                    "task_id": task.task_id,
+                    "title": task.title,
+                    "error": "Cancelled",
+                    "status": "cancelled",
+                    "duration_sec": dur,
+                })
+                raise
+
+            except Exception as e:
+                task.state = SubagentState.FAILED
+                task.completed_at = time.time()
+                dur = round(task.completed_at - start_t, 2)
+                err_str = str(e) or type(e).__name__
+                task.result = SubagentResult(
+                    task_id=task.task_id,
+                    goal=task.goal,
+                    status="failed",
+                    executive_summary=f"Subagent execution failed: {err_str}",
+                    execution_time_sec=dur,
+                    error_message=err_str,
+                )
+                self._emit("subagent_task_failed", {
+                    "task_id": task.task_id,
+                    "title": task.title,
+                    "error": err_str,
+                    "status": "failed",
+                    "duration_sec": dur,
+                })
+                logger.error(f"[SubAgent] Mission #{task.task_id} FAILED: {e}", exc_info=True)
 
     async def _execute_core(
         self,
@@ -358,23 +381,41 @@ class SubAgentManager:
         task.steps_log.append("Executing specialist model reasoning...")
         task.progress_percent = 70
 
+        specialist_instruction = load_prompt(
+            "subagent_specialist",
+            default=(
+                "[TECHNICAL SPECIALIST SUBAGENT PROTOCOL]\n"
+                "You are an isolated, objective technical specialist worker executing a focused sub-task.\n"
+                "Analyze the given objective thoroughly using available read-only exploration tools.\n"
+                "Report your factual findings, discovered code references, and concise technical summary.\n"
+                "Do not emit conversational filler, preambles, or avatar roleplay."
+            )
+        )
+
         res_text = await call_universal_chat_model(
             model_id=model_id,
             user_prompt=sub_prompt,
-            system_instruction=get_soul_prompt(mode="chat"),
+            system_instruction=specialist_instruction,
             max_tokens=None,
-            temperature=0.4,
+            temperature=0.3,
             read_only=True,
-            platform="cli",
+            platform=task.platform or "cli",
         )
 
         out_summary = str(res_text or "").strip()
+
+        # Extract referenced files and bulleted findings for structured contract
+        raw_refs = list(set(re.findall(r"(?:[a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9_]{1,6})", out_summary)))
+        clean_refs = [f for f in raw_refs if ("/" in f or "\\" in f or "." in f) and len(f) > 3 and not f.startswith("http")][:10]
+        bullet_findings = [line.strip().lstrip("-*123456789. ") for line in out_summary.splitlines() if line.strip().startswith(("-", "*", "1.", "2.", "3.", "•"))][:6]
 
         task.result = SubagentResult(
             task_id=task.task_id,
             goal=task.goal,
             status="completed",
             executive_summary=out_summary,
+            key_findings=bullet_findings or [out_summary[:120]],
+            referenced_files=clean_refs,
             execution_time_sec=round(time.time() - task.created_at, 2),
         )
 

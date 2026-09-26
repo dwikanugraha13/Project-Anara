@@ -195,6 +195,7 @@ def run_cua_call(tool_name: str, args: Optional[Dict[str, Any]] = None, timeout:
                         if data.get("isError") or data.get("error") or data.get("code") in (
                             "desktop_coordinate_scope_required",
                             "background_unavailable",
+                            "foreground_unavailable",
                             "missing_field",
                         ):
                             data["isError"] = True
@@ -204,7 +205,10 @@ def run_cua_call(tool_name: str, args: Optional[Dict[str, Any]] = None, timeout:
                     pass
 
             out_lower = out.lower()
-            if any(err_marker in out_lower for err_marker in ("missing required", "error:", "failed", "unrecognized", "invalid")):
+            if any(err_marker in out_lower for err_marker in (
+                "missing required", "error:", "failed", "unrecognized", "invalid",
+                "foreground_unavailable", "background_unavailable", "not foreground"
+            )):
                 return {"status": "error", "isError": True, "error": out}
 
             if proc.returncode == 0:

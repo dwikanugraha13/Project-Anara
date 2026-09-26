@@ -1,6 +1,6 @@
 """
-toolsets.py — Anara Standard 24 Toolsets Matrix & Modular Governance for Project Anara.
-Groups Anara's tools into 24 cohesive, togglable toolsets with persistent status in SQLite.
+toolsets.py — Anara Standard 31 Toolsets Matrix & Modular Governance for Project Anara.
+Groups Anara's tools into 31 cohesive, togglable toolsets with persistent status in SQLite.
 """
 
 import json
@@ -10,7 +10,7 @@ from typing import Dict, List, Any, Optional, Set
 
 logger = logging.getLogger(__name__)
 
-# Complete 24-Toolset Taxonomy for Project Anara
+# Complete 31-Toolset Taxonomy for Project Anara
 ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
     "clarifying_questions": {
         "id": "clarifying_questions",
@@ -340,7 +340,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
 
 
 def get_toolsets_status() -> List[Dict[str, Any]]:
-    """Returns all 24 toolsets with their live enabled/disabled toggle states."""
+    """Returns all 31 toolsets with their live enabled/disabled toggle states."""
     from memory import memory_engine
 
     setting_val = memory_engine.get_app_setting("toolsets_enabled_map")
@@ -549,10 +549,17 @@ class PlatformToolRegistry:
         if user_task:
             try:
                 clean_task = str(user_task).lower()
+                GENERIC_DOMAIN_ROOTS = {"task", "home", "code", "file", "system", "document", "session", "memory"}
                 for ts_id, ts_def in ANARA_TOOLSETS.items():
                     ts_name = ts_id.replace("_", " ").lower()
                     domain_root = ts_id.split("_")[0].lower()
-                    if (domain_root in clean_task) or (ts_name in clean_task):
+                    is_match = False
+                    if domain_root not in GENERIC_DOMAIN_ROOTS and len(domain_root) >= 4 and re.search(rf"\b{re.escape(domain_root)}\b", clean_task):
+                        is_match = True
+                    elif re.search(rf"\b{re.escape(ts_name)}\b", clean_task):
+                        is_match = True
+
+                    if is_match:
                         for t in ts_def.get("tools", []):
                             active_tools.add(t)
             except Exception:
@@ -599,10 +606,17 @@ class PlatformToolRegistry:
         # 3. Dynamic Toolset Domain Activation (Hermes Parity: Explicit Domain Posture Extension)
         if user_task:
             try:
+                GENERIC_DOMAIN_ROOTS = {"task", "home", "code", "file", "system", "document", "session", "memory"}
                 for ts_id, ts_def in ANARA_TOOLSETS.items():
                     ts_name = ts_id.replace("_", " ").lower()
                     domain_root = ts_id.split("_")[0].lower()
-                    if (domain_root in clean_task) or (ts_name in clean_task):
+                    is_match = False
+                    if domain_root not in GENERIC_DOMAIN_ROOTS and len(domain_root) >= 4 and re.search(rf"\b{re.escape(domain_root)}\b", clean_task):
+                        is_match = True
+                    elif re.search(rf"\b{re.escape(ts_name)}\b", clean_task):
+                        is_match = True
+
+                    if is_match:
                         for t in ts_def.get("tools", []):
                             active_tools.add(t)
             except Exception:

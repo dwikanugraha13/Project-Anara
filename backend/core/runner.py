@@ -52,7 +52,7 @@ class TurnEvent:
 
 @dataclass
 class AgentTurnResult:
-    """Standardized final response payload from a unified agent conversation turn."""
+    """Standardized final response payload from a unified agent conversation turn (Hermes & Claude Code Parity)."""
     text: str
     session_id: int
     agent_mode: str = "plan"
@@ -61,6 +61,8 @@ class AgentTurnResult:
     tools_used: List[str] = field(default_factory=list)
     token_usage: Dict[str, Any] = field(default_factory=dict)
     duration_seconds: float = 0.0
+    turn_steps: int = 1
+    latency_ms: Optional[float] = None
     status: str = "success"
     error_message: Optional[str] = None
     pending_tool_call: Optional[Dict[str, Any]] = None
@@ -134,7 +136,6 @@ class AnaraExecutionRunner:
 
         # 2. Check Pending Actions State Machine (Hermes Model-Driven Parity)
         pending = session_state_manager.get_pending(self.platform, str(effective_sid))
-        norm_text = clean_text.lower().strip()
 
         session_obj = memory_engine.get_session(effective_sid)
         session_type = (session_obj.get("session_type") or "chat") if session_obj else "chat"
@@ -148,8 +149,10 @@ class AnaraExecutionRunner:
             from core.plan_detector import classify_approval_intent
             semantic_intent = await classify_approval_intent(clean_text, pending.plan_text)
             is_approved = (semantic_intent == "approve")
-        elif session_mode in ("explicit_plan_build", "plan") and norm_text in ("y", "yes"):
-            is_approved = True
+        elif session_mode in ("explicit_plan_build", "plan"):
+            from core.plan_detector import classify_approval_intent
+            semantic_intent = await classify_approval_intent(clean_text, f"Session mode {session_mode} plan proposal")
+            is_approved = (semantic_intent == "approve")
 
         if pending and is_approved:
             session_state_manager.clear_pending(self.platform, str(effective_sid))
@@ -408,38 +411,41 @@ class AnaraExecutionRunner:
         pending_tool_call = None
         error_msg = None
 
-        async for event in self.execute_turn_stream(user_message, requested_mode=requested_mode, model_id=model_id):
-            if event.type == "chunk":
-                if stream_callback and event.content:
-                    res = stream_callback(event.content)
-                    if asyncio.iscoroutine(res):
-                        await res
-            elif event.type == "thought":
-                if thinking_callback and event.content:
-                    res = thinking_callback(event.content)
-                    if asyncio.iscoroutine(res):
-                        await res
-            elif event.type in ("tool_start", "tool_result"):
-                if event.tool_name and event.tool_name not in tools_used:
-                    tools_used.append(event.tool_name)
-                if tool_progress_callback:
-                    res = tool_progress_callback({
-                        "tool_name": event.tool_name,
-                        "status": "running" if event.type == "tool_start" else "done",
-                        "summary": event.content or "",
-                    })
-                    if asyncio.iscoroutine(res):
-                        await res
-            elif event.type == "need_approval":
-                plan_pending = True
-                plan_id = event.plan_id
-                pending_tool_call = {"tool": event.tool_name, "arguments": event.tool_args}
-                final_text = event.thought or event.content or "Approval required."
-            elif event.type == "final_text":
-                final_text = event.content or ""
-            elif event.type == "error":
-                error_msg = event.content
+        sid_lock_key = str(self.session_id or "default")
+        async with session_state_manager.get_session_lock(sid_lock_key):
+            async for event in self.execute_turn_stream(user_message, requested_mode=requested_mode, model_id=model_id):
+                if event.type == "chunk":
+                    if stream_callback and event.content:
+                        res = stream_callback(event.content)
+                        if asyncio.iscoroutine(res):
+                            await res
+                elif event.type == "thought":
+                    if thinking_callback and event.content:
+                        res = thinking_callback(event.content)
+                        if asyncio.iscoroutine(res):
+                            await res
+                elif event.type in ("tool_start", "tool_result"):
+                    if event.tool_name and event.tool_name not in tools_used:
+                        tools_used.append(event.tool_name)
+                    if tool_progress_callback:
+                        res = tool_progress_callback({
+                            "tool_name": event.tool_name,
+                            "status": "running" if event.type == "tool_start" else "done",
+                            "summary": event.content or "",
+                        })
+                        if asyncio.iscoroutine(res):
+                            await res
+                elif event.type == "need_approval":
+                    plan_pending = True
+                    plan_id = event.plan_id
+                    pending_tool_call = {"tool": event.tool_name, "arguments": event.tool_args}
+                    final_text = event.thought or event.content or "Approval required."
+                elif event.type == "final_text":
+                    final_text = event.content or ""
+                elif event.type == "error":
+                    error_msg = event.content
 
+        duration = round(time.time() - start_time, 2)
         return AgentTurnResult(
             text=final_text,
             session_id=self.session_id or 0,
@@ -447,7 +453,9 @@ class AnaraExecutionRunner:
             plan_pending=plan_pending,
             plan_id=plan_id,
             tools_used=tools_used,
-            duration_seconds=round(time.time() - start_time, 2),
+            duration_seconds=duration,
+            turn_steps=len(tools_used) + 1,
+            latency_ms=round(duration * 1000.0, 1),
             status="error" if error_msg else "success",
             error_message=error_msg,
             pending_tool_call=pending_tool_call,

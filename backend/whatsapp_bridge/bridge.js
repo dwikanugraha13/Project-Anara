@@ -68,6 +68,15 @@ async function startSock() {
   currentQrDataUrl = null;
   currentQrRaw = null;
 
+  // Clean up previous socket if reconnecting to prevent listener memory leak
+  if (sock) {
+    try {
+      sock.ev.removeAllListeners();
+      sock.end();
+    } catch (e) {}
+    sock = null;
+  }
+
   try {
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
     const { version } = await fetchLatestBaileysVersion();
@@ -142,8 +151,10 @@ async function startSock() {
           if (!msg.key.fromMe && msg.message) {
             const senderJid = msg.key.remoteJid || "";
             const isGroup = senderJid.endsWith("@g.us");
-            const senderPhone = senderJid.split("@")[0];
-            const pushName = msg.pushName || (isGroup ? "Grup WhatsApp" : "Kontak");
+            const participantJid = isGroup ? (msg.key.participant || msg.participant || senderJid) : senderJid;
+            const participantPhone = participantJid.split("@")[0].split(":")[0];
+            const senderPhone = isGroup ? participantPhone : senderJid.split("@")[0];
+            const pushName = msg.pushName || (isGroup ? "Anggota WhatsApp" : "Kontak");
             
             // Extract text and media content
             let text = "";
@@ -275,6 +286,7 @@ async function startSock() {
                 id: msg.key.id,
                 sender: pushName,
                 phone: senderPhone,
+                participant: participantPhone,
                 jid: senderJid,
                 isGroup,
                 text: text || `[${(mediaType || "file").toUpperCase()} ATTACHED]`,
@@ -428,27 +440,31 @@ app.post("/send", async (req, res) => {
     return res.status(400).json({ status: "error", message: "Parameters 'to' and 'message' are required." });
   }
 
-  let cleanTo = String(to).replace(/[^0-9]/g, "");
-  // If starts with 08..., convert to 628...
-  if (cleanTo.startsWith("08")) {
-    cleanTo = "628" + cleanTo.substring(2);
-  } else if (cleanTo.startsWith("8")) {
-    cleanTo = "628" + cleanTo.substring(1);
+  const rawTo = String(to).trim();
+  let jid;
+  if (rawTo.endsWith("@g.us") || rawTo.endsWith("@s.whatsapp.net")) {
+    jid = rawTo;
+  } else {
+    let cleanTo = rawTo.replace(/[^0-9]/g, "");
+    if (cleanTo.startsWith("08")) {
+      cleanTo = "628" + cleanTo.substring(2);
+    } else if (cleanTo.startsWith("8")) {
+      cleanTo = "628" + cleanTo.substring(1);
+    }
+    jid = `${cleanTo}@s.whatsapp.net`;
   }
-
-  const jid = cleanTo.includes("@") ? cleanTo : `${cleanTo}@s.whatsapp.net`;
 
   try {
     const sent = await sock.sendMessage(jid, { text: String(message) });
-    console.log(`[WABridge Outgoing] Sent to ${cleanTo}: "${String(message).substring(0, 60)}"`);
+    console.log(`[WABridge Outgoing] Sent to ${jid}: "${String(message).substring(0, 60)}"`);
     res.json({
       status: "ok",
       id: sent.key.id,
-      recipient: cleanTo,
+      recipient: jid,
       message,
     });
   } catch (err) {
-    console.error(`[WABridge Send Error] Failed to send to ${cleanTo}:`, err);
+    console.error(`[WABridge Send Error] Failed to send to ${jid}:`, err);
     res.status(500).json({ status: "error", message: err.message });
   }
 });
@@ -469,13 +485,19 @@ app.post("/send-document", async (req, res) => {
     return res.status(404).json({ status: "error", message: `File not found: ${resolvedPath}` });
   }
 
-  let cleanTo = String(to).replace(/[^0-9]/g, "");
-  if (cleanTo.startsWith("08")) {
-    cleanTo = "628" + cleanTo.substring(2);
-  } else if (cleanTo.startsWith("8")) {
-    cleanTo = "628" + cleanTo.substring(1);
+  const rawToDoc = String(to).trim();
+  let jid;
+  if (rawToDoc.endsWith("@g.us") || rawToDoc.endsWith("@s.whatsapp.net")) {
+    jid = rawToDoc;
+  } else {
+    let cleanTo = rawToDoc.replace(/[^0-9]/g, "");
+    if (cleanTo.startsWith("08")) {
+      cleanTo = "628" + cleanTo.substring(2);
+    } else if (cleanTo.startsWith("8")) {
+      cleanTo = "628" + cleanTo.substring(1);
+    }
+    jid = `${cleanTo}@s.whatsapp.net`;
   }
-  const jid = cleanTo.includes("@") ? cleanTo : `${cleanTo}@s.whatsapp.net`;
 
   try {
     const fileBuffer = fs.readFileSync(resolvedPath);
@@ -500,11 +522,11 @@ app.post("/send-document", async (req, res) => {
       caption: caption || baseName,
     });
 
-    console.log(`[WABridge Outgoing Document] Sent '${baseName}' to ${cleanTo}`);
+    console.log(`[WABridge Outgoing Document] Sent '${baseName}' to ${jid}`);
     res.json({
       status: "ok",
       id: sent.key.id,
-      recipient: cleanTo,
+      recipient: jid,
       filename: baseName,
       file_path: resolvedPath,
     });

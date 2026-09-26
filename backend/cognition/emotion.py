@@ -167,17 +167,48 @@ class EmotionEngine:
 
     def analyze(self, text: str, allow_dance: bool = True) -> Optional[Dict[str, Any]]:
         """
-        Hermes Agent Parity: Default conversational speech streams in natural talking state.
-        Deliberate physical body gestures and expressions (dance, salute, greeting, thinking, etc.)
-        are governed directly by model cognition via the trigger_avatar_animation tool.
+        Dynamically resolves avatar affective state based on conversational context and loaded SQLite behaviors.
         """
         if not text or not text.strip():
             return None
 
+        clean = text.strip()
+
+        # Dynamic behavior mapping using loaded SQLite animation profiles
+        if self._behaviors:
+            # Check for matches against dynamic keywords loaded from SQLite
+            tokens = set(re.findall(r"\w+", clean.lower()))
+            for b in self._behaviors:
+                b_kws = b.get("keywords") or []
+                if any(kw in tokens or kw in clean.lower() for kw in b_kws if len(kw) >= 3):
+                    return {
+                        "animation_name": b.get("name") or b.get("animation_name", "talking"),
+                        "emotion": b.get("emotion", "neutral"),
+                        "gesture": b.get("gesture", "talking"),
+                        "intensity": b.get("intensity", 0.70),
+                    }
+
+            if clean.endswith("?") or "¿" in clean:
+                q_beh = next((b for b in self._behaviors if b.get("emotion") == "curious" or b.get("gesture") in ("question", "thinking")), None)
+                if q_beh:
+                    return {
+                        "animation_name": q_beh.get("name") or q_beh.get("animation_name", "thinking"),
+                        "emotion": q_beh.get("emotion", "curious"),
+                        "gesture": q_beh.get("gesture", "thinking"),
+                        "intensity": q_beh.get("intensity", 0.70),
+                    }
+            if clean.endswith("!"):
+                e_beh = next((b for b in self._behaviors if b.get("emotion") in ("enthusiastic", "happy")), None)
+                if e_beh:
+                    return {
+                        "animation_name": e_beh.get("name") or e_beh.get("animation_name", "happy"),
+                        "emotion": e_beh.get("emotion", "enthusiastic"),
+                        "gesture": e_beh.get("gesture", "explain"),
+                        "intensity": e_beh.get("intensity", 0.80),
+                    }
+
         return {"animation_name": "talking", "emotion": "neutral", "gesture": "talking", "intensity": 0.60}
 
     def analyze_full_turn(self, full_turn_text: str, allow_dance: bool = True) -> Optional[Dict[str, Any]]:
-        """
-        Performs baseline state resolution over the entire turn.
-        """
+        """Performs baseline affective state resolution over the entire turn."""
         return self.analyze(full_turn_text, allow_dance=allow_dance)

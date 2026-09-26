@@ -95,25 +95,17 @@ def check_tool_permission(tool_name: str, mode: str = "plan", args: Optional[Dic
             }
 
     # Granular Risk Gate for 'ask' category tools (destructive commands, etc.)
-    if risk == "ask" and tool_name == "execute_cli_command":
-        cmd = (args or {}).get("command", "").lower()
-        dangerous_patterns = [
-            r"\brm\s+-[rf]{1,2}\s+[/~]",
-            r"\bformat\s+[a-z]:",
-            r"\bdiskpart\b",
-            r"\bdrop\s+database\b",
-            r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;",
-            r"\bshutdown\b",
-            r"\breboot\b",
-        ]
-        for dp in dangerous_patterns:
-            if re.search(dp, cmd):
-                return {
-                    "allowed": False,
-                    "risk": "ask",
-                    "requires_prompt": True,
-                    "message": f"PERMISSION GATE ESCALATION: High-blast-radius system command '{cmd}' requires explicit user confirmation."
-                }
+    if tool_name == "execute_cli_command":
+        cmd = (args or {}).get("command", "")
+        from core.plan_detector import evaluate_command_safety
+        cmd_risk = evaluate_command_safety(cmd)
+        if cmd_risk == "ask":
+            return {
+                "allowed": False,
+                "risk": "ask",
+                "requires_prompt": True,
+                "message": f"PERMISSION GATE ESCALATION: High-blast-radius system command '{cmd}' requires explicit user confirmation."
+            }
 
     return {"allowed": True, "risk": risk}
 
@@ -221,12 +213,13 @@ def _normalize_tool_args(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
             a[target] = val
             continue
 
-        # Substring & semantic stem match (e.g. path -> file_path, dir -> directory_path)
+        # Substring & semantic prefix/suffix match without cross-parameter collisions
         matched_val = None
         for clean_k, (orig_k, val) in clean_incoming.items():
-            if len(clean_k) >= 3 and (clean_k in clean_target or clean_target in clean_k):
-                matched_val = val
-                break
+            if orig_k not in expected and len(clean_k) >= 4:
+                if clean_target.endswith(clean_k) or clean_target.startswith(clean_k):
+                    matched_val = val
+                    break
         if matched_val is not None:
             a[target] = matched_val
 

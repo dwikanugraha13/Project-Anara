@@ -168,42 +168,57 @@ class ModelCapabilityRegistry:
 
     @classmethod
     async def _fetch_gemini_models(cls) -> None:
-        """Enumerate models exposed by the Google Gemini SDK."""
+        """Enumerate models exposed by the Google Gemini SDK and harvest context limits."""
         try:
-            # Import lazily so missing dependency does not break unrelated flows.
-            import google.generativeai as genai  # type: ignore
+            from core.key_manager import key_manager
+            from google import genai
+
+            active_key = key_manager.get_active_key()
+            if not active_key:
+                return
+
+            client = genai.Client(api_key=active_key.split(",")[0].strip())
 
             def _list_models() -> list:
                 try:
-                    return list(genai.list_models())
+                    return list(client.models.list())
                 except Exception as inner:
-                    logger.warning(f"[Capabilities] genai.list_models() failed: {inner}")
+                    logger.debug(f"[Capabilities] client.models.list() notice: {inner}")
                     return []
 
             models = await asyncio.to_thread(_list_models)
             for m in models:
-                # m.name like 'models/gemini-2.5-flash'
                 raw = getattr(m, "name", "") or ""
                 mid = cls.normalize_id(raw)
                 if not mid:
                     continue
-                methods = set(getattr(m, "supported_generation_methods", []) or [])
-                # Gemini Live Preview supports real-time audio via bidiGenerateContent.
+                methods = set(getattr(m, "supported_generation_methods", getattr(m, "supported_actions", [])) or [])
                 supports_voice = (
                     "bidiGenerateContent" in methods
                     or mid in NATIVE_VOICE_MODEL_IDS
                 )
                 input_mods = _gemini_input_modalities(mid)
+
+                # Dynamically harvest and save context limits
+                in_limit = getattr(m, "input_token_limit", None)
+                out_limit = getattr(m, "output_token_limit", None)
+                if in_limit and isinstance(in_limit, int) and in_limit > 0:
+                    try:
+                        from core.token_budget import save_context_length
+                        save_context_length(mid, in_limit, max_output=out_limit if isinstance(out_limit, int) else None)
+                    except Exception:
+                        pass
+
                 cls._cache[mid] = {
                     "name": getattr(m, "display_name", mid) or mid,
                     "input_modalities": input_mods,
-                    "output_modalities": ["text"],  # All current Gemini chat models emit text
+                    "output_modalities": ["text"],
                     "supports_voice": supports_voice,
                     "supports_vision": "image" in input_mods or "vision" in input_mods,
                     "provider": "google",
                 }
         except Exception as e:
-            logger.warning(f"[Capabilities] Gemini fetch error: {e}")
+            logger.debug(f"[Capabilities] Gemini fetch notice: {e}")
 
     @classmethod
     def seed_live_voice_from_key_manager(cls) -> int:

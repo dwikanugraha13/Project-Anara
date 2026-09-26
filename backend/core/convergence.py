@@ -17,6 +17,57 @@ from typing import Any, Dict, List, Optional, Set
 logger = logging.getLogger(__name__)
 
 
+def _is_verifiable_code_target(target_path: str) -> bool:
+    """
+    Language-agnostic check determining if a modified target is executable code or configuration.
+    Rules are loaded dynamically from verifier_rules.yaml (Zero hardcoding in Python).
+    """
+    clean_p = target_path.strip().replace("\\", "/")
+    if not clean_p:
+        return False
+    from core.prompt_loader import load_config_yaml
+    rules = load_config_yaml("convergence/verifier_rules.yaml", default={})
+    non_code_exts = set(rules.get("non_code_extensions") or [])
+    non_code_names = set(rules.get("non_code_filenames") or [])
+
+    basename = os.path.basename(clean_p).lower()
+    name_no_ext, ext = os.path.splitext(basename)
+    if ext in non_code_exts:
+        return False
+    if not ext and name_no_ext in non_code_names:
+        return False
+    return True
+
+
+def _is_verification_command(cmd: str) -> bool:
+    """
+    Dynamically determines if a shell command is an automated verification or test command.
+    Zero hardcoded language runner lists: matches dynamically against detected repo verification
+    commands or semantic test execution tokens.
+    """
+    clean_cmd = (cmd or "").strip().lower()
+    if not clean_cmd:
+        return False
+
+    # 1. Match against dynamically detected repository test commands
+    try:
+        from core.agent import anara_agent
+        from core.prompt_assembler import PromptAssembler
+        root_p = anara_agent.get_project_repo_root()
+        if root_p:
+            snapshot = PromptAssembler.probe_git_worktree_snapshot(root_p)
+            for line in snapshot.splitlines():
+                if "- Project Verification Commands:" in line:
+                    detected_cmds = [c.strip().lower() for c in line.split(":", 1)[1].split(",") if c.strip()]
+                    if any(det in clean_cmd for det in detected_cmds):
+                        return True
+    except Exception:
+        pass
+
+    # 2. Semantic execution intent: check if command invokes a test/check/spec/lint sub-action
+    return bool(re.search(r"\b(test|tests|check|spec|specs|lint)\b", clean_cmd))
+
+
 @dataclass
 class ActionRecord:
     step: int
@@ -120,13 +171,20 @@ class ConvergenceDetector:
                 self.phase = "MUTATING"
                 if target:
                     self.modified_targets.add(target)
+                    # Staleness Tracking (Hermes mark_workspace_edited parity):
+                    # Any new verifiable code mutation immediately renders prior test evidence stale!
+                    if _is_verifiable_code_target(target):
+                        self.last_test_passed = False
 
-            # Check for verification commands
+            # Check for verification commands dynamically (zero hardcoded runner tuples)
             if t_name in ("execute_cli_command", "terminal", "run_terminal_command"):
-                cmd = target.lower()
-                if any(k in cmd for k in ("pytest", "npm test", "run_tests", "python -m unittest")):
+                if _is_verification_command(target):
                     self.phase = "VERIFYING"
-                    if not is_err and "failed" not in summary.lower() and "error" not in summary.lower():
+                    sum_lower = summary.lower()
+                    has_explicit_fail = bool(re.search(r"\b([1-9]\d*\s+failed|[1-9]\d*\s+errors?|failures?=[1-9]\d*)\b", sum_lower))
+                    has_explicit_pass = bool(re.search(r"\b(passed|ok|success|0\s+failed)\b", sum_lower))
+
+                    if not is_err and (has_explicit_pass or not has_explicit_fail):
                         self.test_verified_count += 1
                         self.last_test_passed = True
                     else:
@@ -310,26 +368,48 @@ class ConvergenceDetector:
         if self.read_only or agent_mode == "plan":
             return None
 
-        # Check if code files were mutated
-        has_code_mutations = any(
-            t.endswith((".py", ".ts", ".tsx", ".js", ".jsx", ".rs", ".go", ".cpp", ".c", ".java", ".html", ".css"))
-            for t in self.modified_targets
-        )
+        # Check if verifiable code/config files were mutated (Language-Agnostic Negative Blacklist)
+        verifiable_mutations = [
+            t for t in self.modified_targets
+            if _is_verifiable_code_target(t)
+        ]
 
-        # If code was mutated and NO passing verification was run:
-        if has_code_mutations and (self.test_verified_count == 0 or not self.last_test_passed):
+        # If verifiable code was mutated and NO fresh passing verification was observed:
+        if verifiable_mutations and (self.test_verified_count == 0 or not self.last_test_passed):
             # Allow maximum 2 stop-gate nudges per turn to avoid indefinite deadlocks
             nudges = getattr(self, "_stop_gate_nudges", 0)
             if nudges >= 2:
                 return None
             self._stop_gate_nudges = nudges + 1
 
-            mutated_list = ", ".join(list(self.modified_targets)[:4])
-            return (
-                f"[VERIFICATION STOP-GATE]: You modified code files ({mutated_list}) during this session, "
-                f"but have not yet executed ground-truth verification tests to confirm they work without regressions. "
-                f"Please run the project's verification command (e.g., 'pytest', 'npm test', or project unit tests) "
-                f"and inspect the real output before delivering your final completion report."
+            mutated_list = ", ".join(verifiable_mutations[:4])
+
+            # Dynamically resolve project test command suggestion from active repository
+            cmd_suggestion = ""
+            try:
+                from core.prompt_assembler import PromptAssembler
+                from core.agent import anara_agent
+                root_p = anara_agent.get_project_repo_root()
+                if root_p:
+                    snapshot = PromptAssembler.probe_git_worktree_snapshot(root_p)
+                    for line in snapshot.splitlines():
+                        if "- Project Verification Commands:" in line:
+                            detected = line.split(":", 1)[1].strip()
+                            if detected:
+                                cmd_suggestion = f" (detected: {detected})"
+                                break
+            except Exception:
+                pass
+
+            from core.prompt_loader import load_config_yaml
+            rules = load_config_yaml("convergence/verifier_rules.yaml", default={})
+            nudge_tmpl = rules.get(
+                "default_stop_gate_nudge",
+                "[VERIFICATION STOP-GATE]: You modified files ({mutated_list}) during this session, "
+                "but have not yet executed ground-truth verification tests to confirm they work without regressions. "
+                "Please run the project's verification command{cmd_suggestion} "
+                "and inspect the real output before delivering your final completion report."
             )
+            return nudge_tmpl.format(mutated_list=mutated_list, cmd_suggestion=cmd_suggestion)
 
         return None

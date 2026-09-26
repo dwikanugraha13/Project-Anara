@@ -418,7 +418,17 @@ async def websocket_endpoint(websocket: WebSocket):
                     voice_pipeline.has_speech_started = False
                     voice_pipeline.ser_tracker.reset()
                 elif ai_is_speaking:
-                    pass
+                    intensity = estimate_audio_intensity(raw_audio)
+                    # Acoustic Barge-in detection (Hermes & Claude Code Parity):
+                    # If user speech clearly exceeds ambient playback bleed, interrupt AI speech immediately!
+                    if intensity > 0.045:
+                        live_svc = ensure_gemini_service()
+                        if live_svc:
+                            await live_svc.interrupt()
+                        await on_interrupted()
+                        voice_pipeline.user_audio_buffer.clear()
+                        voice_pipeline.has_speech_started = True
+                        voice_pipeline.last_speech_time = loop.time()
                 else:
                     live_svc = ensure_gemini_service()
                     if live_svc:
@@ -515,6 +525,16 @@ async def websocket_endpoint(websocket: WebSocket):
                             if live_svc:
                                 await live_svc.interrupt()
                             await on_interrupted()
+                        if active_text_task and not active_text_task.done():
+                            active_text_task.cancel()
+                            logger.info("[WebSocket] Cancelled active text turn task on interrupt request.")
+                        try:
+                            from core.session_manager import session_state_manager
+                            if active_session_id:
+                                await session_state_manager.request_hard_interrupt("web_studio", str(active_session_id))
+                                await session_state_manager.request_hard_interrupt("web", str(active_session_id))
+                        except Exception:
+                            pass
                     elif msg_type == "set_active_speaker":
                         requested = data.get("name")
                         await voice_pipeline.notify_speaker_change(requested, reason="client_requested_profile_switch")

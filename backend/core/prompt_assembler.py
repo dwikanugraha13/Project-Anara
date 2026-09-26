@@ -71,16 +71,25 @@ class PromptAssembler:
                 log_lines = "\n    ".join(log_res.stdout.strip().splitlines())
                 lines.append(f"- Recent Commits:\n    {log_lines}")
 
-            # 4. Project verify commands
+            # 4. Dynamic Project Verification Commands Discovery (Hermes & Claude Code Parity)
             verify_cmds = []
+            if os.path.isfile(os.path.join(root_path, "pytest.ini")) or os.path.isfile(os.path.join(root_path, "pyproject.toml")) or os.path.isdir(os.path.join(root_path, "tests")) or os.path.isdir(os.path.join(root_path, "backend", "tests")):
+                verify_cmds.append("pytest")
+            if os.path.isfile(os.path.join(root_path, "package.json")):
+                if os.path.isfile(os.path.join(root_path, "pnpm-lock.yaml")):
+                    verify_cmds.append("pnpm test")
+                elif os.path.isfile(os.path.join(root_path, "bun.lockb")) or os.path.isfile(os.path.join(root_path, "bun.lock")):
+                    verify_cmds.append("bun test")
+                elif os.path.isfile(os.path.join(root_path, "yarn.lock")):
+                    verify_cmds.append("yarn test")
+                else:
+                    verify_cmds.append("npm test")
+            if os.path.isfile(os.path.join(root_path, "Cargo.toml")):
+                verify_cmds.append("cargo test")
+            if os.path.isfile(os.path.join(root_path, "go.mod")):
+                verify_cmds.append("go test ./...")
             if os.path.isfile(os.path.join(root_path, "run_tests.py")):
                 verify_cmds.append("python run_tests.py")
-            if os.path.isfile(os.path.join(root_path, "test_general_agent.py")):
-                verify_cmds.append("python test_general_agent.py")
-            if os.path.isfile(os.path.join(root_path, "pytest.ini")) or os.path.isdir(os.path.join(root_path, "backend", "tests")):
-                verify_cmds.append("python -m pytest")
-            if os.path.isfile(os.path.join(root_path, "package.json")):
-                verify_cmds.append("npm test")
             if verify_cmds:
                 lines.append(f"- Project Verification Commands: {', '.join(verify_cmds)}")
         except Exception:
@@ -143,8 +152,8 @@ class PromptAssembler:
         else:
             skills_list = active_skills if active_skills is not None else memory_engine.get_all_agent_skills(active_only=True)
             if skills_list:
-                skill_lines = [f"- **{sk['name']}** ({sk.get('category', 'general')}): {sk.get('description', '')}" for sk in skills_list[:8]]
-                slot6_skills = "[ACTIVE AGENT SKILLS (ANARA BRAIN)]:\n" + "\n".join(skill_lines)
+                skill_lines = "\n".join([f"- **{sk['name']}** ({sk.get('category', 'general')}): {sk.get('description', '')}" for sk in skills_list[:8]])
+                slot6_skills = load_prompt("skills_manifest", skill_lines=skill_lines).strip()
 
         # Slot 7: Project Context & Live Worktree Snapshot (Hermes Ground-Truth Parity)
         from core.agent import anara_agent
@@ -157,21 +166,28 @@ class PromptAssembler:
 
         git_snapshot = cls.probe_git_worktree_snapshot(root_path)
 
-        slot7_project = (
-            f"[LIVE WORKSPACE & REPOSITORY SNAPSHOT (HERMES GROUND-TRUTH)]:\n"
-            f"- Project Name: {project_name}\n"
-            f"- Physical Root Path: {root_path}\n"
-        )
-        if git_snapshot:
-            slot7_project += f"{git_snapshot}\n"
+        files_info = ""
         if total_files > 0:
             files_preview = ', '.join([f['path'] for f in (workspace_tree or {}).get('files', [])[:25]]) or '(Empty / clean folder)'
-            slot7_project += f"- Indexed Files ({total_files} total): {files_preview}\n"
+            files_info = f"- Indexed Files ({total_files} total): {files_preview}\n"
 
-        slot7_project += (
-            "- WORKSPACE GUIDELINES: All file operations are confined within this project root. "
-            "Use the Git worktree status above as ground truth when verifying or resuming tasks."
-        )
+        git_block = f"{git_snapshot}\n" if git_snapshot else ""
+        slot7_project = load_prompt(
+            "workspace_snapshot",
+            project_name=project_name,
+            root_path=root_path,
+            git_snapshot=git_block,
+            files_info=files_info,
+            default=(
+                f"[LIVE WORKSPACE & REPOSITORY SNAPSHOT (HERMES GROUND-TRUTH)]:\n"
+                f"- Project Name: {project_name}\n"
+                f"- Physical Root Path: {root_path}\n"
+                f"{git_block}"
+                f"{files_info}"
+                "- WORKSPACE GUIDELINES: All file operations are confined within this project root. "
+                "Use the Git worktree status above as ground truth when verifying or resuming tasks."
+            )
+        ).strip()
 
         # Scan for local AGENTS.md / CLAUDE.md / RULES.md in project root
         if root_path and os.path.isdir(root_path):
@@ -180,7 +196,7 @@ class PromptAssembler:
                 if os.path.isfile(doc_p):
                     try:
                         with open(doc_p, "r", encoding="utf-8", errors="ignore") as f:
-                            doc_content = f.read(2000).strip()
+                            doc_content = f.read(12000).strip()
                             if doc_content:
                                 slot7_project += f"\n\n[PROJECT REPOSITORY RULES ({custom_doc})]:\n{doc_content}"
                                 break

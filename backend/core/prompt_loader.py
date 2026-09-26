@@ -8,6 +8,8 @@ Claude Code & Hermes Agent Parity:
 
 import logging
 import os
+import re
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -18,6 +20,26 @@ logger = logging.getLogger(__name__)
 _PROMPTS_DIR: Optional[Path] = None
 _PROMPT_CACHE: Dict[str, Tuple[float, str]] = {}
 _YAML_CACHE: Dict[str, Tuple[float, Any]] = {}
+_CACHE_LOCK = threading.Lock()
+
+
+def _safe_format(template: str, **kwargs: Any) -> str:
+    """
+    Safely substitutes {key} placeholders without crashing on unescaped JSON, CSS, or Bash braces.
+    Hermes & Claude Code Parity: template safety for arbitrary markdown code blocks.
+    """
+    if not kwargs or not template:
+        return template
+    pattern = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+
+    def replacer(match: re.Match) -> str:
+        k = match.group(1)
+        if k in kwargs:
+            val = kwargs[k]
+            return str(val) if val is not None else ""
+        return match.group(0)
+
+    return pattern.sub(replacer, template)
 
 
 def _get_prompts_dir() -> Path:
@@ -58,30 +80,27 @@ def load_prompt(relative_name: str, default: str = "", **format_kwargs: Any) -> 
             file_path = alt_path
         else:
             logger.debug(f"[PromptLoader] Prompt file not found: {file_path}. Using fallback.")
-            return default.format(**format_kwargs) if format_kwargs else default
+            return _safe_format(default, **format_kwargs) if format_kwargs else default
 
     try:
         current_mtime = os.path.getmtime(file_path)
-        cached_entry = _PROMPT_CACHE.get(str(file_path))
-        if cached_entry and cached_entry[0] == current_mtime:
-            raw_text = cached_entry[1]
-        else:
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                raw_text = f.read()
-            _PROMPT_CACHE[str(file_path)] = (current_mtime, raw_text)
-            logger.debug(f"[PromptLoader] Loaded/reloaded prompt '{clean_name}' (mtime: {current_mtime})")
+        with _CACHE_LOCK:
+            cached_entry = _PROMPT_CACHE.get(str(file_path))
+            if cached_entry and cached_entry[0] == current_mtime:
+                raw_text = cached_entry[1]
+            else:
+                with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                    raw_text = f.read()
+                _PROMPT_CACHE[str(file_path)] = (current_mtime, raw_text)
+                logger.debug(f"[PromptLoader] Loaded/reloaded prompt '{clean_name}' (mtime: {current_mtime})")
 
         if format_kwargs:
-            try:
-                return raw_text.format(**format_kwargs)
-            except KeyError as ke:
-                logger.debug(f"[PromptLoader] Safe format missing key {ke} in '{clean_name}'")
-                return raw_text
+            return _safe_format(raw_text, **format_kwargs)
 
         return raw_text
     except Exception as e:
         logger.warning(f"[PromptLoader] Error reading prompt '{clean_name}': {e}")
-        return default.format(**format_kwargs) if format_kwargs else default
+        return _safe_format(default, **format_kwargs) if format_kwargs else default
 
 
 def load_config_yaml(relative_name: str, default: Any = None) -> Any:
@@ -100,15 +119,16 @@ def load_config_yaml(relative_name: str, default: Any = None) -> Any:
 
     try:
         current_mtime = os.path.getmtime(file_path)
-        cached_entry = _YAML_CACHE.get(str(file_path))
-        if cached_entry and cached_entry[0] == current_mtime:
-            return cached_entry[1]
+        with _CACHE_LOCK:
+            cached_entry = _YAML_CACHE.get(str(file_path))
+            if cached_entry and cached_entry[0] == current_mtime:
+                return cached_entry[1]
 
-        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-            data = yaml.safe_load(f)
-        _YAML_CACHE[str(file_path)] = (current_mtime, data)
-        logger.debug(f"[PromptLoader] Loaded/reloaded YAML config '{clean_name}' (mtime: {current_mtime})")
-        return data
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                data = yaml.safe_load(f)
+            _YAML_CACHE[str(file_path)] = (current_mtime, data)
+            logger.debug(f"[PromptLoader] Loaded/reloaded YAML config '{clean_name}' (mtime: {current_mtime})")
+            return data
     except Exception as e:
         logger.warning(f"[PromptLoader] Error reading YAML config '{clean_name}': {e}")
         return default

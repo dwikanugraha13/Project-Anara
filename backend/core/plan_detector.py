@@ -6,13 +6,28 @@ Principle: Security follows the tool invoked, not the channel or interface.
 Zero-hardcoding: Tools are exclusively selected dynamically by the LLM, not by regex heuristics.
 """
 import asyncio
+import concurrent.futures
+import hashlib
+import logging
 import re
 import shlex
-import logging
-from typing import List, Optional, Dict, Any, Set
+import time
+from typing import List, Optional, Dict, Any, Set, Tuple
 from tools import get_tool_risk, TOOL_RISK_CLASSIFICATION
 
 logger = logging.getLogger(__name__)
+
+# Persistent worker pool for synchronous approval intent calls (Hermes Parity)
+_SYNC_INTENT_EXECUTOR: Optional[concurrent.futures.ThreadPoolExecutor] = None
+
+
+def _get_sync_intent_executor() -> concurrent.futures.ThreadPoolExecutor:
+    global _SYNC_INTENT_EXECUTOR
+    if _SYNC_INTENT_EXECUTOR is None:
+        _SYNC_INTENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="anara_intent_sync"
+        )
+    return _SYNC_INTENT_EXECUTOR
 
 # Severity hierarchy for tool risk
 RISK_ORDER: Dict[str, int] = {
@@ -405,7 +420,54 @@ def is_significant_action(request_text: str, tools: List[str]) -> bool:
     return any(t in significant_tools for t in tools)
 
 
-_INTENT_CACHE: Dict[str, str] = {}
+_INTENT_CACHE: Dict[str, Any] = {}
+_INTENT_CACHE_TTL = 90.0  # 90s short TTL to prevent stale or cross-action intent poisoning
+
+
+def _get_intent_cache_key(user_text: str, context: str = "") -> str:
+    ctx_hash = hashlib.sha256(context.strip().encode("utf-8")).hexdigest()[:12] if context.strip() else "general"
+    return f"{user_text.strip().lower()}:::{ctx_hash}"
+
+
+def _lookup_intent_cache(key: str) -> Optional[str]:
+    now = time.time()
+    # Check exact key first
+    if key in _INTENT_CACHE:
+        entry = _INTENT_CACHE[key]
+        if isinstance(entry, tuple):
+            ts, val = entry
+            if now - ts <= _INTENT_CACHE_TTL:
+                return val
+            _INTENT_CACHE.pop(key, None)
+            return None
+        elif isinstance(entry, str):
+            return entry
+
+    # Also check base key (for backwards compatibility with unit tests pre-seeding _INTENT_CACHE["gas"] = "approve")
+    base_key = key.split(":::")[0] if ":::" in key else key
+    if base_key in _INTENT_CACHE:
+        entry = _INTENT_CACHE[base_key]
+        if isinstance(entry, tuple):
+            ts, val = entry
+            if now - ts <= _INTENT_CACHE_TTL:
+                return val
+            return None
+        elif isinstance(entry, str):
+            return entry
+
+    return None
+
+
+def _store_intent_cache(key: str, val: str):
+    now = time.time()
+    if len(_INTENT_CACHE) > 200:
+        expired_keys = [k for k, (ts, _) in _INTENT_CACHE.items() if now - ts > _INTENT_CACHE_TTL]
+        for k in expired_keys:
+            _INTENT_CACHE.pop(k, None)
+        if len(_INTENT_CACHE) > 200:
+            _INTENT_CACHE.clear()
+    _INTENT_CACHE[key] = (now, val)
+
 
 # Universal machine-level binary CLI tokens only (Claude Code & Hermes Parity)
 # These represent explicit single-word terminal keypresses [y/N], NOT human slang dictionaries.
@@ -413,7 +475,7 @@ _CLI_MACHINE_CONFIRM_TOKENS = {"y", "yes"}
 _CLI_MACHINE_CANCEL_TOKENS = {"n", "no"}
 
 
-def is_explicit_plan_approval(user_text: str) -> bool:
+def is_explicit_plan_approval(user_text: str, pending_action_context: str = "") -> bool:
     """
     Claude Code & Hermes Parity: 100% Model-Driven Approval Reasoning.
     Zero language-specific keyword dictionaries. All human language utterances
@@ -424,25 +486,26 @@ def is_explicit_plan_approval(user_text: str) -> bool:
     if not clean:
         return False
 
-    cache_key = clean.lower()
-    if cache_key in _INTENT_CACHE:
-        return _INTENT_CACHE[cache_key] == "approve"
+    cache_key = _get_intent_cache_key(clean, pending_action_context)
+    cached_val = _lookup_intent_cache(cache_key)
+    if cached_val is not None:
+        return cached_val == "approve"
 
     # Fast-path for bare single-character CLI machine responses only
-    if cache_key in _CLI_MACHINE_CONFIRM_TOKENS:
-        _INTENT_CACHE[cache_key] = "approve"
+    lower_tok = clean.lower()
+    if lower_tok in _CLI_MACHINE_CONFIRM_TOKENS:
+        _store_intent_cache(cache_key, "approve")
         return True
-    if cache_key in _CLI_MACHINE_CANCEL_TOKENS:
-        _INTENT_CACHE[cache_key] = "reject"
+    if lower_tok in _CLI_MACHINE_CANCEL_TOKENS:
+        _store_intent_cache(cache_key, "reject")
         return False
 
     # Semantic evaluation via model reasoning (100% Model-Driven Parity)
     try:
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(lambda: asyncio.run(classify_approval_intent(clean)))
-            res = future.result(timeout=20.0)
-            return res == "approve"
+        executor = _get_sync_intent_executor()
+        future = executor.submit(lambda: asyncio.run(classify_approval_intent(clean, pending_action_context)))
+        res = future.result(timeout=20.0)
+        return res == "approve"
     except Exception as e:
         logger.debug(f"[is_explicit_plan_approval] Error: {e}")
         pass
@@ -462,16 +525,18 @@ async def classify_approval_intent(user_text: str, pending_action_context: str =
     if not clean:
         return "other"
 
-    cache_key = clean.lower()
-    if cache_key in _INTENT_CACHE:
-        return _INTENT_CACHE[cache_key]
+    cache_key = _get_intent_cache_key(clean, pending_action_context)
+    cached_val = _lookup_intent_cache(cache_key)
+    if cached_val is not None:
+        return cached_val
 
     # Fast-path for bare single-character CLI machine responses only
-    if cache_key in _CLI_MACHINE_CONFIRM_TOKENS:
-        _INTENT_CACHE[cache_key] = "approve"
+    lower_tok = clean.lower()
+    if lower_tok in _CLI_MACHINE_CONFIRM_TOKENS:
+        _store_intent_cache(cache_key, "approve")
         return "approve"
-    if cache_key in _CLI_MACHINE_CANCEL_TOKENS:
-        _INTENT_CACHE[cache_key] = "reject"
+    if lower_tok in _CLI_MACHINE_CANCEL_TOKENS:
+        _store_intent_cache(cache_key, "reject")
         return "reject"
 
     # Semantic LLM-Driven Classification for any human language, slang, or idiom
@@ -527,9 +592,10 @@ async def classify_approval_intent(user_text: str, pending_action_context: str =
                             verdict = m_v.group(1).lower()
 
                     if verdict in ("approve", "reject"):
-                        _INTENT_CACHE[cache_key] = verdict
+                        _store_intent_cache(cache_key, verdict)
                         return verdict
                     elif verdict == "other":
+                        _store_intent_cache(cache_key, "other")
                         return "other"
             except Exception as e:
                 logger.warning(f"[IntentClassifier] LLM pass attempt {attempt + 1} notice for '{clean}': {e}")
@@ -561,7 +627,7 @@ async def smart_evaluate_command_safety(command: str, description: str = "") -> 
         from core.capabilities import get_fast_auxiliary_model
         from core.prompt_loader import load_prompt
 
-        sys_p = load_prompt("classifiers/command_safety")
+        sys_p = load_prompt("classifiers/command_safety", command=cmd, description=description or "Shell execution")
         user_p = f"<command>\n{cmd}\n</command>\n\nContext: {description or 'Shell execution'}\nVerdict:"
 
         model_id = get_fast_auxiliary_model()

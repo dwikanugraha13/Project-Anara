@@ -345,8 +345,10 @@ class SemanticRAGMixin:
                         sim = 0.0
                         if q_vec and len(emb) == len(q_vec):
                             sim = cosine_similarity(q_vec, emb)
-                        elif len(emb) == len(local_q_vec):
-                            sim = cosine_similarity(local_q_vec, emb)
+                        elif local_q_vec:
+                            # Re-vectorize content with local hash generator so dimensions always match (Zero-offline drop)
+                            content_vec = compute_local_hash_embedding(row["content"])
+                            sim = cosine_similarity(local_q_vec, content_vec)
                         if sim >= 0.35:
                             dense_similarities[(row["source_type"], row["source_id"])] = sim
                     except Exception:

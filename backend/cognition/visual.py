@@ -189,14 +189,22 @@ async def fetch_real_web_image(query: str) -> Optional[Dict[str, str]]:
     return imgs[0] if imgs else None
 
 
-# In-memory query cache
-_VISUAL_QUERY_CACHE: Dict[str, Dict[str, Any]] = {}
+# In-memory bounded LRU query cache (max 100 entries to prevent memory leak)
+from collections import OrderedDict
+_VISUAL_QUERY_CACHE: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+_MAX_VISUAL_CACHE_SIZE = 100
+
+
+def _cache_visual_result(key: str, val: Dict[str, Any]):
+    if len(_VISUAL_QUERY_CACHE) >= _MAX_VISUAL_CACHE_SIZE:
+        _VISUAL_QUERY_CACHE.popitem(last=False)
+    _VISUAL_QUERY_CACHE[key] = val
 
 
 async def generate_visual_projection(
-    client: genai.Client,
-    user_text: str,
-    system_prompt: str,
+    client: Optional[Any] = None,
+    user_text: str = "",
+    system_prompt: str = "",
     model_name: Optional[str] = None
 ) -> Dict[str, Any]:
     """
@@ -243,29 +251,47 @@ async def generate_visual_projection(
     )
 
     try:
-        gen_config = types.GenerateContentConfig(
-            max_output_tokens=1200,
-            temperature=0.3
-        )
-        res = None
         from core.capabilities import get_fast_auxiliary_model
         eff_mdl = model_name or get_fast_auxiliary_model()
-        for mdl in [eff_mdl, "gemini-2.5-flash"]:
-            try:
-                res = await asyncio.wait_for(
-                    client.aio.models.generate_content(
-                        model=mdl,
-                        contents=prompt,
-                        config=gen_config
-                    ),
-                    timeout=4.0
-                )
-                if res and res.text:
-                    break
-            except Exception as m_err:
-                logger.warning(f"[VisualEngine] Fast model {mdl} error/timeout: {m_err}")
+        raw = ""
 
-        raw = res.text.strip() if res and res.text else ""
+        if client and hasattr(client, "aio") and hasattr(client.aio, "models"):
+            gen_config = types.GenerateContentConfig(
+                max_output_tokens=1200,
+                temperature=0.3
+            )
+            for mdl in [eff_mdl, "gemini-2.5-flash"]:
+                try:
+                    res = await asyncio.wait_for(
+                        client.aio.models.generate_content(
+                            model=mdl,
+                            contents=prompt,
+                            config=gen_config
+                        ),
+                        timeout=4.0
+                    )
+                    if res and res.text:
+                        raw = res.text.strip()
+                        break
+                except Exception as m_err:
+                    logger.debug(f"[VisualEngine] GenAI call note: {m_err}")
+        else:
+            try:
+                from providers import call_universal_chat_model
+                res_str = await asyncio.wait_for(
+                    call_universal_chat_model(
+                        model_id=eff_mdl,
+                        user_prompt=prompt,
+                        system_instruction="You are a JSON-generating visual projection analyzer.",
+                        max_tokens=None,
+                        temperature=0.3,
+                        read_only=True
+                    ),
+                    timeout=5.0
+                )
+                raw = str(res_str or "").strip()
+            except Exception as u_err:
+                logger.debug(f"[VisualEngine] Universal model call note: {u_err}")
         if "{" in raw and "}" in raw:
             json_str = raw[raw.find("{"):raw.rfind("}")+1]
             data = json.loads(json_str)
@@ -294,7 +320,7 @@ async def generate_visual_projection(
                         "images": img_list if img_count > 1 else [primary],
                         "reply_text": reply_text or ""
                     }
-                    _VISUAL_QUERY_CACHE[clean_key] = res_obj
+                    _cache_visual_result(clean_key, res_obj)
                     return res_obj
 
             # 2. Holographic Weather HUD
@@ -318,7 +344,7 @@ async def generate_visual_projection(
                     "weather_data": w_data,
                     "reply_text": reply_text or ""
                 }
-                _VISUAL_QUERY_CACHE[clean_key] = res_obj
+                _cache_visual_result(clean_key, res_obj)
                 return res_obj
 
             # 3. Holographic Code Box
@@ -336,7 +362,7 @@ async def generate_visual_projection(
                     "code_data": c_data,
                     "reply_text": reply_text or ""
                 }
-                _VISUAL_QUERY_CACHE[clean_key] = res_obj
+                _cache_visual_result(clean_key, res_obj)
                 return res_obj
 
             # 4. JARVIS System Telemetry HUD
@@ -356,7 +382,7 @@ async def generate_visual_projection(
                     "system_hud_data": hud_data,
                     "reply_text": reply_text or ""
                 }
-                _VISUAL_QUERY_CACHE[clean_key] = res_obj
+                _cache_visual_result(clean_key, res_obj)
                 return res_obj
 
             # 5. Knowledge & Schematic Card
@@ -380,7 +406,7 @@ async def generate_visual_projection(
                     "knowledge_card_data": k_data,
                     "reply_text": reply_text or ""
                 }
-                _VISUAL_QUERY_CACHE[clean_key] = res_obj
+                _cache_visual_result(clean_key, res_obj)
                 return res_obj
 
             # 6. Dynamic To-Do List HUD
@@ -393,7 +419,7 @@ async def generate_visual_projection(
                     "todo_data": {"items": todos},
                     "reply_text": reply_text or ""
                 }
-                _VISUAL_QUERY_CACHE[clean_key] = res_obj
+                _cache_visual_result(clean_key, res_obj)
                 return res_obj
 
             # Default conversational fallback
@@ -482,11 +508,17 @@ async def generate_smart_hud_card(
     # Build conversation transcript for semantic analysis
     convo_lines: List[str] = []
     if conversation_context:
-        for t in conversation_context[-6:]:
-            spk = "User" if t.get("speaker") == "user" else "Anara"
-            txt = (t.get("text") or "").strip()
-            if txt:
-                convo_lines.append(f"{spk}: {txt[:300]}")
+        if isinstance(conversation_context, str) and conversation_context.strip():
+            convo_lines.append(conversation_context.strip())
+        elif isinstance(conversation_context, list):
+            for t in conversation_context[-6:]:
+                if isinstance(t, dict):
+                    spk = "User" if t.get("speaker") == "user" else "Anara"
+                    txt = (t.get("text") or "").strip()
+                    if txt:
+                        convo_lines.append(f"{spk}: {txt[:300]}")
+                elif isinstance(t, str) and t.strip():
+                    convo_lines.append(t.strip())
     if not convo_lines and user_text:
         convo_lines.append(f"User: {user_text[:300]}")
     conversation_str = "\n".join(convo_lines) if convo_lines else "(no prior context)"
@@ -566,8 +598,10 @@ async def generate_smart_hud_card(
                 line = line.strip()
                 if not line:
                     continue
-                if line.startswith(("-", "•")) or (len(line) > 2 and line[0].isdigit() and line[1] in ".-)"):
-                    clean = line.lstrip("0123456789.-•) ").strip()
+                is_bullet = line.startswith(("-", "•", "*"))
+                is_numbered = bool(re.match(r"^\d+[\.\-\)]\s*", line))
+                if is_bullet or is_numbered:
+                    clean = re.sub(r"^(\d+[\.\-\)]\s*|[-•*]\s*)", "", line).strip()
                     if clean:
                         steps.append(clean)
             if len(steps) < 2:

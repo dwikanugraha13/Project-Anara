@@ -26,9 +26,10 @@ class NativeToolCall:
 
 @dataclass
 class NativeTurnResult:
-    """Uniform container for a single LLM response turn in the Native ReAct loop."""
+    """Uniform container for a single LLM response turn in the Native ReAct loop (Hermes & Claude Code Parity)."""
     text: Optional[str] = None
     tool_calls: List[NativeToolCall] = field(default_factory=list)
+    reasoning: Optional[str] = None
     finish_reason: Optional[str] = None
     raw_response: Any = None
     usage: Optional[Dict[str, int]] = None
