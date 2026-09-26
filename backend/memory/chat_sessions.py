@@ -37,8 +37,11 @@ class ChatSessionsMixin:
                        title: Optional[str] = None,
                        session_type: str = "chat",
                        channel: str = "web",
-                       session_mode: Optional[str] = None) -> Dict[str, Any]:
-        """Starts a new conversation thread (defaults to 'New Chat')."""
+                       session_mode: Optional[str] = None,
+                       session_key: Optional[str] = None) -> Dict[str, Any]:
+        """Starts a new conversation thread (defaults to 'New Chat') with canonical collision-free session_key."""
+        from core.session_ids import new_session_key
+        canonical_key = session_key or new_session_key()
         clean_name = speaker_name.strip().title() if speaker_name else None
         initial_title = (title or "").strip() or ("New Project" if session_type == "code" else "New Chat")
         clean_type = "code" if str(session_type).lower() == "code" else "chat"
@@ -51,17 +54,17 @@ class ChatSessionsMixin:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO chat_sessions (title, speaker_name, session_type, channel, session_mode) VALUES (?, ?, ?, ?, ?)",
-                (initial_title, clean_name, clean_type, clean_channel, clean_mode)
+                "INSERT INTO chat_sessions (session_key, title, speaker_name, session_type, channel, session_mode) VALUES (?, ?, ?, ?, ?, ?)",
+                (canonical_key, initial_title, clean_name, clean_type, clean_channel, clean_mode)
             )
             sid = cursor.lastrowid or 0
             conn.commit()
 
         self.clean_empty_sessions(clean_name, exclude_session_id=sid)
 
-        logger.info(f"[ChatSessions] Created {clean_type} session #{sid} ('{initial_title}') [channel={clean_channel}, mode={clean_mode}] for {clean_name or 'Guest'}")
-        self._emit_mutation("session_created", {"id": sid, "title": initial_title, "speaker_name": clean_name, "session_type": clean_type, "channel": clean_channel, "session_mode": clean_mode})
-        return {"id": sid, "title": initial_title, "speaker_name": clean_name, "session_type": clean_type, "channel": clean_channel, "session_mode": clean_mode, "message_count": 0}
+        logger.info(f"[ChatSessions] Created {clean_type} session #{sid} ({canonical_key}) ('{initial_title}') [channel={clean_channel}, mode={clean_mode}] for {clean_name or 'Guest'}")
+        self._emit_mutation("session_created", {"id": sid, "session_key": canonical_key, "title": initial_title, "speaker_name": clean_name, "session_type": clean_type, "channel": clean_channel, "session_mode": clean_mode})
+        return {"id": sid, "session_key": canonical_key, "title": initial_title, "speaker_name": clean_name, "session_type": clean_type, "channel": clean_channel, "session_mode": clean_mode, "message_count": 0}
 
     def get_sessions(self, speaker_name: Optional[str] = None,
                      session_type: Optional[str] = None,
@@ -70,7 +73,7 @@ class ChatSessionsMixin:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             query = """
-                SELECT s.id, s.title, s.speaker_name,
+                SELECT s.id, s.session_key, s.title, s.speaker_name,
                        (SELECT COUNT(*) FROM conversations WHERE conversations.session_id = s.id) AS message_count,
                        s.is_archived, s.is_pinned,
                        COALESCE(s.session_type, 'chat') AS session_type,
@@ -252,10 +255,13 @@ class ChatSessionsMixin:
         self._emit_mutation("session_deleted", {"bulk": True, "sessions": sess})
         return {"sessions": sess, "messages": msgs}
 
-    def get_session(self, session_id: int) -> Optional[Dict[str, Any]]:
+    def get_session(self, session_id: Any) -> Optional[Dict[str, Any]]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM chat_sessions WHERE id = ?", (session_id,))
+            if isinstance(session_id, int) or (isinstance(session_id, str) and session_id.isdigit()):
+                cursor.execute("SELECT * FROM chat_sessions WHERE id = ?", (int(session_id),))
+            else:
+                cursor.execute("SELECT * FROM chat_sessions WHERE session_key = ?", (str(session_id),))
             r = cursor.fetchone()
             if not r:
                 return None

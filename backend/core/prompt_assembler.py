@@ -246,13 +246,28 @@ class PromptAssembler:
         except Exception:
             pass
 
-        # Tier 2b: Active Channel / Interface Context & Session Metadata
+        # Tier 2b: Active Channel / Interface Context & Session Metadata (Dual-Identity: Numeric UI ID + Canonical Key)
         ch_clean = (channel or "").strip().lower()
         sess_disp = str(session_id) if session_id is not None else "cli_session"
+        canonical_key = ""
+        try:
+            if session_id is not None:
+                from memory import memory_engine
+                s_obj = memory_engine.get_session(session_id)
+                if s_obj:
+                    canonical_key = s_obj.get("session_key") or ""
+                    num_id = s_obj.get("id", session_id)
+                    if canonical_key:
+                        sess_disp = f"#{num_id} ({canonical_key})"
+                    else:
+                        sess_disp = f"#{num_id}"
+        except Exception:
+            pass
+
         slot_channel = (
             f"[ACTIVE RUNTIME & SESSION METADATA]:\n"
             f"- Current Platform / Channel: {ch_clean or 'cli'}\n"
-            f"- Current Session ID: {sess_disp}\n"
+            f"- Current Session: {sess_disp}\n"
             f"- Current User / Speaker: {speaker_name or 'Agnan'}\n"
             f"- Active Workspace Root: {root_path}\n\n"
         )

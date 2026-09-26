@@ -209,10 +209,11 @@ class BaseMemoryEngine:
                 );
             """)
 
-            # 7b. Chat Sessions (ChatGPT/Claude-style conversation threads)
+            # 7b. Chat Sessions (Dual-Identity: Numeric UI ID + Canonical Timestamp Key)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS chat_sessions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_key TEXT,
                     title TEXT,
                     speaker_name TEXT,
                     message_count INTEGER DEFAULT 0,
@@ -233,6 +234,29 @@ class BaseMemoryEngine:
                 CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated
                 ON chat_sessions(is_archived, updated_at DESC);
             """)
+            # Migration & Canonical Session Key backfill (Anara Standard)
+            cursor.execute("PRAGMA table_info(chat_sessions)")
+            existing_cols = {row[1] for row in cursor.fetchall()}
+            if "session_key" not in existing_cols:
+                cursor.execute("ALTER TABLE chat_sessions ADD COLUMN session_key TEXT")
+            cursor.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_sessions_key
+                ON chat_sessions(session_key) WHERE session_key IS NOT NULL;
+            """)
+            cursor.execute("SELECT id, created_at FROM chat_sessions WHERE session_key IS NULL")
+            unkeyed = cursor.fetchall()
+            if unkeyed:
+                from core.session_ids import new_session_key
+                from datetime import datetime as dt_cls
+                for row in unkeyed:
+                    sid, raw_dt = row[0], row[1]
+                    parsed_dt = None
+                    if raw_dt:
+                        try:
+                            parsed_dt = dt_cls.fromisoformat(str(raw_dt).replace(" ", "T"))
+                        except Exception:
+                            parsed_dt = None
+                    cursor.execute("UPDATE chat_sessions SET session_key = ? WHERE id = ?", (new_session_key(parsed_dt), sid))
 
             # 8. Acoustic Emotion History (Emotion-Aware Anara)
             cursor.execute("""
