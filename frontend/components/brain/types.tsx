@@ -280,7 +280,6 @@ export type BrainTabId =
   | "soul"
   | "skills"
   | "memories"
-  | "speakers"
   | "tools"
   | "projects"
   | "todos"
