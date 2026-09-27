@@ -20,9 +20,6 @@ import BrainProjectsTab from "./context/BrainProjectsTab";
 import BrainProvidersTab from "./network/BrainProvidersTab";
 import BrainIntegrationsTab from "./network/BrainIntegrationsTab";
 
-import BrainConversationsTab from "./system/BrainConversationsTab";
-import BrainAnimationsTab from "./system/BrainAnimationsTab";
-
 export default function AnaraBrain({
   isOpen,
   onClose,
@@ -212,61 +209,6 @@ export default function AnaraBrain({
             </div>
           </div>
 
-          {/* Section 4: AUDIT & SISTEM */}
-          <div className="space-y-1">
-            <span className="px-2.5 text-[10px] font-mono font-bold tracking-wider text-slate-500 uppercase">
-              Audit &amp; Sistem
-            </span>
-            <div className="space-y-0.5 font-mono">
-              {[
-                {
-                  id: "conversations" as BrainTabId,
-                  label: "Conversation Log",
-                  badge: stats?.conversations_count,
-                  icon: (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                    </svg>
-                  ),
-                },
-                {
-                  id: "animations" as BrainTabId,
-                  label: "Animasi 3D Avatar",
-                  badge: stats?.animations_count,
-                  icon: (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  ),
-                },
-              ].map((item) => {
-                const isActive = activeTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => setActiveTab(item.id)}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium border transition-colors duration-150 ease-out cursor-pointer select-none ${
-                      isActive
-                        ? "bg-white/[0.12] text-white border-white/15 shadow-sm"
-                        : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.04] hover:border-white/[0.06]"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className={`transition-colors duration-150 ${isActive ? "text-cyan-300" : "text-slate-400"}`}>{item.icon}</span>
-                      <span className="truncate">{item.label}</span>
-                    </div>
-                    {item.badge !== undefined && item.badge > 0 && (
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors duration-150 ${isActive ? "bg-cyan-400/20 text-cyan-200" : "bg-white/[0.08] text-slate-400"}`}>
-                        {item.badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
           {/* Bottom Status Row */}
           <div className="mt-auto pt-3 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-slate-500">
             <span className="flex items-center gap-1.5">
@@ -328,15 +270,6 @@ export default function AnaraBrain({
             )}
             {activeTab === "providers" && <BrainProvidersTab onRefreshAll={fetchBrainData} />}
             {activeTab === "integrations" && <BrainIntegrationsTab onRefreshAll={fetchBrainData} />}
-            {activeTab === "conversations" && (
-              <BrainConversationsTab
-                activeSpeaker={activeSpeaker}
-                onRefreshAll={fetchBrainData}
-              />
-            )}
-            {activeTab === "animations" && (
-              <BrainAnimationsTab onTriggerAnimation={onTriggerAnimation} />
-            )}
           </div>
         </div>
       </div>

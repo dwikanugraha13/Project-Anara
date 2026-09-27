@@ -284,9 +284,7 @@ export type BrainTabId =
   | "projects"
   | "todos"
   | "providers"
-  | "integrations"
-  | "conversations"
-  | "animations";
+  | "integrations";
 
 export type BrainPillar = "persona" | "workers" | "ai" | "system";
 
