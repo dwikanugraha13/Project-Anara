@@ -45,6 +45,19 @@ async def request_interactive_question(questions: List[Dict[str, Any]], timeout:
         "questions": questions
     })
 
+    # Omnichannel Trigger: If request originated from Telegram, launch interactive question keyboard card
+    try:
+        from core.channel_adapter import get_active_channel_context
+        ctx = get_active_channel_context()
+        if ctx and ctx.get("channel") == "telegram" and ctx.get("channel_id"):
+            from integrations.telegram.keyboards import start_telegram_interactive_question
+            loop.create_task(start_telegram_interactive_question(ctx["channel_id"], {
+                "question_id": question_id,
+                "questions": questions
+            }))
+    except Exception as e_tg:
+        logger.debug(f"[InteractiveQuestion] Telegram trigger notice: {e_tg}")
+
     try:
         user_res = await asyncio.wait_for(fut, timeout=timeout)
         is_dismissed = False
@@ -103,4 +116,8 @@ def resolve_question_response(question_id: str, answers: Any, dismissed: bool = 
         fut.set_result({"answers": answers, "dismissed": dismissed})
         return True
     return False
+
+
+# Compatibility alias across telegram and web components
+resolve_interactive_question = resolve_question_response
 

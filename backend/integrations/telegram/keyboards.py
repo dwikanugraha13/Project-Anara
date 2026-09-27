@@ -240,7 +240,7 @@ async def render_telegram_question(q_id: str):
     buttons = []
     for opt_idx, opt in enumerate(options):
         lbl = opt.get("label", str(opt)) if isinstance(opt, dict) else str(opt)
-        buttons.append([{"text": lbl, "callback_data": f"qans:{q_id}:{opt_idx}"}])
+        buttons.append([{"text": lbl, "callback_data": f"qans:{q_id}:{idx}:{opt_idx}"}])
 
     # Universal language presentation for questionnaire interface (Anara Standard)
     dismiss_label = "✖ Dismiss"
