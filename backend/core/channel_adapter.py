@@ -379,6 +379,7 @@ class ChannelRequest(BaseModel):
     trigger_type: str = "interactive"  # 'interactive' or 'autonomous'
     attachments: List[Dict[str, Any]] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    session_id: Optional[int] = None
 
 
 class ChannelResponse(BaseModel):
@@ -564,6 +565,7 @@ async def _process_channel_request_core(
 ) -> ChannelResponse:
     # 1. Resolve Session
     session_id = get_or_create_channel_session(req)
+    req.session_id = session_id
     from core.agent import anara_agent
     anara_agent.set_active_session_id(session_id)
     from tools.artifact_tools import clear_turn_artifacts, get_turn_artifacts

@@ -366,8 +366,10 @@ async def _handle_cmd_workspace(ctx: UniversalCommandContext) -> UniversalComman
     from tools.fs_tools import resolve_fuzzy_folder_path
     clean_arg = ctx.args.strip().strip('"\'')
 
+    effective_sid = ctx.session_id if ctx.session_id else anara_agent.get_active_session_id()
+
     if not clean_arg:
-        ws = anara_agent.get_workspace_tree(session_id=ctx.session_id)
+        ws = anara_agent.get_workspace_tree(session_id=effective_sid)
         name = ws.get("workspace_name", "Default Workspace")
         root_p = ws.get("root_path", "(Unset)")
         total_f = ws.get("total_files", 0)
@@ -386,7 +388,7 @@ async def _handle_cmd_workspace(ctx: UniversalCommandContext) -> UniversalComman
     if not resolved_path:
         return UniversalCommandResponse(text=f"❌ <b>Folder Not Found</b>:\nPath <code>{clean_arg}</code> is not a valid directory.")
 
-    res = anara_agent.attach_local_folder(resolved_path, session_id=ctx.session_id)
+    res = anara_agent.attach_local_folder(resolved_path, session_id=effective_sid)
     name = res.get("workspace_name") or os.path.basename(resolved_path) or "Workspace"
     count = res.get("total_files", 0)
     text = (
