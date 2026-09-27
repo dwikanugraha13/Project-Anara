@@ -15,6 +15,7 @@ from .fs_tools import (
     _tool_delete_local_file,
     _tool_list_directory,
     _tool_scan_workspace_folder,
+    _tool_switch_workspace,
     _tool_glob_find_files,
     _tool_grep_search_code,
     _tool_extract_code_outline,
@@ -423,6 +424,25 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
         },
         "handler": _tool_scan_workspace_folder,
         "risk": "read_only",
+        "toolset": "file_operations",
+        "category": "coding",
+        "icon": "folder",
+    },
+    {
+        "name": "switch_workspace",
+        "description": "Switches and locks the agent's active project workspace to a specified local directory or user folder (e.g. 'Downloads', 'Documents', 'C:/Users/Bravo/Downloads').",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "folder_path": {
+                    "type": "STRING",
+                    "description": "Path to the target project directory or folder name (e.g. 'Downloads', 'C:/Users/Bravo/Downloads')."
+                }
+            },
+            "required": ["folder_path"]
+        },
+        "handler": _tool_switch_workspace,
+        "risk": "action",
         "toolset": "file_operations",
         "category": "coding",
         "icon": "folder",
@@ -1378,6 +1398,9 @@ for spec in ALL_TOOL_SPECS:
     )
 
 UNIVERSAL_TOOL_ALIASES = {
+    "set_workspace": "switch_workspace",
+    "change_workspace": "switch_workspace",
+    "attach_workspace": "switch_workspace",
     "terminal": "execute_cli_command",
     "read_file": "read_local_file",
     "write_file": "write_local_file",

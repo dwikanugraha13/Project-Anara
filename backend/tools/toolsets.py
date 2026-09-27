@@ -45,6 +45,7 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
             "grep_search_code",
             "list_directory",
             "scan_workspace_folder",
+            "switch_workspace",
             "extract_code_outline"
         ]
     },
@@ -457,6 +458,7 @@ CORE_TOOLS: List[str] = [
     "glob_find_files",
     "grep_search_code",
     "list_directory",
+    "switch_workspace",
     "execute_cli_command",
     "process_manage",
     "computer_use",

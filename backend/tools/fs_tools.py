@@ -664,6 +664,86 @@ async def _tool_scan_workspace_folder(folder_path: str) -> Dict[str, Any]:
         return {"status": "error", "message": str(e)}
 
 
+def resolve_fuzzy_folder_path(folder_path: str) -> Optional[str]:
+    """Resolves fuzzy path strings (e.g. 'Downloads', 'C: download', '~/Documents') to valid directories."""
+    raw = (folder_path or "").strip().strip('"\'')
+    if not raw:
+        return None
+
+    candidates = [
+        os.path.abspath(os.path.expanduser(raw)),
+        os.path.abspath(os.path.expanduser(raw.replace(":", ":/").replace("//", "/"))),
+    ]
+
+    lower_raw = raw.lower().replace("\\", "/").strip()
+    user_home = os.path.expanduser("~")
+
+    if "download" in lower_raw:
+        candidates.extend([
+            os.path.join(user_home, "Downloads"),
+            "C:\\Downloads",
+            "D:\\Downloads",
+        ])
+    elif "document" in lower_raw:
+        candidates.extend([
+            os.path.join(user_home, "Documents"),
+            "C:\\Documents",
+        ])
+    elif "desktop" in lower_raw:
+        candidates.extend([
+            os.path.join(user_home, "Desktop"),
+        ])
+    elif "project" in lower_raw or "anara" in lower_raw:
+        candidates.extend([
+            os.path.join(user_home, "Documents", "Project Anara"),
+            os.path.abspath("."),
+        ])
+
+    for cand in candidates:
+        if cand and os.path.exists(cand) and os.path.isdir(cand):
+            return os.path.normpath(cand)
+    return None
+
+
+async def _tool_switch_workspace(folder_path: str) -> Dict[str, Any]:
+    """
+    Switches and locks the agent's active project workspace to a specified local directory.
+    Supports fuzzy paths (e.g. 'Downloads', 'Documents', 'C: download', '~/Projects').
+    """
+    from core.agent import anara_agent
+
+    resolved_path = resolve_fuzzy_folder_path(folder_path)
+    if not resolved_path:
+        return {
+            "status": "error",
+            "message": f"Folder '{folder_path}' does not exist or is not a valid directory."
+        }
+
+    try:
+        current_sid = anara_agent.get_active_session_id()
+        tree = anara_agent.attach_local_folder(resolved_path, session_id=current_sid)
+        ws_name = tree.get("workspace_name") or os.path.basename(resolved_path) or "Workspace"
+        file_count = tree.get("total_files", 0)
+
+        _emit_agent_event("agent_action_complete", {
+            "tool_name": "switch_workspace",
+            "action_title": "Workspace Switched",
+            "summary": f"Switched active workspace to '{ws_name}' ({file_count} files).",
+            "icon": "📁"
+        })
+
+        return {
+            "status": "success",
+            "workspace_name": ws_name,
+            "root_path": resolved_path,
+            "total_files": file_count,
+            "message": f"Successfully switched workspace to '{ws_name}' at '{resolved_path}' ({file_count} files indexed)."
+        }
+    except Exception as e:
+        logger.error(f"[AgentTools] Failed to switch workspace to '{resolved_path}': {e}")
+        return {"status": "error", "message": f"Failed to switch workspace: {str(e)}"}
+
+
 async def _tool_glob_find_files(pattern: str, path: Optional[str] = None) -> Dict[str, Any]:
     """Fast file pattern matching across the project workspace."""
     from core import anara_agent

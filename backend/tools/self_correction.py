@@ -330,7 +330,7 @@ def _load_failure_tolerant_tools() -> frozenset:
         pass
     return frozenset({
         "read_local_file", "grep_search_code", "glob_find_files",
-        "list_directory", "scan_workspace_folder", "web_search", "fetch_webpage",
+        "list_directory", "scan_workspace_folder", "switch_workspace", "web_search", "fetch_webpage",
     })
 
 FAILURE_TOLERANT_TOOL_NAMES = _load_failure_tolerant_tools()

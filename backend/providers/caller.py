@@ -318,10 +318,10 @@ def _sanitize_lead_narration(raw_lead: str) -> str:
 def _format_empty_model_notice(prompt: str = "") -> str:
     """
     Anara Universal Fallback Notice:
-    Returns a clean, neutral technical fallback notice when the model produces an empty turn,
-    without brittle Unicode character range checks, biased language assumptions, or rigid hardcoding.
+    Returns a clean, natural technical fallback notice when the model produces an empty turn,
+    without brittle Unicode character range checks or robotic jargon.
     """
-    return "No response was generated for this turn. Please retry or rephrase your request."
+    return "Belum ada respons teks yang dihasilkan pada giliran ini. Coba ulangi atau berikan instruksi yang lebih spesifik, Bro."
 
 
 def _strip_think_blocks(text: str) -> str:
@@ -972,7 +972,10 @@ async def _execute_native_agent_loop(
             logger.info(f"[NativeAgentLoop] Trajectory converged (reason: {conv_status.reason}). Forcing final conclusion.")
             try:
                 from core.prompt_loader import load_prompt
-                closing_instruction = load_prompt("agent_loop/closing_narrative").strip()
+                closing_instruction = load_prompt(
+                    "agent_loop/closing_narrative",
+                    default="Based on all the work, observations, and attachments above, provide a clear, helpful, and complete final response to the user in natural conversational prose matching the active language."
+                ).strip()
                 if history and not isinstance(history[0], dict):
                     from google.genai import types as genai_types
                     closing_history = [*history, genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=closing_instruction)])]
@@ -998,7 +1001,10 @@ async def _execute_native_agent_loop(
     if not cleaned_last:
         try:
             from core.prompt_loader import load_prompt
-            closing_instruction = load_prompt("agent_loop/closing_narrative").strip()
+            closing_instruction = load_prompt(
+                "agent_loop/closing_narrative",
+                default="Based on all the work, observations, and attachments above, provide a clear, helpful, and complete final response to the user in natural conversational prose matching the active language."
+            ).strip()
             if history and not isinstance(history[0], dict):
                 from google.genai import types as genai_types
                 closing_history = [*history, genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=closing_instruction)])]
@@ -1604,13 +1610,23 @@ async def _execute_json_agent_loop(
     # Never return raw JSON tool call or stray bracket artifacts to the user!
     cleaned_last = _clean_model_chat_text(last_response)
     if '"action": "tool_call"' in last_response or '<tool_call>' in last_response or not cleaned_last:
-        logger.info("[AgentLoop] Final turn terminated on unclosed tool call or missing narrative. Executing Hermes Closing Narrative Pass...")
+        logger.info("[AgentLoop] Final turn terminated on unclosed tool call or missing narrative. Executing Closing Narrative Pass...")
         try:
+            # Compact message history for closing pass to avoid token exhaustion
+            effective_messages = list(messages)
+            if len(effective_messages) > 10:
+                head_msgs = effective_messages[:2]
+                tail_msgs = effective_messages[-6:]
+                effective_messages = [*head_msgs, {"role": "user", "content": "[... intermediate tool execution turns compacted ...]"}, *tail_msgs]
+
             closing_prompt = [
-                *messages,
+                *effective_messages,
                 {
                     "role": "user",
-                    "content": load_prompt("agent_loop/closing_narrative")
+                    "content": load_prompt(
+                        "agent_loop/closing_narrative",
+                        default="Based on all the work, observations, and attachments above, provide a clear, helpful, and complete final response to the user in natural conversational prose matching the active language."
+                    )
                 }
             ]
             synth = await provider_caller(closing_prompt)
@@ -1625,6 +1641,22 @@ async def _execute_json_agent_loop(
 
         if cleaned_last:
             return cleaned_last
+
+        # Fallback: Extract recent tool observations from messages to construct honest, informative report
+        recent_obs = []
+        for m in reversed(messages):
+            if isinstance(m, dict) and m.get("role") in ("tool", "user"):
+                c = str(m.get("content", "")).strip()
+                if "[OBSERVATION]" in c or "[TOOL RESULT]" in c or "success" in c.lower():
+                    lines = [ln.strip() for ln in c.splitlines() if ln.strip() and not ln.startswith(("[OBSERVATION]", "[TOOL RESULT]"))]
+                    if lines:
+                        recent_obs.append(lines[0][:150])
+                if len(recent_obs) >= 2:
+                    break
+        if recent_obs:
+            obs_detail = "\n".join(f"• {obs}" for obs in reversed(recent_obs))
+            return f"Langkah tugas telah selesai dijalankan. Observasi terakhir:\n{obs_detail}"
+
         return _format_empty_model_notice(user_prompt)
 
     return cleaned_last or last_response

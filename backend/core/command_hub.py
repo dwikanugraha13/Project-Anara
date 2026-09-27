@@ -363,10 +363,11 @@ async def _handle_cmd_memory(ctx: UniversalCommandContext) -> UniversalCommandRe
 )
 async def _handle_cmd_workspace(ctx: UniversalCommandContext) -> UniversalCommandResponse:
     from core.agent import anara_agent
+    from tools.fs_tools import resolve_fuzzy_folder_path
     clean_arg = ctx.args.strip().strip('"\'')
 
     if not clean_arg:
-        ws = anara_agent.get_workspace_tree()
+        ws = anara_agent.get_workspace_tree(session_id=ctx.session_id)
         name = ws.get("workspace_name", "Default Workspace")
         root_p = ws.get("root_path", "(Unset)")
         total_f = ws.get("total_files", 0)
@@ -376,20 +377,22 @@ async def _handle_cmd_workspace(ctx: UniversalCommandContext) -> UniversalComman
             f"• <b>Physical Path</b>: <code>{root_p}</code>\n"
             f"• <b>Indexed Files</b>: {total_f} files\n\n"
             "<i>To link agent to a specific project directory, use:</i>\n"
-            "<code>/workspace C:\\Path\\To\\Folder</code>"
+            "<code>/workspace C:\\Path\\To\\Folder</code>\n"
+            "<i>(Example: <code>/workspace Downloads</code> or <code>/workspace C:\\Users\\...</code>)</i>"
         )
         return UniversalCommandResponse(text=text)
 
-    if not os.path.exists(clean_arg) or not os.path.isdir(clean_arg):
+    resolved_path = resolve_fuzzy_folder_path(clean_arg)
+    if not resolved_path:
         return UniversalCommandResponse(text=f"❌ <b>Folder Not Found</b>:\nPath <code>{clean_arg}</code> is not a valid directory.")
 
-    res = anara_agent.attach_local_folder(clean_arg)
-    name = res.get("name", os.path.basename(clean_arg))
-    count = res.get("files_count", 0)
+    res = anara_agent.attach_local_folder(resolved_path, session_id=ctx.session_id)
+    name = res.get("workspace_name") or os.path.basename(resolved_path) or "Workspace"
+    count = res.get("total_files", 0)
     text = (
         f"✅ <b>Workspace Linked!</b>\n\n"
         f"• <b>Project</b>: <code>{name}</code>\n"
-        f"• <b>Path</b>: <code>{clean_arg}</code>\n"
+        f"• <b>Path</b>: <code>{resolved_path}</code>\n"
         f"• <b>Indexed Files</b>: {count} files\n\n"
         "Agent is now operating within this project directory."
     )
