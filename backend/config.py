@@ -30,8 +30,8 @@ CURRENT_CONFIG_VERSION = 1
 DEFAULT_CONFIG: Dict[str, Any] = {
     "_config_version": CURRENT_CONFIG_VERSION,
     "model": {
-        "default": os.getenv("DEFAULT_AI_MODEL", "9router/ag/gemini-3.8-flash-high"),
-        "fallback": os.getenv("FALLBACK_AI_MODEL", "9router/ag/gemini-3.8-flash-high"),
+        "default": os.getenv("DEFAULT_AI_MODEL", "ag/gemini-3.8-flash-high"),
+        "fallback": os.getenv("FALLBACK_AI_MODEL", "gemini-3.5-flash-lite"),
         "live_voice": os.getenv("DEFAULT_VOICE_MODEL", "gemini-3.1-flash-live-preview"),
         "auxiliary": os.getenv("AUXILIARY_AI_MODEL", ""),
         "vision": os.getenv("VISION_AI_MODEL", ""),

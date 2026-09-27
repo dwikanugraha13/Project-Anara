@@ -701,6 +701,28 @@ async def _execute_native_agent_loop(
                     history.append({"role": "user", "content": stop_gate_nudge})
                 continue
 
+            # Anti-Fabrication & Tool-Use Enforcement Stop Gate (Hermes Standard: turn_stop_gates.py)
+            simulated_execution = re.search(
+                r"(\*\([^\)]*(?:eksekusi|ngeksekusi|menjalankan|mateni|tutup|kill|close|hapus|buka|running|executing|terminating|closing|opening)[^\)]*\)\*|\*(?:ngeksekusi|eksekusi|menjalankan|mematikan|menutup|membuka|running|executing|killing|terminating)[^\*]+\*)",
+                turn.clean_text,
+                flags=re.IGNORECASE
+            )
+            if simulated_execution and step < max_steps - 1:
+                logger.warning(f"[NativeAgentLoop] Simulated execution detected without tool call: {simulated_execution.group(0)}")
+                enforcement_nudge = (
+                    "[TOOL USE ENFORCEMENT]: You described or simulated an action in text/parentheses instead of invoking the real tool. "
+                    "You MUST make the actual tool call (e.g. execute_cli_command, process_manage, computer_use) to perform the action. "
+                    "Do not roleplay or simulate execution in text."
+                )
+                if history and not isinstance(history[0], dict):
+                    from google.genai import types as genai_types
+                    history.append(genai_types.Content(role="model", parts=[genai_types.Part.from_text(text=turn.clean_text)]))
+                    history.append(genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=enforcement_nudge)]))
+                else:
+                    history.append({"role": "assistant", "content": turn.clean_text})
+                    history.append({"role": "user", "content": enforcement_nudge})
+                continue
+
             final_text = _clean_model_chat_text(last_text) or last_text
             if not final_text:
                 final_text = _format_empty_model_notice(user_prompt)
@@ -1245,6 +1267,24 @@ async def _execute_json_agent_loop(
                 messages.append({"role": "user", "content": stop_gate_nudge})
                 continue
 
+            # Anti-Fabrication & Tool-Use Enforcement Stop Gate (Hermes Standard: turn_stop_gates.py)
+            simulated_execution = re.search(
+                r"(\*\([^\)]*(?:eksekusi|ngeksekusi|menjalankan|mateni|tutup|kill|close|hapus|buka|running|executing|terminating|closing|opening)[^\)]*\)\*|\*(?:ngeksekusi|eksekusi|menjalankan|mematikan|menutup|membuka|running|executing|killing|terminating)[^\*]+\*)",
+                last_response,
+                flags=re.IGNORECASE
+            )
+            if simulated_execution and step < max_steps - 1:
+                logger.warning(f"[AgentLoop] Simulated execution detected without tool call: {simulated_execution.group(0)}")
+                messages.append({"role": "assistant", "content": last_response})
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "[TOOL USE ENFORCEMENT]: You described or simulated an action in text/parentheses instead of invoking the real tool. "
+                        "You MUST make the actual tool call to perform the action. Do not roleplay or simulate execution in text."
+                    )
+                })
+                continue
+
             # Model responded with actual conversational narrative text!
             # Strip any leaked or orphaned tool tags before presenting to user (Anara Standard)
             cleaned_text = _clean_model_chat_text(last_response)
@@ -1777,6 +1817,17 @@ async def call_universal_chat_model(
             logger.warning(
                 f"[ModelCaller] Primary model '{model_id}' failed ({e_prim}); engaging fallback ladder to '{fallback_model}'..."
             )
+            if progress_cb:
+                try:
+                    res_diag = progress_cb({
+                        "tool_name": "agent",
+                        "status": "warning",
+                        "summary": f"Primary model '{model_id}' unavailable ({type(e_prim).__name__}). Engaging fallback to '{fallback_model}'..."
+                    })
+                    if asyncio.iscoroutine(res_diag):
+                        await res_diag
+                except Exception:
+                    pass
             try:
                 fb_profile = resolve_provider_profile(fallback_model)
                 return await fb_profile.generate_chat(
@@ -1793,4 +1844,8 @@ async def call_universal_chat_model(
                 )
             except Exception as e_fb:
                 logger.error(f"[ModelCaller] Fallback model '{fallback_model}' also failed: {e_fb}")
+                raise RuntimeError(
+                    f"Both primary model '{model_id}' ({type(e_prim).__name__}: {e_prim}) "
+                    f"and fallback model '{fallback_model}' ({type(e_fb).__name__}: {e_fb}) failed."
+                ) from e_fb
         raise e_prim

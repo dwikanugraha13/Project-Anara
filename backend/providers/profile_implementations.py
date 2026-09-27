@@ -1246,15 +1246,18 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
             custom_nodes = memory_engine.get_custom_providers()
             for c in custom_nodes:
                 prefix = (c.get("prefix") or "").lower()
+                base_url = c.get("base_url", "").rstrip("/")
+                api_key = c.get("api_key") or ""
+                headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}"
+                }
                 if prefix and model_id.lower().startswith(f"{prefix}/"):
                     target_model = model_id[len(prefix) + 1:]
-                    base_url = c.get("base_url", "").rstrip("/")
-                    api_key = c.get("api_key") or ""
-                    headers = {
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {api_key}"
-                    }
                     return f"{base_url}/chat/completions", headers, target_model
+                # Auto-route 9Router sub-prefixes (ag/, atr/, cf/, cl/) directly to 9router node
+                if prefix == "9router" and any(model_id.lower().startswith(sub) for sub in ("ag/", "atr/", "cf/", "cl/")):
+                    return f"{base_url}/chat/completions", headers, model_id
         except Exception:
             pass
 
