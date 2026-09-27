@@ -67,6 +67,8 @@ export interface TranscriptItem {
   agentMode?: "plan" | "build";
   modelId?: string;
   durationText?: string;
+  thinkingText?: string | null;
+  thinkingDuration?: number;
   tokenUsage?: TokenUsagePayload;
   toolsUsed?: string[];
   isStreaming?: boolean;

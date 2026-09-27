@@ -444,7 +444,9 @@ export default function CodePageClient({
       const agentActionData = typeof payload === "string" ? undefined : payload.agentActionData;
       const planData = typeof payload === "string" ? undefined : payload.planData;
 
-      if (speaker === "output" && text && text.trim().length > 0) {
+      // Capture thinking snapshot before clearing
+      const thinkingSnapshot = activeThinkingText;
+      if (!isPartial) {
         setActiveThinkingText(null);
       }
 
@@ -461,6 +463,7 @@ export default function CodePageClient({
           agentMode,
           modelId: activeModelId,
           isStreaming: isPartial,
+          thinkingText: thinkingSnapshot || last?.thinkingText || null,
           startTime: last?.startTime || Date.now(),
         };
 
@@ -471,10 +474,13 @@ export default function CodePageClient({
         }
 
         if (visualType && visualType !== "none") {
+          // Only update last tool card if it is the completion event of the currently running action
           if (
             visualType === "agent_action" &&
             last &&
             last.visualType === "agent_action" &&
+            last.agentActionData?.eventType === "agent_action_start" &&
+            agentActionData?.eventType === "agent_action_complete" &&
             last.agentActionData?.toolName === agentActionData?.toolName
           ) {
             return [...prev.slice(0, lastIdx), { ...last, ...newEntry }];
@@ -488,10 +494,10 @@ export default function CodePageClient({
         }
 
         if (isPartial) {
-          return [...prev.slice(0, lastIdx), { ...last, text: text, isStreaming: true }];
+          return [...prev.slice(0, lastIdx), { ...last, text: text, isStreaming: true, thinkingText: thinkingSnapshot || last.thinkingText }];
         }
 
-        return [...prev.slice(0, lastIdx), { ...last, text: text, isStreaming: false }];
+        return [...prev.slice(0, lastIdx), { ...last, text: text, isStreaming: false, thinkingText: thinkingSnapshot || last.thinkingText }];
       });
     },
     onAgentThinking: (t: string) => {

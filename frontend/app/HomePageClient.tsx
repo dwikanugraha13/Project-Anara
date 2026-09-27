@@ -219,8 +219,9 @@ export default function HomePageClient({
       const resolvedTokenUsage = payloadTokenUsage || (speaker === "output" ? pendingTokenUsageRef.current || undefined : undefined);
       if (speaker === "output" && resolvedTokenUsage) pendingTokenUsageRef.current = null;
 
-      // When narrative AI text starts arriving, immediately dismiss the thinking indicator
-      if (speaker === "output" && text && text.trim().length > 0) {
+      // Capture thinking snapshot before clearing
+      const thinkingSnapshot = activeThinkingText;
+      if (!payloadIsStreaming) {
         setActiveThinkingText(null);
       }
 
@@ -258,6 +259,7 @@ export default function HomePageClient({
           tokenUsage: resolvedTokenUsage,
           toolsUsed: resolvedToolsUsed,
           isStreaming: payloadIsStreaming,
+          thinkingText: thinkingSnapshot || last?.thinkingText || null,
           startTime: last?.startTime,
         };
 
@@ -278,6 +280,8 @@ export default function HomePageClient({
             visualType === "agent_action" &&
             last &&
             last.visualType === "agent_action" &&
+            last.agentActionData?.eventType === "agent_action_start" &&
+            newEntry.agentActionData?.eventType === "agent_action_complete" &&
             last.agentActionData?.toolName === newEntry.agentActionData?.toolName
           ) {
             return [

@@ -41,12 +41,28 @@ export default function ChatTimeline({
   onAnswerQuestion,
 }: ChatTimelineProps) {
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [isNearBottom, setIsNearBottom] = useState(true);
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
 
-  // Auto-scroll to bottom on new messages
+  const handleScroll = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setIsNearBottom(distanceToBottom < 120);
+  };
+
+  const scrollToBottom = (smooth = true) => {
+    transcriptEndRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
+    setIsNearBottom(true);
+  };
+
+  // Smart auto-scroll: Only auto-scroll when user is already near bottom (no scroll hijacking)
   useEffect(() => {
-    transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [transcript]);
+    if (isNearBottom) {
+      transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [transcript, isNearBottom]);
 
   const handleCopyMessage = (text: string, idx: number) => {
     navigator.clipboard.writeText(text);
@@ -114,7 +130,7 @@ export default function ChatTimeline({
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full relative pt-4 pb-4">
       {/* Scrollable Chat Message Stream */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar px-2 sm:px-4">
+      <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto custom-scrollbar px-2 sm:px-4">
         <div className="max-w-3xl xl:max-w-4xl mx-auto w-full flex flex-col gap-3 py-3">
           {transcript.length === 0 ? (
             <div className="flex flex-col items-center justify-center min-h-[50vh] text-center px-4 animate-fade-in select-none my-auto">
@@ -351,6 +367,11 @@ export default function ChatTimeline({
                           </div>
                         ) : (
                           <>
+                            {item.thinkingText && (
+                              <div className="w-full mb-2">
+                                <ThinkingCard text={item.thinkingText} durationSec={item.thinkingDuration} />
+                              </div>
+                            )}
                             <div className="relative">
                               <AgentMarkdown
                                 content={item.text}
@@ -365,10 +386,10 @@ export default function ChatTimeline({
                   );
                 })}
 
-                {/* Live Thinking Status Pill (Screenshot match) */}
+                {/* Live Thinking Status Pill */}
                 {activeThinkingText && (
                   <div className="w-full my-1.5 px-1 animate-fade-in">
-                    <ThinkingCard text={activeThinkingText} />
+                    <ThinkingCard text={activeThinkingText} isLive={true} />
                   </div>
                 )}
               </>
@@ -384,6 +405,20 @@ export default function ChatTimeline({
           <div ref={transcriptEndRef} />
         </div>
       </div>
+
+      {/* Floating Smart Scroll Down Button */}
+      {!isNearBottom && (
+        <button
+          type="button"
+          onClick={() => scrollToBottom(true)}
+          className="absolute bottom-28 right-6 z-30 px-3.5 py-1.5 rounded-full bg-slate-900/90 border border-cyan-500/40 text-cyan-300 hover:text-white hover:bg-slate-800 text-xs font-mono flex items-center gap-1.5 shadow-2xl backdrop-blur-md cursor-pointer transition-all active:scale-95"
+        >
+          <span>Scroll to bottom</span>
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }

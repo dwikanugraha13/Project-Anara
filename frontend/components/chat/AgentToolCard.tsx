@@ -10,12 +10,64 @@ export interface AgentToolCardProps {
   onDismiss?: () => void;
 }
 
-export function ThinkingCard({ text }: { text: string }) {
-  if (!text) return null;
+export function ThinkingCard({
+  text,
+  durationSec,
+  isLive = false,
+}: {
+  text: string;
+  durationSec?: number;
+  isLive?: boolean;
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  if (!text || text.trim().length === 0) return null;
+
   return (
-    <div className="flex items-center gap-2 py-1 font-mono text-xs select-none animate-fade-in my-1.5">
-      <span className="text-white font-bold tracking-tight">Thinking</span>
-      <span className="text-slate-400 font-sans truncate">{text}</span>
+    <div className="my-1.5 font-mono text-xs select-none rounded-lg border border-slate-800/80 bg-slate-900/40 backdrop-blur-sm overflow-hidden transition-all duration-150">
+      <button
+        type="button"
+        onClick={() => setIsExpanded((v) => !v)}
+        className="w-full flex items-center justify-between px-3 py-1.5 text-left text-slate-300 hover:text-white hover:bg-slate-800/30 transition-colors cursor-pointer"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="relative flex h-2 w-2 shrink-0">
+            {isLive ? (
+              <>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+              </>
+            ) : (
+              <span className="inline-flex rounded-full h-2 w-2 bg-indigo-500/80"></span>
+            )}
+          </span>
+          <span className="font-bold text-slate-200 tracking-tight">Thought Process</span>
+          {durationSec !== undefined && durationSec > 0 && (
+            <span className="text-[11px] text-slate-400 font-sans">({durationSec.toFixed(1)}s)</span>
+          )}
+          {!isExpanded && (
+            <span className="text-slate-400 font-sans truncate text-[11px] ml-1">
+              — {text.slice(0, 80)}...
+            </span>
+          )}
+        </div>
+        <svg
+          className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-150 shrink-0 ml-2 ${
+            isExpanded ? "rotate-180" : ""
+          }`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {isExpanded && (
+        <div className="px-3.5 py-2.5 border-t border-slate-800/60 bg-slate-950/60 font-sans text-xs text-slate-300 whitespace-pre-wrap leading-relaxed max-h-80 overflow-y-auto custom-scrollbar">
+          {text}
+        </div>
+      )}
     </div>
   );
 }
@@ -98,10 +150,106 @@ export function ExplorationGroupCard({
   );
 }
 
-export default function AgentToolCard({ action, todoData, onOpenFile }: AgentToolCardProps) {
+export function TodoChecklistCard({ todoData }: { todoData: any }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  if (!todoData || !todoData.items || todoData.items.length === 0) return null;
+  const total = todoData.items.length;
+  const completed = todoData.items.filter((t: { is_completed?: number | boolean }) => t.is_completed).length;
+
+  return (
+    <div className="my-2.5 rounded-xl overflow-hidden border border-white/10 bg-black/60 backdrop-blur-xl select-none font-sans text-xs transition-all shadow-xl">
+      <button
+        type="button"
+        onClick={() => setIsExpanded((v) => !v)}
+        className="w-full flex items-center justify-between px-3.5 py-2.5 bg-white/[0.03] hover:bg-white/[0.06] transition-colors cursor-pointer text-left"
+      >
+        <div className="flex items-center gap-2">
+          <span className="w-4 h-4 rounded-full border border-white/30 flex items-center justify-center text-[9px] text-cyan-300 font-mono">
+            {completed === total ? "✓" : "○"}
+          </span>
+          <span className="font-semibold text-slate-200">
+            {completed} of {total} tasks completed
+          </span>
+        </div>
+        <svg
+          className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${
+            isExpanded ? "rotate-180" : ""
+          }`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {isExpanded && (
+        <div className="p-3 pt-1 space-y-1.5 border-t border-white/5">
+          {todoData.items.map((item: any, idx: number) => (
+            <div
+              key={idx}
+              className={`flex items-start gap-2.5 p-2 rounded-lg text-[12px] transition-colors ${
+                item.is_completed
+                  ? "text-slate-500 line-through bg-white/[0.01]"
+                  : "text-slate-200 bg-white/[0.025] hover:bg-white/[0.05]"
+              }`}
+            >
+              <span
+                className={`w-4 h-4 rounded mt-0.5 flex items-center justify-center text-[10px] shrink-0 font-bold ${
+                  item.is_completed
+                    ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
+                    : "border border-white/20 text-transparent"
+                }`}
+              >
+                ✓
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="leading-snug">{item.title}</p>
+                {item.content && (
+                  <p className="text-[11px] text-slate-400 font-mono mt-0.5">{item.content}</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function AgentActionCard({
+  action,
+  onOpenFile,
+}: {
+  action?: AgentActionData;
+  onOpenFile?: (filePath: string, fileName: string) => void;
+}) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isReverting, setIsReverting] = useState(false);
   const [isReverted, setIsReverted] = useState(false);
+
+  const rawDiff = action?.rawResult || action?.summary || "";
+  const parsedDiff = useMemo(() => {
+    if (!rawDiff) return { added: 0, deleted: 0, lines: [] };
+    const lines = rawDiff.split("\n");
+    let added = 0;
+    let deleted = 0;
+    const formatted = lines.map((l: string, i: number) => {
+      if (l.startsWith("+") && !l.startsWith("+++")) {
+        added++;
+        return { type: "add" as const, text: l.substring(1), lineNum: i + 1 };
+      }
+      if (l.startsWith("-") && !l.startsWith("---")) {
+        deleted++;
+        return { type: "del" as const, text: l.substring(1), lineNum: i + 1 };
+      }
+      return { type: "ctx" as const, text: l, lineNum: i + 1 };
+    });
+    return { added, deleted, lines: formatted };
+  }, [rawDiff]);
+
+  if (!action) return null;
 
   const handleRollback = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -127,73 +275,6 @@ export default function AgentToolCard({ action, todoData, onOpenFile }: AgentToo
     }
   };
 
-  // ── Render Checklist Widget ("0 dari 7 tugas selesai ˅") ──
-  if (todoData && todoData.items && todoData.items.length > 0) {
-    const total = todoData.items.length;
-    const completed = todoData.items.filter((t: { is_completed?: number | boolean }) => t.is_completed).length;
-
-    return (
-      <div className="my-2.5 rounded-xl overflow-hidden border border-white/10 bg-black/60 backdrop-blur-xl select-none font-sans text-xs transition-all shadow-xl">
-        <button
-          onClick={() => setIsExpanded((v) => !v)}
-          className="w-full flex items-center justify-between px-3.5 py-2.5 bg-white/[0.03] hover:bg-white/[0.06] transition-colors cursor-pointer text-left"
-        >
-          <div className="flex items-center gap-2">
-            <span className="w-4 h-4 rounded-full border border-white/30 flex items-center justify-center text-[9px] text-cyan-300 font-mono">
-              {completed === total ? "✓" : "○"}
-            </span>
-            <span className="font-semibold text-slate-200">
-              {completed} of {total} tasks completed
-            </span>
-          </div>
-          <svg
-            className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${
-              isExpanded ? "rotate-180" : ""
-            }`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-
-        {isExpanded && (
-          <div className="p-3 pt-1 space-y-1.5 border-t border-white/5">
-            {todoData.items.map((item: any, idx: number) => (
-              <div
-                key={idx}
-                className={`flex items-start gap-2.5 p-2 rounded-lg text-[12px] transition-colors ${
-                  item.is_completed
-                    ? "text-slate-500 line-through bg-white/[0.01]"
-                    : "text-slate-200 bg-white/[0.025] hover:bg-white/[0.05]"
-                }`}
-              >
-                <span
-                  className={`w-4 h-4 rounded mt-0.5 flex items-center justify-center text-[10px] shrink-0 font-bold ${
-                    item.is_completed
-                      ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
-                      : "border border-white/20 text-transparent"
-                  }`}
-                >
-                  ✓
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="leading-snug">{item.title}</p>
-                  {item.content && (
-                    <p className="text-[11px] text-slate-400 font-mono mt-0.5">{item.content}</p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  if (!action) return null;
-
   const tool = (action.toolName || "").toLowerCase();
   const isStart = action.eventType === "agent_action_start";
   const isWrite = tool.includes("write") || tool.includes("edit") || tool.includes("artifact");
@@ -205,27 +286,6 @@ export default function AgentToolCard({ action, todoData, onOpenFile }: AgentToo
   const rawTarget = action.detail || action.actionTitle || "";
   const filename = action.filename || action.filePath?.split(/[/\\]/).pop() || rawTarget.split(" ")[0]?.split(/[/\\]/).pop() || "file";
   const dirPath = action.filePath ? action.filePath.replace(filename, "").replace(/[/\\]$/, "") : "";
-
-  // Compute diff lines
-  const rawDiff = action.rawResult || action.summary || "";
-  const parsedDiff = useMemo(() => {
-    if (!rawDiff) return { added: 0, deleted: 0, lines: [] };
-    const lines = rawDiff.split("\n");
-    let added = 0;
-    let deleted = 0;
-    const formatted = lines.map((l: string, i: number) => {
-      if (l.startsWith("+") && !l.startsWith("+++")) {
-        added++;
-        return { type: "add" as const, text: l.substring(1), lineNum: i + 1 };
-      }
-      if (l.startsWith("-") && !l.startsWith("---")) {
-        deleted++;
-        return { type: "del" as const, text: l.substring(1), lineNum: i + 1 };
-      }
-      return { type: "same" as const, text: l, lineNum: i + 1 };
-    });
-    return { added, deleted, lines: formatted };
-  }, [rawDiff]);
 
   // ── Render Edit (File Edit / Diff) Pill ──
   if (isWrite) {
@@ -386,7 +446,7 @@ export default function AgentToolCard({ action, todoData, onOpenFile }: AgentToo
   }
 
   // ── Render Standalone Search / Read ──
-  const toolPrefix = isRead ? "Baca" : isSearch ? (tool.includes("glob") ? "Glob" : "Grep") : "Aksi";
+  const toolPrefix = isRead ? "Read" : isSearch ? (tool.includes("glob") ? "Glob" : "Grep") : "Action";
 
   return (
     <div className="my-1.5 font-mono text-xs select-none">
@@ -397,4 +457,11 @@ export default function AgentToolCard({ action, todoData, onOpenFile }: AgentToo
       </div>
     </div>
   );
+}
+
+export default function AgentToolCard({ action, todoData, onOpenFile }: AgentToolCardProps) {
+  if (todoData && todoData.items && todoData.items.length > 0) {
+    return <TodoChecklistCard todoData={todoData} />;
+  }
+  return <AgentActionCard action={action} onOpenFile={onOpenFile} />;
 }

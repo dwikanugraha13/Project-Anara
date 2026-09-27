@@ -7,27 +7,27 @@ interface AgentMarkdownProps {
   isStreaming?: boolean;
 }
 
-function AgentMarkdown({ content, isStreaming }: AgentMarkdownProps) {
-  if (!content) return null;
+function AgentMarkdown({ content = "", isStreaming }: AgentMarkdownProps) {
+  const safeContent = content || "";
 
   // Fluid Token Stream Consumer (smooth 60fps running text interpolation)
-  const [streamLength, setStreamLength] = useState(() => (!isStreaming ? content.length : Math.min(12, content.length)));
+  const [streamLength, setStreamLength] = useState(() => (!isStreaming ? safeContent.length : Math.min(12, safeContent.length)));
   const animRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!isStreaming) {
-      setStreamLength(content.length);
+      setStreamLength(safeContent.length);
       if (animRef.current) cancelAnimationFrame(animRef.current);
       return;
     }
 
     const step = () => {
       setStreamLength((prev) => {
-        if (prev >= content.length) return prev;
-        const diff = content.length - prev;
+        if (prev >= safeContent.length) return prev;
+        const diff = safeContent.length - prev;
         // Adaptive cadence: smooth character pacing with catch-up
         const increment = diff > 100 ? 8 : diff > 40 ? 4 : diff > 15 ? 2 : 1;
-        return Math.min(content.length, prev + increment);
+        return Math.min(safeContent.length, prev + increment);
       });
       animRef.current = requestAnimationFrame(step);
     };
@@ -36,14 +36,16 @@ function AgentMarkdown({ content, isStreaming }: AgentMarkdownProps) {
     return () => {
       if (animRef.current) cancelAnimationFrame(animRef.current);
     };
-  }, [content, isStreaming]);
+  }, [safeContent, isStreaming]);
 
-  const activeContent = isStreaming && streamLength < content.length
-    ? content.slice(0, streamLength)
-    : content;
+  const activeContent = isStreaming && streamLength < safeContent.length
+    ? safeContent.slice(0, streamLength)
+    : safeContent;
 
   // Split into tokens: code blocks vs standard markdown text (memoized)
   const tokens = useMemo(() => parseMarkdownTokens(activeContent), [activeContent]);
+
+  if (!safeContent) return null;
 
   return (
     <div className="space-y-2.5 text-[13.5px] leading-relaxed text-slate-200 font-sans select-text">
