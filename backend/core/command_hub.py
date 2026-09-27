@@ -485,7 +485,9 @@ async def _handle_cmd_plan(ctx: UniversalCommandContext) -> UniversalCommandResp
         mode="plan",
         speaker_name=ctx.sender_name,
         is_chat_mode=True,
-        session_type="chat"
+        session_type="chat",
+        channel=ctx.channel,
+        session_id=ctx.session_id,
     )
 
     plan_text = await call_universal_chat_model(

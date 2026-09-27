@@ -248,7 +248,7 @@ class PromptAssembler:
 
         # Tier 2b: Active Channel / Interface Context & Session Metadata (Dual-Identity: Numeric UI ID + Canonical Key)
         ch_clean = (channel or "").strip().lower()
-        sess_disp = str(session_id) if session_id is not None else "cli_session"
+        sess_disp = str(session_id) if session_id is not None else "workspace_session"
         canonical_key = ""
         try:
             if session_id is not None:
@@ -261,12 +261,17 @@ class PromptAssembler:
                         sess_disp = f"#{num_id} ({canonical_key})"
                     else:
                         sess_disp = f"#{num_id}"
+                    if not ch_clean and s_obj.get("channel"):
+                        ch_clean = str(s_obj["channel"]).strip().lower()
         except Exception:
             pass
 
+        if not ch_clean:
+            ch_clean = "web"
+
         slot_channel = (
             f"[ACTIVE RUNTIME & SESSION METADATA]:\n"
-            f"- Current Platform / Channel: {ch_clean or 'cli'}\n"
+            f"- Current Platform / Channel: {ch_clean}\n"
             f"- Current Session: {sess_disp}\n"
             f"- Current User / Speaker: {speaker_name or 'Agnan'}\n"
             f"- Active Workspace Root: {root_path}\n\n"
@@ -277,10 +282,11 @@ class PromptAssembler:
                 "You are currently interacting with the user inside an interactive Terminal (CLI) session, NOT in Web Studio, Telegram, or Discord.\n"
                 "Provide direct, concise terminal-friendly responses without HTML tags."
             )
-        elif ch_clean in ("web", "studio", "code"):
+        elif ch_clean in ("web", "web_studio", "studio", "code", "desktop"):
             slot_channel += (
-                "[ACTIVE PLATFORM INTERFACE: WEB CODE STUDIO]\n"
-                "You are currently interacting with the user inside the Web Studio / Code Studio interface."
+                "[ACTIVE PLATFORM INTERFACE: WEB & DESKTOP STUDIO]\n"
+                "You are currently interacting with the user inside the Web Studio / Desktop GUI interface (Code Studio & 3D Companion), NOT in a CLI terminal.\n"
+                "You have access to interactive code editor tabs, diff viewer, and visual timeline cards."
             )
         elif ch_clean == "telegram":
             slot_channel += (

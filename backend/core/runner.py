@@ -202,6 +202,7 @@ class AnaraExecutionRunner:
             is_chat_mode=(session_type != "code"),
             session_type=session_type,
             user_task=clean_text,
+            channel=self.platform,
             session_id=effective_sid,
             model_id=selected_model,
         )
