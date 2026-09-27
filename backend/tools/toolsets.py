@@ -436,6 +436,7 @@ CODING_TOOLS: Set[str] = {
     "glob_find_files",
     "grep_search_code",
     "list_directory",
+    "switch_workspace",
     "execute_cli_command",
     "process_manage",
     "execute_code",
