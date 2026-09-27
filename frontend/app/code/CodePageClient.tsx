@@ -83,6 +83,10 @@ export default function CodePageClient({
   const terminalStartYRef = useRef(0);
   const startTerminalHeightRef = useRef(210);
 
+  const latestLeftWidthRef = useRef(initialSidebarWidth);
+  const latestRightWidthRef = useRef(initialRightWidth);
+  const latestTerminalHeightRef = useRef(initialTerminalHeight);
+
   // ── Code Studio IDE State ──
   const [activeIdeFile, setActiveIdeFile] = useState<{
     isOpen: boolean;
@@ -703,41 +707,47 @@ export default function CodePageClient({
       if (isResizingLeft) {
         const dx = e.clientX - leftStartXRef.current;
         const newW = Math.max(180, Math.min(500, startLeftWidthRef.current + dx));
+        latestLeftWidthRef.current = newW;
         setLeftWidth(newW);
         document.documentElement.style.setProperty("--studio-left-width", `${newW}px`);
       }
       if (isResizingRight) {
         const dx = rightStartXRef.current - e.clientX;
         const newW = Math.max(340, Math.min(700, startRightWidthRef.current + dx));
+        latestRightWidthRef.current = newW;
         setRightWidth(newW);
         document.documentElement.style.setProperty("--studio-right-width", `${newW}px`);
       }
       if (isResizingTerminal) {
         const dy = terminalStartYRef.current - e.clientY;
         const newH = Math.max(100, Math.min(600, startTerminalHeightRef.current + dy));
+        latestTerminalHeightRef.current = newH;
         setTerminalHeight(newH);
       }
     };
 
     const handleMouseUp = () => {
       if (isResizingLeft) {
+        const w = latestLeftWidthRef.current;
         try {
-          localStorage.setItem("anara_studio_left_width", leftWidth.toString());
-          document.cookie = `anara_studio_left_width=${leftWidth}; path=/; max-age=31536000; SameSite=Lax`;
-          document.documentElement.style.setProperty("--studio-left-width", `${leftWidth}px`);
+          localStorage.setItem("anara_studio_left_width", w.toString());
+          document.cookie = `anara_studio_left_width=${w}; path=/; max-age=31536000; SameSite=Lax`;
+          document.documentElement.style.setProperty("--studio-left-width", `${w}px`);
         } catch {}
       }
       if (isResizingRight) {
+        const w = latestRightWidthRef.current;
         try {
-          localStorage.setItem("anara_studio_right_width", rightWidth.toString());
-          document.cookie = `anara_studio_right_width=${rightWidth}; path=/; max-age=31536000; SameSite=Lax`;
-          document.documentElement.style.setProperty("--studio-right-width", `${rightWidth}px`);
+          localStorage.setItem("anara_studio_right_width", w.toString());
+          document.cookie = `anara_studio_right_width=${w}; path=/; max-age=31536000; SameSite=Lax`;
+          document.documentElement.style.setProperty("--studio-right-width", `${w}px`);
         } catch {}
       }
       if (isResizingTerminal) {
+        const h = latestTerminalHeightRef.current;
         try {
-          localStorage.setItem("anara_studio_term_height", terminalHeight.toString());
-          document.cookie = `anara_studio_term_height=${terminalHeight}; path=/; max-age=31536000; SameSite=Lax`;
+          localStorage.setItem("anara_studio_term_height", h.toString());
+          document.cookie = `anara_studio_term_height=${h}; path=/; max-age=31536000; SameSite=Lax`;
         } catch {}
       }
       setIsResizingLeft(false);
@@ -751,7 +761,7 @@ export default function CodePageClient({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isResizingLeft, isResizingRight, isResizingTerminal, leftWidth, rightWidth, terminalHeight]);
+  }, [isResizingLeft, isResizingRight, isResizingTerminal]);
 
   const activeSession = useMemo(() => {
     return sessions.find((s) => s.id === activeSessionId) || null;

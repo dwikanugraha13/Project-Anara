@@ -21,6 +21,9 @@ import { php } from "@codemirror/lang-php";
 import { json } from "@codemirror/lang-json";
 import { html } from "@codemirror/lang-html";
 import { css } from "@codemirror/lang-css";
+import { markdown } from "@codemirror/lang-markdown";
+import { yaml } from "@codemirror/lang-yaml";
+import { sql } from "@codemirror/lang-sql";
 
 export interface IdeTabFile {
   filePath: string;
@@ -75,6 +78,15 @@ function getLanguageExtension(ext: string): Extension {
     case "scss":
     case "less":
       return css();
+    case "md":
+    case "markdown":
+    case "mdown":
+      return markdown();
+    case "yaml":
+    case "yml":
+      return yaml();
+    case "sql":
+      return sql();
     default:
       return [];
   }
@@ -208,7 +220,7 @@ export default function AnaraCodeIDE({
   onSaveFile,
 }: AnaraCodeIDEProps) {
   const [copied, setCopied] = useState(false);
-  const [viewMode, setViewMode] = useState<"code" | "diff">(originalContent ? "diff" : "code");
+  const [viewMode, setViewMode] = useState<"code" | "diff">("code");
   const [editedContents, setEditedContents] = useState<Record<string, string>>({});
   const isCodeHydratedRef = useRef(false);
 
@@ -512,20 +524,38 @@ export default function AnaraCodeIDE({
     );
   };
 
-  // Diff stats count
+  // Diff stats count (multiset frequency comparison for accurate duplicated lines)
   const diffCounts = useMemo(() => {
-    if (!originalContent) return { added: 0, deleted: 0 };
-    const orig = originalContent.split("\n");
-    const curr = activeCode.split("\n");
+    if (!originalContent || originalContent === activeCode) return { added: 0, deleted: 0 };
+    const origLines = originalContent.split("\n");
+    const currLines = activeCode.split("\n");
+
+    const origFreq = new Map<string, number>();
+    for (const l of origLines) origFreq.set(l, (origFreq.get(l) || 0) + 1);
+
     let added = 0;
-    let deleted = 0;
-    const origSet = new Set(orig);
-    const currSet = new Set(curr);
-    for (const c of curr) {
-      if (!origSet.has(c)) added++;
+    const origRemaining = new Map(origFreq);
+    for (const l of currLines) {
+      const c = origRemaining.get(l) || 0;
+      if (c > 0) {
+        origRemaining.set(l, c - 1);
+      } else {
+        added++;
+      }
     }
-    for (const o of orig) {
-      if (!currSet.has(o)) deleted++;
+
+    const currFreq = new Map<string, number>();
+    for (const l of currLines) currFreq.set(l, (currFreq.get(l) || 0) + 1);
+
+    let deleted = 0;
+    const currRemaining = new Map(currFreq);
+    for (const l of origLines) {
+      const c = currRemaining.get(l) || 0;
+      if (c > 0) {
+        currRemaining.set(l, c - 1);
+      } else {
+        deleted++;
+      }
     }
     return { added, deleted };
   }, [activeCode, originalContent]);
@@ -675,11 +705,39 @@ export default function AnaraCodeIDE({
             )}
           </div>
 
-          {/* Diff Stats (+X -Y) */}
-          {originalContent && (diffCounts.added > 0 || diffCounts.deleted > 0) && (
-            <div className="flex items-center gap-1.5 ml-2 font-mono text-[10.5px] shrink-0">
-              <span className="text-emerald-400 font-bold">+{diffCounts.added}</span>
-              <span className="text-rose-400 font-bold">-{diffCounts.deleted}</span>
+          {/* Code vs Diff Mode Toggle Switch */}
+          {originalContent && originalContent !== activeCode && (
+            <div className="flex items-center bg-white/[0.06] rounded-lg p-0.5 border border-white/10 ml-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setViewMode("code")}
+                className={`px-2 py-0.5 rounded-md text-[10.5px] font-mono font-medium transition-all ${
+                  viewMode === "code"
+                    ? "bg-cyan-500/25 text-cyan-300 shadow-sm"
+                    : "text-slate-400 hover:text-white"
+                }`}
+                title="View active editable code"
+              >
+                Code
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("diff")}
+                className={`px-2 py-0.5 rounded-md text-[10.5px] font-mono font-medium flex items-center gap-1 transition-all ${
+                  viewMode === "diff"
+                    ? "bg-purple-500/25 text-purple-300 shadow-sm"
+                    : "text-slate-400 hover:text-white"
+                }`}
+                title="View unified diff against original version"
+              >
+                <span>Diff</span>
+                {(diffCounts.added > 0 || diffCounts.deleted > 0) && (
+                  <span className="flex items-center gap-0.5 text-[9.5px]">
+                    {diffCounts.added > 0 && <span className="text-emerald-400 font-bold">+{diffCounts.added}</span>}
+                    {diffCounts.deleted > 0 && <span className="text-rose-400 font-bold">-{diffCounts.deleted}</span>}
+                  </span>
+                )}
+              </button>
             </div>
           )}
 
