@@ -14,7 +14,7 @@ async def _tool_mcp_manage(
     url: Optional[str] = None
 ) -> Dict[str, Any]:
     """Manages Model Context Protocol (MCP) servers."""
-    from core.mcp_client import mcp_client
+    from integrations.mcp.manager import mcp_manager
 
     act = (action or "list").strip().lower()
 
@@ -25,26 +25,30 @@ async def _tool_mcp_manage(
         "icon": "cpu"
     })
 
-    if act == "list":
-        return mcp_client.list_servers()
+    if act in ("list", "status"):
+        return {"status": "success", "servers": mcp_manager.get_status()}
 
-    elif act == "add":
+    elif act in ("add", "connect"):
         if not server_name:
             return {"status": "error", "message": "Parameter 'server_name' is required."}
-        return mcp_client.add_server(
-            name=server_name,
-            command=command,
-            args=args or [],
-            url=url
-        )
+        cfg = {}
+        if command:
+            cfg["command"] = command
+            if args:
+                cfg["args"] = args
+        elif url:
+            cfg["url"] = url
+        count = await mcp_manager.connect_all_servers({server_name: cfg})
+        return {"status": "success", "connected_count": count, "server": server_name}
 
-    elif act in ("remove", "delete"):
+    elif act in ("remove", "delete", "disconnect"):
         if not server_name:
             return {"status": "error", "message": "Parameter 'server_name' is required."}
-        ok = mcp_client.remove_server(server_name)
-        return {
-            "status": "success" if ok else "error",
-            "message": f"Server '{server_name}' {'removed successfully.' if ok else 'not found.'}"
-        }
+        with mcp_manager._lock:
+            session = mcp_manager._servers.pop(server_name, None)
+        if session:
+            await session.close()
+            return {"status": "success", "message": f"Server '{server_name}' disconnected and removed successfully."}
+        return {"status": "error", "message": f"Server '{server_name}' not found."}
 
     return {"status": "error", "message": f"Unknown action '{act}'. Supported: 'list', 'add', 'remove'."}

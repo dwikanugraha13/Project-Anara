@@ -53,16 +53,16 @@ async def create_session_endpoint(req: SessionCreateRequest):
     return {"status": "success", "session": session}
 
 @router.get("/api/chat/sessions/{session_id}")
-async def get_session_endpoint(session_id: int):
-    """Returns one thread plus all of its messages."""
+async def get_session_endpoint(session_id: str):
+    """Returns one thread plus all of its messages (accepts integer ID or canonical session_key)."""
     session = memory_engine.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found")
-    messages = memory_engine.get_session_messages(session_id)
+    messages = memory_engine.get_session_messages(session["id"])
     return {"status": "success", "session": session, "messages": messages}
 
 @router.patch("/api/chat/sessions/{session_id}")
-async def patch_session_endpoint(session_id: int, req: SessionPatchRequest):
+async def patch_session_endpoint(session_id: str, req: SessionPatchRequest):
     """Renames, pins, archives, or switches mode of a thread."""
     ok = memory_engine.patch_session(
         session_id,
@@ -76,16 +76,19 @@ async def patch_session_endpoint(session_id: int, req: SessionPatchRequest):
     return {"status": "success", "session": memory_engine.get_session(session_id)}
 
 @router.delete("/api/chat/sessions/{session_id}")
-async def delete_session_endpoint(session_id: int):
+async def delete_session_endpoint(session_id: str):
     """Deletes a thread together with every message and cleans its workspace folder on disk."""
-    anara_agent.clear_workspace(session_id=session_id)
+    session = memory_engine.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    anara_agent.clear_workspace(session_id=session["id"])
     ok = memory_engine.delete_session(session_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"status": "success", "session_id": session_id}
 
 @router.delete("/api/chat/sessions/{session_id}/messages")
-async def clear_session_messages_endpoint(session_id: int):
+async def clear_session_messages_endpoint(session_id: str):
     """Empties a thread but keeps it in the list."""
     removed = memory_engine.clear_session_messages(session_id)
     return {"status": "success", "removed": removed, "session_id": session_id}
@@ -93,7 +96,7 @@ async def clear_session_messages_endpoint(session_id: int):
 @router.delete("/api/chat/sessions")
 async def bulk_delete_sessions_endpoint(archived_only: bool = True, keep_pinned: bool = True):
     """Bulk cleanup: archived threads only, or everything non-pinned, cleaning disk workspaces."""
-    deleted = memory_engine.bulk_delete_sessions(archived_only=archived_only, keep_pinned=keep_pinned)
+    deleted = memory_engine.delete_sessions_bulk(archived_only=archived_only, keep_pinned=keep_pinned)
     try:
         ws = anara_agent.base_workspace_path
         valid_ids = set(s["id"] for s in memory_engine.get_sessions(include_archived=True))
@@ -113,13 +116,13 @@ async def bulk_delete_sessions_endpoint(archived_only: bool = True, keep_pinned:
 # ── Project Planning Mode (Plan/Build protocol) Endpoints ──
 
 @router.get("/api/chat/sessions/{session_id}/plan")
-async def get_session_plan_endpoint(session_id: int):
+async def get_session_plan_endpoint(session_id: str):
     """Returns the current pending plan proposal for a session."""
     plan = memory_engine.get_session_pending_plan(session_id)
     return {"status": "success", "session_id": session_id, "plan": plan}
 
 @router.post("/api/chat/sessions/{session_id}/plan")
-async def save_session_plan_endpoint(session_id: int, req: PlanProposalRequest):
+async def save_session_plan_endpoint(session_id: str, req: PlanProposalRequest):
     """Saves or updates a project plan proposal awaiting user review."""
     plan_dict = {
         "title": req.title,
@@ -144,7 +147,7 @@ async def save_session_plan_endpoint(session_id: int, req: PlanProposalRequest):
     return {"status": "success", "plan": plan_dict}
 
 @router.delete("/api/chat/sessions/{session_id}/plan")
-async def clear_session_plan_endpoint(session_id: int):
+async def clear_session_plan_endpoint(session_id: str):
     """Clears the pending plan for a session."""
     memory_engine.clear_session_pending_plan(session_id)
     return {"status": "success", "session_id": session_id}

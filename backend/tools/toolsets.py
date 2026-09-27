@@ -546,19 +546,22 @@ class PlatformToolRegistry:
                 "project_hud",
             ])
 
-        # Dynamic Toolset Domain Activation (Anara Standard: Explicit Domain Posture Extension)
+        # Dynamic Toolset Domain Activation (Anara Standard: Task-domain intent activation without brittle exclusions)
         if user_task:
             try:
                 clean_task = str(user_task).lower()
-                GENERIC_DOMAIN_ROOTS = {"task", "home", "code", "file", "system", "document", "session", "memory"}
+                GENERIC_NOISE = {"task", "code", "file", "system", "document", "session", "memory"}
                 for ts_id, ts_def in ANARA_TOOLSETS.items():
                     ts_name = ts_id.replace("_", " ").lower()
-                    domain_root = ts_id.split("_")[0].lower()
+                    parts = ts_id.lower().split("_")
                     is_match = False
-                    if domain_root not in GENERIC_DOMAIN_ROOTS and len(domain_root) >= 4 and re.search(rf"\b{re.escape(domain_root)}\b", clean_task):
+                    if ts_name in clean_task:
                         is_match = True
-                    elif re.search(rf"\b{re.escape(ts_name)}\b", clean_task):
-                        is_match = True
+                    else:
+                        for p in parts:
+                            if len(p) >= 4 and p not in GENERIC_NOISE and re.search(rf"\b{re.escape(p)}\b", clean_task):
+                                is_match = True
+                                break
 
                     if is_match:
                         for t in ts_def.get("tools", []):
@@ -614,17 +617,22 @@ class PlatformToolRegistry:
             ])
 
         # 3. Dynamic Toolset Domain Activation (Anara Standard: Explicit Domain Posture Extension)
+        # Dynamic Toolset Domain Activation (Anara Standard: Task-domain intent activation without brittle exclusions)
         if user_task:
             try:
-                GENERIC_DOMAIN_ROOTS = {"task", "home", "code", "file", "system", "document", "session", "memory"}
+                clean_task = str(user_task).lower()
+                GENERIC_NOISE = {"task", "code", "file", "system", "document", "session", "memory"}
                 for ts_id, ts_def in ANARA_TOOLSETS.items():
                     ts_name = ts_id.replace("_", " ").lower()
-                    domain_root = ts_id.split("_")[0].lower()
+                    parts = ts_id.lower().split("_")
                     is_match = False
-                    if domain_root not in GENERIC_DOMAIN_ROOTS and len(domain_root) >= 4 and re.search(rf"\b{re.escape(domain_root)}\b", clean_task):
+                    if ts_name in clean_task:
                         is_match = True
-                    elif re.search(rf"\b{re.escape(ts_name)}\b", clean_task):
-                        is_match = True
+                    else:
+                        for p in parts:
+                            if len(p) >= 4 and p not in GENERIC_NOISE and re.search(rf"\b{re.escape(p)}\b", clean_task):
+                                is_match = True
+                                break
 
                     if is_match:
                         for t in ts_def.get("tools", []):

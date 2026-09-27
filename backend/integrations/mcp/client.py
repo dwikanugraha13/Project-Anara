@@ -67,7 +67,7 @@ def _sanitize_mcp_output(text: str) -> str:
     s = re.sub(r"(?:sk-[a-zA-Z0-9_-]{20,})", "sk-[REDACTED]", s)
     s = re.sub(r"(?:ghp_[a-zA-Z0-9]{30,})", "ghp_[REDACTED]", s)
     s = re.sub(r"(?:Bearer\s+)[a-zA-Z0-9_\-\.]{20,}", "Bearer [REDACTED]", s, flags=re.IGNORECASE)
-    s = re.sub(r"(?:key|token|api_key|secret|password)=([^\s&]+)", r"\1=[REDACTED]", s, flags=re.IGNORECASE)
+    s = re.sub(r"((?:key|token|api_key|secret|password)=)[^\s&]+", r"\1[REDACTED]", s, flags=re.IGNORECASE)
     return s
 
 
@@ -180,6 +180,18 @@ class McpSession:
         )
 
         self._read_task = asyncio.create_task(self._stdio_read_loop())
+
+        # Background stderr drain prevents 64KB buffer deadlock on Windows/POSIX
+        async def _drain_stderr():
+            if self._process and self._process.stderr:
+                try:
+                    while True:
+                        err_line = await self._process.stderr.readline()
+                        if not err_line:
+                            break
+                except Exception:
+                    pass
+        self._stderr_task = asyncio.create_task(_drain_stderr())
 
     async def _connect_http(self) -> None:
         """Initializes HTTP client for remote MCP server."""

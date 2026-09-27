@@ -87,6 +87,7 @@ class BaseMemoryEngine:
         try:
             init_conn = sqlite3.connect(self.db_path, timeout=15.0)
             init_conn.execute("PRAGMA journal_mode=WAL;")
+            init_conn.execute("PRAGMA journal_size_limit=67108864;")
             init_conn.execute("PRAGMA synchronous=NORMAL;")
             init_conn.execute("PRAGMA busy_timeout=15000;")
             init_conn.commit()

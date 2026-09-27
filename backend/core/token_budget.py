@@ -512,10 +512,20 @@ class TokenBudgetTracker:
             else:
                 content = str(msg)
 
+            if isinstance(msg, dict):
+                role = msg.get("role", "")
+                content = str(msg.get("content", "") or "")
+                # Never truncate primary user instruction turns (only tool observations and assistant scratchpads)
+                if role == "user" and not any(k in content for k in ("[TOOL", "tool_result", "Observation:", "<tool_response")):
+                    continue
+            elif hasattr(msg, "parts") and getattr(msg, "role", "") == "user":
+                continue
+            else:
+                content = str(getattr(msg, "text", "") or getattr(msg, "content", "") or "")
+
             if not content or len(content) < 500:
                 continue
 
-            # Only compact user messages (tool observations) and assistant messages
             old_tokens = count_tokens(content)
 
             # Progressive truncation based on how far over budget we are
@@ -536,14 +546,34 @@ class TokenBudgetTracker:
             if new_tokens < old_tokens:
                 if isinstance(msg, dict):
                     messages[idx] = {**msg, "content": new_content}
-                elif hasattr(msg, "parts"):
+                    current -= (old_tokens - new_tokens)
+                    compacted = True
+                elif hasattr(msg, "parts") and msg.parts:
                     try:
                         from google.genai import types
-                        messages[idx] = types.Content(role=getattr(msg, "role", "model"), parts=[types.Part.from_text(text=new_content)])
+                        new_parts = []
+                        for p in msg.parts:
+                            # Preserve function_call parts intact!
+                            if hasattr(p, "function_call") and p.function_call:
+                                new_parts.append(p)
+                            elif hasattr(p, "function_response") and p.function_response:
+                                new_parts.append(p)
+                            elif hasattr(p, "text") and p.text:
+                                old_tok = count_tokens(p.text)
+                                if len(p.text) > 600:
+                                    first_line = p.text.split("\n")[0][:200]
+                                    tail = p.text[-200:] if len(p.text) > 200 else ""
+                                    new_txt = f"{first_line}\n[... compacted — {old_tok} tokens ...]\n{tail}"
+                                    new_parts.append(types.Part.from_text(text=new_txt))
+                                    current -= (old_tok - count_tokens(new_txt))
+                                    compacted = True
+                                else:
+                                    new_parts.append(p)
+                            else:
+                                new_parts.append(p)
+                        msg.parts = new_parts
                     except Exception:
                         pass
-                current -= (old_tokens - new_tokens)
-                compacted = True
 
         if compacted:
             logger.info(

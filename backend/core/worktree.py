@@ -161,14 +161,17 @@ class GitWorktreeManager:
             success = apply_res.returncode == 0
             if success:
                 logger.info(f"[Worktree] Successfully merged changes from '{branch_name}' into main workspace.")
+                cls.remove_worktree(repo_dir, worktree_dir, branch_name)
             else:
                 logger.warning(f"[Worktree] Squash merge conflict: {apply_res.stderr.strip()}")
-
-            cls.remove_worktree(repo_dir, worktree_dir, branch_name)
+                # Abort conflicting index in main repo to prevent leaving repo dirty
+                subprocess.run(["git", "merge", "--abort"], cwd=repo_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                # Preserve worktree directory and branch for inspection rather than permanent data loss
+                logger.info(f"[Worktree] Preserved worktree at '{worktree_dir}' and branch '{branch_name}' for manual inspection.")
             return success
         except Exception as e:
             logger.error(f"[Worktree] Error merging worktree changes: {e}")
-            cls.remove_worktree(repo_dir, worktree_dir, branch_name)
+            subprocess.run(["git", "merge", "--abort"], cwd=repo_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
             return False
 
     @classmethod

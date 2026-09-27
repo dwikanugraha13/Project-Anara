@@ -13,6 +13,7 @@ import threading
 import time
 from datetime import datetime
 from typing import Optional, Dict, Any
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,33 @@ USER_CHAR_CAP = 1500
 MEMORY_CHAR_CAP = 2200
 
 _FILE_MEMORY_LOCK = threading.RLock()
+
+
+@contextlib.contextmanager
+def file_memory_os_lock(file_path: str):
+    """Cross-platform OS-level lock on auxiliary .lock file (Anara Standard)."""
+    lock_path = f"{file_path}.lock"
+    os.makedirs(os.path.dirname(os.path.abspath(lock_path)), exist_ok=True)
+    if os.name == "nt":
+        import msvcrt
+        raw_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT)
+        try:
+            msvcrt.locking(raw_fd, msvcrt.LK_LOCK, 1)
+            yield
+        finally:
+            with contextlib.suppress(Exception):
+                msvcrt.locking(raw_fd, msvcrt.LK_UNLCK, 1)
+            os.close(raw_fd)
+    else:
+        import fcntl
+        raw_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(raw_fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            with contextlib.suppress(Exception):
+                fcntl.flock(raw_fd, fcntl.LOCK_UN)
+            os.close(raw_fd)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Privacy Filter: Sanitizes sensitive credentials before writing to disk
@@ -85,7 +113,7 @@ class FileMemoryManager:
     @staticmethod
     def _write_file_safe(path: str, content: str) -> bool:
         """Atomically writes file content using fsync and replace to prevent 0-byte truncation (Anara Standard)."""
-        with _FILE_MEMORY_LOCK:
+        with _FILE_MEMORY_LOCK, file_memory_os_lock(path):
             dir_name = os.path.dirname(os.path.abspath(path))
             os.makedirs(dir_name, exist_ok=True)
             tmp_path = os.path.join(dir_name, f".tmp_{os.getpid()}_{int(time.time() * 1000)}.md")
@@ -257,12 +285,19 @@ class FileMemoryManager:
                 curr = cls.get_user_profile() if file_path == USER_FILE_PATH else cls.get_memory_facts()
                 needle = old_text.strip().lower()
                 lines = curr.split("\n")
-                found_idx = -1
-                for idx, l in enumerate(lines):
-                    if not l.strip().startswith("#"):
-                        if needle == l.strip().lower() or (len(needle) >= 4 and needle in l.lower()):
-                            found_idx = idx
-                            break
+                
+                # Check for exact matches first, then unique substring; refuse if ambiguous
+                exact_matches = [i for i, l in enumerate(lines) if not l.strip().startswith("#") and l.strip().lower() == needle]
+                if exact_matches:
+                    found_idx = exact_matches[0]
+                else:
+                    sub_matches = [i for i, l in enumerate(lines) if not l.strip().startswith("#") and len(needle) >= 4 and needle in l.lower()]
+                    if len(sub_matches) > 1:
+                        return {
+                            "status": "error",
+                            "message": f"Ambiguous match: found {len(sub_matches)} entries matching '{old_text}'. Please provide a more specific identifier to prevent data corruption."
+                        }
+                    found_idx = sub_matches[0] if sub_matches else -1
 
                 if found_idx == -1:
                     return {"status": "error", "message": f"Entry matching '{old_text}' not found in {target_name}."}
@@ -298,20 +333,23 @@ class FileMemoryManager:
 
                 curr = cls.get_user_profile() if file_path == USER_FILE_PATH else cls.get_memory_facts()
                 lines = curr.split("\n")
-                new_lines = []
-                removed = False
-                for l in lines:
-                    if l.strip().startswith("#"):
-                        new_lines.append(l)
-                        continue
-                    if not removed and (needle == l.strip().lower() or (len(needle) >= 4 and needle in l.lower())):
-                        removed = True
-                        continue
-                    new_lines.append(l)
 
-                if not removed:
+                exact_matches = [i for i, l in enumerate(lines) if not l.strip().startswith("#") and l.strip().lower() == needle]
+                if exact_matches:
+                    remove_idx = exact_matches[0]
+                else:
+                    sub_matches = [i for i, l in enumerate(lines) if not l.strip().startswith("#") and len(needle) >= 4 and needle in l.lower()]
+                    if len(sub_matches) > 1:
+                        return {
+                            "status": "error",
+                            "message": f"Ambiguous match: found {len(sub_matches)} entries matching '{needle}'. Please provide a more specific identifier."
+                        }
+                    remove_idx = sub_matches[0] if sub_matches else -1
+
+                if remove_idx == -1:
                     return {"status": "error", "message": f"Entry matching '{needle}' not found in {target_name}."}
 
+                new_lines = [l for i, l in enumerate(lines) if i != remove_idx]
                 ok = cls._write_file_safe(file_path, "\n".join(new_lines))
                 if ok:
                     return {"status": "success", "target": target_name, "message": f"Removed matching entry from {target_name}."}

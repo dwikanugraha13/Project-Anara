@@ -1281,10 +1281,14 @@ async def _execute_json_agent_loop(
             is_stalled, stall_msg = loop_breaker.record_and_check(t_name, t_args)
             if is_stalled and stall_msg:
                 logger.warning(f"[AgentLoop] LoopBreaker triggered on tool '{t_name}'")
-                messages.append({"role": "assistant", "content": raw_out})
-                messages.append({"role": "user", "content": stall_msg})
-                parsed_calls = []
-                break
+                parsed_calls.append({
+                    "name": t_name,
+                    "args": t_args,
+                    "risk": "read_only",
+                    "raw": call,
+                    "stall_error": stall_msg,
+                })
+                continue
 
             t_risk = get_tool_risk(t_name)
             if t_name in ("execute_cli_command", "terminal", "run_terminal_command"):
@@ -1347,10 +1351,15 @@ async def _execute_json_agent_loop(
                         except Exception:
                             pass
 
-                batch_results = await asyncio.gather(*[
-                    dispatch_tool_call(item["name"], item["args"], read_only=read_only)
-                    for item in ro_batch
-                ])
+                batch_tasks = []
+                for item in ro_batch:
+                    if item.get("stall_error"):
+                        async def _synth_stall(m=item["stall_error"]):
+                            return {"status": "error", "message": f"[LOOP BREAKER INTERVENTION]: {m}"}
+                        batch_tasks.append(_synth_stall())
+                    else:
+                        batch_tasks.append(dispatch_tool_call(item["name"], item["args"], read_only=read_only))
+                batch_results = await asyncio.gather(*batch_tasks)
 
                 for offset_i, tool_res in enumerate(batch_results):
                     results_by_index[call_idx + offset_i] = tool_res
@@ -1382,7 +1391,9 @@ async def _execute_json_agent_loop(
                         pass
 
                 is_safe_cli = (item["name"] == "execute_cli_command" and is_safe_read_only_cli_command(item["args"].get("command", "")))
-                if read_only and item["name"] not in READ_ONLY_TOOL_NAMES and not is_safe_cli:
+                if item.get("stall_error"):
+                    mut_res = {"status": "error", "message": f"[LOOP BREAKER INTERVENTION]: {item['stall_error']}"}
+                elif read_only and item["name"] not in READ_ONLY_TOOL_NAMES and not is_safe_cli:
                     mut_res = {"status": "error", "message": f"Tool '{item['name']}' is disabled in Plan Mode (Read-Only)."}
                 else:
                     mut_res = await dispatch_tool_call(item["name"], item["args"], read_only=read_only)

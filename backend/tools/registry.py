@@ -180,6 +180,49 @@ class ToolRegistry:
 
         fn = tool.handler
         try:
+            # Dynamic Schema Coercion & Contract Validation (Anara Standard)
+            coerced_args = dict(args)
+            if tool.parameters and isinstance(tool.parameters, dict):
+                props = tool.parameters.get("properties") or {}
+                required = tool.parameters.get("required") or []
+                missing = [r for r in required if r not in coerced_args or coerced_args[r] is None]
+                if missing:
+                    return {
+                        "status": "error",
+                        "message": f"Missing required parameter(s) for tool '{name}': {', '.join(missing)}. Expected: {list(props.keys())}"
+                    }
+                for k, val in list(coerced_args.items()):
+                    prop_spec = props.get(k)
+                    if not prop_spec or not isinstance(prop_spec, dict) or val is None:
+                        continue
+                    expected_type = prop_spec.get("type")
+                    if expected_type == "boolean":
+                        if isinstance(val, str):
+                            coerced_args[k] = val.strip().lower() in ("true", "1", "yes", "y")
+                        elif isinstance(val, (int, float)):
+                            coerced_args[k] = bool(val)
+                    elif expected_type == "integer":
+                        if isinstance(val, str):
+                            try:
+                                coerced_args[k] = int(val.strip())
+                            except (ValueError, TypeError):
+                                pass
+                        elif isinstance(val, float):
+                            coerced_args[k] = int(val)
+                    elif expected_type == "number":
+                        if isinstance(val, str):
+                            try:
+                                coerced_args[k] = float(val.strip())
+                            except (ValueError, TypeError):
+                                pass
+                    elif expected_type in ("array", "object") and isinstance(val, str):
+                        try:
+                            import json
+                            coerced_args[k] = json.loads(val)
+                        except Exception:
+                            pass
+            args = coerced_args
+
             # 1. Parameter alignment via signature inspection prior to invocation (prevents double execution)
             try:
                 sig = inspect.signature(fn)

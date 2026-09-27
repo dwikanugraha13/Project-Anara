@@ -481,6 +481,7 @@ async def _tool_delegate_subagent(
     task = await subagent_manager.spawn_subagent_task(
         title=effective_goal,
         mission_prompt=effective_context,
+        depth=kwargs.get("depth", 1),
     )
 
     if not background:
@@ -492,6 +493,9 @@ async def _tool_delegate_subagent(
             "task_id": task.task_id,
             "goal": task.goal,
             "findings": findings_text,
+            "key_findings": task.result.key_findings if task.result else [],
+            "referenced_files": task.result.referenced_files if task.result else [],
+            "execution_time_sec": task.result.execution_time_sec if task.result else 0.0,
         }
 
     _emit_agent_event("agent_action_complete", {

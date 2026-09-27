@@ -102,6 +102,23 @@ class ChatSessionsMixin:
             cursor.execute(query, params)
             return [dict(r) for r in cursor.fetchall()]
 
+    def _resolve_session_id(self, session_id: Any) -> Optional[int]:
+        """Resolves any session identifier (integer ID or canonical string session_key) to its numeric SQLite primary key."""
+        if session_id is None:
+            return None
+        if isinstance(session_id, int):
+            return session_id
+        if isinstance(session_id, str):
+            clean = session_id.strip()
+            if clean.isdigit():
+                return int(clean)
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT id FROM chat_sessions WHERE session_key = ?", (clean,))
+                row = cursor.fetchone()
+                return row["id"] if row else None
+        return None
+
     def get_last_active_session_id(self, speaker_name: Optional[str] = None, session_type: Optional[str] = None) -> Optional[int]:
         """Returns the ID of the most recently updated active chat thread."""
         sessions = self.get_sessions(speaker_name=speaker_name, session_type=session_type, include_archived=False, limit=1)
@@ -109,8 +126,9 @@ class ChatSessionsMixin:
             return sessions[0]["id"]
         return None
 
-    def get_session_messages(self, session_id: int, limit: int = 500) -> List[Dict[str, Any]]:
+    def get_session_messages(self, session_id: Any, limit: int = 500) -> List[Dict[str, Any]]:
         """Returns all messages of one thread in chronological order."""
+        sid = self._resolve_session_id(session_id) or session_id
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -120,7 +138,7 @@ class ChatSessionsMixin:
                 WHERE session_id = ?
                 ORDER BY id ASC
                 LIMIT ?
-            """, (session_id, limit))
+            """, (sid, limit))
             out = []
             for r in cursor.fetchall():
                 item = dict(r)
@@ -132,25 +150,27 @@ class ChatSessionsMixin:
                 out.append(item)
             return out
 
-    def rename_session(self, session_id: int, title: str) -> bool:
+    def rename_session(self, session_id: Any, title: str) -> bool:
         clean = (title or "").strip()[:120]
         if not clean:
             return False
+        sid = self._resolve_session_id(session_id) or session_id
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "UPDATE chat_sessions SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (clean, session_id)
+                (clean, sid)
             )
             conn.commit()
             ok = cursor.rowcount > 0
         if ok:
-            self._emit_mutation("session_updated", {"id": session_id, "title": clean})
+            self._emit_mutation("session_updated", {"id": sid, "title": clean})
         return ok
 
-    def patch_session(self, session_id: int, title: Optional[str] = None,
+    def patch_session(self, session_id: Any, title: Optional[str] = None,
                       is_pinned: Optional[bool] = None, is_archived: Optional[bool] = None) -> bool:
         """Updates title, pinned, or archived status of a session."""
+        sid = self._resolve_session_id(session_id) or session_id
         sets, params = [], []
         if title is not None:
             clean = title.strip()[:120]
@@ -165,7 +185,7 @@ class ChatSessionsMixin:
             params.append(1 if is_archived else 0)
         if not sets:
             return False
-        params.append(session_id)
+        params.append(sid)
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -176,48 +196,50 @@ class ChatSessionsMixin:
             ok = cursor.rowcount > 0
         if ok:
             self._emit_mutation("session_updated", {
-                "id": session_id, "title": title, "is_pinned": is_pinned, "is_archived": is_archived
+                "id": sid, "title": title, "is_pinned": is_pinned, "is_archived": is_archived
             })
         return ok
 
-    def delete_session(self, session_id: int) -> bool:
+    def delete_session(self, session_id: Any) -> bool:
         """Removes a thread AND all cascading messages, tokens, and settings (Anara Enterprise Architecture)."""
+        sid = self._resolve_session_id(session_id) or session_id
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM conversations WHERE session_id = ?", (session_id,))
+            cursor.execute("DELETE FROM conversations WHERE session_id = ?", (sid,))
             removed_msgs = cursor.rowcount
             try:
-                cursor.execute("DELETE FROM token_usage_logs WHERE session_id = ?", (session_id,))
+                cursor.execute("DELETE FROM token_usage_logs WHERE session_id = ?", (sid,))
             except Exception:
                 pass
             try:
-                cursor.execute("DELETE FROM project_adr WHERE session_id = ?", (str(session_id),))
+                cursor.execute("DELETE FROM project_adr WHERE session_id = ?", (str(sid),))
             except Exception:
                 pass
             try:
-                cursor.execute("DELETE FROM app_settings WHERE key = ?", (f"session_scratchpad_{session_id}",))
+                cursor.execute("DELETE FROM app_settings WHERE key = ?", (f"session_scratchpad_{sid}",))
             except Exception:
                 pass
-            cursor.execute("DELETE FROM chat_sessions WHERE id = ?", (session_id,))
+            cursor.execute("DELETE FROM chat_sessions WHERE id = ?", (sid,))
             ok = cursor.rowcount > 0
             conn.commit()
         if ok:
-            logger.info(f"[ChatSessions] Deleted session #{session_id} with {removed_msgs} message(s)")
-            self._emit_mutation("session_deleted", {"id": session_id, "messages": removed_msgs})
+            logger.info(f"[ChatSessions] Deleted session #{sid} with {removed_msgs} message(s)")
+            self._emit_mutation("session_deleted", {"id": sid, "messages": removed_msgs})
         return ok
 
-    def clear_session_messages(self, session_id: int) -> int:
+    def clear_session_messages(self, session_id: Any) -> int:
         """Empties a thread but keeps the thread itself."""
+        sid = self._resolve_session_id(session_id) or session_id
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM conversations WHERE session_id = ?", (session_id,))
+            cursor.execute("DELETE FROM conversations WHERE session_id = ?", (sid,))
             removed = cursor.rowcount
             cursor.execute(
                 "UPDATE chat_sessions SET message_count = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (session_id,)
+                (sid,)
             )
             conn.commit()
-        self._emit_mutation("session_updated", {"id": session_id, "message_count": 0})
+        self._emit_mutation("session_updated", {"id": sid, "message_count": 0})
         return removed
 
     def delete_sessions_bulk(self, archived_only: bool = False,
@@ -406,9 +428,21 @@ class ChatSessionsMixin:
         media_type: Optional[str] = None,
         media_url: Optional[str] = None,
         visual_data: Optional[Dict[str, Any]] = None,
-        session_id: Optional[int] = None
+        session_id: Optional[Any] = None
     ) -> int:
         """Persists a full dialogue turn to SQLite conversations table."""
+        # Screen out raw WebSocket control frames (Anara Clean Ingestion Standard)
+        clean_user = (user_text or "").strip()
+        if clean_user.startswith("{") and ('"type"' in clean_user or '"action"' in clean_user) and len(clean_user) < 500:
+            try:
+                parsed_frame = json.loads(clean_user)
+                if isinstance(parsed_frame, dict) and parsed_frame.get("type") in ("ping", "pong", "handshake", "switch_session", "switch_model"):
+                    logger.debug(f"[ChatSessions] Ignored raw WebSocket control frame: {parsed_frame.get('type')}")
+                    return 0
+            except Exception:
+                pass
+
+        sid = self._resolve_session_id(session_id) if session_id is not None else None
         speaker_id = None
         clean_name = speaker_name.strip().title() if speaker_name else None
         if clean_name:
@@ -424,11 +458,11 @@ class ChatSessionsMixin:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             
-            if session_id is not None:
+            if sid is not None:
                 cursor.execute("""
                     DELETE FROM conversations
                     WHERE LOWER(TRIM(user_text)) = LOWER(?) AND session_id = ? AND (ai_text IS NULL OR ai_text = '')
-                """, (user_text.strip(), session_id))
+                """, (user_text.strip(), sid))
             elif clean_name:
                 cursor.execute("""
                     DELETE FROM conversations
@@ -439,10 +473,10 @@ class ChatSessionsMixin:
             cursor.execute("""
                 INSERT INTO conversations (speaker_name, speaker_id, user_text, ai_text, media_type, media_url, visual_data_json, session_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (clean_name, speaker_id, user_text.strip(), ai_text.strip(), media_type, media_url, vis_json, session_id))
+            """, (clean_name, speaker_id, user_text.strip(), ai_text.strip(), media_type, media_url, vis_json, sid))
             last_id = cursor.lastrowid or 0
 
-            if session_id is not None:
+            if sid is not None:
                 cursor.execute("""
                     UPDATE chat_sessions
                     SET message_count = (
@@ -450,7 +484,7 @@ class ChatSessionsMixin:
                         ),
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
-                """, (session_id, session_id))
+                """, (sid, sid))
 
             conn.commit()
 

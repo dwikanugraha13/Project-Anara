@@ -248,11 +248,17 @@ def classify_single_command_ast(segment: str) -> str:
             return "read_only"
         return "mutating"
 
+    # --- Test Runners (Verification & QA Safe) ---
+    if binary in ("pytest", "vitest", "jest"):
+        return "read_only"
+    if binary == "cargo" and subcmd == "test":
+        return "read_only"
+
     # --- NPM / PNPM / YARN / BUN ---
     if binary in ("npm", "pnpm", "yarn", "bun"):
         if not subcmd or subcmd in ("-v", "-V", "--version", "-h", "--help"):
             return "read_only"
-        safe_npm_subcmds = {"list", "ls", "view", "info", "outdated", "why", "audit", "explain"}
+        safe_npm_subcmds = {"list", "ls", "view", "info", "outdated", "why", "audit", "explain", "test"}
         if subcmd == "audit" and "fix" in [a.lower() for a in non_flag_args]:
             return "mutating"
         if subcmd == "config":

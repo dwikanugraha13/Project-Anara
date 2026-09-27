@@ -119,7 +119,7 @@ class AnaraExecutionRunner:
         clean_text = (user_message or "").strip()
         effective_speaker = self.speaker_name or memory_engine.get_last_active_speaker_name() or "User"
 
-        # 1. Resolve Session
+        # 1. Resolve Session & Reset Interrupted Flags (Anara Standard)
         effective_sid = self.session_id
         if not effective_sid:
             from core.agent import anara_agent
@@ -133,8 +133,10 @@ class AnaraExecutionRunner:
             )
             effective_sid = new_s["id"]
         self.session_id = effective_sid
+        self.is_interrupted = False
+        session_state_manager.clear_interrupted(self.platform, str(effective_sid))
 
-        # 2. Check Pending Actions State Machine (Hermes Model-Driven Parity)
+        # 2. Check Pending Actions State Machine (Anara Autonomous Parity)
         pending = session_state_manager.get_pending(self.platform, str(effective_sid))
 
         session_obj = memory_engine.get_session(effective_sid)
@@ -158,6 +160,8 @@ class AnaraExecutionRunner:
             session_state_manager.clear_pending(self.platform, str(effective_sid))
             agent_mode = "build"
             logger.info(f"[ExecutionRunner] Pending action #{pending.plan_id} APPROVED -> switching to BUILD MODE")
+            if pending.original_prompt:
+                clean_text = f"Approved plan execution for original request: '{pending.original_prompt}'."
         elif session_mode == "explicit_plan_build":
             if is_approved:
                 agent_mode = "build"
@@ -167,14 +171,16 @@ class AnaraExecutionRunner:
             # Conversational mode: execute directly, runtime tool interception handles safety
             if is_approved:
                 agent_mode = "build"
-            elif needs_plan(clean_text, session_mode="conversational"):
+            elif session_mode == "conversational":
+                agent_mode = "conversational"
+            elif needs_plan(clean_text, session_mode=session_mode):
                 agent_mode = "plan"
             else:
                 agent_mode = "build"
 
         # 3. Memory Snapshot is injected into system prompt context; autonomous memory tool handles updates (Anara Standard)
 
-        # 4. Context Compaction (Hermes Chronological Alternation)
+        # 4. Context Compaction (Anara Chronological Alternation)
         try:
             history_rows = memory_engine.get_recent_conversations(limit=30, session_id=effective_sid)
             compacted_history = ContextCompactor.compact_history(history_rows, verbatim_turns=12)
@@ -444,7 +450,7 @@ class AnaraExecutionRunner:
             except Exception as e_conv:
                 logger.debug(f"[ExecutionRunner] Stop-gate notice: {e_conv}")
 
-        # 9. Record Final AI Response with Execution Audit (Hermes Persist Parity)
+        # 9. Record Final AI Response with Execution Audit (Anara Persist Parity)
         turn_visual_data = {
             "tools_used": tools_used,
             "tool_records_count": len(turn_tool_records),

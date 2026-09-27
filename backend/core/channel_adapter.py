@@ -851,14 +851,17 @@ async def _process_channel_request_core(
     prior_turns = []
     for h in all_history:
         ai_t = (h.get("ai_text") or "").strip()
-        # Anara Standard: close interrupted/unclosed tool sequence in past transcript to prevent continuation hallucination
+        # Anara Standard: close unclosed tool markup syntax safely without heuristic text rewriting
         is_tool_invocation = '"action": "tool_call"' in ai_t or '<tool_call>' in ai_t
         is_unclosed = ('<tool_call>' in ai_t and '</tool_call>' not in ai_t) or (
             '"action": "tool_call"' in ai_t and not ai_t.rstrip().endswith(('}', '```', '</tool_call>'))
         )
         if is_tool_invocation and is_unclosed:
             h_clean = dict(h)
-            h_clean["ai_text"] = f"Previous inspection sequence concluded for '{clean_text}'."
+            if "<tool_call>" in ai_t and "</tool_call>" not in ai_t:
+                h_clean["ai_text"] = ai_t + "\n</tool_call>"
+            elif '"action": "tool_call"' in ai_t and not ai_t.rstrip().endswith(('}', '```')):
+                h_clean["ai_text"] = ai_t + "\n}"
             prior_turns.append(h_clean)
         else:
             prior_turns.append(h)

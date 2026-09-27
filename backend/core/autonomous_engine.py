@@ -477,11 +477,12 @@ class AutonomousEngine:
             now = datetime.now(get_scheduler_timezone())
             if last_run:
                 # Calculate next run or finalize one-shot tasks
-                cursor.execute("SELECT interval_seconds, trigger_type, failure_count FROM autonomous_tasks WHERE id = ?", (task_id,))
+                cursor.execute("SELECT interval_seconds, trigger_type, failure_count, prompt FROM autonomous_tasks WHERE id = ?", (task_id,))
                 row = cursor.fetchone()
                 interval = row[0] if row else 3600
                 trigger_t = row[1] if row and len(row) > 1 else "interval"
                 fail_cnt = row[2] if row and len(row) > 2 and row[2] is not None else 0
+                task_prompt = row[3] if row and len(row) > 3 else ""
 
                 if status == "idle":
                     fail_cnt = 0
@@ -509,6 +510,18 @@ class AutonomousEngine:
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = ?
                     """, (fail_cnt, now.isoformat(), task_id))
+                elif trigger_t == "cron":
+                    next_r = compute_next_run("cron", effective_interval, task_prompt)
+                    cursor.execute("""
+                        UPDATE autonomous_tasks SET
+                            status = ?,
+                            pending_plan_id = ?,
+                            failure_count = ?,
+                            last_run = ?,
+                            next_run = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    """, (status, plan_id, fail_cnt, now.isoformat(), next_r.isoformat(), task_id))
                 else:
                     next_r = now + timedelta(seconds=effective_interval)
                     cursor.execute("""
@@ -530,6 +543,18 @@ class AutonomousEngine:
                     WHERE id = ?
                 """, (status, plan_id, task_id))
             conn.commit()
+
+    def resume_task_after_approval(self, plan_id: str) -> bool:
+        """Resumes an autonomous task waiting on plan approval once the plan is resolved (Anara Standard)."""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE autonomous_tasks
+                SET status = 'idle', pending_plan_id = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE pending_plan_id = ?
+            """, (plan_id,))
+            conn.commit()
+            return cursor.rowcount > 0
 
     async def _scheduler_loop(self):
         """Continuous scheduler tick inspecting pending & due autonomous tasks (Atomic Kanban Claiming)."""

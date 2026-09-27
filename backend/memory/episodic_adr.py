@@ -40,7 +40,6 @@ class EpisodicADRManager:
         try:
             conn.execute("PRAGMA busy_timeout = 15000;")
             conn.execute("PRAGMA foreign_keys = ON;")
-            conn.execute("PRAGMA journal_mode = WAL;")
             conn.execute("PRAGMA synchronous = NORMAL;")
             with conn:
                 yield conn
@@ -52,6 +51,7 @@ class EpisodicADRManager:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
+                cursor.execute("PRAGMA journal_mode = WAL;")
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS project_adr (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
