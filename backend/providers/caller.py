@@ -701,7 +701,7 @@ async def _execute_native_agent_loop(
                     history.append({"role": "user", "content": stop_gate_nudge})
                 continue
 
-            # Anti-Fabrication & Tool-Use Enforcement Stop Gate (Hermes Standard: turn_stop_gates.py)
+            # Anti-Fabrication & Tool-Use Enforcement Stop Gate (Anara Standard: Anti-Fabrication)
             simulated_execution = re.search(
                 r"(\*\([^\)]*(?:eksekusi|ngeksekusi|menjalankan|mateni|tutup|kill|close|hapus|buka|running|executing|terminating|closing|opening)[^\)]*\)\*|\*(?:ngeksekusi|eksekusi|menjalankan|mematikan|menutup|membuka|running|executing|killing|terminating)[^\*]+\*)",
                 turn.clean_text,
@@ -1273,7 +1273,7 @@ async def _execute_json_agent_loop(
                 messages.append({"role": "user", "content": stop_gate_nudge})
                 continue
 
-            # Anti-Fabrication & Tool-Use Enforcement Stop Gate (Hermes Standard: turn_stop_gates.py)
+            # Anti-Fabrication & Tool-Use Enforcement Stop Gate (Anara Standard: Anti-Fabrication)
             simulated_execution = re.search(
                 r"(\*\([^\)]*(?:eksekusi|ngeksekusi|menjalankan|mateni|tutup|kill|close|hapus|buka|running|executing|terminating|closing|opening)[^\)]*\)\*|\*(?:ngeksekusi|eksekusi|menjalankan|mematikan|menutup|membuka|running|executing|killing|terminating)[^\*]+\*)",
                 last_response,
