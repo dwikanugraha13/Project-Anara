@@ -717,7 +717,10 @@ context_lengths:
   9router/xkiro/mistralai/mistral-small-2603@http://localhost:20128/v1: 128000
   9router/xkiro/moonshotai/kimi-k2.5@http://localhost:20128/v1: 262144
   9router/xkiro/moonshotai/kimi-k2.6@http://localhost:20128/v1: 262144
+  9router/xkiro/moonshotai/kimi-k2.7-code-highspeed@http://localhost:20128/v1: 262144
   9router/xkiro/moonshotai/kimi-k2.7-code@http://localhost:20128/v1: 262144
+  9router/xkiro/moonshotai/kimi-k2.8-preview@http://localhost:20128/v1: 262144
+  9router/xkiro/moonshotai/kimi-k3-256k@http://localhost:20128/v1: 1048576
   9router/xkiro/moonshotai/kimi-k3@http://localhost:20128/v1: 1048576
   9router/xkiro/nvidia/llama-3.3-nemotron-super-49b@http://localhost:20128/v1: 128000
   9router/xkiro/nvidia/nemotron-3-nano-omni@http://localhost:20128/v1: 128000
@@ -1577,7 +1580,10 @@ context_lengths:
   xkiro/mistralai/mistral-small-2603@http://localhost:20128/v1: 128000
   xkiro/moonshotai/kimi-k2.5@http://localhost:20128/v1: 262144
   xkiro/moonshotai/kimi-k2.6@http://localhost:20128/v1: 262144
+  xkiro/moonshotai/kimi-k2.7-code-highspeed@http://localhost:20128/v1: 262144
   xkiro/moonshotai/kimi-k2.7-code@http://localhost:20128/v1: 262144
+  xkiro/moonshotai/kimi-k2.8-preview@http://localhost:20128/v1: 262144
+  xkiro/moonshotai/kimi-k3-256k@http://localhost:20128/v1: 1048576
   xkiro/moonshotai/kimi-k3@http://localhost:20128/v1: 1048576
   xkiro/nvidia/llama-3.3-nemotron-super-49b@http://localhost:20128/v1: 128000
   xkiro/nvidia/nemotron-3-nano-omni@http://localhost:20128/v1: 128000

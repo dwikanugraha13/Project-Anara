@@ -402,6 +402,8 @@ class ChannelResponse(BaseModel):
 
 def get_or_create_channel_session(req: ChannelRequest) -> int:
     """Binds an incoming channel request to an isolated persistent chat session (Anara Standard)."""
+    if req.session_id:
+        return req.session_id
     speaker = req.sender_name or "User"
     cid = str(req.channel_id or "default").strip()
     session_tag = f"[{req.channel}:{cid}]"

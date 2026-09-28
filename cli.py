@@ -104,16 +104,43 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
     if not single_prompt:
         print_banner(session_mode, model_id)
 
-    # Initialize prompt_toolkit session with persistent history and fuzzy completer
+    # Initialize prompt_toolkit session with persistent history, fuzzy completer, and safe terminal output
     history_dir = os.path.expanduser("~/.anara")
     os.makedirs(history_dir, exist_ok=True)
     history_file = os.path.join(history_dir, "cli_history")
 
-    session = PromptSession(
-        history=FileHistory(history_file),
-        auto_suggest=AutoSuggestFromHistory(),
-        completer=AnaraCliCompleter(ROOT_DIR),
-    )
+    session = None
+    if not single_prompt and sys.stdin.isatty():
+        output = None
+        try:
+            from prompt_toolkit.output.defaults import create_output
+            output = create_output()
+        except Exception:
+            try:
+                from prompt_toolkit.output.vt100 import Vt100_Output
+                output = Vt100_Output.from_pty(sys.stdout)
+            except Exception:
+                output = None
+
+        try:
+            session_kwargs = {
+                "history": FileHistory(history_file),
+                "auto_suggest": AutoSuggestFromHistory(),
+                "completer": AnaraCliCompleter(ROOT_DIR),
+            }
+            if output is not None:
+                session_kwargs["output"] = output
+            session = PromptSession(**session_kwargs)
+        except Exception:
+            session = None
+
+    async def _read_cli_line(prompt_text: str) -> str:
+        if session is not None:
+            try:
+                return await session.prompt_async(prompt_text)
+            except Exception:
+                pass
+        return await asyncio.to_thread(input, prompt_text)
 
     async def _handle_input(user_text: str):
         nonlocal session_mode, session_id, session_key
@@ -231,7 +258,8 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
             channel_id=terminal_id,
             user_id="agnan",
             sender_name=user_name,
-            trigger_type="interactive"
+            trigger_type="interactive",
+            session_id=session_id
         )
 
         streamed_any = False
@@ -273,7 +301,8 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
             terminal_ui.render_plan_approval_card(res.text)
 
             try:
-                choice = session.prompt("Approve the plan above for execution? [Y/n]: ").strip().lower()
+                raw_choice = await _read_cli_line("Approve the plan above for execution? [Y/n]: ")
+                choice = raw_choice.strip().lower()
             except (KeyboardInterrupt, EOFError):
                 choice = "n"
 
@@ -319,16 +348,16 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
         await _handle_input(single_prompt)
         return
 
-    # REPL interactive loop with prompt_toolkit
+    # REPL interactive loop with prompt_toolkit and safe terminal fallback
     while True:
         try:
             prompt_text = f"{user_name} ({session_mode}) > "
-            user_input = session.prompt(prompt_text)
+            user_input = await _read_cli_line(prompt_text)
 
             # Support multiline trailing backslash continuation
             while user_input.endswith("\\"):
                 user_input = user_input[:-1] + "\n"
-                continuation = session.prompt("... ")
+                continuation = await _read_cli_line("... ")
                 user_input += continuation
 
             should_continue = await _handle_input(user_input)
@@ -697,28 +726,44 @@ def main():
     sk_p.add_argument("--limit", type=int, default=15, help="Max results for search")
     sk_p.add_argument("--all", action="store_true", help="List all skills including disabled ones")
 
-    parser.add_argument("prompt", nargs="?", help="Execute a single command directly without entering the REPL loop")
-    parser.add_argument("--mode", choices=["conversational", "explicit_plan_build"], default="conversational", help="Select initial mode")
-    args = parser.parse_args()
+    KNOWN_SUBCOMMANDS = {"daemon", "autostart", "gateway", "computer-use", "skills"}
+    argv = sys.argv[1:]
 
-    if args.command == "daemon":
-        asyncio.run(manage_cli_daemon(args.action))
-    elif args.command == "autostart":
-        manage_cli_autostart(args.action)
-    elif args.command == "gateway":
-        asyncio.run(manage_cli_gateway(args.action, args.param))
-    elif args.command == "computer-use":
-        manage_cli_computer_use(args.action)
-    elif args.command == "skills":
-        manage_cli_skills(
-            action=args.action,
-            target=args.target,
-            source=getattr(args, "source", "all"),
-            limit=getattr(args, "limit", 15),
-            show_all=getattr(args, "all", False),
-        )
+    first_non_flag = None
+    for a in argv:
+        if not a.startswith("-"):
+            first_non_flag = a
+            break
+
+    is_subcommand = (first_non_flag in KNOWN_SUBCOMMANDS) or any(h in argv for h in ("-h", "--help"))
+
+    if is_subcommand:
+        args = parser.parse_args(argv)
+        if args.command == "daemon":
+            asyncio.run(manage_cli_daemon(args.action))
+        elif args.command == "autostart":
+            manage_cli_autostart(args.action)
+        elif args.command == "gateway":
+            asyncio.run(manage_cli_gateway(args.action, args.param))
+        elif args.command == "computer-use":
+            manage_cli_computer_use(args.action)
+        elif args.command == "skills":
+            manage_cli_skills(
+                action=args.action,
+                target=args.target,
+                source=getattr(args, "source", "all"),
+                limit=getattr(args, "limit", 15),
+                show_all=getattr(args, "all", False),
+            )
+        else:
+            asyncio.run(run_cli_interactive())
     else:
-        asyncio.run(run_cli_interactive(initial_mode=args.mode, single_prompt=args.prompt))
+        prompt_p = argparse.ArgumentParser(description="Anara General-Purpose AI Agent — CLI Runner")
+        prompt_p.add_argument("--mode", choices=["conversational", "explicit_plan_build"], default="conversational", help="Select initial mode")
+        prompt_p.add_argument("prompt", nargs="*", help="Execute a single command directly without entering the REPL loop")
+        p_args = prompt_p.parse_args(argv)
+        prompt_str = " ".join(p_args.prompt).strip() if p_args.prompt else None
+        asyncio.run(run_cli_interactive(initial_mode=p_args.mode, single_prompt=prompt_str))
 
 
 if __name__ == "__main__":
