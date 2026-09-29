@@ -17,8 +17,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
-import tempfile
 from typing import Dict, List, Optional, Tuple, Any
 
 logger = logging.getLogger(__name__)
@@ -75,27 +73,33 @@ def get_sanitized_environment() -> Dict[str, str]:
     return clean_env
 
 
-def _strip_quoted_strings(cmd: str) -> str:
-    """Strips double-quoted and single-quoted string literals to prevent false positives in commit messages/echoes."""
-    s = re.sub(r'"[^"\\]*(?:\\.[^"\\]*)*"', '""', cmd)
-    s = re.sub(r"'[^'\\]*(?:\\.[^'\\]*)*'", "''", s)
+def _strip_commit_messages(cmd: str) -> str:
+    """Strips git commit messages and echo strings while preserving quoted paths (Anara Security Parity)."""
+    # Strips -m "..." or --message="..."
+    s = re.sub(r'(-m\s+|--message(?:=|\s+))"[^"\\]*(?:\\.[^"\\]*)*"', r'\1""', cmd)
+    s = re.sub(r"(-m\s+|--message(?:=|\s+))'[^'\\]*(?:\\.[^'\\]*)*'", r"\1''", s)
+    # Strips echo "..."
+    s = re.sub(r'\becho\s+"[^"\\]*(?:\\.[^"\\]*)*"', 'echo ""', s)
+    s = re.sub(r"\becho\s+'[^'\\]*(?:\\.[^'\\]*)*'", "echo ''", s)
     return s
 
 
 def check_command_safety(command: str) -> Tuple[bool, Optional[str]]:
     """
     Validates command against destructive and host-takeover patterns.
-    Strips quoted literals before pattern matching to avoid false positives on commit messages.
+    Strips commit messages before pattern matching to avoid false positives while keeping quoted target paths.
     Returns (is_safe, error_reason).
     """
     cmd_raw = (command or "").strip()
     if not cmd_raw:
         return False, "Command string cannot be empty."
 
-    unquoted = _strip_quoted_strings(cmd_raw).lower()
+    # Normalize quotes around file paths: e.g. "anara_brain.db" -> anara_brain.db
+    cleaned = _strip_commit_messages(cmd_raw)
+    normalized = re.sub(r'["\']([a-zA-Z0-9_.\-\/\\]+)["\']', r'\1', cleaned).lower()
 
     for pattern in HOST_TAKEOVER_PATTERNS:
-        if re.search(pattern, unquoted):
+        if re.search(pattern, normalized) or re.search(pattern, cmd_raw.lower()):
             logger.warning(f"[SandboxSecurity] Blocked dangerous command pattern: {pattern} in '{command}'")
             return False, f"SANDBOX SECURITY ERROR: Command '{command}' triggered high-risk host takeover restrictions."
 

@@ -478,11 +478,15 @@ class AnaraAgent:
 
     def save_uploaded_file(self, filename: str, content_bytes: bytes, relative_path: Optional[str] = None, session_id: Optional[int] = None) -> Dict[str, Any]:
         """Saves an uploaded file into the session-isolated workspace directory, preserving relative subdirectory structure."""
-        target_dir = self.get_session_dir(session_id)
+        target_dir = os.path.abspath(self.get_session_dir(session_id))
         raw_rel = (relative_path or filename or "file.txt").replace("\\", "/")
         clean_rel = re.sub(r"^[a-zA-Z]:[/\\]?", "", raw_rel).lstrip("/")
         
-        dest_path = os.path.join(target_dir, clean_rel)
+        # Confinement guard against path traversal attacks (e.g. ../../)
+        dest_path = os.path.abspath(os.path.join(target_dir, clean_rel))
+        if not (dest_path == target_dir or dest_path.startswith(target_dir + os.sep)):
+            raise ValueError(f"File path traversal forbidden: '{clean_rel}' escapes workspace root")
+        
         os.makedirs(os.path.dirname(dest_path), exist_ok=True)
         
         with open(dest_path, "wb") as f:

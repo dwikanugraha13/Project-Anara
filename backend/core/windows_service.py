@@ -129,8 +129,10 @@ class WindowsAutostartManager:
             }
 
         # 1. Try Windows Task Scheduler
-        # Format delay as HHMM:SS
-        delay_str = f"0000:{delay_seconds:02d}"
+        # Format delay as mmmm:ss (minutes up to 9999, seconds up to 59 per schtasks spec)
+        mins = delay_seconds // 60
+        secs = delay_seconds % 60
+        delay_str = f"{mins:04d}:{secs:02d}"
         cmd_str = f'wscript.exe "{launcher}"'
         sch_cmd = [
             "schtasks",

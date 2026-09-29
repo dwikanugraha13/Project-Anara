@@ -229,8 +229,9 @@ class ChatSessionsMixin:
         return self.get_session(new_id)
 
     def patch_session(self, session_id: Any, title: Optional[str] = None,
-                      is_pinned: Optional[bool] = None, is_archived: Optional[bool] = None) -> bool:
-        """Updates title, pinned, or archived status of a session."""
+                      is_pinned: Optional[bool] = None, is_archived: Optional[bool] = None,
+                      session_mode: Optional[str] = None) -> bool:
+        """Updates title, pinned, archived, or session_mode status of a session."""
         sid = self._resolve_session_id(session_id) or session_id
         sets, params = [], []
         if title is not None:
@@ -244,6 +245,11 @@ class ChatSessionsMixin:
         if is_archived is not None:
             sets.append("is_archived = ?")
             params.append(1 if is_archived else 0)
+        if session_mode is not None:
+            clean_mode = session_mode.strip().lower()
+            if clean_mode in ("conversational", "plan", "build", "explicit_plan_build"):
+                sets.append("session_mode = ?")
+                params.append(clean_mode)
         if not sets:
             return False
         params.append(sid)
@@ -257,7 +263,7 @@ class ChatSessionsMixin:
             ok = cursor.rowcount > 0
         if ok:
             self._emit_mutation("session_updated", {
-                "id": sid, "title": title, "is_pinned": is_pinned, "is_archived": is_archived
+                "id": sid, "title": title, "is_pinned": is_pinned, "is_archived": is_archived, "session_mode": session_mode
             })
         return ok
 

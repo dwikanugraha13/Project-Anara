@@ -107,7 +107,7 @@ async def bulk_delete_sessions_endpoint(archived_only: bool = True, keep_pinned:
     deleted = memory_engine.delete_sessions_bulk(archived_only=archived_only, keep_pinned=keep_pinned)
     try:
         ws = anara_agent.base_workspace_path
-        valid_ids = set(s["id"] for s in memory_engine.get_sessions(include_archived=True))
+        valid_ids = set(s["id"] for s in memory_engine.get_sessions(include_archived=True, limit=100000))
         if os.path.exists(ws):
             for item in os.listdir(ws):
                 if item.startswith("session_"):
