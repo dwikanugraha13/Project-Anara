@@ -454,6 +454,23 @@ export default function ChatSessionSidebar({
     }
   };
 
+  const forkSession = async (s: ChatSession) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/chat/sessions/${s.id}/fork`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.session && data.session.id) {
+          await loadSessions();
+          onSelectSession(data.session.id);
+        }
+      }
+    } catch (err) {
+      console.warn("[Sessions] fork failed:", err);
+    }
+  };
+
   return (
     <aside
       className={`${embedded ? "relative w-full" : "fixed top-0 left-0 z-40"} h-full flex flex-col pointer-events-auto select-none group/sidebar`}
@@ -547,6 +564,7 @@ export default function ChatSessionSidebar({
           }}
           onPatchSession={patchSession}
           onDeleteSession={deleteSession}
+          onForkSession={forkSession}
           onDropPin={handleDropPin}
           onDropUnpin={handleDropUnpin}
           draggedSession={draggedSession}

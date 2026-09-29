@@ -16,6 +16,7 @@ interface SessionHistoryListProps {
   sessionType?: "chat" | "code";
   onPatchSession: (id: number, body: Record<string, unknown>) => Promise<void>;
   onDeleteSession: (s: ChatSession) => Promise<void>;
+  onForkSession?: (s: ChatSession) => Promise<void>;
   onDropPin: (id: number) => void;
   onDropUnpin: (id: number) => void;
   draggedSession: ChatSession | null;
@@ -39,6 +40,7 @@ export default function SessionHistoryList({
   sessionType,
   onPatchSession,
   onDeleteSession,
+  onForkSession,
   onDropPin,
   onDropUnpin,
   draggedSession,
@@ -462,6 +464,13 @@ export default function SessionHistoryList({
                                       label: s.is_pinned === 1 ? "Unpin" : "Pin",
                                       action: () => {
                                         onPatchSession(s.id, { is_pinned: s.is_pinned !== 1 });
+                                        setMenuOpenId(null);
+                                      },
+                                    },
+                                    {
+                                      label: "Branch / Fork",
+                                      action: () => {
+                                        onForkSession?.(s);
                                         setMenuOpenId(null);
                                       },
                                     },

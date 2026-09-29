@@ -62,19 +62,23 @@ class SoulUpdateRequest(BaseModel):
 @router.post("/api/agent/pick-local-folder")
 async def pick_local_folder_endpoint(req: FolderImportRequest):
     """Opens the native Windows folder picker and attaches the selected real folder to a chat session."""
-    import tkinter as tk
-    from tkinter import filedialog
-
     folder_path = req.folder_path
     if not folder_path:
-        try:
-            root = tk.Tk()
-            root.withdraw()
-            root.wm_attributes("-topmost", 1)
-            folder_path = filedialog.askdirectory(title="Select Project Folder for Anara Agent")
-            root.destroy()
-        except Exception as e:
-            logger.warning(f"[Workspace Folder Picker] Tkinter dialog error: {e}")
+        def _pick_sync() -> str:
+            try:
+                import tkinter as tk
+                from tkinter import filedialog
+                root = tk.Tk()
+                root.withdraw()
+                root.wm_attributes("-topmost", 1)
+                path = filedialog.askdirectory(title="Select Project Folder for Anara Agent")
+                root.destroy()
+                return path or ""
+            except Exception as e:
+                logger.warning(f"[Workspace Folder Picker] Tkinter dialog error: {e}")
+                return ""
+
+        folder_path = await asyncio.to_thread(_pick_sync)
 
     if not folder_path:
         return {"status": "cancelled"}

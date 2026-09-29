@@ -5,7 +5,6 @@ with bounded log tailing, PID lifecycle supervision, session isolation, and clea
 termination with PID-reuse protection (Anara Enterprise Architecture).
 """
 
-import ctypes
 import logging
 import os
 import re
@@ -38,7 +37,7 @@ def _tail_file_block_reverse(file_path: str, max_lines: int = 50, block_size: in
             bytes_to_read = file_size
 
             while bytes_to_read > 0 and len(lines) < max_lines:
-                chunk_size = min(buffer_size, bytes_to_read)
+                chunk_size = min(block_size, bytes_to_read)
                 bytes_to_read -= chunk_size
                 f.seek(bytes_to_read, os.SEEK_SET)
                 chunk = f.read(chunk_size) + remainder
@@ -190,7 +189,7 @@ class ProcessRegistry:
             return {"status": "error", "message": f"No logs found for process '{proc_id}'."}
 
         try:
-            tail_lines = _tail_file_bounded(log_path, max_lines=max(1, lines))
+            tail_lines = _tail_file_block_reverse(str(log_path), max_lines=max(1, lines))
             return {
                 "status": "success",
                 "process_id": proc_id,

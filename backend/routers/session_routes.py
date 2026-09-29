@@ -75,6 +75,14 @@ async def patch_session_endpoint(session_id: str, req: SessionPatchRequest):
         raise HTTPException(status_code=400, detail="Session not found or no changes applied")
     return {"status": "success", "session": memory_engine.get_session(session_id)}
 
+@router.post("/api/chat/sessions/{session_id}/fork")
+async def fork_session_endpoint(session_id: str):
+    """Forks an existing session into an independent conversation branch, copying messages and workspace state."""
+    session = memory_engine.fork_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Original session not found or could not be forked")
+    return {"status": "success", "session": session}
+
 @router.delete("/api/chat/sessions/{session_id}")
 async def delete_session_endpoint(session_id: str):
     """Deletes a thread together with every message and cleans its workspace folder on disk."""

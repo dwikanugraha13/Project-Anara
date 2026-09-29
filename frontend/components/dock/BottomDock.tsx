@@ -168,7 +168,7 @@ export default function BottomDock({
     const el = textareaRef.current;
     if (!el || isInputExpanded) return;
     if (!inputMessage) {
-      el.style.height = "32px";
+      el.style.height = "36px";
       setIsInputOverflowed(false);
       return;
     }
@@ -406,10 +406,10 @@ export default function BottomDock({
                     onChange={(e) => setInputMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="Ask anything, / for commands, @ for context..."
-                    className={`w-full bg-transparent border-none py-1.5 px-1 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none font-sans resize-none custom-scrollbar leading-relaxed overflow-y-auto ${
-                      isInputExpanded ? "flex-1 h-full max-h-none" : ""
-                    }`}
-                    style={isInputExpanded ? { minHeight: "140px" } : { maxHeight: "180px", minHeight: "32px" }}
+                    className={`w-full bg-transparent border-none py-1.5 px-1 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none font-sans resize-none custom-scrollbar leading-relaxed ${
+                      isInputOverflowed || isInputExpanded ? "overflow-y-auto" : "overflow-hidden"
+                    } ${isInputExpanded ? "flex-1 h-full max-h-none" : ""}`}
+                    style={isInputExpanded ? { minHeight: "140px" } : { maxHeight: "180px", minHeight: "36px" }}
                     autoFocus
                   />
                 </div>

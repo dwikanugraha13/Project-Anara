@@ -109,7 +109,7 @@ export function RecursiveTreeNode({
           <div className="flex flex-col border-l border-white/[0.06] ml-2.5">
             {node.children!.map((child, idx) => (
               <RecursiveTreeNode
-                key={idx}
+                key={child.path || `${child.name}-${idx}`}
                 node={child}
                 depth={depth + 1}
                 onOpenFileIDE={onOpenFileIDE}

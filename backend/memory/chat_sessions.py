@@ -1,7 +1,9 @@
 import asyncio
 import json
 import logging
+import os
 import re
+import shutil
 from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger(__name__)
@@ -166,6 +168,65 @@ class ChatSessionsMixin:
         if ok:
             self._emit_mutation("session_updated", {"id": sid, "title": clean})
         return ok
+
+    def fork_session(self, session_id: Any, title_prefix: str = "Branch: ") -> Optional[Dict[str, Any]]:
+        """
+        Forks an existing session into an independent conversation branch (Anara Standard).
+        Copies all conversation turns, metadata, and workspace configuration.
+        """
+        orig = self.get_session(session_id)
+        if not orig:
+            return None
+
+        orig_id = orig["id"]
+        forked_title = f"{title_prefix}{orig.get('title') or 'Chat'}"[:120]
+        new_session = self.create_session(
+            speaker_name=orig.get("speaker_name"),
+            title=forked_title,
+            session_type=orig.get("session_type", "chat"),
+            channel=orig.get("channel", "web"),
+            session_mode=orig.get("session_mode"),
+        )
+        new_id = new_session["id"]
+
+        # Copy conversation turns
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT speaker_name, user_text, ai_text, media_type, media_url,
+                       visual_data_json, created_at
+                FROM conversations
+                WHERE session_id = ?
+                ORDER BY id ASC
+            """, (orig_id,))
+            rows = cursor.fetchall()
+            for r in rows:
+                cursor.execute("""
+                    INSERT INTO conversations (session_id, speaker_name, user_text, ai_text,
+                                              media_type, media_url, visual_data_json, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (new_id, r["speaker_name"], r["user_text"], r["ai_text"],
+                      r["media_type"], r["media_url"], r["visual_data_json"], r["created_at"]))
+
+            cursor.execute("UPDATE chat_sessions SET message_count = ? WHERE id = ?", (len(rows), new_id))
+            conn.commit()
+
+        # Copy workspace files if present on disk
+        try:
+            from core import anara_agent
+            orig_dir = anara_agent.get_session_dir(orig_id)
+            new_dir = anara_agent.get_session_dir(new_id)
+            if os.path.exists(orig_dir) and orig_dir != new_dir and not orig_dir.endswith("Project Anara"):
+                import shutil
+                if os.path.exists(new_dir):
+                    shutil.rmtree(new_dir, ignore_errors=True)
+                shutil.copytree(orig_dir, new_dir, dirs_exist_ok=True)
+        except Exception as e:
+            logger.warning(f"[ChatSessions] Note: workspace copy during fork: {e}")
+
+        logger.info(f"[ChatSessions] Forked session #{orig_id} -> #{new_id} ('{forked_title}') with {len(rows)} messages")
+        self._emit_mutation("session_created", {"id": new_id, "forked_from": orig_id, "title": forked_title})
+        return self.get_session(new_id)
 
     def patch_session(self, session_id: Any, title: Optional[str] = None,
                       is_pinned: Optional[bool] = None, is_archived: Optional[bool] = None) -> bool:
