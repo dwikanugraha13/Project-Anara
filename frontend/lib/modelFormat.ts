@@ -6,22 +6,33 @@
  *      'openai/gpt-4o' -> 'GPT-4o'
  */
 
+function extractEffortSuffix(raw: string): string {
+  const lower = raw.toLowerCase();
+  if (lower.endsWith("-high") || lower.includes("-high-") || lower.includes("-high/")) return " (High)";
+  if (lower.endsWith("-medium") || lower.includes("-medium-") || lower.includes("-medium/")) return " (Medium)";
+  if (lower.endsWith("-low") || lower.includes("-low-") || lower.includes("-low/")) return " (Low)";
+  if (lower.endsWith("-thinking") || lower.includes("-thinking-") || lower.includes("-thinking/")) return " (Thinking)";
+  return "";
+}
+
 export function formatModelDisplayName(raw: string | undefined | null): string {
   if (!raw) return "Model AI";
   const lower = raw.toLowerCase();
+  const effortSuffix = extractEffortSuffix(raw);
 
   // Gemini family
-  if (lower.includes("gemini-3.8-flash")) return "Gemini 3.8 Flash";
-  if (lower.includes("gemini-3.5-flash")) return "Gemini 3.5 Flash";
-  if (lower.includes("gemini-2.5-flash")) return "Gemini 2.5 Flash";
+  if (lower.includes("gemini-3.8-flash")) return `Gemini 3.8 Flash${effortSuffix}`;
+  if (lower.includes("gemini-3.5-flash")) return `Gemini 3.5 Flash${effortSuffix}`;
+  if (lower.includes("gemini-2.5-flash")) return `Gemini 2.5 Flash${effortSuffix}`;
+  if (lower.includes("gemini-2.5-pro")) return `Gemini 2.5 Pro${effortSuffix}`;
   if (lower.includes("gemini-3.1-flash-live")) return "Gemini 3.1 Live";
-  if (lower.includes("gemini-2.0-flash")) return "Gemini 2.0 Flash";
+  if (lower.includes("gemini-2.0-flash")) return `Gemini 2.0 Flash${effortSuffix}`;
   if (lower.includes("gemini-1.5-pro")) return "Gemini 1.5 Pro";
   if (lower.includes("gemini-1.5-flash")) return "Gemini 1.5 Flash";
 
   // Anthropic Claude family
-  if (lower.includes("claude-3-7-sonnet")) return "Claude 3.7 Sonnet";
-  if (lower.includes("claude-3-5-sonnet")) return "Claude 3.5 Sonnet";
+  if (lower.includes("claude-3-7-sonnet")) return `Claude 3.7 Sonnet${effortSuffix}`;
+  if (lower.includes("claude-3-5-sonnet")) return `Claude 3.5 Sonnet${effortSuffix}`;
   if (lower.includes("claude-3-5-haiku")) return "Claude 3.5 Haiku";
   if (lower.includes("claude-3-opus")) return "Claude 3 Opus";
 
@@ -30,8 +41,8 @@ export function formatModelDisplayName(raw: string | undefined | null): string {
   if (lower.includes("gpt-4o")) return "GPT-4o";
   if (lower.includes("gpt-4.5")) return "GPT-4.5 Preview";
   if (lower.includes("o1-mini")) return "OpenAI o1-mini";
-  if (lower.includes("o1-preview") || lower.includes("o1")) return "OpenAI o1";
-  if (lower.includes("o3-mini")) return "OpenAI o3-mini";
+  if (lower.includes("o1-preview") || lower.includes("o1")) return `OpenAI o1${effortSuffix}`;
+  if (lower.includes("o3-mini")) return `OpenAI o3-mini${effortSuffix}`;
 
   // DeepSeek family
   if (lower.includes("deepseek-r1")) return "DeepSeek R1";

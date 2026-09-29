@@ -207,11 +207,38 @@ export default function ModelSelectorDropdown({
                       <span className="px-1.5 py-0.5 rounded bg-white/[0.08] text-slate-300 font-mono text-[9px] font-semibold">
                         {capBadge}
                       </span>
-                      {isReasoningSupported(m) && (
-                        <span className="px-1.5 py-0.5 rounded bg-purple-500/15 border border-purple-400/25 text-purple-300 font-mono text-[9px] font-semibold">
-                          REASONING
-                        </span>
-                      )}
+                      {(() => {
+                        const mid = (m.id || "").toLowerCase();
+                        if (mid.includes("-high")) {
+                          return (
+                            <span className="px-1.5 py-0.5 rounded bg-purple-500/20 border border-purple-400/35 text-purple-200 font-mono text-[9px] font-bold">
+                              HIGH REASONING
+                            </span>
+                          );
+                        }
+                        if (mid.includes("-medium")) {
+                          return (
+                            <span className="px-1.5 py-0.5 rounded bg-purple-500/15 border border-purple-400/25 text-purple-300 font-mono text-[9px] font-semibold">
+                              MEDIUM REASONING
+                            </span>
+                          );
+                        }
+                        if (mid.includes("-low")) {
+                          return (
+                            <span className="px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-400/20 text-purple-300 font-mono text-[9px] font-medium">
+                              LOW REASONING
+                            </span>
+                          );
+                        }
+                        if (isReasoningSupported(m)) {
+                          return (
+                            <span className="px-1.5 py-0.5 rounded bg-purple-500/15 border border-purple-400/25 text-purple-300 font-mono text-[9px] font-semibold">
+                              REASONING
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
                       <span className="text-[9.5px] text-slate-400 truncate">
                         {m.provider?.toUpperCase()} · {m.badge?.replace(/[^\x20-\x7E]/g, "").trim()}
                       </span>
