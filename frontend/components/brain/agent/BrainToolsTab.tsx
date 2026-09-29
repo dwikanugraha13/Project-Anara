@@ -103,29 +103,29 @@ export default function BrainToolsTab() {
   return (
     <div className="space-y-4 font-sans select-text">
       {/* Header & Sub-Tab Switcher */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 rounded-2xl liquid-glass border border-white/10">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-white/[0.025] border border-white/[0.08]">
         <div className="space-y-0.5">
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-bold text-white font-mono">
-              Tools Catalog, Sub-Agent &amp; Autonomous
+            <h3 className="text-xs sm:text-sm font-semibold text-white font-mono">
+              Agent Execution Instruments
             </h3>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-400/30 font-semibold">
+            <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-400/20 font-medium">
               {toolsCatalog.length || 24} Tools
             </span>
           </div>
           <p className="text-xs text-slate-400">
-            Physical instruments, background workers, and autonomous scheduler (Anara Standard &amp; OpenCode).
+            Physical execution instruments, background workers, and autonomous scheduler.
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-black/40 border border-white/10 font-mono text-xs flex-wrap">
+        <div className="flex items-center gap-1 p-0.5 rounded-lg bg-black/40 border border-white/[0.08] font-mono text-xs flex-wrap">
           <button
             type="button"
             onClick={() => setToolsSubTab("tools")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors duration-150 ease-out cursor-pointer select-none ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all cursor-pointer select-none ${
               toolsSubTab === "tools"
-                ? "bg-white/[0.12] text-white border-white/20 shadow-sm"
-                : "border-transparent text-slate-400 hover:text-white hover:bg-white/[0.04]"
+                ? "bg-white/[0.08] text-white border-white/[0.14] shadow-sm"
+                : "border-transparent text-slate-400 hover:text-white hover:bg-white/[0.03]"
             }`}
           >
             <svg className="w-3.5 h-3.5 text-cyan-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -137,10 +137,10 @@ export default function BrainToolsTab() {
           <button
             type="button"
             onClick={() => setToolsSubTab("autonomous")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors duration-150 ease-out cursor-pointer select-none ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all cursor-pointer select-none ${
               toolsSubTab === "autonomous"
-                ? "bg-white/[0.12] text-white border-white/20 shadow-sm"
-                : "border-transparent text-slate-400 hover:text-white hover:bg-white/[0.04]"
+                ? "bg-white/[0.08] text-white border-white/[0.14] shadow-sm"
+                : "border-transparent text-slate-400 hover:text-white hover:bg-white/[0.03]"
             }`}
           >
             <svg className="w-3.5 h-3.5 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -151,16 +151,16 @@ export default function BrainToolsTab() {
           <button
             type="button"
             onClick={() => setToolsSubTab("subagents")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors duration-150 ease-out cursor-pointer select-none ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all cursor-pointer select-none ${
               toolsSubTab === "subagents"
-                ? "bg-white/[0.12] text-white border-white/20 shadow-sm"
-                : "border-transparent text-slate-400 hover:text-white hover:bg-white/[0.04]"
+                ? "bg-white/[0.08] text-white border-white/[0.14] shadow-sm"
+                : "border-transparent text-slate-400 hover:text-white hover:bg-white/[0.03]"
             }`}
           >
             <svg className="w-3.5 h-3.5 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
             </svg>
-            <span>Misi Sub-Agent ({subagentTasks.length})</span>
+            <span>Sub-Agent Swarms ({subagentTasks.length})</span>
           </button>
         </div>
       </div>
@@ -171,21 +171,21 @@ export default function BrainToolsTab() {
           {/* Category Filters */}
           <div className="flex items-center gap-1.5 flex-wrap font-mono text-xs">
             {[
-              { id: "all", label: "Semua" },
+              { id: "all", label: "All" },
               { id: "coding", label: "Coding & Files" },
-              { id: "exploration", label: "Search & Exploration" },
-              { id: "system", label: "Terminal & Sistem" },
-              { id: "intelligence", label: "Intelijen & Riset" },
-              { id: "connectivity", label: "Konektivitas" },
+              { id: "exploration", label: "Search & Navigation" },
+              { id: "system", label: "Terminal & Shell" },
+              { id: "intelligence", label: "Intelligence & Research" },
+              { id: "connectivity", label: "Connectivity & MCP" },
             ].map((cat) => (
               <button
                 key={cat.id}
                 type="button"
                 onClick={() => setSelectedToolCategory(cat.id)}
-                className={`px-3 py-1 rounded-lg border transition-all cursor-pointer text-[11px] ${
+                className={`px-2.5 py-1 rounded-md border transition-all cursor-pointer text-[11px] ${
                   selectedToolCategory === cat.id
-                    ? "bg-cyan-500/20 text-cyan-200 border-cyan-400/40 font-bold"
-                    : "bg-white/[0.03] text-slate-400 border-white/5 hover:text-white"
+                    ? "bg-white/[0.08] text-white border-white/[0.14] font-medium shadow-sm"
+                    : "bg-white/[0.02] text-slate-400 border-white/[0.06] hover:text-white"
                 }`}
               >
                 {cat.label}
@@ -199,7 +199,7 @@ export default function BrainToolsTab() {
               return (
                 <div
                   key={tool.name}
-                  className="p-3.5 rounded-2xl liquid-glass border border-white/10 space-y-2 hover:border-white/20 transition-all font-mono"
+                  className="p-3.5 rounded-xl bg-white/[0.025] hover:bg-white/[0.04] border border-white/[0.08] hover:border-white/[0.15] space-y-2 transition-all font-mono shadow-sm"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">

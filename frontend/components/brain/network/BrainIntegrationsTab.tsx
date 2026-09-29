@@ -308,9 +308,9 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
 
   return (
     <>
-      <div className="space-y-6">
+      <div className="space-y-4">
         {/* Header Banner */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl liquid-glass border border-white/10">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3.5 sm:p-4 rounded-xl bg-white/[0.025] border border-white/[0.08] shadow-lg">
           <div>
             <div className="flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
@@ -325,12 +325,12 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
         </div>
     
         {/* Grid Kartu Integrasi */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           {/* 1. KARTU WHATSAPP */}
-          <div className={`p-5 rounded-2xl border transition-all flex flex-col justify-between ${
+          <div className={`p-4 rounded-xl border transition-all flex flex-col justify-between shadow-sm ${
             waStatus === "connected"
-              ? "liquid-glass border-emerald-400/40 shadow-[0_0_25px_rgba(52,211,153,0.1)]"
-              : "liquid-glass-subtle hover:border-white/20"
+              ? "bg-white/[0.035] border-emerald-500/30 shadow-[0_0_20px_rgba(52,211,153,0.06)]"
+              : "bg-white/[0.02] border-white/[0.08] hover:border-white/[0.15]"
           }`}>
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3.5">

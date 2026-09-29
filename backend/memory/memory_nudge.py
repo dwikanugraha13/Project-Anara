@@ -122,6 +122,9 @@ class TaskScratchpad:
                 if 0 <= idx < len(self.steps):
                     self.steps[idx]["status"] = clean_status
                     updated = True
+                elif 1 <= idx <= len(self.steps):
+                    self.steps[idx - 1]["status"] = clean_status
+                    updated = True
             except (ValueError, TypeError):
                 pass
 
@@ -220,15 +223,28 @@ class MemoryNudgeManager:
         self._trackers: Dict[str, SessionTurnTracker] = {}
         self._scratchpads: Dict[str, TaskScratchpad] = {}
 
+    def _canonical_key(self, session_id: Any) -> str:
+        """Resolves hybrid session keys (int id or canonical key string) to a consistent string key."""
+        if not session_id:
+            return "default"
+        try:
+            from memory import memory_engine
+            sid = memory_engine._resolve_session_id(session_id)
+            if sid is not None:
+                return str(sid)
+        except Exception:
+            pass
+        return str(session_id)
+
     def get_tracker(self, session_id: Any) -> SessionTurnTracker:
-        s_key = str(session_id or "default")
+        s_key = self._canonical_key(session_id)
         with self._lock:
             if s_key not in self._trackers:
                 self._trackers[s_key] = SessionTurnTracker(session_id=s_key)
             return self._trackers[s_key]
 
     def get_scratchpad(self, session_id: Any) -> TaskScratchpad:
-        s_key = str(session_id or "default")
+        s_key = self._canonical_key(session_id)
         with self._lock:
             if s_key not in self._scratchpads:
                 pad = TaskScratchpad(session_id=s_key)

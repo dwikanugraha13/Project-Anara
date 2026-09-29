@@ -24,7 +24,6 @@ class BaseMemoryEngine:
     def __init__(self, db_path: str = DB_PATH):
         self.db_path = db_path
         self._lock = threading.RLock()
-        self._pending_proposals: Dict[str, Dict[str, Any]] = {}
         self._mutation_listeners: List[Callable[[str, Dict[str, Any]], Any]] = []
         self._last_adapt_ts: Dict[int, float] = {}
         self._prompt_context_cache: Dict[Tuple[str, bool], Tuple[float, str]] = {}
@@ -550,11 +549,13 @@ class BaseMemoryEngine:
                         if gap_too_big:
                             raw_title = (row["user_text"] or "Session").strip()
                             title = (raw_title[:44] + "...") if len(raw_title) > 44 else raw_title
+                            from core.session_ids import new_session_key
+                            skey = new_session_key(cur_time)
                             cursor.execute(
-                                "INSERT INTO chat_sessions (title, speaker_name, created_at, updated_at) "
-                                "VALUES (?, ?, ?, ?)",
+                                "INSERT INTO chat_sessions (title, speaker_name, session_key, created_at, updated_at) "
+                                "VALUES (?, ?, ?, ?, ?)",
                                 (title or "Previous Session", row["speaker_name"],
-                                 row["created_at"], row["created_at"])
+                                 skey, row["created_at"], row["created_at"])
                             )
                             session_id = cursor.lastrowid
                             grouped += 1
@@ -569,6 +570,13 @@ class BaseMemoryEngine:
                             SELECT COUNT(*) FROM conversations WHERE conversations.session_id = chat_sessions.id
                         )
                     """)
+                    # Final safety check: ensure all chat_sessions have a valid canonical session_key
+                    cursor.execute("SELECT id, created_at FROM chat_sessions WHERE session_key IS NULL")
+                    unkeyed = cursor.fetchall()
+                    if unkeyed:
+                        from core.session_ids import new_session_key
+                        for u_row in unkeyed:
+                            cursor.execute("UPDATE chat_sessions SET session_key = ? WHERE id = ?", (new_session_key(), u_row[0]))
                     conn.commit()
                     logger.info(
                         f"[ChatSessions] Backfilled {len(orphans)} legacy message(s) into {grouped} session(s)"

@@ -27,6 +27,49 @@ interface BrainNavTab {
   badge?: number;
 }
 
+const TAB_DESCRIPTIONS: Record<BrainTabId, { title: string; subtitle: string; category: string }> = {
+  soul: {
+    title: "Soul & Rules",
+    subtitle: "Core agent directives, persona, user preferences, and durable facts",
+    category: "Autonomous Agent",
+  },
+  tools: {
+    title: "Tools Catalog",
+    subtitle: "Physical execution instruments, subagent delegates, and background runners",
+    category: "Autonomous Agent",
+  },
+  skills: {
+    title: "Skills Catalog",
+    subtitle: "Procedural workflows, custom capabilities, and extensible skill hub",
+    category: "Autonomous Agent",
+  },
+  memories: {
+    title: "Persistent Memory",
+    subtitle: "Durable SQLite knowledge store, episodic memory nodes, and semantic indexing",
+    category: "Memory & Context",
+  },
+  todos: {
+    title: "Tasks & Todos",
+    subtitle: "Autonomous task scratchpad, multi-step checklists, and durable priorities",
+    category: "Memory & Context",
+  },
+  projects: {
+    title: "Project Workspaces",
+    subtitle: "Tracked codebase roots, git branches, architectural contexts, and goals",
+    category: "Memory & Context",
+  },
+  providers: {
+    title: "Providers & Gateway",
+    subtitle: "LLM inference backends, model routing, API accounts pool, and token telemetry",
+    category: "AI & Network",
+  },
+  integrations: {
+    title: "Integrations & Channels",
+    subtitle: "Omnichannel gateways (Telegram, WhatsApp, CLI) and external platform connectors",
+    category: "AI & Network",
+  },
+};
+
 export default function AnaraBrain({
   isOpen,
   onClose,
@@ -37,6 +80,8 @@ export default function AnaraBrain({
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<BrainStats | null>(null);
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
+
+  const currentMeta = TAB_DESCRIPTIONS[activeTab] || TAB_DESCRIPTIONS.soul;
 
   const fetchBrainData = useCallback(async () => {
     setLoading(true);
@@ -97,19 +142,19 @@ export default function AnaraBrain({
       <div className="absolute bottom-0 right-1/5 w-[520px] h-[520px] bg-indigo-600/[0.06] rounded-full blur-[160px] pointer-events-none animate-liquid-2 [transform:translateZ(0)] [will-change:transform]" />
       <div className="absolute top-1/3 right-1/3 w-[380px] h-[380px] bg-purple-600/[0.03] rounded-full blur-[140px] pointer-events-none animate-liquid-3 [transform:translateZ(0)] [will-change:transform]" />
 
-      {/* ── Main Framed Window ── */}
+      {/* ── Main Framed Window (Liquid Glass Obsidian Studio) ── */}
       <div
-        className="relative w-full h-full max-w-7xl max-h-[92vh] rounded-2xl border border-white/10 bg-[#070c18] shadow-[0_20px_70px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col md:flex-row pointer-events-auto"
+        className="relative w-full h-full max-w-7xl max-h-[92vh] rounded-2xl border border-white/[0.08] bg-[#060913] shadow-[0_24px_80px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col md:flex-row pointer-events-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Specular Sheen Highlight */}
-        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent pointer-events-none z-20" />
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/[0.12] to-transparent pointer-events-none z-20" />
 
         {/* ── SIDEBAR KIRI: Navigasi Terpusat ── */}
-        <div className="w-full md:w-60 shrink-0 border-b md:border-b-0 md:border-r border-white/10 bg-slate-950/70 flex flex-col overflow-y-auto no-scrollbar p-3 space-y-4 select-none">
+        <div className="w-full md:w-60 shrink-0 border-b md:border-b-0 md:border-r border-white/[0.08] bg-[#080d1a]/90 backdrop-blur-xl flex flex-col overflow-y-auto no-scrollbar p-3 space-y-4 select-none">
           {/* Section 1: AUTONOMOUS AGENT */}
           <div className="space-y-1">
-            <span className="px-2.5 text-[10px] font-mono font-bold tracking-wider text-slate-500 uppercase">
+            <span className="px-2.5 text-[10px] font-mono font-semibold tracking-wider text-slate-500 uppercase">
               Autonomous Agent
             </span>
             <div className="space-y-0.5 font-mono">
@@ -148,10 +193,10 @@ export default function AnaraBrain({
                   <button
                     key={item.id}
                     onClick={() => setActiveTab(item.id)}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium border transition-colors duration-150 ease-out cursor-pointer select-none ${
+                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium border transition-all cursor-pointer select-none ${
                       isActive
-                        ? "bg-white/[0.12] text-white border-white/15 shadow-sm"
-                        : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.04] hover:border-white/[0.06]"
+                        ? "bg-white/[0.08] text-white border-white/[0.12] shadow-sm"
+                        : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]"
                     }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -159,7 +204,7 @@ export default function AnaraBrain({
                       <span className="truncate">{item.label}</span>
                     </div>
                     {item.badge !== undefined && item.badge > 0 && (
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors duration-150 ${isActive ? "bg-cyan-400/20 text-cyan-200" : "bg-white/[0.08] text-slate-400"}`}>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors duration-150 ${isActive ? "bg-cyan-400/20 text-cyan-200" : "bg-white/[0.06] text-slate-400"}`}>
                         {item.badge}
                       </span>
                     )}
@@ -171,7 +216,7 @@ export default function AnaraBrain({
 
           {/* Section 2: MEMORY & CONTEXT */}
           <div className="space-y-1">
-            <span className="px-2.5 text-[10px] font-mono font-bold tracking-wider text-slate-500 uppercase">
+            <span className="px-2.5 text-[10px] font-mono font-semibold tracking-wider text-slate-500 uppercase">
               Memory &amp; Context
             </span>
             <div className="space-y-0.5 font-mono">
@@ -211,10 +256,10 @@ export default function AnaraBrain({
                   <button
                     key={item.id}
                     onClick={() => setActiveTab(item.id)}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium border transition-colors duration-150 ease-out cursor-pointer select-none ${
+                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium border transition-all cursor-pointer select-none ${
                       isActive
-                        ? "bg-white/[0.12] text-white border-white/15 shadow-sm"
-                        : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.04] hover:border-white/[0.06]"
+                        ? "bg-white/[0.08] text-white border-white/[0.12] shadow-sm"
+                        : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]"
                     }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -222,7 +267,7 @@ export default function AnaraBrain({
                       <span className="truncate">{item.label}</span>
                     </div>
                     {item.badge !== undefined && item.badge > 0 && (
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors duration-150 ${isActive ? "bg-cyan-400/20 text-cyan-200" : "bg-white/[0.08] text-slate-400"}`}>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors duration-150 ${isActive ? "bg-cyan-400/20 text-cyan-200" : "bg-white/[0.06] text-slate-400"}`}>
                         {item.badge}
                       </span>
                     )}
@@ -234,7 +279,7 @@ export default function AnaraBrain({
 
           {/* Section 3: AI & NETWORK */}
           <div className="space-y-1">
-            <span className="px-2.5 text-[10px] font-mono font-bold tracking-wider text-slate-500 uppercase">
+            <span className="px-2.5 text-[10px] font-mono font-semibold tracking-wider text-slate-500 uppercase">
               AI &amp; Network
             </span>
             <div className="space-y-0.5 font-mono">
@@ -263,10 +308,10 @@ export default function AnaraBrain({
                   <button
                     key={item.id}
                     onClick={() => setActiveTab(item.id)}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium border transition-colors duration-150 ease-out cursor-pointer select-none ${
+                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium border transition-all cursor-pointer select-none ${
                       isActive
-                        ? "bg-white/[0.12] text-white border-white/15 shadow-sm"
-                        : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.04] hover:border-white/[0.06]"
+                        ? "bg-white/[0.08] text-white border-white/[0.12] shadow-sm"
+                        : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]"
                     }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -280,7 +325,7 @@ export default function AnaraBrain({
           </div>
 
           {/* Bottom Status Row */}
-          <div className="mt-auto pt-3 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-slate-500">
+          <div className="mt-auto pt-3 border-t border-white/[0.06] flex items-center justify-between text-[10px] font-mono text-slate-500">
             <span className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
               <span>SQLite Connected</span>
@@ -289,29 +334,45 @@ export default function AnaraBrain({
           </div>
         </div>
 
-        {/* ── RIGHT PANEL (ACTIVE CONTENT & MINIMAL HEADER) ── */}
-        <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-slate-950/40">
-          {/* Top minimal action bar */}
-          <div className="flex items-center justify-end gap-2 px-6 py-3 border-b border-white/10 shrink-0 select-none">
-            <button
-              onClick={fetchBrainData}
-              className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-slate-300 hover:text-white text-xs font-mono flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
-              title="Sync database"
-            >
-              <svg className={`w-3.5 h-3.5 text-cyan-300 ${loading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              <span>Sync</span>
-            </button>
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-xl bg-white/[0.04] hover:bg-rose-500/20 text-slate-400 hover:text-rose-200 border border-white/10 hover:border-rose-500/30 cursor-pointer transition-all active:scale-95"
-              title="Close (Esc)"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+        {/* ── RIGHT PANEL (ACTIVE CONTENT & REFINED HEADER) ── */}
+        <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#060913]/60">
+          {/* Top minimal action bar with clear tab identity & status */}
+          <div className="flex items-center justify-between gap-3 px-6 py-3 border-b border-white/[0.08] bg-[#070c18]/80 shrink-0 select-none">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="text-[10.5px] font-mono uppercase tracking-wider text-slate-500 hidden sm:inline">
+                {currentMeta.category}
+              </span>
+              <span className="text-slate-600 hidden sm:inline">/</span>
+              <h2 className="text-xs sm:text-sm font-semibold text-white tracking-tight truncate">
+                {currentMeta.title}
+              </h2>
+              <span className="text-[11px] text-slate-400 truncate hidden md:inline font-sans">
+                — {currentMeta.subtitle}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={fetchBrainData}
+                disabled={loading}
+                className="px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-slate-300 hover:text-white text-xs font-mono flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 disabled:opacity-50"
+                title="Sync database & refresh"
+              >
+                <svg className={`w-3.5 h-3.5 text-cyan-400 ${loading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span>Sync</span>
+              </button>
+              <button
+                onClick={onClose}
+                className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-rose-500/20 text-slate-400 hover:text-rose-200 border border-white/[0.08] hover:border-rose-500/30 cursor-pointer transition-all active:scale-95"
+                title="Close (Esc)"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           {/* Main Content Scrollable Viewport with Hardware Layer Isolation */}

@@ -62,9 +62,11 @@ def file_memory_os_lock(file_path: str):
 # ─────────────────────────────────────────────────────────────────────────────
 
 SENSITIVE_PATTERNS = [
-    # OpenAI, Anthropic, Google, Groq, HuggingFace API Keys
+    # Specific Anthropic, OpenAI, Google, Groq, HuggingFace API Keys
+    (r"\bsk-ant-[a-zA-Z0-9_-]{20,}\b", "[REDACTED_API_KEY]"),
     (r"\bsk-[a-zA-Z0-9_-]{20,}\b", "[REDACTED_API_KEY]"),
     (r"\bAIza[0-9A-Za-z-_]{35}\b", "[REDACTED_API_KEY]"),
+    (r"\bAQ\.[a-zA-Z0-9_-]{20,}\b", "[REDACTED_API_KEY]"),
     (r"\bgsk_[a-zA-Z0-9]{20,}\b", "[REDACTED_API_KEY]"),
     (r"\bhf_[a-zA-Z0-9]{20,}\b", "[REDACTED_API_KEY]"),
     # GitHub Tokens & AWS Keys (Anara Standard)
@@ -72,10 +74,10 @@ SENSITIVE_PATTERNS = [
     (r"\bgithub_pat_[a-zA-Z0-9_]{82}\b", "[REDACTED_GITHUB_TOKEN]"),
     (r"\bAKIA[0-9A-Z]{16}\b", "[REDACTED_AWS_KEY]"),
     (r"\bxox[baprs]-[0-9a-zA-Z]{10,48}\b", "[REDACTED_SLACK_TOKEN]"),
-    # Generic Key/Secret assignments (key=xyz, secret=xyz, token=xyz, password=xyz)
-    (r"(?i)(api[_-]?key|secret[_-]?key|auth[_-]?token|access[_-]?token|password|passwd)\s*[:=]\s*['\"]?([a-zA-Z0-9_\-\.\$\!\@\#\%\^\&\*]{6,})['\"]?", r"\1: [REDACTED_SECRET]"),
+    # Generic Key/Secret assignments (key=xyz, secret=xyz, token=xyz, password=xyz) with Base64 charset support
+    (r"(?i)(api[_-]?key|secret[_-]?key|auth[_-]?token|access[_-]?token|password|passwd)\s*[:=]\s*['\"]?([a-zA-Z0-9_\-\.\$\!\@\#\%\^\&\*\+\/\=]{6,})['\"]?", r"\1: [REDACTED_SECRET]"),
     # Bearer tokens
-    (r"(?i)bearer\s+[a-zA-Z0-9_\-\.]{20,}", "Bearer [REDACTED_TOKEN]"),
+    (r"(?i)bearer\s+[a-zA-Z0-9_\-\.\+\/\=]{20,}", "Bearer [REDACTED_TOKEN]"),
     # Private keys
     (r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----", "[REDACTED_PRIVATE_KEY]"),
     # JWT Tokens

@@ -5,7 +5,6 @@ smart audio/video autoplay, visual clicks, text input, snapshots, and screenshot
 """
 
 import asyncio
-import json
 import logging
 import os
 import re
@@ -164,8 +163,10 @@ async def _tool_browser_click(selector_or_text: str) -> Dict[str, Any]:
     if not target:
         return {"status": "error", "message": "Selector or target text cannot be empty."}
 
-    if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
-        return {"status": "error", "message": "No active browser session open. Call 'browser_navigate' first."}
+    async with _LOCK:
+        if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
+            return {"status": "error", "message": "No active browser session open. Call 'browser_navigate' first."}
+        page = _ACTIVE_PAGE
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "browser_click",
@@ -175,7 +176,6 @@ async def _tool_browser_click(selector_or_text: str) -> Dict[str, Any]:
     })
 
     try:
-        page = _ACTIVE_PAGE
         # Try CSS selector first
         clicked = False
         try:
@@ -220,11 +220,12 @@ async def _tool_browser_type(selector: str, text: str, press_enter: bool = False
     sel = (selector or "").strip()
     val = str(text or "").strip()
 
-    if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
-        return {"status": "error", "message": "No active browser session open. Call 'browser_navigate' first."}
+    async with _LOCK:
+        if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
+            return {"status": "error", "message": "No active browser session open. Call 'browser_navigate' first."}
+        page = _ACTIVE_PAGE
 
     try:
-        page = _ACTIVE_PAGE
         loc = page.locator(sel).first
         if await loc.count() == 0:
             # Common search input fallbacks
@@ -248,11 +249,12 @@ async def _tool_browser_type(selector: str, text: str, press_enter: bool = False
 
 async def _tool_browser_snapshot() -> Dict[str, Any]:
     """Returns a clean accessibility summary of interactive elements on the current page."""
-    if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
-        return {"status": "error", "message": "No active browser session open."}
+    async with _LOCK:
+        if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
+            return {"status": "error", "message": "No active browser session open."}
+        page = _ACTIVE_PAGE
 
     try:
-        page = _ACTIVE_PAGE
         title = await page.title()
         url = page.url
 

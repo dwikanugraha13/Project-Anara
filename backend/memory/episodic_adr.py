@@ -167,13 +167,31 @@ class EpisodicADRManager:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 if session_id:
-                    cursor.execute("""
-                        SELECT adr_id, session_id, milestone_task, architecture_decision,
-                               rationale, affected_files_json, test_exit_code, created_at
-                        FROM project_adr
-                        WHERE session_id = ?
-                        ORDER BY id DESC LIMIT ?
-                    """, (str(session_id), limit))
+                    s_str = str(session_id)
+                    alt_id = None
+                    try:
+                        from memory import memory_engine
+                        sess = memory_engine.get_session(session_id)
+                        if sess:
+                            alt_id = str(sess.get("id")) if s_str != str(sess.get("id")) else str(sess.get("session_key") or "")
+                    except Exception:
+                        pass
+                    if alt_id and alt_id != s_str:
+                        cursor.execute("""
+                            SELECT adr_id, session_id, milestone_task, architecture_decision,
+                                   rationale, affected_files_json, test_exit_code, created_at
+                            FROM project_adr
+                            WHERE session_id = ? OR session_id = ?
+                            ORDER BY id DESC LIMIT ?
+                        """, (s_str, alt_id, limit))
+                    else:
+                        cursor.execute("""
+                            SELECT adr_id, session_id, milestone_task, architecture_decision,
+                                   rationale, affected_files_json, test_exit_code, created_at
+                            FROM project_adr
+                            WHERE session_id = ?
+                            ORDER BY id DESC LIMIT ?
+                        """, (s_str, limit))
                 else:
                     cursor.execute("""
                         SELECT adr_id, session_id, milestone_task, architecture_decision,

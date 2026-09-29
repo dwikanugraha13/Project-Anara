@@ -217,7 +217,6 @@ class ChatSessionsMixin:
             orig_dir = anara_agent.get_session_dir(orig_id)
             new_dir = anara_agent.get_session_dir(new_id)
             if os.path.exists(orig_dir) and orig_dir != new_dir and not orig_dir.endswith("Project Anara"):
-                import shutil
                 if os.path.exists(new_dir):
                     shutil.rmtree(new_dir, ignore_errors=True)
                 shutil.copytree(orig_dir, new_dir, dirs_exist_ok=True)
@@ -270,6 +269,9 @@ class ChatSessionsMixin:
     def delete_session(self, session_id: Any) -> bool:
         """Removes a thread AND all cascading messages, tokens, and settings (Anara Enterprise Architecture)."""
         sid = self._resolve_session_id(session_id) or session_id
+        sess = self.get_session(session_id)
+        skey = sess.get("session_key") if sess else None
+
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM conversations WHERE session_id = ?", (sid,))
@@ -279,11 +281,17 @@ class ChatSessionsMixin:
             except Exception:
                 pass
             try:
-                cursor.execute("DELETE FROM project_adr WHERE session_id = ?", (str(sid),))
+                if skey:
+                    cursor.execute("DELETE FROM project_adr WHERE session_id = ? OR session_id = ?", (str(sid), str(skey)))
+                else:
+                    cursor.execute("DELETE FROM project_adr WHERE session_id = ?", (str(sid),))
             except Exception:
                 pass
             try:
-                cursor.execute("DELETE FROM app_settings WHERE key = ?", (f"session_scratchpad_{sid}",))
+                if skey:
+                    cursor.execute("DELETE FROM app_settings WHERE key = ? OR key = ?", (f"session_scratchpad_{sid}", f"session_scratchpad_{skey}"))
+                else:
+                    cursor.execute("DELETE FROM app_settings WHERE key = ?", (f"session_scratchpad_{sid}",))
             except Exception:
                 pass
             cursor.execute("DELETE FROM chat_sessions WHERE id = ?", (sid,))
@@ -320,10 +328,13 @@ class ChatSessionsMixin:
             if keep_pinned:
                 conds.append("is_pinned = 0")
             where = (" WHERE " + " AND ".join(conds)) if conds else ""
-            cursor.execute(f"SELECT id FROM chat_sessions{where}")
-            ids = [r["id"] for r in cursor.fetchall()]
-            if not ids:
+            cursor.execute(f"SELECT id, session_key FROM chat_sessions{where}")
+            rows = cursor.fetchall()
+            if not rows:
                 return {"sessions": 0, "messages": 0}
+
+            ids = [r["id"] for r in rows]
+            skeys = [r["session_key"] for r in rows if r["session_key"]]
 
             msgs = 0
             sess = 0
@@ -337,8 +348,34 @@ class ChatSessionsMixin:
                     cursor.execute(f"DELETE FROM token_usage_logs WHERE session_id IN ({marks})", batch)
                 except Exception:
                     pass
+                try:
+                    cursor.execute(f"DELETE FROM project_adr WHERE session_id IN ({marks})", [str(x) for x in batch])
+                except Exception:
+                    pass
+                try:
+                    scratch_keys = [f"session_scratchpad_{x}" for x in batch]
+                    kmarks = ",".join("?" for _ in scratch_keys)
+                    cursor.execute(f"DELETE FROM app_settings WHERE key IN ({kmarks})", scratch_keys)
+                except Exception:
+                    pass
                 cursor.execute(f"DELETE FROM chat_sessions WHERE id IN ({marks})", batch)
                 sess += cursor.rowcount
+
+            if skeys:
+                for i in range(0, len(skeys), 200):
+                    batch_keys = skeys[i:i + 200]
+                    kmarks = ",".join("?" for _ in batch_keys)
+                    try:
+                        cursor.execute(f"DELETE FROM project_adr WHERE session_id IN ({kmarks})", batch_keys)
+                    except Exception:
+                        pass
+                    try:
+                        scratch_keys = [f"session_scratchpad_{k}" for k in batch_keys]
+                        skmarks = ",".join("?" for _ in scratch_keys)
+                        cursor.execute(f"DELETE FROM app_settings WHERE key IN ({skmarks})", scratch_keys)
+                    except Exception:
+                        pass
+
             conn.commit()
         logger.info(f"[ChatSessions] Bulk deleted {sess} session(s), {msgs} message(s)")
         self._emit_mutation("session_deleted", {"bulk": True, "sessions": sess})
@@ -366,22 +403,25 @@ class ChatSessionsMixin:
                 res["workspace_info"] = None
             return res
 
-    def set_session_workspace_info(self, session_id: int, workspace_info: Optional[Dict[str, Any]]) -> bool:
+    def set_session_workspace_info(self, session_id: Any, workspace_info: Optional[Dict[str, Any]]) -> bool:
         """Stores or clears active project folder metadata for a specific chat session."""
+        sid = self._resolve_session_id(session_id)
+        if sid is None:
+            return False
         info_json = json.dumps(workspace_info) if workspace_info else None
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "UPDATE chat_sessions SET workspace_info_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (info_json, session_id)
+                (info_json, sid)
             )
             conn.commit()
             ok = cursor.rowcount > 0
         if ok:
-            self._emit_mutation("session_workspace_updated", {"id": session_id, "workspace_info": workspace_info})
+            self._emit_mutation("session_workspace_updated", {"id": sid, "workspace_info": workspace_info})
         return ok
 
-    def get_session_pending_plan(self, session_id: int) -> Optional[Dict[str, Any]]:
+    def get_session_pending_plan(self, session_id: Any) -> Optional[Dict[str, Any]]:
         """Returns the saved Plan Mode proposal for one chat session."""
         sess = self.get_session(session_id)
         if not sess or not sess.get("pending_plan_json"):
@@ -391,22 +431,25 @@ class ChatSessionsMixin:
         except Exception:
             return None
 
-    def set_session_pending_plan(self, session_id: int, plan: Optional[Dict[str, Any]]) -> bool:
+    def set_session_pending_plan(self, session_id: Any, plan: Optional[Dict[str, Any]]) -> bool:
         """Persists or clears a session-scoped project plan awaiting Build confirmation."""
+        sid = self._resolve_session_id(session_id)
+        if sid is None:
+            return False
         plan_json = json.dumps(plan) if plan else None
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "UPDATE chat_sessions SET pending_plan_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (plan_json, session_id),
+                (plan_json, sid),
             )
             conn.commit()
             ok = cursor.rowcount > 0
         if ok:
-            self._emit_mutation("session_plan_updated", {"id": session_id, "plan": plan})
+            self._emit_mutation("session_plan_updated", {"id": sid, "plan": plan})
         return ok
 
-    def clear_session_pending_plan(self, session_id: int) -> bool:
+    def clear_session_pending_plan(self, session_id: Any) -> bool:
         """Clears the pending plan proposal for a session."""
         return self.set_session_pending_plan(session_id, None)
 
@@ -510,21 +553,18 @@ class ChatSessionsMixin:
                 pass
 
         sid = self._resolve_session_id(session_id) if session_id is not None else None
-        speaker_id = None
         clean_name = speaker_name.strip().title() if speaker_name else None
-        if clean_name:
-            with self._get_connection() as conn:
-                cur = conn.cursor()
-                cur.execute("SELECT id FROM speakers WHERE name = ?", (clean_name,))
-                r = cur.fetchone()
-                if r:
-                    speaker_id = r["id"]
-
-        vis_json = json.dumps(visual_data) if visual_data else None
+        vis_json = json.dumps(visual_data, default=str) if visual_data else None
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            
+            speaker_id = None
+            if clean_name:
+                cursor.execute("SELECT id FROM speakers WHERE name = ?", (clean_name,))
+                r = cursor.fetchone()
+                if r:
+                    speaker_id = r["id"]
+
             if sid is not None:
                 cursor.execute("""
                     DELETE FROM conversations
@@ -580,24 +620,25 @@ class ChatSessionsMixin:
         ai_text: str,
         speaker_name: Optional[str] = None,
         visual_data: Optional[Dict[str, Any]] = None,
-        session_id: Optional[int] = None,
+        session_id: Optional[Any] = None,
         conversation_id: Optional[int] = None,
     ) -> bool:
         """Attaches visual telemetry/media to conversation, scoped to session or specific id (Anara Standard)."""
         clean_name = speaker_name.strip().title() if speaker_name else None
-        vis_json = json.dumps(visual_data) if visual_data else None
+        vis_json = json.dumps(visual_data, default=str) if visual_data else None
         vis_type = visual_data.get("visual_type", "hud") if visual_data else "hud"
         vis_url = visual_data.get("image_url") if visual_data else None
+        sid = self._resolve_session_id(session_id) if session_id is not None else None
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
             target_id = None
             if conversation_id:
                 target_id = conversation_id
-            elif session_id is not None:
+            elif sid is not None:
                 cursor.execute(
                     "SELECT id FROM conversations WHERE session_id = ? ORDER BY id DESC LIMIT 1",
-                    (session_id,)
+                    (sid,)
                 )
                 row = cursor.fetchone()
                 if row:
@@ -631,8 +672,9 @@ class ChatSessionsMixin:
             return cursor.rowcount > 0
 
     def get_recent_conversations(self, limit: int = 30, speaker_name: Optional[str] = None,
-                                 session_id: Optional[int] = None) -> List[Dict[str, Any]]:
+                                 session_id: Optional[Any] = None) -> List[Dict[str, Any]]:
         """Retrieves recent conversation history from SQLite (newest first)."""
+        sid = self._resolve_session_id(session_id) if session_id is not None else None
         with self._get_connection() as conn:
             cursor = conn.cursor()
             query = """
@@ -641,9 +683,9 @@ class ChatSessionsMixin:
                 FROM conversations
             """
             conds, params = [], []
-            if session_id is not None:
+            if sid is not None:
                 conds.append("session_id = ?")
-                params.append(session_id)
+                params.append(sid)
             elif speaker_name:
                 conds.append("speaker_name = ?")
                 params.append(speaker_name.strip().title())

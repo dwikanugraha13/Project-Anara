@@ -45,7 +45,7 @@ export default function BrainTodosTab({
           title: newNoteTitle.trim(),
           content: newNoteContent.trim(),
           category: newNoteCategory,
-          speaker_name: activeSpeaker || "Agnan",
+          speaker_name: activeSpeaker || "User",
         }),
       });
 
@@ -90,9 +90,8 @@ export default function BrainTodosTab({
   };
 
   const currentSpeakerNotes = useMemo(() => {
-    if (!activeSpeaker) return notes;
-    return notes.filter((n) => (n.speaker_name || "").toLowerCase() === activeSpeaker.toLowerCase());
-  }, [notes, activeSpeaker]);
+    return notes;
+  }, [notes]);
 
   const filteredNotes = useMemo(() => {
     return currentSpeakerNotes.filter((n) => {
@@ -114,177 +113,169 @@ export default function BrainTodosTab({
 
   const noteCategoryOptions: SelectOption[] = [
     { value: "todo", label: "Tasks (To-Do)" },
-    { value: "reminder", label: "Pengingat" },
-    { value: "idea", label: "Ide" },
-    { value: "general", label: "Umum" },
+    { value: "reminder", label: "Reminder" },
+    { value: "idea", label: "Idea" },
+    { value: "general", label: "General" },
   ];
 
   return (
-    <div className="space-y-5 font-sans select-text">
-      {!activeSpeaker ? (
-        <div className="p-10 sm:p-14 rounded-3xl liquid-glass-subtle text-center flex flex-col items-center justify-center gap-3 animate-fade-in">
-          <div className="w-14 h-14 rounded-2xl bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center text-cyan-300 shadow-[0_0_24px_rgba(34,211,238,0.2)]">
-            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-            </svg>
-          </div>
-          <h4 className="text-sm sm:text-base font-bold text-white uppercase tracking-wider">
-            Awaiting User Identification
-          </h4>
-          <p className="text-xs sm:text-sm text-slate-300 max-w-lg leading-relaxed">
-            To-do list and personal notes saved based on user profile. Please speak or introduce yourself so Anara can load your tasks.
-          </p>
+    <div className="space-y-4 font-sans select-text">
+      {/* Progress Ribbon */}
+      <div className="p-3.5 rounded-xl bg-white/[0.025] border border-white/[0.08] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div>
+          <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 font-semibold">
+            Task Execution
+          </span>
+          <h3 className="text-sm sm:text-base font-semibold text-white mt-0.5">
+            {completedNotesCount} of {currentSpeakerNotes.length} Tasks Completed ({progressPercent}%)
+          </h3>
         </div>
-      ) : (
-        <>
-          {/* Progress Ribbon */}
-          <div className="p-5 rounded-2xl liquid-glass-subtle flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div>
-              <span className="text-[10px] uppercase tracking-wider text-cyan-300 font-semibold">
-                Task Completion • {activeSpeaker}
-              </span>
-              <h3 className="text-base font-bold text-white mt-0.5">
-                {completedNotesCount} of {currentSpeakerNotes.length} Tasks Completed ({progressPercent}%)
-              </h3>
-            </div>
-            <div className="w-full sm:w-48 h-2 rounded-full bg-black/40 overflow-hidden border border-white/10">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-indigo-500 transition-all duration-500 shadow-[0_0_10px_rgba(34,211,238,0.3)]"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-          </div>
+        <div className="w-full sm:w-48 h-2 rounded-full bg-black/40 overflow-hidden border border-white/[0.08]">
+          <div
+            className="h-full rounded-full bg-cyan-400 transition-all duration-500 shadow-[0_0_8px_rgba(34,211,238,0.5)]"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+      </div>
 
-          {/* Filter & Add Actions */}
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-1 p-1 rounded-full liquid-glass-subtle">
-              {[
-                { id: "all", label: "Semua" },
-                { id: "active", label: "Active" },
-                { id: "completed", label: "Completed" },
-              ].map((f) => (
-                <button
-                  key={f.id}
-                  onClick={() => setTodoFilter(f.id as any)}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
-                    todoFilter === f.id
-                      ? "bg-cyan-500/20 text-cyan-100 border border-cyan-400/35"
-                      : "text-slate-400 hover:text-slate-200 border border-transparent"
-                  }`}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-
+      {/* Filter & Add Actions */}
+      <div className="flex items-center justify-between gap-2.5 flex-wrap">
+        <div className="flex items-center gap-1 p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.08]">
+          {[
+            { id: "all", label: "All" },
+            { id: "active", label: "Active" },
+            { id: "completed", label: "Completed" },
+          ].map((f) => (
             <button
-              onClick={() => setIsAddNoteOpen(true)}
-              className="px-4 py-2 rounded-2xl bg-gradient-to-r from-cyan-500 to-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 cursor-pointer shadow-[0_4px_20px_rgba(34,211,238,0.25)] transition-all hover:opacity-90 active:scale-[0.98]"
+              key={f.id}
+              onClick={() => setTodoFilter(f.id as any)}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${
+                todoFilter === f.id
+                  ? "bg-white/[0.08] text-white border border-white/[0.12] shadow-sm"
+                  : "text-slate-400 hover:text-slate-200 border border-transparent"
+              }`}
             >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              New Task
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        <button
+          onClick={() => setIsAddNoteOpen(true)}
+          className="px-3.5 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.12] text-slate-200 hover:text-white font-medium text-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-[0.98]"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          <span>New Task</span>
+        </button>
+      </div>
+
+      {isAddNoteOpen && (
+        <form onSubmit={handleSaveNote} className="relative z-30 p-4 rounded-xl bg-[#080d1a] border border-white/[0.12] space-y-3 animate-fade-in shadow-lg">
+          <h4 className="text-xs font-mono font-semibold text-cyan-400 uppercase tracking-wider">New Task / Scratchpad Item</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <input
+              type="text"
+              value={newNoteTitle}
+              onChange={(e) => setNewNoteTitle(e.target.value)}
+              placeholder="Task Title (e.g. Audit API Endpoints)"
+              className="bg-black/40 border border-white/[0.08] rounded-lg py-2 px-3 text-xs text-white placeholder-slate-500 focus:outline-none sm:col-span-2"
+              required
+            />
+            <LiquidGlassSelect
+              value={newNoteCategory}
+              onChange={setNewNoteCategory}
+              options={noteCategoryOptions}
+            />
+          </div>
+          <input
+            type="text"
+            value={newNoteContent}
+            onChange={(e) => setNewNoteContent(e.target.value)}
+            placeholder="Detailed task description or checklist notes (optional)"
+            className="w-full bg-black/40 border border-white/[0.08] rounded-lg py-2 px-3 text-xs text-white placeholder-slate-500 focus:outline-none"
+          />
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setIsAddNoteOpen(false)}
+              className="px-3 py-1.5 rounded-lg border border-white/[0.08] text-slate-300 hover:text-white text-xs cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-1.5 rounded-lg bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.14] text-white font-medium text-xs cursor-pointer transition-all"
+            >
+              Save Task
             </button>
           </div>
+        </form>
+      )}
 
-          {isAddNoteOpen && (
-            <form onSubmit={handleSaveNote} className="relative z-30 p-5 rounded-2xl liquid-glass space-y-3.5 animate-fade-in">
-              <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wider">Add Task / Note</h4>
-              <div className="relative z-40 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <input
-                  type="text"
-                  value={newNoteTitle}
-                  onChange={(e) => setNewNoteTitle(e.target.value)}
-                  placeholder="Task Title (e.g. Report Evaluation)"
-                  className="liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none sm:col-span-2"
-                  required
-                />
-                <LiquidGlassSelect
-                  value={newNoteCategory}
-                  onChange={setNewNoteCategory}
-                  options={noteCategoryOptions}
-                />
-              </div>
-              <input
-                type="text"
-                value={newNoteContent}
-                onChange={(e) => setNewNoteContent(e.target.value)}
-                placeholder="Detailed task description (optional)"
-                className="w-full liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
-              />
-              <div className="flex justify-end gap-2.5 pt-1">
+      <div className="space-y-2">
+        {filteredNotes.length === 0 ? (
+          <div className="p-8 sm:p-12 rounded-xl bg-white/[0.02] border border-white/[0.08] text-center flex flex-col items-center justify-center gap-2">
+            <div className="w-10 h-10 rounded-lg bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-slate-400">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+            </div>
+            <h4 className="text-xs font-semibold text-slate-200">No tasks in this view</h4>
+            <p className="text-[11px] text-slate-400 max-w-sm">
+              Keep track of multi-step plans and agent instructions with tasks.
+            </p>
+          </div>
+        ) : (
+          filteredNotes.map((n) => (
+            <div
+              key={n.id}
+              className={`p-3 px-3.5 rounded-xl border transition-all flex items-start justify-between gap-3 shadow-sm ${
+                n.is_completed
+                  ? "bg-white/[0.015] border-white/[0.05] opacity-50"
+                  : "bg-white/[0.025] hover:bg-white/[0.04] border-white/[0.08] hover:border-white/[0.15]"
+              }`}
+            >
+              <div className="flex items-start gap-3 min-w-0 flex-1">
                 <button
-                  type="button"
-                  onClick={() => setIsAddNoteOpen(false)}
-                  className="px-4 py-2 rounded-xl liquid-glass-subtle border border-white/10 text-slate-300 text-xs cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-semibold text-xs cursor-pointer shadow-[0_4px_16px_rgba(168,85,247,0.3)] transition-all hover:opacity-90"
-                >
-                   Save
-                </button>
-              </div>
-            </form>
-          )}
-
-          <div className="space-y-2.5">
-            {filteredNotes.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-16 rounded-2xl liquid-glass-subtle">No tasks or notes for {activeSpeaker} yet.</p>
-            ) : (
-              filteredNotes.map((n) => (
-                <div
-                  key={n.id}
-                  className={`p-4 px-5 rounded-2xl border transition-all duration-300 flex items-start justify-between gap-4 ${
+                  onClick={() => handleToggleTodo(n.id)}
+                  className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 mt-0.5 cursor-pointer transition-all duration-150 ${
                     n.is_completed
-                      ? "liquid-glass-subtle border-white/[0.06] opacity-50"
-                      : "liquid-glass-subtle hover:border-purple-400/40"
+                      ? "bg-cyan-400 border-cyan-400 text-black shadow-[0_0_8px_rgba(34,211,238,0.4)]"
+                      : "border-white/20 hover:border-white/40 hover:bg-white/[0.06] text-transparent"
                   }`}
                 >
-                  <div className="flex items-start gap-3.5 min-w-0 flex-1">
-                    <button
-                      onClick={() => handleToggleTodo(n.id)}
-                      className={`w-[22px] h-[22px] rounded-lg border flex items-center justify-center shrink-0 mt-0.5 cursor-pointer transition-all duration-200 ${
-                        n.is_completed
-                          ? "bg-gradient-to-tr from-emerald-500 to-teal-400 border-emerald-300/60 text-black shadow-[0_0_12px_rgba(52,211,153,0.35)]"
-                          : "border-white/25 hover:border-purple-300 hover:bg-purple-500/20 text-transparent"
-                      }`}
-                    >
-                      <svg className="w-3 h-3 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    </button>
-                    <div className="truncate min-w-0 flex-1">
-                      <p className={`text-xs sm:text-sm ${n.is_completed ? "line-through text-slate-500 font-normal" : "text-white font-semibold"}`}>
-                        {n.title}
-                      </p>
-                      {n.content && <p className="text-xs text-slate-400 mt-1 leading-relaxed">{n.content}</p>}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-[10px] uppercase tracking-wide px-2.5 py-1 rounded-full bg-purple-500/15 text-purple-300 border border-purple-400/25">
-                      {n.category}
-                    </span>
-                    <button
-                      onClick={() => handleDeleteNote(n.id)}
-                      className="text-slate-500 hover:text-rose-400 p-1.5 text-xs cursor-pointer transition-colors"
-                      title="Delete task"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
+                  <svg className="w-2.5 h-2.5 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </button>
+                <div className="truncate min-w-0 flex-1">
+                  <p className={`text-xs ${n.is_completed ? "line-through text-slate-500 font-normal" : "text-white font-medium"}`}>
+                    {n.title}
+                  </p>
+                  {n.content && <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">{n.content}</p>}
                 </div>
-              ))
-            )}
-          </div>
-        </>
-      )}
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[10px] font-mono uppercase tracking-wide px-2 py-0.5 rounded bg-white/[0.05] text-slate-300 border border-white/[0.08]">
+                  {n.category}
+                </span>
+                <button
+                  onClick={() => handleDeleteNote(n.id)}
+                  className="text-slate-500 hover:text-rose-400 p-1 cursor-pointer transition-colors"
+                  title="Delete task"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }

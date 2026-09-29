@@ -42,7 +42,7 @@ export default function BrainProjectsTab({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: newProjectName.trim(),
-          speaker_name: activeSpeaker || "Agnan",
+          speaker_name: activeSpeaker || "User",
           tech_stack: newProjectStack.trim(),
           goal: newProjectGoal.trim(),
           notes: newProjectNotes.trim(),
@@ -77,146 +77,137 @@ export default function BrainProjectsTab({
   };
 
   const currentSpeakerProjects = useMemo(() => {
-    if (!activeSpeaker) return projects;
-    return projects.filter((p) => (p.speaker_name || "").toLowerCase() === activeSpeaker.toLowerCase());
-  }, [projects, activeSpeaker]);
+    return projects;
+  }, [projects]);
 
   return (
-    <div className="space-y-5 font-sans select-text">
-      {!activeSpeaker ? (
-        <div className="p-10 sm:p-14 rounded-3xl liquid-glass-subtle text-center flex flex-col items-center justify-center gap-3 animate-fade-in">
-          <div className="w-14 h-14 rounded-2xl bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center text-cyan-300 shadow-[0_0_24px_rgba(34,211,238,0.2)]">
-            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-            </svg>
-          </div>
-          <h4 className="text-sm sm:text-base font-bold text-white uppercase tracking-wider">
-            Awaiting User Identification
-          </h4>
-          <p className="text-xs sm:text-sm text-slate-300 max-w-lg leading-relaxed">
-            Work projects and target history saved per profile. Please speak or select your profile so Anara can load your project context.
-          </p>
+    <div className="space-y-4 font-sans select-text">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 font-semibold">
+            Tracked Workspaces
+          </span>
+          <h3 className="text-sm sm:text-base font-semibold text-white mt-0.5">
+            {currentSpeakerProjects.length} Active Contexts
+          </h3>
         </div>
-      ) : (
-        <>
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <span className="text-[10px] uppercase tracking-wider text-cyan-300 font-semibold">
-                Project Context • {activeSpeaker}
-              </span>
-              <h3 className="text-base sm:text-lg font-bold text-white mt-0.5">
-                {currentSpeakerProjects.length} Registered Projects
-              </h3>
-            </div>
 
+        <button
+          onClick={() => setIsAddProjectOpen(true)}
+          className="px-3.5 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.12] text-slate-200 hover:text-white font-medium text-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-[0.98]"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          <span>New Project</span>
+        </button>
+      </div>
+
+      {isAddProjectOpen && (
+        <form onSubmit={handleSaveProject} className="p-4 rounded-xl bg-[#080d1a] border border-white/[0.12] space-y-3 animate-fade-in shadow-lg">
+          <h4 className="text-xs font-mono font-semibold text-cyan-400 uppercase tracking-wider">New Project / Work Context</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <input
+              type="text"
+              value={newProjectName}
+              onChange={(e) => setNewProjectName(e.target.value)}
+              placeholder="Project Name (e.g. Project Anara)"
+              className="bg-black/40 border border-white/[0.08] rounded-lg py-2 px-3 text-xs text-white placeholder-slate-500 focus:outline-none"
+              required
+            />
+            <input
+              type="text"
+              value={newProjectStack}
+              onChange={(e) => setNewProjectStack(e.target.value)}
+              placeholder="Tech Stack (e.g. Next.js, FastAPI, SQLite)"
+              className="bg-black/40 border border-white/[0.08] rounded-lg py-2 px-3 text-xs text-white placeholder-slate-500 focus:outline-none"
+            />
+          </div>
+          <input
+            type="text"
+            value={newProjectGoal}
+            onChange={(e) => setNewProjectGoal(e.target.value)}
+            placeholder="Primary Goal / Deliverable"
+            className="w-full bg-black/40 border border-white/[0.08] rounded-lg py-2 px-3 text-xs text-white placeholder-slate-500 focus:outline-none"
+          />
+          <input
+            type="text"
+            value={newProjectNotes}
+            onChange={(e) => setNewProjectNotes(e.target.value)}
+            placeholder="Architectural notes, constraints, or guidelines (optional)"
+            className="w-full bg-black/40 border border-white/[0.08] rounded-lg py-2 px-3 text-xs text-white placeholder-slate-500 focus:outline-none"
+          />
+          <div className="flex justify-end gap-2 pt-1">
             <button
-              onClick={() => setIsAddProjectOpen(true)}
-              className="px-4 py-2 rounded-2xl bg-gradient-to-r from-cyan-500 to-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 cursor-pointer shadow-[0_4px_20px_rgba(34,211,238,0.25)] transition-all hover:opacity-90 active:scale-[0.98]"
+              type="button"
+              onClick={() => setIsAddProjectOpen(false)}
+              className="px-3 py-1.5 rounded-lg border border-white/[0.08] text-slate-300 hover:text-white text-xs cursor-pointer"
             >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              New Project
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-1.5 rounded-lg bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.14] text-white font-medium text-xs cursor-pointer transition-all"
+            >
+              Save Project
             </button>
           </div>
-
-          {isAddProjectOpen && (
-            <form onSubmit={handleSaveProject} className="p-5 rounded-2xl liquid-glass space-y-3.5 animate-fade-in">
-              <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wider">New Project / Work Context</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <input
-                  type="text"
-                  value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
-                  placeholder="Project Name (e.g. Anara Assistant System)"
-                  className="liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
-                  required
-                />
-                <input
-                  type="text"
-                  value={newProjectStack}
-                  onChange={(e) => setNewProjectStack(e.target.value)}
-                  placeholder="Tech Stack (cth: Next.js, FastAPI, SQLite)"
-                  className="liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
-                />
-              </div>
-              <input
-                type="text"
-                value={newProjectGoal}
-                onChange={(e) => setNewProjectGoal(e.target.value)}
-                placeholder="Primary Target / Goal of This Project"
-                className="w-full liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
-              />
-              <input
-                type="text"
-                value={newProjectNotes}
-                onChange={(e) => setNewProjectNotes(e.target.value)}
-                placeholder="Additional notes for Anara (optional)"
-                className="w-full liquid-glass-input rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-slate-500 focus:outline-none"
-              />
-              <div className="flex justify-end gap-2.5 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setIsAddProjectOpen(false)}
-                  className="px-4 py-2 rounded-xl liquid-glass-subtle border border-white/10 text-slate-300 text-xs cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-bold text-xs cursor-pointer shadow-[0_4px_16px_rgba(245,158,11,0.3)] transition-all hover:opacity-90"
-                >
-                   Save
-                </button>
-              </div>
-            </form>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            {currentSpeakerProjects.length === 0 ? (
-              <p className="col-span-2 text-xs text-slate-400 text-center py-16 rounded-2xl liquid-glass-subtle">No work project notes for {activeSpeaker} yet. Click 'New Project' or tell Anara about your project during chat.</p>
-            ) : (
-              currentSpeakerProjects.map((p) => (
-                <div
-                  key={p.id}
-                  className="p-5 rounded-2xl liquid-glass-subtle hover:border-amber-400/40 flex flex-col justify-between gap-3 transition-all duration-300"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-bold text-white truncate">{p.name}</span>
-                      <span className="text-[10px] uppercase tracking-wide px-2.5 py-1 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/25 shrink-0">
-                        {p.status}
-                      </span>
-                    </div>
-                    {p.tech_stack && (
-                      <p className="text-[11px] text-cyan-300 mt-1.5">Tech: {p.tech_stack}</p>
-                    )}
-                    {p.goal && (
-                      <p className="text-xs text-slate-200 mt-2 leading-relaxed">Target: {p.goal}</p>
-                    )}
-                    {p.notes && (
-                      <p className="text-xs text-slate-400 mt-1 italic">{p.notes}</p>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2.5 border-t border-white/[0.07] text-[10px] text-slate-500">
-                    <span>Diperbarui: {new Date(p.updated_at).toLocaleDateString("id-ID")}</span>
-                    <button
-                      onClick={() => handleDeleteProject(p.id)}
-                      className="text-slate-500 hover:text-rose-400 transition-colors p-1 cursor-pointer"
-                      title="Delete project"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </>
+        </form>
       )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {currentSpeakerProjects.length === 0 ? (
+          <div className="col-span-2 p-8 sm:p-12 rounded-xl bg-white/[0.02] border border-white/[0.08] text-center flex flex-col items-center justify-center gap-2">
+            <div className="w-10 h-10 rounded-lg bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-slate-400">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+              </svg>
+            </div>
+            <h4 className="text-xs font-semibold text-slate-200">No project workspaces tracked yet</h4>
+            <p className="text-[11px] text-slate-400 max-w-sm">
+              Click 'New Project' or discuss your project in chat to provide Anara with deep repository context.
+            </p>
+          </div>
+        ) : (
+          currentSpeakerProjects.map((p) => (
+            <div
+              key={p.id}
+              className="p-3.5 rounded-xl bg-white/[0.025] hover:bg-white/[0.04] border border-white/[0.08] hover:border-white/[0.15] flex flex-col justify-between gap-2.5 transition-all shadow-sm"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-white truncate">{p.name}</span>
+                  <span className="text-[10px] font-mono uppercase tracking-wide px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-400/20 shrink-0">
+                    {p.status}
+                  </span>
+                </div>
+                {p.tech_stack && (
+                  <p className="text-[11px] font-mono text-cyan-400/90 mt-1">Stack: {p.tech_stack}</p>
+                )}
+                {p.goal && (
+                  <p className="text-xs text-slate-200 mt-1.5 leading-relaxed">{p.goal}</p>
+                )}
+                {p.notes && (
+                  <p className="text-[11px] text-slate-400 mt-1 italic">{p.notes}</p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-white/[0.05] text-[10px] font-mono text-slate-500">
+                <span>Updated: {new Date(p.updated_at).toLocaleDateString("id-ID")}</span>
+                <button
+                  onClick={() => handleDeleteProject(p.id)}
+                  className="text-slate-500 hover:text-rose-400 transition-colors p-1 cursor-pointer"
+                  title="Delete project"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }

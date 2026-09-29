@@ -1,8 +1,11 @@
+import asyncio
+import difflib
 import fnmatch
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional
+import time
+from typing import Any, Dict, List, Optional, Tuple
 
 from .events import _emit_agent_event
 
@@ -83,12 +86,21 @@ def _resolve_local_file_path(path: str) -> Optional[str]:
 
     if active_f and os.path.exists(active_f):
         target_name = os.path.basename(clean_p).lower()
+        matches = []
         for r, _, files in os.walk(active_f):
             if any(ig in r for ig in [".git", "node_modules", "venv", "__pycache__", ".next"]):
                 continue
             for f in files:
                 if f.lower() == target_name:
-                    return os.path.abspath(os.path.join(r, f))
+                    matches.append(os.path.abspath(os.path.join(r, f)))
+        if len(matches) == 1:
+            return matches[0]
+        elif len(matches) > 1:
+            norm_clean = clean_p.replace("\\", "/").lower().lstrip("/")
+            for m in matches:
+                if m.replace("\\", "/").lower().endswith(norm_clean):
+                    return m
+            return matches[0]
     return None
 
 
@@ -189,13 +201,70 @@ async def _tool_read_local_file(file_path: str, offset: Optional[int] = None, li
         return {"status": "error", "message": str(e)}
 
 
+def _perform_fuzzy_replace(
+    content: str,
+    old_string: str,
+    new_string: str,
+    replace_all: bool = False
+) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    Multi-strategy fuzzy replacement (Anara Enterprise Standard):
+    1. Exact substring match
+    2. Universal newline (CRLF <-> LF) normalization
+    3. Trailing-whitespace normalized block match
+    Returns (new_content, matched_old, error_message).
+    """
+    # Strategy 1: Exact match
+    if old_string in content:
+        count = content.count(old_string)
+        if not replace_all and count > 1:
+            return None, None, f"Found {count} matches for old_string. Provide more surrounding context lines or use replace_all=True."
+        new_content = content.replace(old_string, new_string) if replace_all else content.replace(old_string, new_string, 1)
+        return new_content, old_string, None
+
+    # Strategy 2: Line-ending normalization (CRLF / LF mismatch)
+    crlf = chr(13) + chr(10)
+    norm_content = content.replace(crlf, "\n")
+    norm_old = old_string.replace(crlf, "\n")
+    norm_new = new_string.replace(crlf, "\n")
+    if norm_old in norm_content:
+        count = norm_content.count(norm_old)
+        if not replace_all and count > 1:
+            return None, None, f"Found {count} matches for old_string under newline normalization. Provide more surrounding context lines."
+        res = norm_content.replace(norm_old, norm_new) if replace_all else norm_content.replace(norm_old, norm_new, 1)
+        if crlf in content:
+            res = res.replace("\n", crlf)
+        return res, old_string, None
+
+    # Strategy 3: Trailing whitespace tolerance per line
+    c_lines = content.splitlines(keepends=True)
+    o_lines = [l.rstrip() for l in old_string.splitlines()]
+    if o_lines and len(o_lines) <= len(c_lines):
+        window_size = len(o_lines)
+        matches = []
+        for i in range(len(c_lines) - window_size + 1):
+            window = [c_lines[i + j].rstrip() for j in range(window_size)]
+            if window == o_lines:
+                matches.append(i)
+        if matches:
+            if not replace_all and len(matches) > 1:
+                return None, None, f"Found {len(matches)} whitespace-normalized matches. Provide more context lines."
+            new_lines = new_string.splitlines(keepends=True)
+            res_lines = list(c_lines)
+            for m_idx in reversed(matches if replace_all else [matches[0]]):
+                res_lines[m_idx:m_idx + window_size] = new_lines
+            return "".join(res_lines), old_string, None
+
+    return None, None, "old_string not found in file. Ensure the text to replace matches the file content."
+
+
 async def _tool_edit_file(
     file_path: str,
     old_string: str,
     new_string: str,
     replace_all: bool = False
 ) -> Dict[str, Any]:
-    """Selectively edits an existing code or document file in-place by exact string replacement."""
+    """Selectively edits an existing code or document file in-place by exact or fuzzy string replacement."""
     path = (file_path or "").strip().strip('"\'')
     if not path:
         return {"status": "error", "message": "file_path parameter cannot be empty."}
@@ -225,46 +294,39 @@ async def _tool_edit_file(
         with open(target_file, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
 
-        if old_string not in content:
+        new_content, matched_old, err = _perform_fuzzy_replace(content, old_string, new_string, replace_all=replace_all)
+        if err or new_content is None:
             return {
                 "status": "error",
-                "message": (
-                    f"old_string not found in file '{os.path.basename(target_file)}'. "
-                    "Ensure the text to replace matches exactly including indentation and whitespace."
-                )
+                "message": f"{err or 'Replacement failed'} in file '{os.path.basename(target_file)}'."
             }
 
-        count = content.count(old_string)
-        if not replace_all and count > 1:
-            return {
-                "status": "error",
-                "message": (
-                    f"Found {count} matches for old_string in '{os.path.basename(target_file)}'. "
-                    "Provide more surrounding lines to uniquely identify the block, or set replace_all=True."
-                )
-            }
-
-        if replace_all:
-            new_content = content.replace(old_string, new_string)
-        else:
-            new_content = content.replace(old_string, new_string, 1)
-
-        with open(target_file, "w", encoding="utf-8") as f:
+        # Atomic replacement to eliminate risk of empty file on crash
+        tmp_target = f"{target_file}.tmp_{os.getpid()}_{int(time.time() * 1000)}"
+        with open(tmp_target, "w", encoding="utf-8", newline="") as f:
             f.write(new_content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_target, target_file)
 
         # Ground-Truth Read-Back Verification (Anara Standard)
         read_back = workspace_sentinel.verify_read_back(target_file, expected_snippet=new_string[:80] if len(new_string) > 5 else new_string)
         if not read_back.get("verified"):
             logger.warning(f"[WorkspaceSentinel] Post-edit read-back warning for '{target_file}': {read_back.get('error')}")
 
+        diff_iter = difflib.unified_diff(
+            content.splitlines(),
+            new_content.splitlines(),
+            fromfile=f"a/{os.path.basename(target_file)}",
+            tofile=f"b/{os.path.basename(target_file)}",
+            lineterm=""
+        )
+        diff_str = "\n".join(diff_iter)
+        if not diff_str:
+            diff_str = f"Modified {os.path.basename(target_file)}"
+
         old_lines = old_string.splitlines()
         new_lines = new_string.splitlines()
-        diff_lines = []
-        for ol in old_lines:
-            diff_lines.append(f"-{ol}")
-        for nl in new_lines:
-            diff_lines.append(f"+{nl}")
-        diff_str = "\n".join(diff_lines)
 
         added = len(new_lines)
         deleted = len(old_lines)
@@ -405,8 +467,12 @@ async def _tool_write_local_file(file_path: str, content: str) -> Dict[str, Any]
 
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
         anara_agent.ensure_git_repo(None)
-        with open(target_path, "w", encoding="utf-8") as f:
+        tmp_target = f"{target_path}.tmp_{os.getpid()}_{int(time.time() * 1000)}"
+        with open(tmp_target, "w", encoding="utf-8") as f:
             f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_target, target_path)
 
         # Ground-Truth Read-Back Verification (Anara Standard)
         read_back = workspace_sentinel.verify_read_back(target_path, expected_snippet=content[:80] if len(content) > 5 else content)

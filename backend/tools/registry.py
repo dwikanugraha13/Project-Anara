@@ -11,7 +11,7 @@ import asyncio
 import inspect
 import logging
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Set
 from google.genai import types
 
@@ -81,7 +81,8 @@ class ToolRegistry:
                 enabled_by_default=enabled_by_default,
                 declaration=decl
             )
-            self._tools[name] = tool_def
+            with self._lock:
+                self._tools[name] = tool_def
             return fn
 
         return decorator
@@ -104,7 +105,7 @@ class ToolRegistry:
             description=description,
             parameters=parameters
         )
-        self._tools[name] = ToolDefinition(
+        tool_def = ToolDefinition(
             name=name,
             description=description,
             parameters=parameters,
@@ -116,10 +117,13 @@ class ToolRegistry:
             enabled_by_default=enabled_by_default,
             declaration=decl
         )
+        with self._lock:
+            self._tools[name] = tool_def
 
     def get_tool(self, name: str) -> Optional[ToolDefinition]:
         canonical = self.resolve_name(name)
-        return self._tools.get(canonical)
+        with self._lock:
+            return self._tools.get(canonical)
 
     def get_handler(self, name: str) -> Optional[Callable[..., Any]]:
         tool = self.get_tool(name)
@@ -132,7 +136,9 @@ class ToolRegistry:
     def get_all_declarations(self, read_only: bool = False, enabled_set: Optional[Set[str]] = None) -> List[types.FunctionDeclaration]:
         """Returns types.FunctionDeclaration for all active tools, filtered by mode."""
         decls = []
-        for name, t in self._tools.items():
+        with self._lock:
+            tools_snapshot = list(self._tools.items())
+        for name, t in tools_snapshot:
             if enabled_set is not None and name not in enabled_set:
                 continue
             if read_only and t.risk != "read_only":
@@ -143,12 +149,15 @@ class ToolRegistry:
 
     def get_risk_classification(self) -> Dict[str, str]:
         """Returns dictionary of tool_name -> risk_tier ('read_only', 'action', 'mutating', 'ask')."""
-        return {name: t.risk for name, t in self._tools.items()}
+        with self._lock:
+            return {name: t.risk for name, t in list(self._tools.items())}
 
     def get_tools_catalog(self, enabled_set: Optional[Set[str]] = None) -> List[Dict[str, Any]]:
         """Returns serializable JSON catalog of all registered tools for the Web UI."""
         catalog = []
-        for name, t in self._tools.items():
+        with self._lock:
+            tools_snapshot = list(self._tools.items())
+        for name, t in tools_snapshot:
             is_ro = (t.risk == "read_only")
             catalog.append({
                 "name": name,
@@ -168,7 +177,9 @@ class ToolRegistry:
     def get_toolsets_mapping(self) -> Dict[str, List[str]]:
         """Returns dynamic mapping of toolset_id -> list of tool names."""
         mapping: Dict[str, List[str]] = {}
-        for name, t in self._tools.items():
+        with self._lock:
+            tools_snapshot = list(self._tools.items())
+        for name, t in tools_snapshot:
             mapping.setdefault(t.toolset, []).append(name)
         return mapping
 

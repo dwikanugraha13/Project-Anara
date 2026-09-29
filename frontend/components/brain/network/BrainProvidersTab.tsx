@@ -503,20 +503,20 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
 
   return (
     <div className="space-y-4">
-      {/* 9Router-Style Providers Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-4 rounded-2xl liquid-glass border border-white/10 shadow-lg">
+      {/* Dynamic Gateway Providers Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-3.5 rounded-xl bg-white/[0.025] border border-white/[0.08] shadow-lg">
           <div>
             <div className="flex items-center gap-2.5">
-              <span className="w-7 h-7 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-center text-cyan-300">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <span className="w-6 h-6 rounded-lg bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-cyan-300">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
                 </svg>
               </span>
-              <h3 className="text-sm sm:text-base font-bold text-white tracking-wide">
+              <h3 className="text-xs sm:text-sm font-semibold text-white tracking-wide">
                 Providers &amp; Gateway
               </h3>
               {providerActionMsg && (
-                <span className="px-2.5 py-0.5 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-400/30 text-[10px] font-mono font-medium">
+                <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-400/20 text-[10px] font-mono font-medium">
                   {providerActionMsg.text}
                 </span>
               )}
@@ -534,9 +534,9 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
                 placeholder="Search providers..."
                 value={providerGlobalSearch}
                 onChange={(e) => setProviderGlobalSearch(e.target.value)}
-                className="w-40 sm:w-48 px-3 py-1.5 pl-8 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
+                className="w-40 sm:w-48 px-3 py-1.5 pl-8 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-white/20 font-mono transition-colors"
               />
-              <svg className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
             </div>
@@ -546,18 +546,18 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
                 setCustomProviderType("anthropic");
                 setIsCustomProviderModalOpen(true);
               }}
-              className="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-rose-100 border border-rose-400/30 text-xs font-medium font-mono transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+              className="px-3 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-slate-200 hover:text-white border border-white/[0.12] text-xs font-medium font-mono transition-all cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-[0.98]"
             >
-              <span>+ Add Anthropic Compatible</span>
+              <span>+ Anthropic Compatible</span>
             </button>
             <button
               onClick={() => {
                 setCustomProviderType("openai");
                 setIsCustomProviderModalOpen(true);
               }}
-              className="px-3 py-1.5 rounded-xl bg-white text-black hover:bg-slate-200 text-xs font-semibold font-mono transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+              className="px-3 py-1.5 rounded-lg bg-white/[0.08] hover:bg-white/[0.15] text-white border border-white/[0.14] text-xs font-semibold font-mono transition-all cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-[0.98]"
             >
-              <span>+ Add OpenAI Compatible</span>
+              <span>+ OpenAI Compatible</span>
             </button>
             <button
               onClick={() => fetchProviders(true)}
@@ -637,7 +637,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
                 </div>
     
                 {customProviders.length === 0 ? (
-                  <div className="p-6 rounded-2xl border border-dashed border-white/10 liquid-glass-subtle text-center text-xs font-mono text-slate-500">
+                  <div className="p-6 rounded-xl border border-dashed border-white/[0.08] bg-white/[0.015] text-center text-xs font-mono text-slate-500">
                     No custom providers yet. Use the button above to add a proxy like 9Router Proxy, Ollama, or vLLM.
                   </div>
                 ) : (
@@ -649,23 +649,23 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
                         <div
                           key={p.id}
                           onClick={() => { setSelectedProviderId(p.id); setProviderDetailTab("accounts"); }}
-                          className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 group select-none ${
+                          className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 group select-none shadow-sm ${
                             isActive
-                              ? "liquid-glass border-white/15 hover:border-cyan-400/50 hover:shadow-[0_0_20px_rgba(34,211,238,0.12)]"
-                              : "liquid-glass-subtle border-white/5 opacity-60 hover:opacity-100 hover:border-white/20"
+                              ? "bg-white/[0.035] border-white/[0.12] hover:border-cyan-400/40 hover:shadow-[0_0_20px_rgba(34,211,238,0.08)]"
+                              : "bg-white/[0.015] border-white/[0.06] opacity-60 hover:opacity-100 hover:border-white/15"
                           }`}
                         >
-                          <div className="flex items-center gap-3 min-w-0 flex-1">
-                            <div className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center text-cyan-300 shrink-0 shadow-inner group-hover:scale-105 transition-transform">
-                              <BrandIcon name={p.id} className="w-5 h-5" />
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            <div className="w-8 h-8 rounded-lg bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-cyan-300 shrink-0 shadow-inner group-hover:scale-105 transition-transform">
+                              <BrandIcon name={p.id} className="w-4 h-4" />
                             </div>
                             <div className="min-w-0 flex-1">
-                              <h5 className="text-xs font-bold text-white truncate group-hover:text-cyan-200 transition-colors">
+                              <h5 className="text-xs font-semibold text-white truncate group-hover:text-cyan-200 transition-colors">
                                 {p.name}
                               </h5>
                               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                 {isActive ? (
-                                  <span className="flex items-center gap-1 text-[10px] font-mono text-emerald-400 font-semibold">
+                                  <span className="flex items-center gap-1 text-[10px] font-mono text-emerald-400 font-medium">
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                                     {p.models_count > 0 ? `${p.models_count} Models` : "Connected"}
                                   </span>
@@ -674,7 +674,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
                                     ⏸ Disabled
                                   </span>
                                 )}
-                                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-white/5 text-slate-400 border border-white/10">
+                                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-white/[0.04] text-slate-400 border border-white/[0.06]">
                                   {apiType}
                                 </span>
                               </div>
@@ -689,14 +689,14 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
                                 handleToggleCustomProvider(p.custom_data.id, e);
                               }
                             }}
-                            className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer shrink-0 ${
+                            className={`w-8 h-4.5 rounded-full p-0.5 transition-colors cursor-pointer shrink-0 ${
                               isActive ? "bg-emerald-500" : "bg-slate-700/60"
                             }`}
                             title={isActive ? "Deactivate this provider" : "Activate this provider"}
                           >
                             <div
-                              className={`w-4 h-4 rounded-full bg-white transition-transform shadow-sm ${
-                                isActive ? "translate-x-4" : "translate-x-0"
+                              className={`w-3.5 h-3.5 rounded-full bg-white transition-transform shadow-sm ${
+                                isActive ? "translate-x-3.5" : "translate-x-0"
                               }`}
                             />
                           </div>
@@ -711,10 +711,10 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <h4 className="text-sm font-bold text-white font-mono">
+                    <h4 className="text-xs sm:text-sm font-semibold text-white font-mono">
                       OAuth &amp; Official Providers
                     </h4>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/10 text-slate-400 font-semibold">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/[0.06] text-slate-400 font-medium">
                       {officialProviders.length}
                     </span>
                   </div>
@@ -729,29 +729,29 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
                       <div
                         key={p.id}
                         onClick={() => { setSelectedProviderId(p.id); setProviderDetailTab("accounts"); }}
-                        className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 group select-none ${
+                        className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 group select-none shadow-sm ${
                           isConnected
-                            ? "liquid-glass border-emerald-500/30 hover:border-emerald-400/50 shadow-[0_0_20px_rgba(16,185,129,0.08)]"
-                            : "liquid-glass-subtle border-white/10 hover:border-white/25 hover:bg-white/[0.04]"
+                            ? "bg-white/[0.035] border-emerald-500/25 hover:border-emerald-400/40 shadow-[0_0_20px_rgba(16,185,129,0.06)]"
+                            : "bg-white/[0.015] border-white/[0.06] hover:border-white/15 hover:bg-white/[0.03]"
                         }`}
                       >
-                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-inner group-hover:scale-105 transition-transform ${
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-inner group-hover:scale-105 transition-transform ${
                             p.id === "codex"
                               ? "bg-emerald-500/15 border border-emerald-400/30 text-emerald-400"
                               : p.id === "gemini"
                               ? "bg-cyan-500/15 border border-cyan-400/30 text-cyan-300"
                               : "bg-amber-500/15 border border-amber-400/30 text-amber-300"
                           }`}>
-                            <BrandIcon name={p.id} className="w-5 h-5" />
+                            <BrandIcon name={p.id} className="w-4 h-4" />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <h5 className="text-xs font-bold text-white truncate group-hover:text-cyan-200 transition-colors">
+                            <h5 className="text-xs font-semibold text-white truncate group-hover:text-cyan-200 transition-colors">
                               {p.name}
                             </h5>
                             <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                               {isConnected ? (
-                                <span className="flex items-center gap-1 text-[10px] font-mono text-emerald-400 font-semibold">
+                                <span className="flex items-center gap-1 text-[10px] font-mono text-emerald-400 font-medium">
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                                   {count > 0 ? `${count} Connected` : `${p.models_count} Models`}
                                 </span>
@@ -760,7 +760,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
                                   No connections
                                 </span>
                               )}
-                              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-white/5 text-slate-400 border border-white/10">
+                              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-white/[0.04] text-slate-400 border border-white/[0.06]">
                                 {badge}
                               </span>
                             </div>

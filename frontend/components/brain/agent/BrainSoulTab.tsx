@@ -106,17 +106,17 @@ export default function BrainSoulTab() {
   return (
     <div className="space-y-4 font-sans select-text">
       {/* Header & File Selector Ribbon */}
-      <div className="p-4 rounded-2xl liquid-glass border border-white/10 space-y-3">
+      <div className="p-3.5 rounded-xl bg-white/[0.025] border border-white/[0.08] space-y-3">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="space-y-0.5">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-white font-mono">4-File Memory Architecture</h3>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-500/15 border border-emerald-400/30 text-emerald-300">
-                ● Persistent Markdown
+              <h3 className="text-xs sm:text-sm font-semibold text-white font-mono">Agent Directives &amp; Rules</h3>
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/10 border border-emerald-400/20 text-emerald-300">
+                Persistent Markdown
               </span>
               {isDirty && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-amber-500/15 border border-amber-400/30 text-amber-300 animate-pulse">
-                  ● Unsaved changes
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-amber-500/10 border border-amber-400/20 text-amber-300 animate-pulse">
+                  Unsaved changes
                 </span>
               )}
             </div>
@@ -130,7 +130,7 @@ export default function BrainSoulTab() {
               type="button"
               onClick={handleSaveCurrentFile}
               disabled={isSaving}
-              className="px-4 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-400/50 text-cyan-200 hover:text-white text-xs font-semibold font-mono transition-all active:scale-95 cursor-pointer shadow-md flex items-center gap-1.5"
+              className="px-3.5 py-1.5 rounded-lg bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.14] text-white text-xs font-mono font-medium transition-all active:scale-95 cursor-pointer shadow-sm flex items-center gap-1.5"
               title="Save changes (Ctrl+S / Cmd+S)"
             >
               {isSaving ? (
@@ -154,21 +154,21 @@ export default function BrainSoulTab() {
         </div>
 
         {saveMsg && (
-          <div className="px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-200 text-xs font-mono animate-fade-in">
+          <div className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-400/20 text-emerald-200 text-xs font-mono animate-fade-in">
             {saveMsg}
           </div>
         )}
 
-        {/* 4-File Selector Pills */}
-        <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-white/5 text-xs font-mono">
-          <span className="text-slate-500 text-[11px]">Memory Files:</span>
+        {/* File Selector Pills */}
+        <div className="flex items-center gap-2 flex-wrap pt-2.5 border-t border-white/[0.06] text-xs font-mono">
+          <span className="text-slate-500 text-[11px]">System Files:</span>
           <button
             type="button"
             onClick={() => setActiveTab("soul")}
-            className={`px-3 py-1 rounded-xl transition-all cursor-pointer ${
+            className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
               activeTab === "soul"
-                ? "bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 font-bold"
-                : "bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 hover:text-white border border-white/10"
+                ? "bg-white/[0.08] text-white border border-white/[0.14] font-semibold shadow-sm"
+                : "bg-white/[0.02] hover:bg-white/[0.06] text-slate-400 hover:text-white border border-white/[0.06]"
             }`}
           >
             SOUL.md (Identity &amp; Rules)
@@ -176,36 +176,36 @@ export default function BrainSoulTab() {
           <button
             type="button"
             onClick={() => setActiveTab("user")}
-            className={`px-3 py-1 rounded-xl transition-all cursor-pointer ${
+            className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
               activeTab === "user"
-                ? "bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 font-bold"
-                : "bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 hover:text-white border border-white/10"
+                ? "bg-white/[0.08] text-white border border-white/[0.14] font-semibold shadow-sm"
+                : "bg-white/[0.02] hover:bg-white/[0.06] text-slate-400 hover:text-white border border-white/[0.06]"
             }`}
           >
-            USER.md (Preferences)
+            USER.md (User Profile)
           </button>
           <button
             type="button"
             onClick={() => setActiveTab("memory")}
-            className={`px-3 py-1 rounded-xl transition-all cursor-pointer ${
+            className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
               activeTab === "memory"
-                ? "bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 font-bold"
-                : "bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 hover:text-white border border-white/10"
+                ? "bg-white/[0.08] text-white border border-white/[0.14] font-semibold shadow-sm"
+                : "bg-white/[0.02] hover:bg-white/[0.06] text-slate-400 hover:text-white border border-white/[0.06]"
             }`}
           >
-            MEMORY.md (Facts)
+            MEMORY.md (Durable Notes)
           </button>
           <span className="text-[10px] text-slate-500 ml-auto hidden sm:inline">
-            AGENTS.md automatically active in project workspace root
+            AGENTS.md active in project workspace root
           </span>
         </div>
       </div>
 
       {/* Raw Markdown Editor Container */}
-      <div className="rounded-2xl liquid-glass border border-white/10 overflow-hidden flex flex-col shadow-2xl">
-        <div className="flex items-center justify-between px-4 py-2 bg-black/50 border-b border-white/10 text-xs font-mono text-slate-400 select-none">
+      <div className="rounded-xl bg-[#060913] border border-white/[0.08] overflow-hidden flex flex-col shadow-2xl">
+        <div className="flex items-center justify-between px-4 py-2 bg-black/40 border-b border-white/[0.06] text-xs font-mono text-slate-400 select-none">
           <div className="flex items-center gap-2">
-            <span className="text-cyan-300 font-bold">{badge.label}</span>
+            <span className="text-cyan-400 font-semibold">{badge.label}</span>
             <span className={`text-[10px] ${isOverBudget ? "text-rose-400 font-bold" : "text-slate-500"}`}>
               • Budget: {badge.cap}
             </span>
@@ -221,11 +221,11 @@ export default function BrainSoulTab() {
           value={currentContent}
           onChange={(e) => setCurrentContent(e.target.value)}
           rows={18}
-          className="w-full bg-slate-950/80 p-4 font-mono text-xs text-slate-200 leading-relaxed custom-scrollbar border-none focus:outline-none resize-y selection:bg-cyan-500/30"
+          className="w-full bg-[#080d1a]/60 p-4 font-mono text-xs text-slate-200 leading-relaxed custom-scrollbar border-none focus:outline-none resize-y selection:bg-cyan-500/30 min-h-[340px]"
           placeholder={`# Enter ${badge.label} content here...`}
         />
-        <div className="px-4 py-2 bg-black/40 border-t border-white/5 text-[11px] text-slate-400 font-mono flex items-center justify-between">
-          <span>🔒 Privacy Filter active: Credentials &amp; API keys are automatically redacted before saving.</span>
+        <div className="px-4 py-2 bg-black/40 border-t border-white/[0.06] text-[11px] text-slate-500 font-mono flex items-center justify-between">
+          <span>Privacy Filter: Credentials &amp; secrets automatically checked before persist.</span>
           <span>UTF-8 Markdown • Ctrl+S to save</span>
         </div>
       </div>

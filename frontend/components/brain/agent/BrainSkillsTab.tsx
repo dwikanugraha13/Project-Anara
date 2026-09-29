@@ -242,15 +242,15 @@ export default function BrainSkillsTab() {
   return (
     <div className="space-y-6 font-sans select-text">
       {/* Top Banner Navigation: Installed vs Skills Hub */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl liquid-glass border border-white/10 shadow-lg">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3.5 sm:p-4 rounded-xl bg-white/[0.025] border border-white/[0.08] shadow-lg">
         <div>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
             <h3 className="text-xs sm:text-sm font-semibold text-white tracking-wide">
-              Anara Skill Ecosystem (Hermes Parity)
+              Anara Skill Ecosystem
             </h3>
             <span className="px-2 py-0.5 rounded-md text-[9px] font-mono uppercase bg-cyan-500/10 border border-cyan-400/20 text-cyan-300">
-              100.000+ Skills Hub
+              100.000+ Community Hub
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1 leading-relaxed">
@@ -260,17 +260,17 @@ export default function BrainSkillsTab() {
 
         {/* View Switcher Tabs & Actions */}
         <div className="flex items-center gap-2 shrink-0">
-          <div className="flex items-center p-1 rounded-xl bg-black/50 border border-white/10 text-xs font-mono">
+          <div className="flex items-center p-0.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs font-mono">
             <button
               type="button"
               onClick={() => setActiveTab("installed")}
-              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
                 activeTab === "installed"
-                  ? "bg-cyan-500/25 text-cyan-200 font-bold border border-cyan-400/30 shadow-sm"
+                  ? "bg-white/[0.08] text-white font-medium border border-white/[0.14] shadow-sm"
                   : "text-slate-400 hover:text-white"
               }`}
             >
-              <span>Terpasang</span>
+              <span>Installed</span>
               <span className="px-1.5 py-0.2 rounded text-[10px] bg-white/10 text-slate-200">
                 {skills.length}
               </span>
@@ -278,9 +278,9 @@ export default function BrainSkillsTab() {
             <button
               type="button"
               onClick={() => setActiveTab("hub")}
-              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
                 activeTab === "hub"
-                  ? "bg-cyan-500/25 text-cyan-200 font-bold border border-cyan-400/30 shadow-sm"
+                  ? "bg-white/[0.08] text-white font-medium border border-white/[0.14] shadow-sm"
                   : "text-slate-400 hover:text-white"
               }`}
             >
@@ -295,7 +295,7 @@ export default function BrainSkillsTab() {
             <button
               type="button"
               onClick={() => setIsAddSkillOpen((v) => !v)}
-              className="px-3 py-2 rounded-xl bg-white/[0.07] hover:bg-white/[0.12] border border-white/15 text-slate-200 hover:text-white text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+              className="px-3 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.12] text-slate-200 hover:text-white text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-[0.98]"
               title="Create your own custom skill"
             >
               <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
