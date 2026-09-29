@@ -594,8 +594,8 @@ export default function AnaraWorkbench({
               />
             </div>
 
-            {/* Anchored Composer Dock — zero text overlap, seamless studio flow */}
-            <div className="shrink-0 px-3 py-2.5 sm:px-5 sm:py-3.5 border-t border-white/[0.08] bg-[#060913]/90 backdrop-blur-2xl relative z-20">
+            {/* Anchored Composer Dock — seamless floating card, zero divider lines */}
+            <div className="shrink-0 px-3 py-2 sm:px-5 sm:py-3 relative z-20 bg-transparent">
               <div className="max-w-3xl xl:max-w-4xl mx-auto w-full">
                 <BottomDock
                   embedded={true}

@@ -11,32 +11,43 @@ export interface ChecklistData {
   items: ChecklistStep[];
   completedCount: number;
   total: number;
+  status?: "pending_approval" | "executing" | "completed";
 }
 
 export interface DockPlanChecklistProps {
   checklistData: ChecklistData;
   isExpanded: boolean;
   onToggle: () => void;
+  onApprovePlan?: () => void;
+  onRejectPlan?: () => void;
 }
 
-export function DockPlanChecklist({ checklistData, isExpanded, onToggle }: DockPlanChecklistProps) {
+export function DockPlanChecklist({
+  checklistData,
+  isExpanded,
+  onToggle,
+  onApprovePlan,
+  onRejectPlan,
+}: DockPlanChecklistProps) {
   if (!checklistData || !checklistData.items || checklistData.items.length === 0) {
     return null;
   }
+
+  const isAllDone = checklistData.completedCount === checklistData.total;
 
   return (
     <div className="w-full liquid-glass rounded-2xl border border-white/15 shadow-2xl shadow-black/80 pointer-events-auto backdrop-blur-3xl overflow-hidden transition-all duration-300 relative select-none animate-fade-in">
       <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/25 to-transparent pointer-events-none" />
 
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center justify-between px-3.5 py-2.5 hover:bg-white/[0.04] transition-colors cursor-pointer text-left"
-      >
-        <div className="flex items-center gap-2.5 min-w-0">
+      <div className="w-full flex items-center justify-between px-3.5 py-2 hover:bg-white/[0.04] transition-colors">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer"
+        >
           <span
             className={`px-1.5 py-0.5 rounded-[5px] font-mono text-[9.5px] font-bold border transition-colors shrink-0 ${
-              checklistData.completedCount === checklistData.total
+              isAllDone
                 ? "bg-emerald-500/15 border-emerald-400/30 text-emerald-300 shadow-[0_0_8px_rgba(52,211,153,0.15)]"
                 : "bg-cyan-500/15 border-cyan-400/30 text-cyan-300"
             }`}
@@ -46,20 +57,36 @@ export function DockPlanChecklist({ checklistData, isExpanded, onToggle }: DockP
           <span className="text-[12px] font-medium text-slate-200 tracking-tight font-sans truncate">
             {checklistData.title}
           </span>
-        </div>
-        <div className="p-0.5 rounded text-slate-400 hover:text-white transition-colors shrink-0">
-          <svg
-            className={`w-3.5 h-3.5 transition-transform duration-200 ease-out ${
-              isExpanded ? "rotate-180" : ""
-            }`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        </button>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {checklistData.status === "pending_approval" && onApprovePlan && (
+            <button
+              type="button"
+              onClick={onApprovePlan}
+              className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/40 text-[11px] font-mono font-bold flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-sm"
+            >
+              <span>Approve &amp; Run</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onToggle}
+            className="p-1 rounded text-slate-400 hover:text-white transition-colors cursor-pointer"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+            <svg
+              className={`w-3.5 h-3.5 transition-transform duration-200 ease-out ${
+                isExpanded ? "rotate-180" : ""
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
         </div>
-      </button>
+      </div>
 
       {isExpanded && (
         <div className="px-2.5 pb-2 pt-1 space-y-0.5 border-t border-white/[0.08] max-h-[120px] overflow-y-auto no-scrollbar">
@@ -70,7 +97,7 @@ export function DockPlanChecklist({ checklistData, isExpanded, onToggle }: DockP
 
             return (
               <div
-                key={sIdx}
+                key={`${cleanTitle}-${sIdx}`}
                 className={`flex items-start gap-2.5 py-1.5 px-2 rounded-xl transition-all ${
                   isDone
                     ? "bg-white/[0.015] hover:bg-white/[0.03]"

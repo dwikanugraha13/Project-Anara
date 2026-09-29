@@ -56,6 +56,9 @@ export interface BottomDockProps {
   onHeightChange?: (height: number) => void;
   embedded?: boolean;
   showAgentModeToggle?: boolean;
+  onApprovePlan?: () => void;
+  reasoningEffort?: "low" | "medium" | "high";
+  onSelectReasoningEffort?: (effort: "low" | "medium" | "high") => void;
 }
 
 export default function BottomDock({
@@ -89,6 +92,9 @@ export default function BottomDock({
   onHeightChange,
   embedded = false,
   showAgentModeToggle,
+  onApprovePlan,
+  reasoningEffort,
+  onSelectReasoningEffort,
 }: BottomDockProps) {
   const isAgentToggleVisible = showAgentModeToggle !== undefined ? showAgentModeToggle : embedded;
   const footerDockRef = useRef<HTMLElement>(null);
@@ -143,19 +149,19 @@ export default function BottomDock({
     }
   };
 
-  // Measure dock height for timeline spacer
+  // Measure dock height for timeline spacer via ResizeObserver (zero keystroke layout thrashing)
   useEffect(() => {
-    if (footerDockRef.current) {
-      onHeightChange?.(footerDockRef.current.offsetHeight);
-    }
-  }, [
-    inputMessage,
-    isInputExpanded,
-    attachedFiles.length,
-    checklistData,
-    isPlanChecklistExpanded,
-    onHeightChange,
-  ]);
+    const el = footerDockRef.current;
+    if (!el || !onHeightChange) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const height = Math.round(entry.contentRect.height);
+        onHeightChange(height);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [onHeightChange]);
 
   // Textarea auto-resize
   useEffect(() => {
@@ -205,26 +211,69 @@ export default function BottomDock({
     }
   };
 
-  const handleAttachFiles = (files: FileList | null) => {
+  const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB cap
+
+  const handleAttachFiles = useCallback((files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const newItems: AttachedItem[] = Array.from(files).map((f) => {
-      const ext = f.name.split(".").pop() || "";
-      return {
+    const validItems: AttachedItem[] = [];
+    const validFiles: File[] = [];
+
+    Array.from(files).forEach((f) => {
+      if (f.size > MAX_FILE_SIZE_BYTES) {
+        console.warn(`[Attachment] File ${f.name} exceeds 25MB limit.`);
+        return;
+      }
+      const isDuplicate = attachedFiles.some(
+        (existing) => existing.name === f.name && existing.sizeKb === Math.round(f.size / 1024)
+      );
+      if (isDuplicate) return;
+
+      const ext = f.name.split(".").pop()?.toLowerCase() || "";
+      const isImage = f.type.startsWith("image/");
+      let previewUrl: string | undefined;
+      if (isImage) {
+        try {
+          previewUrl = URL.createObjectURL(f);
+        } catch {}
+      }
+
+      validItems.push({
         file: f,
         name: f.name,
         ext,
         sizeKb: Math.round(f.size / 1024),
-      };
+        previewUrl,
+      });
+      validFiles.push(f);
     });
-    setAttachedFiles((prev) => [...prev, ...newItems]);
-    onFileUpload(files);
-  };
+
+    if (validItems.length > 0) {
+      setAttachedFiles((prev) => [...prev, ...validItems]);
+      try {
+        const dt = new DataTransfer();
+        validFiles.forEach((file) => dt.items.add(file));
+        onFileUpload(dt.files);
+      } catch {
+        onFileUpload(files);
+      }
+    }
+  }, [attachedFiles, onFileUpload]);
+
+  const dragCounterRef = useRef(0);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (e.dataTransfer.types && Array.from(e.dataTransfer.types).includes("Files")) {
       e.preventDefault();
       e.stopPropagation();
       e.dataTransfer.dropEffect = "copy";
+    }
+  }, []);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
+    if (e.dataTransfer.types && Array.from(e.dataTransfer.types).includes("Files")) {
       setIsDragOver(true);
     }
   }, []);
@@ -232,18 +281,22 @@ export default function BottomDock({
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-    setIsDragOver(false);
+    dragCounterRef.current--;
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0;
+      setIsDragOver(false);
+    }
   }, []);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsDragOver(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDragOver(false);
       handleAttachFiles(e.dataTransfer.files);
     }
-  }, []);
+  }, [handleAttachFiles]);
 
   return (
     <footer
@@ -276,6 +329,7 @@ export default function BottomDock({
           checklistData={checklistData}
           isExpanded={isPlanChecklistExpanded}
           onToggle={() => setIsPlanChecklistExpanded((v) => !v)}
+          onApprovePlan={onApprovePlan}
         />
       )}
 
@@ -401,8 +455,8 @@ export default function BottomDock({
           )}
         </div>
 
-        {/* 2. Bottom Action Toolbar Row */}
-        <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/[0.07]">
+        {/* 2. Bottom Action Toolbar Row (Zero divider line, seamless obsidian glass) */}
+        <div className="flex items-center justify-between gap-2 pt-1">
           {/* Left: [+] [Voice/Chat] [Plan/Build] [Model] */}
           <div className="flex items-center gap-2 flex-wrap min-w-0">
             {/* Attachment (+) */}
@@ -653,6 +707,8 @@ export default function BottomDock({
                 activeModelId={activeModelId}
                 onSelectModel={onSelectModel}
                 interactionMode={interactionMode}
+                reasoningEffort={reasoningEffort}
+                onSelectReasoningEffort={onSelectReasoningEffort}
               />
             </div>
           </div>

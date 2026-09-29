@@ -188,6 +188,11 @@ def is_request_local(client_host: Optional[str], headers: Optional[Dict[str, str
             return False
         if headers.get("cf-ray"):
             return False
+        xff = headers.get("x-forwarded-for")
+        if xff:
+            first_ip = xff.split(",")[0].strip().lower()
+            if first_ip and first_ip not in ("127.0.0.1", "::1", "localhost", "testclient"):
+                return False
     clean_host = (client_host or "").strip().lower()
     return clean_host in ("127.0.0.1", "::1", "localhost", "testclient")
 

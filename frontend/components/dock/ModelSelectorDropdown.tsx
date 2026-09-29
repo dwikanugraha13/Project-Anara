@@ -12,6 +12,10 @@ export interface AIModelInfo {
   description: string;
   icon: string;
   supports_voice: boolean;
+  supports_reasoning?: boolean;
+  supports_vision?: boolean;
+  context_window?: number;
+  max_output_tokens?: number;
   is_configured: boolean;
   is_active: boolean;
 }
@@ -23,6 +27,8 @@ interface ModelSelectorDropdownProps {
   activeModelId: string;
   onSelectModel: (id: string) => void;
   interactionMode: "voice" | "chat";
+  reasoningEffort?: "low" | "medium" | "high";
+  onSelectReasoningEffort?: (effort: "low" | "medium" | "high") => void;
 }
 
 export default function ModelSelectorDropdown({
@@ -32,6 +38,8 @@ export default function ModelSelectorDropdown({
   activeModelId,
   onSelectModel,
   interactionMode,
+  reasoningEffort = "medium",
+  onSelectReasoningEffort,
 }: ModelSelectorDropdownProps) {
   const [modelSearchQuery, setModelSearchQuery] = useState("");
 
@@ -44,10 +52,17 @@ export default function ModelSelectorDropdown({
     return true;
   });
 
+  const formatTokens = (tokens?: number) => {
+    if (!tokens) return "";
+    if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(0)}M`;
+    if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}k`;
+    return `${tokens}`;
+  };
+
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      className="absolute bottom-9 left-0 z-50 w-72 sm:w-80 p-2 rounded-2xl bg-slate-950/95 border border-white/15 backdrop-blur-2xl shadow-2xl animate-scale-up space-y-2 max-h-[380px] flex flex-col font-mono"
+      className="absolute bottom-9 left-0 z-50 w-72 sm:w-80 p-2 rounded-2xl bg-slate-950/95 border border-white/15 backdrop-blur-2xl shadow-2xl animate-scale-up space-y-2 max-h-[420px] flex flex-col font-mono"
     >
       <div className="px-2 py-1 border-b border-white/10 flex items-center justify-between">
         <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-300">
@@ -56,11 +71,35 @@ export default function ModelSelectorDropdown({
         <button
           type="button"
           onClick={onClose}
-          className="text-slate-400 hover:text-white text-xs cursor-pointer px-1"
+          className="w-5 h-5 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
         >
-          ✕
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
         </button>
       </div>
+
+      {onSelectReasoningEffort && interactionMode === "chat" && (
+        <div className="px-2 py-1 border-b border-white/[0.08] flex items-center justify-between">
+          <span className="text-[10px] font-mono text-slate-400">Reasoning</span>
+          <div className="flex items-center gap-1 bg-white/[0.05] p-0.5 rounded-lg border border-white/10">
+            {(["low", "medium", "high"] as const).map((lvl) => (
+              <button
+                key={lvl}
+                type="button"
+                onClick={() => onSelectReasoningEffort(lvl)}
+                className={`px-2 py-0.5 rounded text-[9px] font-mono uppercase transition-all cursor-pointer ${
+                  reasoningEffort === lvl
+                    ? "bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-400/40 shadow-xs"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                {lvl}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="px-1">
         <input
@@ -109,7 +148,14 @@ export default function ModelSelectorDropdown({
                   }`}
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold truncate">{formatModelDisplayName(m.name || m.id)}</p>
+                    <div className="flex items-center justify-between gap-1">
+                      <p className="text-xs font-bold truncate">{formatModelDisplayName(m.name || m.id)}</p>
+                      {m.context_window && (
+                        <span className="text-[9px] font-mono text-slate-400 bg-white/[0.04] px-1 rounded">
+                          {formatTokens(m.context_window)}
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <span className="px-1.5 py-0.5 rounded bg-white/[0.08] text-slate-300 font-mono text-[9px] font-semibold">
                         {capBadge}

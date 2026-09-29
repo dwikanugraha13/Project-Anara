@@ -424,16 +424,17 @@ export default function ChatTimeline({
         </div>
       </div>
 
-      {/* Floating Smart Scroll Down Button */}
+      {/* Floating Circular Scroll Down Button (World-Class Agent Standard) */}
       {!isNearBottom && (
         <button
           type="button"
           onClick={() => scrollToBottom(true)}
-          className="absolute bottom-4 right-6 z-30 px-3.5 py-1.5 rounded-full bg-[#060913]/90 border border-white/10 hover:border-cyan-400/40 text-slate-200 hover:text-cyan-300 text-xs font-mono flex items-center gap-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.7)] backdrop-blur-xl cursor-pointer transition-all active:scale-95"
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 w-8 h-8 rounded-full bg-[#060913]/90 hover:bg-[#0c1328] border border-white/15 hover:border-cyan-400/40 text-slate-400 hover:text-cyan-300 flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.65)] backdrop-blur-xl cursor-pointer transition-all active:scale-90 animate-fade-in group"
+          title="Scroll to bottom"
+          aria-label="Scroll to bottom"
         >
-          <span>Scroll to bottom</span>
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+          <svg className="w-4 h-4 text-slate-400 group-hover:text-cyan-300 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M19 9l-7 7-7-7" />
           </svg>
         </button>
       )}
