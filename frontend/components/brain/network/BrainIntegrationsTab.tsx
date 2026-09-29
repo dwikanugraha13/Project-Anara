@@ -13,10 +13,6 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
   const [waQrUrl, setWaQrUrl] = useState<string | null>(null);
   const [isWaModalOpen, setIsWaModalOpen] = useState(false);
   const [isWaLoading, setIsWaLoading] = useState(false);
-  const [contacts, setContacts] = useState<Array<{ id: number; name: string; phone_number: string; platform: string }>>([]);
-  const [newContactName, setNewContactName] = useState("");
-  const [newContactPhone, setNewContactPhone] = useState("");
-  const [isAddContactOpen, setIsAddContactOpen] = useState(false);
 
   // ── Telegram & Google Integrations State ──
   const [tgStatus, setTgStatus] = useState<"connected" | "error" | "disconnected">("disconnected");
@@ -98,16 +94,6 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
     }
   };
 
-  const fetchContacts = async () => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/integrations/contacts`);
-      if (res.ok) {
-        const data = await res.json();
-        setContacts(data || []);
-      }
-    } catch {}
-  };
-
   const openWhatsAppModal = async () => {
     setIsWaModalOpen(true);
     setIsWaLoading(true);
@@ -140,38 +126,6 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
       console.error("[WhatsApp] logout error:", e);
     } finally {
       setIsWaLoading(false);
-    }
-  };
-
-  const handleSaveContact = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newContactName.trim() || !newContactPhone.trim()) return;
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/integrations/contacts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newContactName, phone_number: newContactPhone, platform: "whatsapp" }),
-      });
-      if (res.ok) {
-        setNewContactName("");
-        setNewContactPhone("");
-        setIsAddContactOpen(false);
-        fetchContacts();
-      }
-    } catch (err) {
-      console.error("Save contact error:", err);
-    }
-  };
-
-  const handleDeleteContact = async (id: number) => {
-    if (!confirm("Delete this contact?")) return;
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/integrations/contacts/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        setContacts((prev) => prev.filter((c) => c.id !== id));
-      }
-    } catch (err) {
-      console.error("Delete contact error:", err);
     }
   };
 
@@ -281,7 +235,6 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
     fetchWhatsAppStatus();
     fetchTelegramStatus();
     fetchGoogleStatus();
-    fetchContacts();
   }, []);
 
   useEffect(() => {
@@ -296,15 +249,12 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
         } else if (isGoogleModalOpen) {
           setIsGoogleModalOpen(false);
           e.stopPropagation();
-        } else if (isAddContactOpen) {
-          setIsAddContactOpen(false);
-          e.stopPropagation();
         }
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isWaModalOpen, isTgModalOpen, isGoogleModalOpen, isAddContactOpen]);
+  }, [isWaModalOpen, isTgModalOpen, isGoogleModalOpen]);
 
   return (
     <>
@@ -540,101 +490,6 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
               <span>Direct voice commands:</span>
               <span className="text-emerald-300 font-mono">&quot;Play Music&quot;</span>
             </div>
-          </div>
-        </div>
-    
-    
-    
-        {/* ── BUKU KONTAK WHATSAPP (CONTACTS BOOK) ── */}
-        <div className="p-5 rounded-2xl liquid-glass border border-white/10 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="text-sm font-semibold text-white tracking-wide flex items-center gap-2">
-                <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-                <span>WhatsApp Contacts Book</span>
-              </h4>
-              <p className="text-xs text-slate-400 mt-0.5">
-                List of nicknames and phone numbers so Anara can send messages to your contacts directly.
-              </p>
-            </div>
-            <button
-              onClick={() => setIsAddContactOpen((v) => !v)}
-              className="px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-200 hover:text-white border border-emerald-400/30 text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5"
-            >
-              <span>+</span> Add Contact
-            </button>
-          </div>
-    
-          {/* Form Tambah Kontak */}
-          {isAddContactOpen && (
-            <form onSubmit={handleSaveContact} className="p-4 rounded-xl bg-black/40 border border-emerald-400/30 space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] font-mono text-slate-400 block mb-1">Nickname</label>
-                  <input
-                    type="text"
-                    placeholder="misal: Budi / Ibu / Kantor"
-                    value={newContactName}
-                    onChange={(e) => setNewContactName(e.target.value)}
-                    className="w-full px-3 py-1.5 rounded-lg bg-black/50 border border-white/20 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-400"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] font-mono text-slate-400 block mb-1">WhatsApp Number</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 08123456789 or 628123456789"
-                    value={newContactPhone}
-                    onChange={(e) => setNewContactPhone(e.target.value)}
-                    className="w-full px-3 py-1.5 rounded-lg bg-black/50 border border-white/20 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-400"
-                    required
-                  />
-                </div>
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAddContactOpen(false)}
-                  className="px-3 py-1 text-xs text-slate-400 hover:text-white"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 rounded-lg bg-emerald-500/30 hover:bg-emerald-500/50 border border-emerald-400 text-xs font-bold text-white shadow-md cursor-pointer"
-                >
-                  Save Contact
-                </button>
-              </div>
-            </form>
-          )}
-    
-          {/* List Kontak */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
-            {contacts.length === 0 ? (
-              <div className="col-span-full py-6 text-center text-xs text-slate-500 italic">
-                No contacts saved yet. Add contacts above or say: &quot;Anara, save contact John number 0812...&quot;
-              </div>
-            ) : (
-              contacts.map((c) => (
-                <div key={c.id} className="p-2.5 px-3 rounded-xl bg-black/30 border border-white/10 flex items-center justify-between gap-2 group hover:border-emerald-400/40 transition-colors">
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-white truncate">{c.name}</p>
-                    <p className="text-[10px] font-mono text-emerald-300/80 truncate">+{c.phone_number}</p>
-                  </div>
-                  <button
-                    onClick={() => handleDeleteContact(c.id)}
-                    className="w-6 h-6 rounded flex items-center justify-center text-slate-500 hover:text-rose-300 hover:bg-rose-500/20 transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
-                    title="Delete contact"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))
-            )}
           </div>
         </div>
       </div>
