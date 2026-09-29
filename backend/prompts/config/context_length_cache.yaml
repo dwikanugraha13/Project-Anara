@@ -66,6 +66,8 @@ context_lengths:
   9router/cl/anthropic/claude-sonnet-4.6:batch@http://localhost:20128/v1: 200000
   9router/cl/anthropic/claude-sonnet-4.6@http://localhost:20128/v1: 1000000
   9router/cl/anthropic/claude-sonnet-4@http://localhost:20128/v1: 200000
+  9router/cl/anthropic/claude-sonnet-5.5:batch@http://localhost:20128/v1: 200000
+  9router/cl/anthropic/claude-sonnet-5.5@http://localhost:20128/v1: 200000
   9router/cl/anthropic/claude-sonnet-5:batch@http://localhost:20128/v1: 200000
   9router/cl/anthropic/claude-sonnet-5@http://localhost:20128/v1: 1000000
   9router/cl/arcee-ai/trinity-large-thinking@http://localhost:20128/v1: 200000
@@ -223,6 +225,8 @@ context_lengths:
   9router/cl/moonshotai/kimi-k3@http://localhost:20128/v1: 1048576
   9router/cl/morph/morph-v3-fast@http://localhost:20128/v1: 200000
   9router/cl/morph/morph-v3-large@http://localhost:20128/v1: 200000
+  9router/cl/nex-agi/nex-n2.5-mini@http://localhost:20128/v1: 200000
+  9router/cl/nex-agi/nex-n2.5-pro@http://localhost:20128/v1: 200000
   9router/cl/nousresearch/hermes-3-llama-3.1-405b@http://localhost:20128/v1: 128000
   9router/cl/nousresearch/hermes-3-llama-3.1-70b@http://localhost:20128/v1: 128000
   9router/cl/nousresearch/hermes-4-405b@http://localhost:20128/v1: 200000
@@ -696,6 +700,7 @@ context_lengths:
   9router/xkiro/google/gemini-3.8-flash@http://localhost:20128/v1: 1048576
   9router/xkiro/meituan/longcat-2.0@http://localhost:20128/v1: 200000
   9router/xkiro/meta/muse-spark-1.2-contributor@http://localhost:20128/v1: 1048576
+  9router/xkiro/meta/muse-spark-1.3-contributor:free@http://localhost:20128/v1: 1048576
   9router/xkiro/minimax/minimax-m2.1-highspeed:free@http://localhost:20128/v1: 200000
   9router/xkiro/minimax/minimax-m2.1:free@http://localhost:20128/v1: 200000
   9router/xkiro/minimax/minimax-m2.5-highspeed:free@http://localhost:20128/v1: 204800
@@ -763,6 +768,8 @@ context_lengths:
   9router/xkiro/qwen/qwen3.8-omni-flash:free@http://localhost:20128/v1: 262144
   9router/xkiro/sensenova/sensenova-6.7-flash-lite@http://localhost:20128/v1: 200000
   9router/xkiro/sensenova/sensenova-6.8-flash-lite@http://localhost:20128/v1: 200000
+  9router/xkiro/stealth/pixel-canary:free@http://localhost:20128/v1: 200000
+  9router/xkiro/stealth/space-bunny-alpha:free@http://localhost:20128/v1: 200000
   9router/xkiro/tencent/hy3@http://localhost:20128/v1: 262144
   9router/xkiro/tencent/hy4-preview@http://localhost:20128/v1: 200000
   9router/xkiro/x-ai/grok-4.5@http://localhost:20128/v1: 500000
@@ -868,6 +875,8 @@ context_lengths:
   cl/anthropic/claude-sonnet-4.6:batch@http://localhost:20128/v1: 200000
   cl/anthropic/claude-sonnet-4.6@http://localhost:20128/v1: 1000000
   cl/anthropic/claude-sonnet-4@http://localhost:20128/v1: 200000
+  cl/anthropic/claude-sonnet-5.5:batch@http://localhost:20128/v1: 200000
+  cl/anthropic/claude-sonnet-5.5@http://localhost:20128/v1: 200000
   cl/anthropic/claude-sonnet-5:batch@http://localhost:20128/v1: 200000
   cl/anthropic/claude-sonnet-5@http://localhost:20128/v1: 1000000
   cl/arcee-ai/trinity-large-thinking@http://localhost:20128/v1: 200000
@@ -1025,6 +1034,8 @@ context_lengths:
   cl/moonshotai/kimi-k3@http://localhost:20128/v1: 1048576
   cl/morph/morph-v3-fast@http://localhost:20128/v1: 200000
   cl/morph/morph-v3-large@http://localhost:20128/v1: 200000
+  cl/nex-agi/nex-n2.5-mini@http://localhost:20128/v1: 200000
+  cl/nex-agi/nex-n2.5-pro@http://localhost:20128/v1: 200000
   cl/nousresearch/hermes-3-llama-3.1-405b@http://localhost:20128/v1: 128000
   cl/nousresearch/hermes-3-llama-3.1-70b@http://localhost:20128/v1: 128000
   cl/nousresearch/hermes-4-405b@http://localhost:20128/v1: 200000
@@ -1559,6 +1570,7 @@ context_lengths:
   xkiro/google/gemini-3.8-flash@http://localhost:20128/v1: 1048576
   xkiro/meituan/longcat-2.0@http://localhost:20128/v1: 200000
   xkiro/meta/muse-spark-1.2-contributor@http://localhost:20128/v1: 1048576
+  xkiro/meta/muse-spark-1.3-contributor:free@http://localhost:20128/v1: 1048576
   xkiro/minimax/minimax-m2.1-highspeed:free@http://localhost:20128/v1: 200000
   xkiro/minimax/minimax-m2.1:free@http://localhost:20128/v1: 200000
   xkiro/minimax/minimax-m2.5-highspeed:free@http://localhost:20128/v1: 204800
@@ -1626,6 +1638,8 @@ context_lengths:
   xkiro/qwen/qwen3.8-omni-flash:free@http://localhost:20128/v1: 262144
   xkiro/sensenova/sensenova-6.7-flash-lite@http://localhost:20128/v1: 200000
   xkiro/sensenova/sensenova-6.8-flash-lite@http://localhost:20128/v1: 200000
+  xkiro/stealth/pixel-canary:free@http://localhost:20128/v1: 200000
+  xkiro/stealth/space-bunny-alpha:free@http://localhost:20128/v1: 200000
   xkiro/tencent/hy3@http://localhost:20128/v1: 262144
   xkiro/tencent/hy4-preview@http://localhost:20128/v1: 200000
   xkiro/x-ai/grok-4.5@http://localhost:20128/v1: 500000

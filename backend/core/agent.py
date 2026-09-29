@@ -10,7 +10,7 @@ Provides:
 """
 
 import asyncio
-import json
+import contextvars
 import logging
 import os
 import re
@@ -19,11 +19,15 @@ import subprocess
 import tempfile
 import time
 from typing import Any, Dict, List, Optional
-import httpx
 from config import cfg_get
-from tools import dispatch_tool_call, _emit_agent_event
+from tools import _emit_agent_event
 
 logger = logging.getLogger(__name__)
+
+# Context variable for concurrent async session isolation
+_ACTIVE_SESSION_CV: contextvars.ContextVar[Optional[int]] = contextvars.ContextVar(
+    "anara_agent_active_session_id", default=None
+)
 
 # Use system temp directory for uploaded files so project directory stays 100% clean
 WORKSPACE_DIR = os.path.join(tempfile.gettempdir(), "anara_agent_workspace")
@@ -49,12 +53,17 @@ class AnaraAgent:
         self._active_session_id: Optional[int] = None
 
     def set_active_session_id(self, session_id: Optional[int]):
-        """Sets the globally active session ID for the agent."""
+        """Sets the active session ID for the current context and instance."""
         self._active_session_id = session_id
+        try:
+            _ACTIVE_SESSION_CV.set(session_id)
+        except Exception:
+            pass
 
     def get_active_session_id(self) -> Optional[int]:
-        """Returns the currently active session ID."""
-        return self._active_session_id
+        """Returns the currently active session ID from context or instance."""
+        cv_val = _ACTIVE_SESSION_CV.get()
+        return cv_val if cv_val is not None else self._active_session_id
 
     def has_active_custom_workspace(self, session_id: Optional[int] = None) -> bool:
         """Returns True if the session has an explicitly attached user project folder (Anara Code mode)."""
@@ -264,6 +273,10 @@ class AnaraAgent:
         logger.info(f"[Checkpoint] Created snapshot {cp_id} with {copied} files.")
         return cp_id
 
+    async def async_create_checkpoint(self, session_id: Optional[int] = None) -> Optional[str]:
+        """Asynchronously creates a workspace snapshot offloaded to worker thread."""
+        return await asyncio.to_thread(self.create_checkpoint, session_id)
+
     def rollback_checkpoint(self, checkpoint_id: str, session_id: Optional[int] = None) -> bool:
         """Restores workspace files from a previously saved checkpoint snapshot."""
         effective_sid = session_id if session_id is not None else self._active_session_id
@@ -286,6 +299,10 @@ class AnaraAgent:
                     pass
         logger.info(f"[Checkpoint] Successfully rolled back to snapshot {safe_cp}.")
         return True
+
+    async def async_rollback_checkpoint(self, checkpoint_id: str, session_id: Optional[int] = None) -> bool:
+        """Asynchronously rolls back a workspace snapshot offloaded to worker thread."""
+        return await asyncio.to_thread(self.rollback_checkpoint, checkpoint_id, session_id)
 
     def record_git_commit(self, file_path: str, message: str, session_id: Optional[int] = None) -> Optional[str]:
         """

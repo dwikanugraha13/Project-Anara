@@ -162,21 +162,14 @@ class AnaraExecutionRunner:
             logger.info(f"[ExecutionRunner] Pending action #{pending.plan_id} APPROVED -> switching to BUILD MODE")
             if pending.original_prompt:
                 clean_text = f"Approved plan execution for original request: '{pending.original_prompt}'."
+        elif requested_mode in ("plan", "build", "conversational"):
+            agent_mode = requested_mode
         elif session_mode == "explicit_plan_build":
-            if is_approved:
-                agent_mode = "build"
-            else:
-                agent_mode = requested_mode if requested_mode in ("plan", "build") else "plan"
+            agent_mode = "build" if is_approved else "plan"
+        elif needs_plan(clean_text, session_mode=session_mode):
+            agent_mode = "plan"
         else:
-            # Conversational mode: execute directly, runtime tool interception handles safety
-            if is_approved:
-                agent_mode = "build"
-            elif session_mode == "conversational":
-                agent_mode = "conversational"
-            elif needs_plan(clean_text, session_mode=session_mode):
-                agent_mode = "plan"
-            else:
-                agent_mode = "build"
+            agent_mode = "conversational" if session_mode == "conversational" else "build"
 
         # 3. Memory Snapshot is injected into system prompt context; autonomous memory tool handles updates (Anara Standard)
 

@@ -18,7 +18,11 @@ class CliPlatformAdapter(BasePlatformAdapter):
         return {"name": "cli", "status": "connected", "is_configured": True, "connected": True}
 
     async def send_message(self, target_id: str, text: str, **kwargs: Any) -> Dict[str, Any]:
-        print(text)
+        try:
+            from .terminal_ui import terminal_ui
+            terminal_ui.print_response(text, speaker_name="Anara")
+        except Exception:
+            print(text)
         return {"status": "success", "platform": "cli"}
 
     def render_approval(self, narration: str, action: Any) -> Dict[str, Any]:

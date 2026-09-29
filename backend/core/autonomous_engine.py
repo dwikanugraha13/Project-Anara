@@ -24,7 +24,7 @@ from typing import Dict, List, Any, Optional, Generator
 
 from memory.base import DB_PATH
 from tools import get_tool_risk
-from core.plan_detector import get_highest_risk, detect_tools_from_text
+from core.plan_detector import get_highest_risk
 
 logger = logging.getLogger(__name__)
 

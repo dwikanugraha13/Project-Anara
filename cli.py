@@ -72,10 +72,25 @@ def print_banner(session_mode: str, model_id: str):
     terminal_ui.print_banner(session_mode=session_mode)
 
 
+def resolve_workspace_root() -> str:
+    """Dynamically resolves the active workspace root starting from cwd, probing for nearest git repo."""
+    cwd = os.getcwd()
+    curr = os.path.abspath(cwd)
+    while True:
+        if os.path.isdir(os.path.join(curr, ".git")):
+            return curr
+        parent = os.path.dirname(curr)
+        if parent == curr:
+            break
+        curr = parent
+    return cwd
+
+
 async def run_cli_interactive(initial_mode: str = "conversational", single_prompt: Optional[str] = None):
     session_mode = initial_mode
     model_id = get_active_model_id()
     terminal_id = f"cli_{os.getpid()}"
+    active_workspace = resolve_workspace_root()
 
     # Resolve speaker from profile if available
     user_name = "Agnan"
@@ -100,6 +115,13 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
     )
     session_id = new_sess["id"]
     session_key = new_sess.get("session_key", "")
+
+    # Ground session in active workspace root
+    try:
+        from core.agent import anara_agent
+        anara_agent.attach_local_folder(active_workspace, session_id=session_id)
+    except Exception:
+        pass
 
     if not single_prompt:
         print_banner(session_mode, model_id)
@@ -126,7 +148,7 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
             session_kwargs = {
                 "history": FileHistory(history_file),
                 "auto_suggest": AutoSuggestFromHistory(),
-                "completer": AnaraCliCompleter(ROOT_DIR),
+                "completer": AnaraCliCompleter(active_workspace),
             }
             if output is not None:
                 session_kwargs["output"] = output
@@ -164,9 +186,9 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
         if cmd.lower() == "/diff":
             import subprocess
             try:
-                diff_out = subprocess.check_output("git diff", shell=True, text=True, errors="replace", cwd=ROOT_DIR)
+                diff_out = subprocess.check_output("git diff", shell=True, text=True, errors="replace", cwd=active_workspace)
                 if diff_out.strip():
-                    terminal_ui.render_diff("Workspace Unstaged Changes", "", diff_out)
+                    terminal_ui.render_diff("Workspace Unstaged Changes", raw_diff=diff_out)
                 else:
                     terminal_ui.console.print("  [dim]Working tree clean. No unstaged changes.[/dim]\n")
             except Exception as e_diff:
@@ -206,7 +228,7 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
             import subprocess
             branch = "unknown"
             try:
-                branch = subprocess.check_output("git branch --show-current", shell=True, text=True, cwd=ROOT_DIR).strip()
+                branch = subprocess.check_output("git branch --show-current", shell=True, text=True, cwd=active_workspace).strip()
             except Exception:
                 pass
 
@@ -215,7 +237,7 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
                 "Session Mode": session_mode,
                 "Session ID": f"#{session_id} ({session_key})" if session_key else f"#{session_id}",
                 "Active AI Model": cur_m,
-                "Workspace Root": ROOT_DIR,
+                "Workspace Root": active_workspace,
                 "Git Branch": branch or "main",
                 "Fact Memories": f"{stats.get('memories_count', 0)} nodes",
                 "Skills Library": f"{stats.get('skills_count', 0)} registered",
@@ -223,8 +245,19 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
             terminal_ui.render_status_hud(data)
             return True
 
-        if cmd.lower() == "/mode":
-            session_mode = "explicit_plan_build" if session_mode == "conversational" else "conversational"
+        if cmd.lower().startswith("/mode"):
+            parts = cmd.split(maxsplit=1)
+            if len(parts) > 1:
+                target_mode = parts[1].strip().lower()
+                if target_mode in ("plan", "build", "explicit_plan_build"):
+                    session_mode = "explicit_plan_build"
+                elif target_mode in ("chat", "conversational"):
+                    session_mode = "conversational"
+                else:
+                    terminal_ui.console.print(f"\n[yellow]Unknown mode '{target_mode}'. Options: chat, conversational, plan, build.[/yellow]\n")
+                    return True
+            else:
+                session_mode = "explicit_plan_build" if session_mode == "conversational" else "conversational"
             terminal_ui.console.print(f"\n[yellow]Operational mode switched to:[/yellow] [bold cyan]{session_mode}[/bold cyan]\n")
             return True
 
@@ -236,13 +269,11 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
             terminal_ui.console.print()
             return True
 
-        if cmd.lower() == "/skills":
-            skills = skill_library.list_skills()
-            terminal_ui.console.print(f"\n[bold cyan]=== SKILL LIBRARY ({len(skills)} Registered) ===[/bold cyan]")
-            for s in skills:
-                color = "green" if s["status"] == "active" else "yellow"
-                terminal_ui.console.print(f" • [bold]{s['name']}[/bold] ({s['category']}) [[{color}]{s['status']}[/{color}]]: [dim]{s['description']}[/dim]")
-            terminal_ui.console.print()
+        if cmd.lower().startswith("/skills"):
+            parts = cmd.split(maxsplit=2)
+            act = parts[1].strip().lower() if len(parts) > 1 else "list"
+            target = parts[2].strip() if len(parts) > 2 else None
+            manage_cli_skills(action=act, target=target)
             return True
 
         if cmd.lower().startswith("/daemon"):
@@ -251,15 +282,44 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
             await manage_cli_daemon(act)
             return True
 
+        # Expand @file references into grounded context attachments
+        attachments = []
+        expanded_context_blocks = []
+        import re
+        at_matches = re.findall(r"@([a-zA-Z0-9_\-\./\\]+)", cmd)
+        for ref in at_matches:
+            target_path = os.path.normpath(os.path.join(active_workspace, ref))
+            if os.path.isfile(target_path):
+                try:
+                    with open(target_path, "r", encoding="utf-8", errors="replace") as f:
+                        file_body = f.read()
+                    if len(file_body) > 12000:
+                        file_preview = file_body[:8000] + "\n\n[... truncated large file ...]\n\n" + file_body[-3000:]
+                    else:
+                        file_preview = file_body
+                    attachments.append({
+                        "filename": os.path.basename(target_path),
+                        "path": target_path,
+                        "content": file_preview
+                    })
+                    expanded_context_blocks.append(f"[CONTEXT ATTACHMENT (@{ref})]:\n```\n{file_preview}\n```")
+                except Exception:
+                    pass
+
+        effective_text = cmd
+        if expanded_context_blocks:
+            effective_text = "\n\n".join(expanded_context_blocks) + f"\n\nUser Instruction: {cmd}"
+
         # Process standard request
         req = ChannelRequest(
-            text=cmd,
+            text=effective_text,
             channel="cli",
             channel_id=terminal_id,
             user_id="agnan",
             sender_name=user_name,
             trigger_type="interactive",
-            session_id=session_id
+            session_id=session_id,
+            attachments=attachments
         )
 
         streamed_any = False
@@ -298,7 +358,10 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
 
         if res.plan_pending and res.plan_id:
             # Plan Mode Gate triggered
-            terminal_ui.render_plan_approval_card(res.text)
+            clean_plan = res.text
+            if "\n[Approval Confirmation:" in clean_plan:
+                clean_plan = clean_plan.split("\n[Approval Confirmation:")[0].strip()
+            terminal_ui.render_plan_approval_card(clean_plan)
 
             try:
                 raw_choice = await _read_cli_line("Approve the plan above for execution? [Y/n]: ")

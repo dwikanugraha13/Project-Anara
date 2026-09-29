@@ -41,6 +41,10 @@ class ToolActivitySpinner:
         self._current_label = ""
 
     def start_tool(self, tool_name: str, detail: str = ""):
+        # If another tool was already active, complete it cleanly before starting new tool
+        if self._status is not None and self._current_label:
+            self.finish_tool(success=True)
+
         self._start_time = time.time()
         clean_detail = detail.strip().replace("\n", " ")
         if len(clean_detail) > 65:
@@ -67,6 +71,8 @@ class ToolActivitySpinner:
             self._status.update(f"{self._current_label} [dim]({clean})[/dim]")
 
     def finish_tool(self, success: bool = True, summary: str = ""):
+        if not self._current_label and self._status is None:
+            return
         elapsed = time.time() - self._start_time if self._start_time > 0 else 0.0
         if self._status:
             try:
@@ -84,6 +90,8 @@ class ToolActivitySpinner:
                 clean_sum = clean_sum[:52] + "..."
             msg += f" → [dim]{clean_sum}[/dim]"
         self.console.print(msg)
+        self._current_label = ""
+        self._start_time = 0.0
 
 
 class StreamTokenRenderer:
@@ -153,22 +161,28 @@ class AnaraTerminalUI:
         self.console.print(panel)
         self.console.print()
 
-    def render_diff(self, file_path: str, old_content: str, new_content: str):
-        """Displays a syntax-highlighted unified diff for file edits."""
-        old_lines = old_content.splitlines(keepends=True)
-        new_lines = new_content.splitlines(keepends=True)
-        diff_lines = list(difflib.unified_diff(
-            old_lines,
-            new_lines,
-            fromfile=f"a/{file_path}",
-            tofile=f"b/{file_path}",
-            n=3
-        ))
-        if not diff_lines:
+    def render_diff(self, file_path: str, old_content: str = "", new_content: str = "", raw_diff: Optional[str] = None):
+        """Displays a syntax-highlighted unified diff for file edits or raw git diffs."""
+        if raw_diff is not None:
+            diff_text = raw_diff.strip()
+        elif not old_content and (new_content.startswith("diff --git") or new_content.startswith("index ") or new_content.startswith("--- ")):
+            diff_text = new_content.strip()
+        else:
+            old_lines = old_content.splitlines(keepends=True)
+            new_lines = new_content.splitlines(keepends=True)
+            diff_lines = list(difflib.unified_diff(
+                old_lines,
+                new_lines,
+                fromfile=f"a/{file_path}",
+                tofile=f"b/{file_path}",
+                n=3
+            ))
+            diff_text = "".join(diff_lines).strip()
+
+        if not diff_text:
             self.console.print(f"  [dim]No textual differences for {file_path}[/dim]")
             return
 
-        diff_text = "".join(diff_lines)
         syntax = Syntax(diff_text, "diff", theme="monokai", line_numbers=True)
         panel = Panel(
             syntax,
@@ -281,21 +295,31 @@ class AnaraCliCompleter(Completer):
             try:
                 base_dir = self.workspace_root
                 target_prefix = prefix
+                sub = ""
                 if "/" in prefix or "\\" in prefix:
-                    sub, target_prefix = os.path.split(prefix)
+                    norm_p = prefix.replace("\\", "/")
+                    if norm_p.endswith("/"):
+                        sub = norm_p.rstrip("/")
+                        target_prefix = ""
+                    else:
+                        sub, target_prefix = norm_p.rsplit("/", 1)
                     base_dir = os.path.join(base_dir, sub)
 
                 if os.path.isdir(base_dir):
-                    for item in os.listdir(base_dir):
+                    for item in sorted(os.listdir(base_dir)):
                         if item.startswith(".") or item in ("node_modules", "venv", "__pycache__"):
                             continue
-                        if item.lower().startswith(target_prefix.lower()):
-                            full_rel = os.path.join(prefix[:-len(target_prefix)], item) if target_prefix else item
+                        if not target_prefix or item.lower().startswith(target_prefix.lower()):
+                            is_dir = os.path.isdir(os.path.join(base_dir, item))
+                            clean_sub = sub.replace("\\", "/")
+                            full_rel = f"{clean_sub}/{item}" if clean_sub else item
+                            if is_dir:
+                                full_rel += "/"
                             yield Completion(
                                 full_rel,
                                 start_position=-len(prefix),
-                                display=item,
-                                display_meta="file" if not os.path.isdir(os.path.join(base_dir, item)) else "dir"
+                                display=item + ("/" if is_dir else ""),
+                                display_meta="dir" if is_dir else "file"
                             )
             except Exception:
                 pass
