@@ -269,11 +269,16 @@ class PromptAssembler:
         if not ch_clean:
             ch_clean = "web"
 
+        from providers.accounts import get_active_model_id
+        current_active_model = model_id or get_active_model_id()
+        model_display_line = f"- Active AI Model: {current_active_model}\n" if current_active_model else ""
+
         slot_channel = (
             f"[ACTIVE RUNTIME & SESSION METADATA]:\n"
             f"- Current Platform / Channel: {ch_clean}\n"
             f"- Current Session: {sess_disp}\n"
             f"- Current User / Speaker: {speaker_name or 'Agnan'}\n"
+            f"{model_display_line}"
             f"- Active Workspace Root: {root_path}\n\n"
         )
         if ch_clean == "cli":
