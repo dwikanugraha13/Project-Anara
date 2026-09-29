@@ -279,8 +279,6 @@ async def fetch_codex_models(force_refresh: bool = False) -> List[Dict[str, Any]
                         # Dynamic chat/reasoning filter: excludes embeddings, audio, moderation, and legacy completions
                         if any(k in r_low for k in ["embedding", "whisper", "tts", "dall-e", "babbage", "davinci", "moderation", "realtime"]):
                             continue
-                        if not re.search(r'\b(gpt-[3-9]|o[1-9]|codex|chatgpt)\b', r_low):
-                            continue
                         full_id = f"codex/{raw_id}"
                         if full_id in default_ids:
                             continue
@@ -471,7 +469,7 @@ async def fetch_custom_providers_models(force_refresh: bool = False) -> List[Dic
         try:
             async with httpx.AsyncClient(timeout=6.0) as client:
                 res = await client.get(f"{base_url}/models", headers=headers)
-                if res.status_code == 404 and "11434" in base_url:
+                if res.status_code == 404:
                     res = await client.get(f"{base_url}/api/tags", headers=headers)
 
                 if res.status_code == 200:

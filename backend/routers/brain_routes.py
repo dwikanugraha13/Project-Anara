@@ -99,6 +99,8 @@ async def proxy_image_endpoint(url: str):
         host = (parsed.hostname or "").lower().strip()
         if not host:
             raise HTTPException(status_code=400, detail="Invalid hostname.")
+        if host in ("localhost", "metadata.google.internal", "instance-data"):
+            raise HTTPException(status_code=403, detail="Access to internal host is forbidden.")
 
         # Resolve hostname to actual IP to prevent DNS rebinding attacks
         try:
@@ -106,8 +108,16 @@ async def proxy_image_endpoint(url: str):
             for family, _, _, _, sockaddr in addr_info:
                 ip_str = sockaddr[0]
                 ip = ipaddress.ip_address(ip_str)
-                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-                    raise HTTPException(status_code=403, detail="Access to private or local network resources is forbidden.")
+                if (
+                    ip.is_private
+                    or ip.is_loopback
+                    or ip.is_link_local
+                    or ip.is_reserved
+                    or ip.is_unspecified
+                    or ip.is_multicast
+                    or ip in ipaddress.ip_network("100.64.0.0/10")
+                ):
+                    raise HTTPException(status_code=403, detail=f"Access to private or local network resources ({ip_str}) is forbidden.")
         except socket.gaierror:
             raise HTTPException(status_code=400, detail="Cannot resolve hostname.")
     except HTTPException:

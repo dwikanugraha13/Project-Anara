@@ -25,13 +25,48 @@ from .events import _emit_agent_event
 
 logger = logging.getLogger(__name__)
 
-# Global persistent Playwright session manager
+_LOCK = asyncio.Lock()
 _PLAYWRIGHT_INSTANCE: Optional[Playwright] = None
 _ACTIVE_BROWSER: Optional[Browser] = None
 _ACTIVE_CONTEXT: Optional[BrowserContext] = None
 _ACTIVE_PAGE: Optional[Page] = None
 _CURRENT_HEADED_STATE: Optional[bool] = None
-_LOCK = asyncio.Lock()
+
+
+def _is_safe_public_url(url: str) -> tuple[bool, Optional[str]]:
+    """SSRF & DNS rebinding safety barrier."""
+    try:
+        from urllib.parse import urlparse
+        import socket
+        import ipaddress
+        parsed = urlparse(url)
+        if parsed.scheme.lower() not in ("http", "https"):
+            return False, f"Unsupported scheme '{parsed.scheme}'. Only HTTP and HTTPS are permitted."
+        host = (parsed.hostname or "").strip().lower()
+        if not host:
+            return False, "Target URL missing valid hostname."
+        if host in ("localhost", "metadata.google.internal", "instance-data"):
+            return False, f"Access to internal host '{host}' is forbidden."
+        try:
+            addr_info = socket.getaddrinfo(host, None)
+            for family, _, _, _, sockaddr in addr_info:
+                ip_str = sockaddr[0]
+                ip = ipaddress.ip_address(ip_str)
+                if (
+                    ip.is_private
+                    or ip.is_loopback
+                    or ip.is_link_local
+                    or ip.is_reserved
+                    or ip.is_unspecified
+                    or ip.is_multicast
+                    or ip in ipaddress.ip_network("100.64.0.0/10")
+                ):
+                    return False, f"Access to private/internal network IP '{ip_str}' is forbidden."
+        except socket.gaierror:
+            return False, f"Could not resolve hostname '{host}'."
+        return True, None
+    except Exception as e:
+        return False, f"Invalid URL: {e}"
 
 
 def _find_brave_binary() -> Optional[str]:
@@ -117,6 +152,10 @@ async def _tool_browser_navigate(url: str, headed: Optional[bool] = None, use_br
 
     if not clean_url.startswith("http://") and not clean_url.startswith("https://"):
         clean_url = f"https://{clean_url}"
+
+    is_safe, denial_reason = _is_safe_public_url(clean_url)
+    if not is_safe:
+        return {"status": "error", "message": denial_reason or "URL navigation rejected by SSRF guard."}
 
     # Auto-headed determination: media playback requires headed mode for reliable sound output
     from config import cfg_get

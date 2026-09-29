@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { BACKEND_URL, BrandIcon, ProviderItem } from "../types";
-import ProviderTokenSummary, { TokenSummaryData, TokenLogEntry } from "./providers/ProviderTokenSummary";
 import ProviderDetailView from "./providers/ProviderDetailView";
 import CustomProviderModal from "./providers/CustomProviderModal";
 import CodexOAuthModal, { OAuthSessionData } from "./providers/CodexOAuthModal";
@@ -97,27 +96,6 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
     codeVerifier?: string;
   } | null>(null);
 
-  // ── Token Usage & Credit Tracker State ──
-  const [tokenSummary, setTokenSummary] = useState<{
-    overall?: { total_tokens: number; total_prompt: number; total_completion: number; total_requests: number };
-    today?: { today_tokens: number; today_requests: number };
-    by_provider?: Array<{ provider: string; requests: number; total_tokens: number }>;
-    top_models?: Array<{ model_id: string; requests: number; total_tokens: number }>;
-  } | null>(null);
-  const [tokenLogs, setTokenLogs] = useState<Array<{
-    id: number;
-    session_id?: number;
-    model_id: string;
-    provider: string;
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
-    created_at: string;
-  }>>([]);
-  const [showTokenHistory, setShowTokenHistory] = useState(false);
-
-  // ── WhatsApp & Media Integrations State ──
-
   const fetchProviders = async (forceRefresh: boolean = false) => {
     if (forceRefresh) setIsRefreshingProviders(true);
     setProvidersError(null);
@@ -127,12 +105,10 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
     try {
       const url = forceRefresh ? `${BACKEND_URL}/api/providers?refresh=true` : `${BACKEND_URL}/api/providers`;
       
-      // Parallel execution of all 4 provider/token/hidden endpoints with 12s timeout
-      const [res, hRes, tRes, tlRes] = await Promise.all([
+      // Parallel execution of provider and hidden models endpoints with 12s timeout
+      const [res, hRes] = await Promise.all([
         fetch(url, { signal: controller.signal }).catch(() => null),
         fetch(`${BACKEND_URL}/api/models/hidden`, { signal: controller.signal }).catch(() => null),
-        fetch(`${BACKEND_URL}/api/tokens/summary`, { signal: controller.signal }).catch(() => null),
-        fetch(`${BACKEND_URL}/api/tokens/history?limit=50`, { signal: controller.signal }).catch(() => null),
       ]);
 
       if (res && res.ok) {
@@ -156,16 +132,6 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
           grouped[provider].push(item.model_id);
         });
         setHiddenModelsByProvider(grouped);
-      }
-
-      if (tRes && tRes.ok) {
-        const tData = await tRes.json();
-        setTokenSummary(tData);
-      }
-
-      if (tlRes && tlRes.ok) {
-        const tlData = await tlRes.json();
-        setTokenLogs(tlData.logs || []);
       }
     } catch (err: any) {
       if (err?.name === "AbortError") {
@@ -561,12 +527,6 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
             </button>
           </div>
         </div>
-    
-        {/* ── Token Usage & Credit Tracking Summary Cards & Accordion ── */}
-        <ProviderTokenSummary
-          tokenSummary={tokenSummary}
-          tokenLogs={tokenLogs}
-        />
 
         {/* 9Router-Style Categorized Provider Grids & Interactive Detail View */}
         {(() => {

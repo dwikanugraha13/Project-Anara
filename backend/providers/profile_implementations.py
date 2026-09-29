@@ -1307,7 +1307,11 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
         except Exception:
             pass
 
-        return "https://api.openai.com/v1/chat/completions", {"Content-Type": "application/json"}, model_id
+        fallback_headers = {"Content-Type": "application/json"}
+        openai_key = get_provider_key("openai")
+        if openai_key:
+            fallback_headers["Authorization"] = f"Bearer {openai_key}"
+        return "https://api.openai.com/v1/chat/completions", fallback_headers, model_id
 
     async def stream_chat(
         self,

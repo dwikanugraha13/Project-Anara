@@ -429,13 +429,18 @@ class AnaraExecutionRunner:
         if tools_used and agent_mode == "build":
             try:
                 from core.convergence import ConvergenceDetector
+                from tools import get_tool_risk
                 conv_detector = ConvergenceDetector(read_only=False)
-                for rec in turn_tool_records:
-                    conv_detector.record_turn_actions([{
-                        "tool": rec.get("tool_name", ""),
-                        "args": rec.get("tool_args", {}),
-                        "result": rec.get("tool_result", "")
-                    }])
+                for step_idx, rec in enumerate(turn_tool_records):
+                    if rec.get("status") == "done":
+                        t_name = rec.get("tool_name", "")
+                        conv_detector.record_turn_actions(step_idx, [{
+                            "tool_name": t_name,
+                            "args": rec.get("tool_args", {}),
+                            "risk": get_tool_risk(t_name),
+                            "summary": rec.get("tool_result", ""),
+                            "is_error": False,
+                        }])
                 stop_gate_nudge = conv_detector.evaluate_final_stop_gate(agent_mode="build")
                 if stop_gate_nudge:
                     logger.info(f"[ExecutionRunner] Verification stop-gate activated: {stop_gate_nudge[:80]}...")

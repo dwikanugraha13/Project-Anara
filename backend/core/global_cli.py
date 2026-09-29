@@ -80,8 +80,11 @@ class GlobalCLIInstaller:
             "} else { Write-Output 'ALREADY' } }"
         )
         try:
+            import base64
+            encoded_bytes = ps_cmd.encode("utf-16le")
+            encoded_cmd = base64.b64encode(encoded_bytes).decode("ascii")
             res = subprocess.run(
-                ["powershell", "-NoProfile", "-Command", ps_cmd],
+                ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded_cmd],
                 capture_output=True,
                 text=True,
                 check=False,
