@@ -17,6 +17,7 @@ const nextConfig: NextConfig = {
   experimental: {
     cpus: 1,
   },
+  devIndicators: false,
   turbopack: {},
   webpack: (config, { dev }) => {
     if (dev) {

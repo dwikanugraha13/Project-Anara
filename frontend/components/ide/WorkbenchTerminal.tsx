@@ -43,22 +43,27 @@ export default function WorkbenchTerminal({
   const [isExecuting, setIsExecuting] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const terminalEndRef = useRef<HTMLDivElement>(null);
+  const processedLogIndexRef = useRef<number>(0);
 
-  // Auto-append incoming live agent tool/build logs
+  // Strip ANSI escape codes safely for clean visual rendering
+  const stripAnsi = (text: string) =>
+    text.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, "");
+
+  // Auto-append incoming live agent tool/build logs without dropping duplicates
   useEffect(() => {
-    if (logs.length > 0) {
-      setTabs((prev) =>
-        prev.map((t) => {
-          if (t.id === "term-1") {
-            const existing = new Set(t.lines);
-            const newLines = logs.filter((l) => !existing.has(l));
-            if (newLines.length > 0) {
-              return { ...t, lines: [...t.lines, ...newLines] };
+    if (logs.length > processedLogIndexRef.current) {
+      const newLines = logs.slice(processedLogIndexRef.current).map(stripAnsi);
+      processedLogIndexRef.current = logs.length;
+      if (newLines.length > 0) {
+        setTabs((prev) =>
+          prev.map((t) => {
+            if (t.id === "term-1") {
+              return { ...t, lines: [...t.lines, ...newLines].slice(-1000) };
             }
-          }
-          return t;
-        })
-      );
+            return t;
+          })
+        );
+      }
     }
   }, [logs]);
 
@@ -117,7 +122,7 @@ export default function WorkbenchTerminal({
               try {
                 const parsed = JSON.parse(line.slice(5).trim());
                 if (parsed.line !== undefined) {
-                  newLines.push(parsed.line);
+                  newLines.push(stripAnsi(parsed.line));
                 } else if (parsed.done) {
                   newLines.push(`[Process finished with exit code ${parsed.returncode}]`);
                 } else if (parsed.error) {
@@ -133,11 +138,36 @@ export default function WorkbenchTerminal({
                 t.id === activeTabId
                   ? {
                       ...t,
-                      lines: [...t.lines, ...newLines].slice(-300),
+                      lines: [...t.lines, ...newLines].slice(-1000),
                     }
                   : t
               )
             );
+          }
+        }
+
+        // Flush trailing chunk if present
+        if (buffer.trim()) {
+          const line = buffer.trim();
+          if (line.startsWith("data:")) {
+            try {
+              const parsed = JSON.parse(line.slice(5).trim());
+              const trailing: string[] = [];
+              if (parsed.line !== undefined) {
+                trailing.push(stripAnsi(parsed.line));
+              } else if (parsed.done) {
+                trailing.push(`[Process finished with exit code ${parsed.returncode}]`);
+              }
+              if (trailing.length > 0) {
+                setTabs((prev) =>
+                  prev.map((t) =>
+                    t.id === activeTabId
+                      ? { ...t, lines: [...t.lines, ...trailing].slice(-1000) }
+                      : t
+                  )
+                );
+              }
+            } catch {}
           }
         }
       } else {
@@ -244,9 +274,11 @@ export default function WorkbenchTerminal({
             type="button"
             onClick={handleAddTab}
             className="p-1 px-2 rounded-lg text-slate-500 hover:text-white hover:bg-white/10 text-xs transition-colors"
-            title="Buka tab terminal baru"
+            title="New Terminal Tab"
           >
-            ＋
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
           </button>
         </div>
 
@@ -275,7 +307,7 @@ export default function WorkbenchTerminal({
       {/* Terminal Output Body */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1 text-slate-300">
         {activeTab.lines.map((line, idx) => {
-          const isCmd = line.startsWith("$");
+          const isCmd = line.startsWith("$") || line.startsWith("PS >");
           const isWarn = line.includes("WARNING") || line.includes("warn") || line.includes("503");
           const isErr = line.includes("ERROR") || line.includes("Error") || line.includes("400") || line.includes("429");
           const isOk = line.includes("SUCCESS") || line.includes("200") || line.includes("✓");
@@ -320,10 +352,10 @@ export default function WorkbenchTerminal({
           <button
             type="button"
             onClick={handleStopExecution}
-            className="px-2.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[10px] cursor-pointer flex items-center gap-1 font-mono"
+            className="px-2.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[10px] cursor-pointer flex items-center gap-1.5 font-mono"
             title="Cancel terminal process"
           >
-            <span>■</span>
+            <span className="w-1.5 h-1.5 rounded-xs bg-rose-400" />
             <span>Cancel</span>
           </button>
         ) : commandInput ? (

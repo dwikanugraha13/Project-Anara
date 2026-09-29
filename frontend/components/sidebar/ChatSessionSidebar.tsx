@@ -579,71 +579,69 @@ export default function ChatSessionSidebar({
 
               {/* ── RIGHT COLUMN: Code Editor & Terminal Dock (Flex-1) ── */}
               <div className="flex-1 min-w-0 h-full flex flex-col overflow-hidden bg-slate-950/80">
-                {activeIdeFile && activeIdeFile.isOpen ? (
-                  <div className="flex-1 min-h-0 flex flex-col w-full h-full overflow-hidden">
-                    <div className="flex-1 min-h-[140px] w-full overflow-hidden">
-                      <AnaraCodeIDE
-                        isOpen={true}
-                        embedded={true}
-                        onClose={onCloseIDE ?? (() => {})}
-                        fileName={activeIdeFile.fileName}
-                        filePath={activeIdeFile.filePath}
-                        fileExt={activeIdeFile.fileExt}
-                        fileSizeKb={activeIdeFile.fileSizeKb}
-                        content={activeIdeFile.content}
-                        originalContent={activeIdeFile.originalContent}
-                        isTerminalOpen={isTerminalOpen}
-                        onToggleTerminal={() => onToggleTerminal?.(!isTerminalOpen)}
-                        tabs={ideTabs}
-                        onSelectTab={onSelectIdeTab}
-                        onCloseTab={onCloseIdeTab}
-                        onSaveFile={onSaveIdeFile}
-                        onAskAnara={(p: string, n: string) => {
-                          if (onAskAnaraIDE) {
-                            onAskAnaraIDE(p, n);
-                          } else if (onSendText) {
-                            onSendText(`Please analyze file @${n} (${p})`, agentMode);
-                          }
-                        }}
+                <div className="flex-1 min-h-[140px] w-full overflow-hidden flex flex-col">
+                  {activeIdeFile && activeIdeFile.isOpen ? (
+                    <AnaraCodeIDE
+                      isOpen={true}
+                      embedded={true}
+                      onClose={onCloseIDE ?? (() => {})}
+                      fileName={activeIdeFile.fileName}
+                      filePath={activeIdeFile.filePath}
+                      fileExt={activeIdeFile.fileExt}
+                      fileSizeKb={activeIdeFile.fileSizeKb}
+                      content={activeIdeFile.content}
+                      originalContent={activeIdeFile.originalContent}
+                      isTerminalOpen={isTerminalOpen}
+                      onToggleTerminal={() => onToggleTerminal?.(!isTerminalOpen)}
+                      tabs={ideTabs}
+                      onSelectTab={onSelectIdeTab}
+                      onCloseTab={onCloseIdeTab}
+                      onSaveFile={onSaveIdeFile}
+                      onAskAnara={(p: string, n: string) => {
+                        if (onAskAnaraIDE) {
+                          onAskAnaraIDE(p, n);
+                        } else if (onSendText) {
+                          onSendText(`Please analyze file @${n} (${p})`, agentMode);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center p-6 text-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-500">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                        </svg>
+                      </div>
+                      <p className="text-xs text-slate-400 font-mono">
+                        Select a file from the tree on the left to view &amp; edit code
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {isTerminalOpen && (
+                  <>
+                    <div
+                      onMouseDown={startResizingTerminal}
+                      className="h-1.5 w-full cursor-row-resize shrink-0 select-none bg-transparent border-y border-white/10 hover:border-white/30 hover:bg-white/[0.04] transition-colors"
+                      title="Drag to resize terminal height"
+                    />
+
+                    <div
+                      style={{ height: terminalHeight }}
+                      className="w-full shrink-0 overflow-hidden transition-[height] duration-75"
+                    >
+                      <WorkbenchTerminal
+                        logs={[
+                          `[anara-agent] Active mode: ${agentMode.toUpperCase()}`,
+                          `[system] Terminal worker ready (Files: ${activeIdeFile?.filePath || "workspace"}).`,
+                        ]}
+                        activeTask={status === "thinking" ? "AI Model Thinking..." : undefined}
+                        onExecuteCommand={() => {}}
+                        onClose={() => onToggleTerminal?.(false)}
                       />
                     </div>
-
-                    {isTerminalOpen && (
-                      <>
-                        <div
-                          onMouseDown={startResizingTerminal}
-                          className="h-1.5 w-full cursor-row-resize shrink-0 select-none bg-transparent border-y border-white/10 hover:border-white/30 hover:bg-white/[0.04] transition-colors"
-                          title="Drag to resize terminal height"
-                        />
-
-                        <div
-                          style={{ height: terminalHeight }}
-                          className="w-full shrink-0 overflow-hidden transition-[height] duration-75"
-                        >
-                          <WorkbenchTerminal
-                            logs={[
-                              `[anara-agent] Active mode: ${agentMode.toUpperCase()}`,
-                              `[system] Terminal worker ready (Files: ${activeIdeFile?.filePath || "workspace"}).`,
-                            ]}
-                            activeTask={status === "thinking" ? "AI Model Thinking..." : undefined}
-                            onExecuteCommand={() => {}}
-                            onClose={() => onToggleTerminal?.(false)}
-                          />
-                        </div>
-                      </>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center p-6 text-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-500">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                      </svg>
-                    </div>
-                    <p className="text-xs text-slate-400 font-mono">
-                      Select a file from the tree on the left to view &amp; edit code
-                    </p>
-                  </div>
+                  </>
                 )}
               </div>
             </div>

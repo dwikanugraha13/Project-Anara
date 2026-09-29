@@ -7,7 +7,6 @@ internal request format, routing through Unified Plan Detector and Permission Ga
 """
 import asyncio
 import contextvars
-from datetime import datetime
 import json
 import logging
 import os
@@ -17,12 +16,11 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional, Callable
 from pydantic import BaseModel, Field
 
-from memory import memory_engine, file_memory
+from memory import memory_engine
 from core.context_compactor import ContextCompactor
 # NOTE: classify_approval_intent is imported lazily at line ~636 when needed
 # needs_plan and is_explicit_plan_approval were removed (dead imports — never called in this file)
 from core.prompt_assembler import PromptAssembler
-from core.skill_library import skill_library
 from core.security import check_prompt_injection
 from core.session_manager import session_state_manager, PendingAction, ActionState
 from providers import call_universal_chat_model, get_active_model_id
@@ -445,6 +443,18 @@ async def _auto_dispatch_artifacts_to_channel(channel: str, channel_id: str, art
         if not f_path or not os.path.isfile(f_path):
             continue
         try:
+            sz_bytes = os.path.getsize(f_path)
+            max_size_bytes = 25 * 1024 * 1024 if channel == "discord" else 48 * 1024 * 1024
+            if sz_bytes > max_size_bytes:
+                sz_mb = sz_bytes / (1024 * 1024)
+                logger.warning(f"[AutoDispatch] Media '{f_name}' exceeds upload limit ({sz_mb:.1f}MB). Delivering local path notice.")
+                await channel_manager.send_message(
+                    channel=channel,
+                    target_id=channel_id,
+                    text=f"📁 Generated file <code>{f_name}</code> ({sz_mb:.1f} MB) exceeds upload limit. Stored at:\n<code>{f_path}</code>"
+                )
+                continue
+
             logger.info(f"[AutoDispatch] Dispatching media '{f_name}' to {channel} {channel_id}")
             ext = os.path.splitext(f_name)[1].lower()
             if ext in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"):
@@ -1060,7 +1070,6 @@ async def _process_channel_request_core(
                 if t_risk in ("mutating", "ask"):
                     # Anara Standard: NEVER auto-execute mutating tools unvetted! Route to Approval State Machine
                     logger.info(f"[ChannelAdapter] Anti-leak caught mutating tool call '{leaked_tool}'. Routing to approval gate...")
-                    import uuid
                     plan_id = f"plan_{uuid.uuid4().hex[:8]}"
                     t_args = leaked_payload.get("arguments") or {}
                     pending_act = PendingAction(
@@ -1076,15 +1085,25 @@ async def _process_channel_request_core(
                         user_id=req.user_id,
                     )
                     session_state_manager.set_pending_action(req.channel, req.channel_id, pending_act)
+                    _PENDING_PLANS[f"{req.channel}_{req.channel_id}"] = pending_act.to_dict()
+
                     rationale = await synthesize_action_rationale(leaked_tool, t_args, clean_text)
                     plan_disp = f"Proposed Action: `{leaked_tool}`\n{rationale}\n\nPlease confirm to execute."
+                    rendered = UniversalChannelAdapter.render_approval_payload(
+                        channel=req.channel,
+                        narration=plan_disp,
+                        action=pending_act
+                    )
                     return ChannelResponse(
-                        text=plan_disp,
+                        text=rendered.get("text") or plan_disp,
                         session_id=session_id,
                         mode="plan",
                         plan_pending=True,
                         plan_id=plan_id,
+                        status="pending_approval",
+                        reply_markup=rendered.get("reply_markup"),
                         pending_action=pending_act.to_dict(),
+                        rendered_payload=rendered,
                     )
                 else:
                     logger.info(f"[ChannelAdapter] Anti-leak caught harmless read-only tool call '{leaked_tool}'. Auto-dispatching...")
@@ -1477,8 +1496,9 @@ async def dispatch_channel_approval_resolution(
             try:
                 from integrations.telegram.client import edit_telegram_message
                 await edit_telegram_message(chat_id=channel_id, message_id=int(message_id), text=rendered.get("text", exp_text), reply_markup=None)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[OmnichannelGateway] Telegram message edit failed: {e}. Falling back to send_message.")
+                await channel_manager.send_message(channel=clean_chan, target_id=channel_id, text=rendered.get("text", exp_text))
         else:
             await channel_manager.send_message(channel=clean_chan, target_id=channel_id, text=rendered.get("text", exp_text))
         return {"status": "expired", "message": exp_text}
@@ -1500,8 +1520,9 @@ async def dispatch_channel_approval_resolution(
             try:
                 from integrations.telegram.client import edit_telegram_message
                 await edit_telegram_message(chat_id=channel_id, message_id=int(message_id), text=rendered.get("text", cancel_msg), reply_markup=None)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[OmnichannelGateway] Telegram message edit failed: {e}. Falling back to send_message.")
+                await channel_manager.send_message(channel=clean_chan, target_id=channel_id, text=rendered.get("text", cancel_msg))
         else:
             await channel_manager.send_message(channel=clean_chan, target_id=channel_id, text=rendered.get("text", cancel_msg))
         return {"status": "rejected", "message": cancel_msg}

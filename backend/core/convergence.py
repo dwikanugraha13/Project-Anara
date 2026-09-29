@@ -8,10 +8,12 @@ Monitors agent trajectory across turns to detect:
 4. Inspection Budget Exhaustion: Prevents indefinite exploration in Plan/Read-Only modes.
 """
 
+import hashlib
+import json
 import logging
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
@@ -54,8 +56,12 @@ def _is_verification_command(cmd: str) -> bool:
     if not clean_cmd:
         return False
 
-    # Exclude non-test inspection commands like 'git checkout', 'cat test.py', etc.
-    non_test_prefixes = ("git ", "cat ", "type ", "echo ", "head ", "tail ", "less ", "more ", "grep ", "find ")
+    # Exclude non-test inspection commands like 'git checkout', 'cat test.py', 'ls tests', etc.
+    non_test_prefixes = (
+        "git ", "cat ", "type ", "echo ", "head ", "tail ", "less ", "more ",
+        "grep ", "find ", "ls ", "dir ", "rm ", "touch ", "mkdir ", "cd ", "pwd ",
+        "rg ", "fd ", "stat ", "file "
+    )
     if any(clean_cmd.startswith(p) for p in non_test_prefixes):
         return False
 
@@ -342,7 +348,7 @@ class ConvergenceDetector:
             )
 
         # 4. Plan Mode / Read-Only Exploration Budget
-        if self.read_only or self.phase == "EXPLORING":
+        if self.read_only:
             if current_step >= 8:
                 default_exh = (
                     "[INSPECTION BUDGET EXHAUSTION]: You have conducted extensive exploration across 8+ steps. "
@@ -365,6 +371,19 @@ class ConvergenceDetector:
                     should_nudge=True,
                     guidance=g_cfg.get("exploration_guidance", default_exp),
                     reason="inspection_sufficient",
+                    phase=self.phase
+                )
+        elif self.phase == "EXPLORING":
+            if current_step >= 12:
+                default_exh = (
+                    "[INSPECTION BUDGET EXHAUSTION]: You have conducted extensive exploration across 12+ steps. "
+                    "Synthesize your findings and proceed with implementation or conclusion now."
+                )
+                return ConvergenceStatus(
+                    is_converged=True,
+                    should_nudge=True,
+                    guidance=g_cfg.get("inspection_budget_exhaustion", default_exh),
+                    reason="inspection_budget_exhausted",
                     phase=self.phase
                 )
 

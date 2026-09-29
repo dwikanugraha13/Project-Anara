@@ -17,8 +17,6 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-import httpx
-
 logger = logging.getLogger(__name__)
 
 # --- Public constants (canonical Gemini Live Preview model ids) ---------------

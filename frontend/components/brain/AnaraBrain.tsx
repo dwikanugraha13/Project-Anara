@@ -20,6 +20,13 @@ import BrainProjectsTab from "./context/BrainProjectsTab";
 import BrainProvidersTab from "./network/BrainProvidersTab";
 import BrainIntegrationsTab from "./network/BrainIntegrationsTab";
 
+interface BrainNavTab {
+  id: BrainTabId;
+  label: string;
+  icon: React.ReactNode;
+  badge?: number;
+}
+
 export default function AnaraBrain({
   isOpen,
   onClose,
@@ -106,7 +113,7 @@ export default function AnaraBrain({
               Autonomous Agent
             </span>
             <div className="space-y-0.5 font-mono">
-              {[
+              {([
                 {
                   id: "soul" as BrainTabId,
                   label: "Soul & Rules",
@@ -135,7 +142,7 @@ export default function AnaraBrain({
                     </svg>
                   ),
                 },
-              ].map((item) => {
+              ] as BrainNavTab[]).map((item) => {
                 const isActive = activeTab === item.id;
                 return (
                   <button

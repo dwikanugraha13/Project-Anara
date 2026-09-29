@@ -389,16 +389,6 @@ export default function AnaraWorkbench({
   const handleToggleTerminal = (targetState?: boolean) => {
     const nextState = targetState !== undefined ? targetState : !isTerminalOpen;
     setIsTerminalOpen(nextState);
-    if (nextState && (!activeIdeFile || !activeIdeFile.isOpen)) {
-      setActiveIdeFile({
-        isOpen: true,
-        fileName: "terminal.sh",
-        filePath: "workspace/terminal.sh",
-        fileExt: "sh",
-        fileSizeKb: 0,
-        content: "# Terminal Workspace\n# Ready to receive commands or execute code from the agent.\n",
-      });
-    }
   };
 
   // Fetch AI Models
@@ -580,25 +570,65 @@ export default function AnaraWorkbench({
           </div>
 
           {/* RIGHT PANEL: CHAT TIMELINE STREAM & INPUT PROMPT (Default Right Pane) */}
-          <div className="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden">
-            <ChatTimeline
-              transcript={transcript}
-              status={status}
-              activeSpeaker={activeSpeaker}
-              activeModelId={activeModelId}
-              liveToolProgress={liveToolProgress}
-              footerDockHeight={footerDockHeight}
-              onApprovePlan={onApprovePlan}
-              activeThinkingText={activeThinkingText}
-              onAnswerQuestion={onAnswerQuestion}
-              onOpenFile={(p: string) => handleOpenFileIDE(p, p.split("/").pop() || "file")}
-              onOpenLightbox={handleOpenLightbox}
-              onSelectPrompt={(text: string) => {
-                setInputMessage(text);
-                const inputEl = document.querySelector('footer textarea') as HTMLTextAreaElement;
-                inputEl?.focus();
-              }}
-            />
+          <div className="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden bg-[#030712]">
+            {/* Scrollable message timeline fills remaining vertical space */}
+            <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden">
+              <ChatTimeline
+                transcript={transcript}
+                status={status}
+                activeSessionId={activeSessionId || undefined}
+                activeSpeaker={activeSpeaker}
+                activeModelId={activeModelId}
+                liveToolProgress={liveToolProgress}
+                footerDockHeight={0}
+                onApprovePlan={onApprovePlan}
+                activeThinkingText={activeThinkingText}
+                onAnswerQuestion={onAnswerQuestion}
+                onOpenFile={(p: string) => handleOpenFileIDE(p, p.split("/").pop() || "file")}
+                onOpenLightbox={handleOpenLightbox}
+                onSelectPrompt={(text: string) => {
+                  setInputMessage(text);
+                  const inputEl = document.querySelector('footer textarea') as HTMLTextAreaElement;
+                  inputEl?.focus();
+                }}
+              />
+            </div>
+
+            {/* Anchored Composer Dock — zero text overlap, seamless studio flow */}
+            <div className="shrink-0 px-3 py-2.5 sm:px-5 sm:py-3.5 border-t border-white/[0.08] bg-[#060913]/90 backdrop-blur-2xl relative z-20">
+              <div className="max-w-3xl xl:max-w-4xl mx-auto w-full">
+                <BottomDock
+                  embedded={true}
+                  inputMessage={inputMessage}
+                  setInputMessage={setInputMessage}
+                  onSend={(text: string, mode: "plan" | "build") => onSendText?.(text, mode)}
+                  agentMode={agentMode}
+                  setAgentMode={setAgentMode}
+                  models={models}
+                  activeModelId={activeModelId}
+                  onSelectModel={handleSelectModel}
+                  status={status}
+                  isMicActive={isMicActive}
+                  isMuted={isMuted}
+                  onToggleMute={onToggleMute}
+                  onStartSession={onStartSession}
+                  onInterrupt={onInterrupt}
+                  micDenied={micDenied}
+                  activeIntensity={activeIntensity}
+                  interactionMode={interactionMode}
+                  onSetInteractionMode={onSetInteractionMode}
+                  isConnected={isConnected}
+                  activeSessionId={activeSessionId}
+                  onNewSession={handleNewSession}
+                  onFolderUpload={handleFolderUpload}
+                  onFileUpload={handleFileUpload}
+                  liveToolProgress={liveToolProgress}
+                  activeQuestion={activeUnansweredQuestion}
+                  onAnswerQuestion={onAnswerQuestion}
+                  onHeightChange={setFooterDockHeight}
+                />
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -634,36 +664,39 @@ export default function AnaraWorkbench({
         </div>
       )}
 
-      {/* ── UNIVERSAL BOTTOM DOCK ── */}
-      <BottomDock
-        inputMessage={inputMessage}
-        setInputMessage={setInputMessage}
-        onSend={(text: string, mode: "plan" | "build") => onSendText?.(text, mode)}
-        agentMode={agentMode}
-        setAgentMode={setAgentMode}
-        models={models}
-        activeModelId={activeModelId}
-        onSelectModel={handleSelectModel}
-        status={status}
-        isMicActive={isMicActive}
-        isMuted={isMuted}
-        onToggleMute={onToggleMute}
-        onStartSession={onStartSession}
-        onInterrupt={onInterrupt}
-        micDenied={micDenied}
-        activeIntensity={activeIntensity}
-        interactionMode={interactionMode}
-        onSetInteractionMode={onSetInteractionMode}
-        isConnected={isConnected}
-        activeSessionId={activeSessionId}
-        onNewSession={handleNewSession}
-        onFolderUpload={handleFolderUpload}
-        onFileUpload={handleFileUpload}
-        liveToolProgress={liveToolProgress}
-        activeQuestion={activeUnansweredQuestion}
-        onAnswerQuestion={onAnswerQuestion}
-        onHeightChange={setFooterDockHeight}
-      />
+      {/* ── VOICE MODE FLOATING BOTTOM DOCK ── */}
+      {interactionMode === "voice" && (
+        <BottomDock
+          embedded={false}
+          inputMessage={inputMessage}
+          setInputMessage={setInputMessage}
+          onSend={(text: string, mode: "plan" | "build") => onSendText?.(text, mode)}
+          agentMode={agentMode}
+          setAgentMode={setAgentMode}
+          models={models}
+          activeModelId={activeModelId}
+          onSelectModel={handleSelectModel}
+          status={status}
+          isMicActive={isMicActive}
+          isMuted={isMuted}
+          onToggleMute={onToggleMute}
+          onStartSession={onStartSession}
+          onInterrupt={onInterrupt}
+          micDenied={micDenied}
+          activeIntensity={activeIntensity}
+          interactionMode={interactionMode}
+          onSetInteractionMode={onSetInteractionMode}
+          isConnected={isConnected}
+          activeSessionId={activeSessionId}
+          onNewSession={handleNewSession}
+          onFolderUpload={handleFolderUpload}
+          onFileUpload={handleFileUpload}
+          liveToolProgress={liveToolProgress}
+          activeQuestion={activeUnansweredQuestion}
+          onAnswerQuestion={onAnswerQuestion}
+          onHeightChange={setFooterDockHeight}
+        />
+      )}
 
       {/* ── Lightbox Modal ── */}
       {selectedPreviewImage && (

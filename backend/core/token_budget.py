@@ -514,13 +514,12 @@ class TokenBudgetTracker:
 
             if isinstance(msg, dict):
                 role = msg.get("role", "")
-                content = str(msg.get("content", "") or "")
                 # Never truncate primary user instruction turns (only tool observations and assistant scratchpads)
                 if role == "user" and not any(k in content for k in ("[TOOL", "tool_result", "Observation:", "<tool_response")):
                     continue
             elif hasattr(msg, "parts") and getattr(msg, "role", "") == "user":
                 continue
-            else:
+            elif not isinstance(msg, dict) and not hasattr(msg, "parts"):
                 content = str(getattr(msg, "text", "") or getattr(msg, "content", "") or "")
 
             if not content or len(content) < 500:

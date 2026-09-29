@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { formatModelDisplayName } from "@/lib/modelFormat";
 
 export interface AIModelInfo {
   id: string;
@@ -108,7 +109,7 @@ export default function ModelSelectorDropdown({
                   }`}
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold truncate">{m.name}</p>
+                    <p className="text-xs font-bold truncate">{formatModelDisplayName(m.name || m.id)}</p>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <span className="px-1.5 py-0.5 rounded bg-white/[0.08] text-slate-300 font-mono text-[9px] font-semibold">
                         {capBadge}

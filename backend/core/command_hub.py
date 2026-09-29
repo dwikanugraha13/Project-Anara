@@ -9,15 +9,12 @@ Anara Standard Unified Command Hub:
 5. Seamless zero-friction fallback to agent reasoning loop when input is not a command.
 """
 
-from __future__ import annotations
-
-import asyncio
+import html
 from dataclasses import dataclass, field
 import logging
 import os
-import time
 import uuid
-from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple
+from typing import Any, Callable, Coroutine, Dict, List, Optional
 
 from memory import memory_engine, file_memory
 from core.skill_library import skill_library
@@ -386,15 +383,18 @@ async def _handle_cmd_workspace(ctx: UniversalCommandContext) -> UniversalComman
 
     resolved_path = resolve_fuzzy_folder_path(clean_arg)
     if not resolved_path:
-        return UniversalCommandResponse(text=f"❌ <b>Folder Not Found</b>:\nPath <code>{clean_arg}</code> is not a valid directory.")
+        escaped_arg = html.escape(clean_arg)
+        return UniversalCommandResponse(text=f"❌ <b>Folder Not Found</b>:\nPath <code>{escaped_arg}</code> is not a valid directory.")
 
     res = anara_agent.attach_local_folder(resolved_path, session_id=effective_sid)
     name = res.get("workspace_name") or os.path.basename(resolved_path) or "Workspace"
     count = res.get("total_files", 0)
+    escaped_name = html.escape(name)
+    escaped_path = html.escape(resolved_path)
     text = (
         f"✅ <b>Workspace Linked!</b>\n\n"
-        f"• <b>Project</b>: <code>{name}</code>\n"
-        f"• <b>Path</b>: <code>{resolved_path}</code>\n"
+        f"• <b>Project</b>: <code>{escaped_name}</code>\n"
+        f"• <b>Path</b>: <code>{escaped_path}</code>\n"
         f"• <b>Indexed Files</b>: {count} files\n\n"
         "Agent is now operating within this project directory."
     )

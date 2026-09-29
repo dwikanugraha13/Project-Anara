@@ -8,7 +8,7 @@ import base64
 import json
 import logging
 import os
-from typing import Callable, Awaitable, Optional, Dict, Any, List
+from typing import Callable, Awaitable, Optional, Dict, Any
 
 from google import genai
 from google.genai import types

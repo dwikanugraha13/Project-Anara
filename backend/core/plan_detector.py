@@ -13,8 +13,8 @@ import re
 import shlex
 import threading
 import time
-from typing import List, Optional, Dict, Any, Set, Tuple
-from tools import get_tool_risk, TOOL_RISK_CLASSIFICATION
+from typing import List, Optional, Dict, Any, Set
+from tools import get_tool_risk
 
 logger = logging.getLogger(__name__)
 

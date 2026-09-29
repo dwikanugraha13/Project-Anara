@@ -6,6 +6,7 @@ import { AgentActionData, TodoData } from "../hud/types";
 export interface AgentToolCardProps {
   action?: AgentActionData;
   todoData?: TodoData;
+  sessionId?: number;
   onOpenFile?: (filePath: string, fileName: string) => void;
   onDismiss?: () => void;
 }
@@ -218,11 +219,20 @@ export function TodoChecklistCard({ todoData }: { todoData: any }) {
   );
 }
 
+export interface DiffLineItem {
+  type: "add" | "del" | "ctx" | "hunk";
+  text: string;
+  oldLine?: number;
+  newLine?: number;
+}
+
 export function AgentActionCard({
   action,
+  sessionId,
   onOpenFile,
 }: {
   action?: AgentActionData;
+  sessionId?: number;
   onOpenFile?: (filePath: string, fileName: string) => void;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -231,21 +241,48 @@ export function AgentActionCard({
 
   const rawDiff = action?.rawResult || action?.summary || "";
   const parsedDiff = useMemo(() => {
-    if (!rawDiff) return { added: 0, deleted: 0, lines: [] };
-    const lines = rawDiff.split("\n");
+    if (!rawDiff) return { added: 0, deleted: 0, lines: [] as DiffLineItem[] };
+    const rawLines = rawDiff.split("\n");
     let added = 0;
     let deleted = 0;
-    const formatted = lines.map((l: string, i: number) => {
-      if (l.startsWith("+") && !l.startsWith("+++")) {
+    let currentOldLine = 1;
+    let currentNewLine = 1;
+
+    const formatted: DiffLineItem[] = [];
+
+    for (const l of rawLines) {
+      if (l.startsWith("@@")) {
+        const match = l.match(/@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/);
+        if (match) {
+          currentOldLine = parseInt(match[1], 10);
+          currentNewLine = parseInt(match[2], 10);
+        }
+        formatted.push({ type: "hunk", text: l });
+      } else if (l.startsWith("+") && !l.startsWith("+++")) {
         added++;
-        return { type: "add" as const, text: l.substring(1), lineNum: i + 1 };
-      }
-      if (l.startsWith("-") && !l.startsWith("---")) {
+        formatted.push({
+          type: "add",
+          text: l.substring(1),
+          newLine: currentNewLine++,
+        });
+      } else if (l.startsWith("-") && !l.startsWith("---")) {
         deleted++;
-        return { type: "del" as const, text: l.substring(1), lineNum: i + 1 };
+        formatted.push({
+          type: "del",
+          text: l.substring(1),
+          oldLine: currentOldLine++,
+        });
+      } else if (l.startsWith("---") || l.startsWith("+++")) {
+        formatted.push({ type: "ctx", text: l });
+      } else {
+        formatted.push({
+          type: "ctx",
+          text: l.startsWith(" ") ? l.substring(1) : l,
+          oldLine: currentOldLine++,
+          newLine: currentNewLine++,
+        });
       }
-      return { type: "ctx" as const, text: l, lineNum: i + 1 };
-    });
+    }
     return { added, deleted, lines: formatted };
   }, [rawDiff]);
 
@@ -254,13 +291,20 @@ export function AgentActionCard({
   const handleRollback = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!action?.checkpointId) return;
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm("Are you sure you want to revert modifications from this checkpoint?");
+      if (!confirmed) return;
+    }
     setIsReverting(true);
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
     try {
       const res = await fetch(`${backendUrl}/api/agent/checkpoint/revert`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ checkpoint_id: action.checkpointId }),
+        body: JSON.stringify({
+          checkpoint_id: action.checkpointId,
+          session_id: sessionId ?? null,
+        }),
       });
       if (res.ok) {
         setIsReverted(true);
@@ -374,28 +418,39 @@ export function AgentActionCard({
               {parsedDiff.lines.length > 0 ? (
                 <table className="w-full border-collapse">
                   <tbody>
-                    {parsedDiff.lines.map((line: { type: "add" | "del" | "same"; text: string; lineNum: number }, idx: number) => (
-                      <tr
-                        key={idx}
-                        className={`${
-                          line.type === "add"
-                            ? "bg-emerald-950/40 text-emerald-200 border-l-2 border-emerald-500"
-                            : line.type === "del"
-                            ? "bg-rose-950/40 text-rose-300 border-l-2 border-rose-500"
-                            : "text-slate-300 hover:bg-white/[0.02]"
-                        }`}
-                      >
-                        <td className="w-9 pr-2 text-right select-none text-slate-600 font-mono text-[10px] py-0.5">
-                          {line.lineNum}
-                        </td>
-                        <td className="w-5 text-center select-none font-bold py-0.5">
-                          {line.type === "add" ? "+" : line.type === "del" ? "-" : " "}
-                        </td>
-                        <td className="pl-1.5 whitespace-pre leading-relaxed py-0.5 font-mono">
-                          {line.text || "\u00A0"}
-                        </td>
-                      </tr>
-                    ))}
+                    {parsedDiff.lines.map((line: DiffLineItem, idx: number) => {
+                      if (line.type === "hunk") {
+                        return (
+                          <tr key={idx} className="bg-cyan-950/30 text-cyan-300 font-mono text-[10.5px] border-y border-cyan-500/20">
+                            <td colSpan={3} className="px-3 py-0.5 select-none font-semibold">
+                              {line.text}
+                            </td>
+                          </tr>
+                        );
+                      }
+                      return (
+                        <tr
+                          key={idx}
+                          className={`${
+                            line.type === "add"
+                              ? "bg-emerald-950/40 text-emerald-200 border-l-2 border-emerald-500"
+                              : line.type === "del"
+                              ? "bg-rose-950/40 text-rose-300 border-l-2 border-rose-500"
+                              : "text-slate-300 hover:bg-white/[0.02]"
+                          }`}
+                        >
+                          <td className="w-9 pr-2 text-right select-none text-slate-600 font-mono text-[10px] py-0.5">
+                            {line.type === "del" ? line.oldLine : line.newLine || line.oldLine || ""}
+                          </td>
+                          <td className="w-5 text-center select-none font-bold py-0.5">
+                            {line.type === "add" ? "+" : line.type === "del" ? "-" : " "}
+                          </td>
+                          <td className="pl-1.5 whitespace-pre leading-relaxed py-0.5 font-mono">
+                            {line.text || "\u00A0"}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               ) : (
@@ -459,9 +514,9 @@ export function AgentActionCard({
   );
 }
 
-export default function AgentToolCard({ action, todoData, onOpenFile }: AgentToolCardProps) {
+export default function AgentToolCard({ action, todoData, sessionId, onOpenFile }: AgentToolCardProps) {
   if (todoData && todoData.items && todoData.items.length > 0) {
     return <TodoChecklistCard todoData={todoData} />;
   }
-  return <AgentActionCard action={action} onOpenFile={onOpenFile} />;
+  return <AgentActionCard action={action} sessionId={sessionId} onOpenFile={onOpenFile} />;
 }

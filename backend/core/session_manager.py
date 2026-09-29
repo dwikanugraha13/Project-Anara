@@ -67,7 +67,18 @@ class AsyncReentrantLock:
         if self._owner == current_task:
             self._count += 1
             return True
-        await self._lock.acquire()
+        try:
+            await asyncio.wait_for(self._lock.acquire(), timeout=self._lease_timeout)
+        except asyncio.TimeoutError:
+            logger.warning(f"[AsyncReentrantLock] Timeout waiting for lock ({self._lease_timeout}s). Forcing lease takeover.")
+            self._owner = None
+            self._count = 0
+            if self._lock.locked():
+                try:
+                    self._lock.release()
+                except RuntimeError:
+                    pass
+            await self._lock.acquire()
         self._owner = current_task
         self._count = 1
         self._acquired_at = time.time()
@@ -192,6 +203,7 @@ class SessionStateManager:
         conn = sqlite3.connect(self.db_path, timeout=15.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON;")
+        conn.execute("PRAGMA journal_mode = WAL;")
         conn.execute("PRAGMA synchronous = NORMAL;")
         conn.execute("PRAGMA busy_timeout = 15000;")
         try:
@@ -512,20 +524,34 @@ class SessionStateManager:
                 return action
         return None
 
-    def clear_pending(self, channel: str, channel_id: str) -> Optional[PendingAction]:
+    def clear_pending(self, channel: str, channel_id: str, final_state: Optional[ActionState] = None) -> Optional[PendingAction]:
         key = self._make_key(channel, channel_id)
         act = self._pending.pop(key, None)
         if act:
-            self._update_action_state_in_db(act.plan_id, ActionState.REJECTED)
+            if final_state is not None:
+                act.state = final_state
+                act.status = str(final_state.value)
+                self._update_action_state_in_db(act.plan_id, final_state)
+            elif act.state == ActionState.PENDING:
+                act.state = ActionState.CANCELLED
+                act.status = str(ActionState.CANCELLED.value)
+                self._update_action_state_in_db(act.plan_id, ActionState.CANCELLED)
         return act
 
-    def clear_pending_by_id(self, action_id: str) -> Optional[PendingAction]:
+    def clear_pending_by_id(self, action_id: str, final_state: Optional[ActionState] = None) -> Optional[PendingAction]:
         """Removes pending action across any channel by its unique plan_id/action_id."""
         for key, action in list(self._pending.items()):
             if action.plan_id == action_id:
                 act = self._pending.pop(key, None)
                 if act:
-                    self._update_action_state_in_db(act.plan_id, ActionState.REJECTED)
+                    if final_state is not None:
+                        act.state = final_state
+                        act.status = str(final_state.value)
+                        self._update_action_state_in_db(act.plan_id, final_state)
+                    elif act.state == ActionState.PENDING:
+                        act.state = ActionState.CANCELLED
+                        act.status = str(ActionState.CANCELLED.value)
+                        self._update_action_state_in_db(act.plan_id, ActionState.CANCELLED)
                 return act
         return None
 

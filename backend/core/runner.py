@@ -25,7 +25,7 @@ from core.capabilities import ModelCapabilityRegistry
 from core.context_compactor import ContextCompactor
 from core.plan_detector import needs_plan, is_explicit_plan_approval, evaluate_command_safety
 from core.prompt_assembler import PromptAssembler
-from core.session_manager import PendingAction, session_state_manager
+from core.session_manager import PendingAction, session_state_manager, ActionState
 from providers import (
     call_universal_chat_model,
     get_active_model_id,
@@ -157,7 +157,7 @@ class AnaraExecutionRunner:
             is_approved = (semantic_intent == "approve")
 
         if pending and is_approved:
-            session_state_manager.clear_pending(self.platform, str(effective_sid))
+            session_state_manager.clear_pending(self.platform, str(effective_sid), final_state=ActionState.APPROVED)
             agent_mode = "build"
             logger.info(f"[ExecutionRunner] Pending action #{pending.plan_id} APPROVED -> switching to BUILD MODE")
             if pending.original_prompt:

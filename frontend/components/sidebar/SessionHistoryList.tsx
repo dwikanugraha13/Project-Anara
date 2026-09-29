@@ -70,41 +70,60 @@ export default function SessionHistoryList({
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return sessions;
-    return sessions.filter(
-      (s) =>
-        (s.title || "").toLowerCase().includes(q) ||
-        (s.last_user_text || "").toLowerCase().includes(q)
-    );
-  }, [sessions, search]);
+    let res = sessions;
+    if (!q) {
+      // Auto-filter noisy empty duplicate CLI sessions unless active
+      res = res.filter((s) => {
+        const isCli = (s.title || "").toLowerCase().includes("cli");
+        if (isCli && s.message_count === 0 && s.id !== activeSessionId) return false;
+        return true;
+      });
+    } else {
+      res = res.filter(
+        (s) =>
+          (s.title || "").toLowerCase().includes(q) ||
+          (s.last_user_text || "").toLowerCase().includes(q)
+      );
+    }
+    return res;
+  }, [sessions, search, activeSessionId]);
 
   const groups = useMemo(() => groupSessions(filtered), [filtered]);
 
   return (
     <>
-      {/* Top Action Buttons: Anara Brain, Anara Code & Chat Baru */}
-      <div className="px-3 pt-2.5 space-y-1.5 font-sans">
+      {/* High-Density Action Bar: New Chat + Quick Studio Buttons */}
+      <div className="px-3 pt-2.5 flex items-center gap-1.5 font-sans">
+        <button
+          onClick={onNewSession}
+          className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/30 hover:border-cyan-400/50 text-cyan-200 hover:text-white text-xs font-semibold transition-all active:scale-[0.98] cursor-pointer shadow-[0_0_12px_rgba(34,211,238,0.15)] group"
+          title="Start new conversation"
+        >
+          <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0 group-hover:rotate-90 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M12 4v16m8-8H4" />
+          </svg>
+          <span>{sessionType === "code" ? "New Project" : "New Chat"}</span>
+        </button>
+
         <button
           onClick={onOpenBrain}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.10] border border-white/10 hover:border-white/20 text-slate-200 hover:text-white text-xs font-medium transition-all active:scale-[0.98] cursor-pointer shadow-sm"
-          title="Open Anara Brain (Memory, Tasks, Projects & Providers)"
+          className="w-8 h-8 rounded-xl flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.10] border border-white/10 hover:border-white/20 text-slate-300 hover:text-white transition-all active:scale-95 cursor-pointer shrink-0"
+          title="Anara Brain (Memory, Skills & Providers)"
         >
-          <svg className="w-3.5 h-3.5 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" />
           </svg>
-          <span>Anara Brain</span>
         </button>
 
         {sessionType === "code" ? (
           <button
             onClick={onOpenCode}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/30 hover:border-cyan-400/50 text-cyan-200 hover:text-white text-xs font-semibold transition-all active:scale-[0.98] cursor-pointer shadow-sm group"
-            title="Open Workspace Editor & Terminal"
+            className="w-8 h-8 rounded-xl flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.10] border border-white/10 hover:border-white/20 text-slate-300 hover:text-white transition-all active:scale-95 cursor-pointer shrink-0"
+            title="Open Workspace Editor"
           >
-            <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
             </svg>
-            <span>Open Editor ‹/›</span>
           </button>
         ) : (
           <button
@@ -113,25 +132,14 @@ export default function SessionHistoryList({
                 window.open("/code", "_blank");
               }
             }}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/30 hover:border-cyan-400/50 text-cyan-200 hover:text-white text-xs font-semibold transition-all active:scale-[0.98] cursor-pointer shadow-sm group"
-            title="Open Anara Code Studio in new browser tab"
+            className="w-8 h-8 rounded-xl flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.10] border border-white/10 hover:border-white/20 text-slate-300 hover:text-white transition-all active:scale-95 cursor-pointer shrink-0"
+            title="Open Anara Code Studio in new tab"
           >
-            <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
             </svg>
-            <span>Open Anara Code ↗</span>
           </button>
         )}
-
-        <button
-          onClick={onNewSession}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-white/[0.07] hover:bg-white/[0.12] border border-white/12 hover:border-white/20 text-white text-xs font-semibold transition-all active:scale-[0.98] cursor-pointer shadow-sm"
-        >
-          <svg className="w-3.5 h-3.5 text-slate-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          <span>{sessionType === "code" ? "New Project" : "New Chat"}</span>
-        </button>
       </div>
 
       {/* Search */}
@@ -263,6 +271,14 @@ export default function SessionHistoryList({
                       const isBeingDragged = draggedSession?.id === s.id;
                       const isHoveredTarget = hoveredDropSessionId === s.id && Boolean(draggedSession && draggedSession.id !== s.id);
                       const formattedTime = formatFullDateTime(s.updated_at || s.created_at);
+                      const rawTitle = s.title || `Conversation #${s.id}`;
+                      const tgMatch = rawTitle.match(/Telegram Chat \((.*?)\)(?:\s*\[telegram:.*?\])?/i);
+                      const isCli = rawTitle.toLowerCase().includes("anara cli") || rawTitle.toLowerCase().includes("cli session");
+                      const cleanTitle = tgMatch
+                        ? tgMatch[1] || "Telegram User"
+                        : isCli
+                        ? "Anara CLI"
+                        : rawTitle.replace(/\s*\[.*?:.*?\]/g, "").trim() || `Conversation #${s.id}`;
 
                       return (
                         <div
@@ -367,7 +383,20 @@ export default function SessionHistoryList({
                                   : "border-transparent bg-transparent hover:bg-white/[0.04] text-slate-300 hover:text-white"
                               }`}
                             >
-                              <div className="flex items-center gap-1.5 w-full pointer-events-none">
+                              <div className="flex items-center gap-1.5 w-full pointer-events-none min-w-0">
+                                {tgMatch ? (
+                                  <span className="w-3.5 h-3.5 rounded bg-sky-500/15 border border-sky-400/30 flex items-center justify-center shrink-0 text-sky-400" title="Telegram session">
+                                    <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor">
+                                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.52 2.77-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .26z" />
+                                    </svg>
+                                  </span>
+                                ) : isCli ? (
+                                  <span className="w-3.5 h-3.5 rounded bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center shrink-0 text-emerald-400" title="CLI session">
+                                    <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 9l3 3-3 3m5 0h3" />
+                                    </svg>
+                                  </span>
+                                ) : null}
                                 {s.is_pinned === 1 && (
                                   <svg className="w-3 h-3 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
@@ -381,14 +410,16 @@ export default function SessionHistoryList({
                                     isActive ? "text-white font-semibold" : "text-slate-300"
                                   }`}
                                 >
-                                  {s.title || `Conversation #${s.id}`}
+                                  {cleanTitle}
                                 </p>
                               </div>
 
                               {/* Full Datetime Display */}
                               <div className="flex items-center justify-between text-[9.5px] font-mono text-slate-400/90 pt-0.5 pointer-events-none">
                                 <span className="truncate">{formattedTime}</span>
-                                <span className={`shrink-0 ${isActive ? "text-slate-400" : "text-slate-500"}`}>{s.message_count} messages</span>
+                                <span className={`shrink-0 ${isActive ? "text-slate-400" : "text-slate-500"}`}>
+                                  {s.message_count} {s.message_count === 1 ? "msg" : "msgs"}
+                                </span>
                               </div>
                             </div>
                           )}

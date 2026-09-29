@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import CodeMirror, { ReactCodeMirrorRef, Extension } from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
+import { EditorState } from "@codemirror/state";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import {
@@ -226,7 +227,7 @@ export default function AnaraCodeIDE({
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("anara_ide_edited_contents");
+      const saved = sessionStorage.getItem("anara_ide_edited_contents");
       if (saved) {
         setEditedContents(JSON.parse(saved));
       }
@@ -234,15 +235,19 @@ export default function AnaraCodeIDE({
     isCodeHydratedRef.current = true;
   }, []);
 
+  // Debounced non-blocking session storage persistence (1500ms delay) to prevent main-thread freeze
   useEffect(() => {
     if (!isCodeHydratedRef.current) return;
-    try {
-      if (Object.keys(editedContents).length > 0) {
-        localStorage.setItem("anara_ide_edited_contents", JSON.stringify(editedContents));
-      } else {
-        localStorage.removeItem("anara_ide_edited_contents");
-      }
-    } catch {}
+    const timer = setTimeout(() => {
+      try {
+        if (Object.keys(editedContents).length > 0) {
+          sessionStorage.setItem("anara_ide_edited_contents", JSON.stringify(editedContents));
+        } else {
+          sessionStorage.removeItem("anara_ide_edited_contents");
+        }
+      } catch {}
+    }, 1500);
+    return () => clearTimeout(timer);
   }, [editedContents]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -261,6 +266,7 @@ export default function AnaraCodeIDE({
 
   const findInputRef = useRef<HTMLInputElement>(null);
   const cmRef = useRef<ReactCodeMirrorRef>(null);
+  const editorContainerRef = useRef<HTMLDivElement>(null);
 
   // Active in-memory code buffer for current file
   const activeCode = editedContents[filePath] !== undefined ? editedContents[filePath] : (content || "");
@@ -409,18 +415,31 @@ export default function AnaraCodeIDE({
   // Global Keyboard shortcuts: Ctrl+F, Ctrl+H, Escape, Ctrl+S
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const isInput = activeEl?.tagName === "INPUT" || activeEl?.tagName === "TEXTAREA";
+      const isInsideIde = editorContainerRef.current?.contains(activeEl) || false;
+
+      // Do not hijack search/find if user is typing in another input outside IDE
+      if (isInput && !isInsideIde && !isFindOpen) {
+        return;
+      }
+
       // Ctrl + F / Cmd + F
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
-        e.preventDefault();
-        handleOpenSearch(false);
-        return;
+        if (isInsideIde || isFindOpen) {
+          e.preventDefault();
+          handleOpenSearch(false);
+          return;
+        }
       }
 
       // Ctrl + H / Cmd + H
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "h") {
-        e.preventDefault();
-        handleOpenSearch(true);
-        return;
+        if (isInsideIde || isFindOpen) {
+          e.preventDefault();
+          handleOpenSearch(true);
+          return;
+        }
       }
 
       // Escape to close search
@@ -432,9 +451,11 @@ export default function AnaraCodeIDE({
 
       // Ctrl + S / Cmd + S to save
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        handleSave();
-        return;
+        if (isInsideIde) {
+          e.preventDefault();
+          handleSave();
+          return;
+        }
       }
     };
     window.addEventListener("keydown", onKey);
@@ -569,6 +590,8 @@ export default function AnaraCodeIDE({
     ];
     if (viewMode === "diff" && originalContent) {
       list.push(...unifiedMergeView({ original: originalContent, mergeControls: false }));
+      list.push(EditorView.editable.of(false));
+      list.push(EditorState.readOnly.of(true));
     }
     return list;
   }, [fileExt, viewMode, originalContent]);
@@ -577,6 +600,7 @@ export default function AnaraCodeIDE({
 
   const editorContent = (
     <div
+      ref={editorContainerRef}
       className={`w-full h-full overflow-hidden flex flex-col text-white relative ${
         embedded
           ? "rounded-none border-none shadow-none bg-transparent"

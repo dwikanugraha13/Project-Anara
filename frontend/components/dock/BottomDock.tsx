@@ -7,6 +7,7 @@ import { DockPlanChecklist } from "./DockPlanChecklist";
 import { DockAudioWaveform } from "./DockAudioWaveform";
 import { DockAttachmentChips } from "./DockAttachmentChips";
 import type { ToolProgressPayload } from "@/hooks/useWebSocket";
+import { formatModelDisplayName } from "@/lib/modelFormat";
 
 export type AssistantStatus = "idle" | "listening" | "thinking" | "speaking";
 
@@ -273,19 +274,19 @@ export default function BottomDock({
           />
         </div>
       ) : (
-        /* ── Modern Agent Prompt Card ── */
+        /* ── Modern Agent Prompt Card (True Obsidian Liquid Glass) ── */
         <div
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`w-full liquid-glass rounded-2xl p-2.5 px-3.5 shadow-2xl flex flex-col gap-2 shadow-black/90 pointer-events-auto backdrop-blur-3xl relative transition-[border-color,background-color,box-shadow] duration-200 ${
+          className={`w-full rounded-2xl p-2.5 px-3.5 flex flex-col gap-2 pointer-events-auto bg-[#060913]/90 backdrop-blur-2xl border shadow-[0_20px_50px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.12)] relative transition-[border-color,background-color,box-shadow] duration-200 ${
             isDragOver
               ? "border-cyan-400 bg-cyan-950/40 ring-2 ring-cyan-400/50 shadow-[0_0_30px_rgba(34,211,238,0.25)]"
-              : "border-white/15 hover:border-white/25"
+              : "border-white/[0.10] hover:border-white/[0.20]"
           } ${isInputExpanded ? "h-full flex-1 min-h-0" : ""}`}
         >
           {/* Top Specular Sheen Highlight */}
-          <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent pointer-events-none z-10" />
+          <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-cyan-400/30 to-transparent pointer-events-none z-10" />
           {isDragOver && (
             <div className="absolute inset-0 z-40 rounded-2xl bg-slate-950/85 backdrop-blur-md border-2 border-dashed border-cyan-400 flex items-center justify-center gap-2.5 text-cyan-200 text-xs font-mono font-medium animate-fade-in pointer-events-none select-none">
               <svg className="w-5 h-5 text-cyan-300 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -402,7 +403,9 @@ export default function BottomDock({
                 }`}
                 title="Add attachment / file / folder"
               >
-                <span className="text-sm font-light">＋</span>
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
               </button>
 
               {isAttachMenuOpen && (
@@ -606,21 +609,23 @@ export default function BottomDock({
             <div className="relative shrink-0">
               {(() => {
                 const cur = models.find((m) => m.id === activeModelId) || models[0];
+                const displayName = formatModelDisplayName(cur?.name || cur?.id || activeModelId);
                 return (
                   <button
                     type="button"
                     onClick={(e) => toggleDropdown("model", e)}
-                    title="Select AI Model"
+                    title={`Active Model: ${cur?.id || activeModelId}`}
                     className={`flex items-center gap-1.5 py-1 px-2.5 rounded-lg border text-[11px] font-medium font-mono transition-all cursor-pointer ${
                       isModelDropdownOpen
                         ? "bg-white/15 border-white/30 text-white"
                         : "bg-white/[0.04] border-white/10 text-slate-300 hover:text-white hover:border-white/20"
                     }`}
                   >
-                    <span className="truncate max-w-[120px] sm:max-w-[160px] font-semibold" suppressHydrationWarning>
-                      {cur?.name || (interactionMode === "voice" ? "Model Live" : "Model AI")}
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.7)] shrink-0" />
+                    <span className="truncate max-w-[130px] sm:max-w-[180px] font-semibold" suppressHydrationWarning>
+                      {displayName}
                     </span>
-                    <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3 h-3 text-slate-400 opacity-60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </button>
@@ -719,8 +724,8 @@ export default function BottomDock({
                   disabled={!inputMessage.trim() && attachedFiles.length === 0}
                   className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200 cursor-pointer shadow-md ${
                     inputMessage.trim() || attachedFiles.length > 0
-                      ? "bg-gradient-to-tr from-cyan-400 via-teal-500 to-indigo-500 text-white hover:scale-105 active:scale-95 shadow-[0_0_16px_rgba(34,211,238,0.45)] border border-cyan-300/60"
-                      : "bg-white/[0.04] text-slate-600 border border-white/10 cursor-not-allowed opacity-50"
+                      ? "bg-cyan-400 hover:bg-cyan-300 text-black shadow-[0_0_14px_rgba(34,211,238,0.4)] active:scale-95"
+                      : "bg-white/[0.04] text-slate-600 border border-white/10 cursor-not-allowed opacity-40"
                   }`}
                   title="Send message (Enter, Shift+Enter for new line)"
                 >

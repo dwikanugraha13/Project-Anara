@@ -343,6 +343,7 @@ async def stream_terminal_command_endpoint(req: TerminalExecRequest):
         return StreamingResponse(blocked_stream(), media_type="text/event-stream")
 
     async def sse_runner():
+        proc = None
         try:
             if os.name == "nt":
                 ps_cmd = [
@@ -370,13 +371,28 @@ async def stream_terminal_command_endpoint(req: TerminalExecRequest):
                 line_bytes = await proc.stdout.readline()
                 if not line_bytes:
                     break
-                line_str = line_bytes.decode("utf-8", errors="replace").rstrip("\r\n")
+                line_str = line_bytes.decode("utf-8", errors="replace").strip()
                 yield f"data: {json.dumps({'line': line_str})}\n\n"
 
             await proc.wait()
             yield f"data: {json.dumps({'done': True, 'returncode': proc.returncode})}\n\n"
+        except (asyncio.CancelledError, GeneratorExit):
+            if proc and proc.returncode is None:
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except Exception:
+                    pass
+            raise
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        finally:
+            if proc and proc.returncode is None:
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except Exception:
+                    pass
 
     return StreamingResponse(
         sse_runner(),
