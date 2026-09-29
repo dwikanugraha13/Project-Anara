@@ -128,10 +128,24 @@ export default function HomePageClient({
   const [activeThinkingText, setActiveThinkingText] = useState<string | null>(null);
   const pendingTokenUsageRef = useRef<TokenUsagePayload | null>(null);
   const [liveToolProgress, setLiveToolProgress] = useState<ToolProgressPayload | null>(null);
+  const [reasoningEffort, setReasoningEffort] = useState<"off" | "low" | "medium" | "high">("medium");
   const intensityIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
+    try {
+      const saved = localStorage.getItem("anara_reasoning_effort");
+      if (saved && ["off", "low", "medium", "high"].includes(saved)) {
+        setReasoningEffort(saved as any);
+      }
+    } catch {}
+  }, []);
+
+  const handleSelectReasoningEffort = useCallback((lvl: "off" | "low" | "medium" | "high") => {
+    setReasoningEffort(lvl);
+    try {
+      localStorage.setItem("anara_reasoning_effort", lvl);
+    } catch {}
   }, []);
 
   // ── Audio player ──────────────────────────────────────────────────────────
@@ -852,11 +866,12 @@ export default function HomePageClient({
         type: "text_input",
         text: trimmed,
         agent_mode: agentMode,
+        reasoning_effort: reasoningEffort,
         sessionId: activeSessionId
       });
       setAssistantStatus("thinking");
     },
-    [sendJSON, forceUnlock, activateDance, activeSessionId]
+    [sendJSON, forceUnlock, activateDance, activeSessionId, reasoningEffort]
   );
 
   const handleApprovePlan = useCallback(
@@ -1076,6 +1091,8 @@ export default function HomePageClient({
           onAnswerQuestion={handleAnswerQuestion}
           initialSidebarTab={initialSidebarTab}
           activeThinkingText={activeThinkingText}
+          reasoningEffort={reasoningEffort}
+          onSelectReasoningEffort={handleSelectReasoningEffort}
         />
       )}
     </main>

@@ -316,7 +316,16 @@ class AnaraAgent:
 
         self.ensure_git_repo(effective_sid)
         try:
-            rel_file = os.path.relpath(file_path, target_dir) if os.path.isabs(file_path) else file_path
+            if os.path.isabs(file_path):
+                if os.name == "nt" and os.path.splitdrive(file_path)[0].lower() != os.path.splitdrive(target_dir)[0].lower():
+                    rel_file = file_path
+                else:
+                    try:
+                        rel_file = os.path.relpath(file_path, target_dir)
+                    except ValueError:
+                        rel_file = file_path
+            else:
+                rel_file = file_path
             # Stage specific file
             subprocess.run(["git", "add", rel_file], cwd=target_dir, capture_output=True, timeout=10)
             # Commit with clean message

@@ -126,6 +126,7 @@ class GeminiProviderProfile(BaseProviderProfile):
                     temperature=temperature,
                     max_tokens=max_tokens,
                     on_chunk=token_cb,
+                    reasoning_effort=kwargs.get("reasoning_effort"),
                 )
 
             def _record_gemini_results(contents: List[Any], turn_result: Any, executed_results: List[Tuple[Any, str, bool]]) -> None:
@@ -1186,6 +1187,7 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
         token_cb: Optional[Callable[[str], Any]] = None,
         intercept_mutating_tools: bool = False,
         platform: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> Optional[Any]:
         """
         Anara Enterprise Architecture: Native Structured Tool-Use API for OpenAI-Compatible Endpoints.
@@ -1213,6 +1215,14 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                 payload["tools"] = openai_tools
             if max_tokens is not None and max_tokens > 0:
                 payload["max_tokens"] = max_tokens
+            if reasoning_effort:
+                try:
+                    from core.reasoning_effort import to_openai_reasoning
+                    oai_reasoning = to_openai_reasoning(reasoning_effort, target_model)
+                    if oai_reasoning:
+                        payload.update(oai_reasoning)
+                except Exception as e_re:
+                    logger.debug(f"[OpenAINativeTurn] reasoning_effort error: {e_re}")
 
             custom_timeout = float(cfg_get("agent.generation.custom_timeout", 120.0))
             async with httpx.AsyncClient(timeout=custom_timeout) as client:
@@ -1434,6 +1444,7 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                         token_cb=token_cb,
                         intercept_mutating_tools=intercept_mutating_tools,
                         platform=platform,
+                        reasoning_effort=kwargs.get("reasoning_effort"),
                     )
                     if native_res is not None:
                         return native_res
@@ -1547,6 +1558,7 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                         token_cb=token_cb,
                         intercept_mutating_tools=intercept_mutating_tools,
                         platform=platform,
+                        reasoning_effort=kwargs.get("reasoning_effort"),
                     )
                     if native_res is not None:
                         return native_res

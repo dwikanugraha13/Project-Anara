@@ -20,15 +20,40 @@ export interface AIModelInfo {
   is_active: boolean;
 }
 
-interface ModelSelectorDropdownProps {
+export function isReasoningSupported(model?: AIModelInfo | null): boolean {
+  if (!model) return false;
+  if (typeof model.supports_reasoning === "boolean") return model.supports_reasoning;
+  const lower = (model.id || "").toLowerCase();
+  const nameLower = (model.name || "").toLowerCase();
+  return (
+    lower.includes("thinking") ||
+    lower.includes("reasoning") ||
+    lower.includes("reasoner") ||
+    lower.includes("claude-3-7") ||
+    lower.includes("claude-3.7") ||
+    lower.includes("o1") ||
+    lower.includes("o3") ||
+    lower.includes("o4") ||
+    lower.includes("deepseek-r1") ||
+    lower.includes("r1") ||
+    lower.includes("qwq") ||
+    lower.includes("gemini-2.5") ||
+    lower.includes("gemini-3") ||
+    lower.includes("gemini-2.0-flash-thinking") ||
+    nameLower.includes("thinking") ||
+    nameLower.includes("reasoning")
+  );
+}
+
+export interface ModelSelectorDropdownProps {
   isOpen: boolean;
   onClose: () => void;
   models: AIModelInfo[];
   activeModelId: string;
   onSelectModel: (id: string) => void;
   interactionMode: "voice" | "chat";
-  reasoningEffort?: "low" | "medium" | "high";
-  onSelectReasoningEffort?: (effort: "low" | "medium" | "high") => void;
+  reasoningEffort?: "off" | "low" | "medium" | "high" | string;
+  onSelectReasoningEffort?: (effort: "off" | "low" | "medium" | "high") => void;
 }
 
 export default function ModelSelectorDropdown({
@@ -44,6 +69,9 @@ export default function ModelSelectorDropdown({
   const [modelSearchQuery, setModelSearchQuery] = useState("");
 
   if (!isOpen) return null;
+
+  const activeModel = models.find((m) => m.id === activeModelId);
+  const activeSupportsReasoning = isReasoningSupported(activeModel);
 
   const modeFilteredModels = models.filter((m) => {
     if (interactionMode === "voice") {
@@ -79,25 +107,44 @@ export default function ModelSelectorDropdown({
         </button>
       </div>
 
-      {onSelectReasoningEffort && interactionMode === "chat" && (
-        <div className="px-2 py-1 border-b border-white/[0.08] flex items-center justify-between">
-          <span className="text-[10px] font-mono text-slate-400">Reasoning</span>
-          <div className="flex items-center gap-1 bg-white/[0.05] p-0.5 rounded-lg border border-white/10">
-            {(["low", "medium", "high"] as const).map((lvl) => (
-              <button
-                key={lvl}
-                type="button"
-                onClick={() => onSelectReasoningEffort(lvl)}
-                className={`px-2 py-0.5 rounded text-[9px] font-mono uppercase transition-all cursor-pointer ${
-                  reasoningEffort === lvl
-                    ? "bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-400/40 shadow-xs"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                {lvl}
-              </button>
-            ))}
+      {interactionMode === "chat" && (
+        <div className="px-2.5 py-1.5 border-b border-white/[0.08] flex items-center justify-between bg-white/[0.02]">
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                activeSupportsReasoning ? "bg-purple-400 shadow-[0_0_6px_#c084fc]" : "bg-slate-600"
+              }`}
+            />
+            <span className="text-[10px] font-mono font-medium text-slate-300">Reasoning</span>
           </div>
+
+          {activeSupportsReasoning ? (
+            <div className="flex items-center gap-1 bg-white/[0.04] p-0.5 rounded-lg border border-white/[0.08]">
+              {(["off", "low", "medium", "high"] as const).map((lvl) => (
+                <button
+                  key={lvl}
+                  type="button"
+                  onClick={() => onSelectReasoningEffort?.(lvl)}
+                  className={`px-2 py-0.5 rounded text-[9.5px] font-mono uppercase transition-all cursor-pointer ${
+                    (reasoningEffort || "medium") === lvl
+                      ? "bg-purple-500/25 text-purple-200 font-bold border border-purple-400/40 shadow-xs"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                  title={
+                    lvl === "off"
+                      ? "Standard generation without extended thinking"
+                      : `Extended thinking effort: ${lvl} budget`
+                  }
+                >
+                  {lvl}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <span className="text-[9px] font-mono text-slate-500 italic">
+              Standard · No extended thinking
+            </span>
+          )}
         </div>
       )}
 
@@ -160,6 +207,11 @@ export default function ModelSelectorDropdown({
                       <span className="px-1.5 py-0.5 rounded bg-white/[0.08] text-slate-300 font-mono text-[9px] font-semibold">
                         {capBadge}
                       </span>
+                      {isReasoningSupported(m) && (
+                        <span className="px-1.5 py-0.5 rounded bg-purple-500/15 border border-purple-400/25 text-purple-300 font-mono text-[9px] font-semibold">
+                          REASONING
+                        </span>
+                      )}
                       <span className="text-[9.5px] text-slate-400 truncate">
                         {m.provider?.toUpperCase()} · {m.badge?.replace(/[^\x20-\x7E]/g, "").trim()}
                       </span>

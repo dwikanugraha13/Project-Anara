@@ -369,7 +369,8 @@ class AutonomousEngine:
                 from core.session_manager import session_state_manager
                 pending_act = session_state_manager.get_pending_by_id(res.plan_id)
                 action_tools = [pending_act.tool_name] if (pending_act and pending_act.tool_name) else (res.tools_used or ["mutating"])
-                auto_approved = evaluate_trust_approval(trust_level, action_tools)
+                act_args = getattr(pending_act, "tool_args", None) if pending_act else None
+                auto_approved = evaluate_trust_approval(trust_level, action_tools, tool_args=act_args)
 
                 if auto_approved:
                     # Policy grants auto-approval for this risk tier

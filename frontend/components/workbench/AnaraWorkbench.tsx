@@ -109,6 +109,8 @@ export interface AnaraWorkbenchProps {
   initialSidebarTab?: "history" | "editor";
   activeThinkingText?: string | null;
   onAnswerQuestion?: (questionId: string, answers: any, dismissed?: boolean) => void;
+  reasoningEffort?: "off" | "low" | "medium" | "high" | string;
+  onSelectReasoningEffort?: (effort: "off" | "low" | "medium" | "high") => void;
 }
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
@@ -146,6 +148,8 @@ export default function AnaraWorkbench({
   initialSidebarTab,
   activeThinkingText = null,
   onAnswerQuestion,
+  reasoningEffort,
+  onSelectReasoningEffort,
 }: AnaraWorkbenchProps) {
   const [inputMessage, setInputMessage] = useState("");
   const [isBrainDrawerOpen, setIsBrainDrawerOpen] = useState(false);
@@ -628,6 +632,8 @@ export default function AnaraWorkbench({
                   activeQuestion={activeUnansweredQuestion}
                   onAnswerQuestion={onAnswerQuestion}
                   onHeightChange={setFooterDockHeight}
+                  reasoningEffort={reasoningEffort}
+                  onSelectReasoningEffort={onSelectReasoningEffort}
                 />
               </div>
             </div>
@@ -699,7 +705,9 @@ export default function AnaraWorkbench({
           activeQuestion={activeUnansweredQuestion}
           onAnswerQuestion={onAnswerQuestion}
           onHeightChange={setFooterDockHeight}
-        />
+          reasoningEffort={reasoningEffort}
+          onSelectReasoningEffort={onSelectReasoningEffort}
+          />
       )}
 
       {/* ── Lightbox Modal ── */}

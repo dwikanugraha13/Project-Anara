@@ -156,6 +156,7 @@ class AgentRunner:
 
             tools_used: List[str] = []
             selected_model = data.get("model_id") or get_active_model_id()
+            req_reasoning_effort = data.get("reasoning_effort") or data.get("reasoningEffort") or "medium"
             chat_diagnostics["active_requests"] += 1
             chat_diagnostics["last_stage"] = f"generating with {selected_model}"
             chat_diagnostics["last_updated"] = _time.time()
@@ -168,6 +169,7 @@ class AgentRunner:
                     requested_mode=agent_mode,
                     model_id=selected_model,
                     interaction_mode=req_interaction_mode,
+                    reasoning_effort=req_reasoning_effort,
                 ):
                     if event.type == "chunk" and event.content:
                         accumulated_chunks.append(event.content)

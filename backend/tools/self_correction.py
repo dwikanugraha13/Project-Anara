@@ -431,6 +431,26 @@ class SelfCorrectionTracker:
     def is_exhausted(self) -> bool:
         return len(self.history) >= self.max_retries
 
+    def record_tool_call(self, tool_name: str, args: Any = None, result: Any = None) -> None:
+        """Records a tool call and automatically registers failed attempts for circuit breaker tracking."""
+        is_err = False
+        err_type = "unknown"
+        detail_msg = ""
+        if isinstance(result, dict):
+            if result.get("status") == "error" or result.get("is_error"):
+                is_err = True
+                err_type = str(result.get("error_type") or "tool_error")
+                detail_msg = str(result.get("message") or result.get("error") or "")
+        elif isinstance(result, str):
+            r_low = result.lower()
+            if "error:" in r_low or "exception:" in r_low or "failed:" in r_low:
+                is_err = True
+                err_type = "execution_error"
+                detail_msg = result[:150]
+        if is_err:
+            arg_str = str(args or "")[:120]
+            self.register_attempt(tool_name, arg_str, err_type, detail=detail_msg)
+
     def reset(self) -> None:
         self.history.clear()
 

@@ -109,6 +109,25 @@ export default function CodePageClient({
   const [ideTabs, setIdeTabs] = useState<IdeTabFile[]>([]);
   const isIdeHydratedRef = useRef(false);
 
+  // ── Reasoning Effort State ──
+  const [reasoningEffort, setReasoningEffort] = useState<"off" | "low" | "medium" | "high">("medium");
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("anara_reasoning_effort");
+      if (saved && ["off", "low", "medium", "high"].includes(saved)) {
+        setReasoningEffort(saved as any);
+      }
+    } catch {}
+  }, []);
+
+  const handleSelectReasoningEffort = useCallback((lvl: "off" | "low" | "medium" | "high") => {
+    setReasoningEffort(lvl);
+    try {
+      localStorage.setItem("anara_reasoning_effort", lvl);
+    } catch {}
+  }, []);
+
   // ── Load saved pane preferences from localStorage & release transition freeze ──
   useEffect(() => {
     try {
@@ -648,6 +667,7 @@ export default function CodePageClient({
       type: "text_input",
       text: trimmed,
       agent_mode: mode,
+      reasoning_effort: reasoningEffort,
       sessionId: activeSessionId,
     });
     setAssistantStatus("thinking");
@@ -1381,6 +1401,8 @@ export default function CodePageClient({
               activeQuestion={activeUnansweredQuestion}
               onAnswerQuestion={handleAnswerQuestion}
               onHeightChange={() => {}}
+              reasoningEffort={reasoningEffort}
+              onSelectReasoningEffort={handleSelectReasoningEffort}
             />
           </div>
         )}

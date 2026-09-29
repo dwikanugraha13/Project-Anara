@@ -109,6 +109,7 @@ class AnaraExecutionRunner:
         requested_mode: str = "plan",
         model_id: Optional[str] = None,
         interaction_mode: str = "chat",
+        reasoning_effort: Optional[str] = None,
     ) -> AsyncGenerator[TurnEvent, None]:
         """
         Executes a single multi-step ReAct turn and yields TurnEvents in real-time.
@@ -330,6 +331,7 @@ class AnaraExecutionRunner:
                 token_cb=_token_cb,
                 intercept_mutating_tools=intercept_mutating,
                 platform=self.platform,
+                reasoning_effort=reasoning_effort,
             )
         )
         self._current_task = model_task
@@ -518,7 +520,20 @@ class AnaraExecutionRunner:
         pending_tool_call = None
         error_msg = None
 
-        sid_lock_key = str(self.session_id or "default")
+        if not self.session_id:
+            from core.agent import anara_agent
+            self.session_id = anara_agent.get_active_session_id()
+        if not self.session_id:
+            effective_speaker = self.speaker_name or memory_engine.get_last_active_speaker_name() or "User"
+            new_s = memory_engine.create_session(
+                speaker_name=effective_speaker,
+                title=(user_message or "").strip()[:40] or "New Session",
+                session_type="chat",
+                session_mode="conversational",
+            )
+            self.session_id = new_s["id"]
+
+        sid_lock_key = str(self.session_id)
         async with session_state_manager.get_session_lock(sid_lock_key):
             async for event in self.execute_turn_stream(user_message, requested_mode=requested_mode, model_id=model_id):
                 if event.type == "chunk":

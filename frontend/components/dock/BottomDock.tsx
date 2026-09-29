@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useEffect, useCallback } from "react";
-import ModelSelectorDropdown, { AIModelInfo } from "./ModelSelectorDropdown";
+import ModelSelectorDropdown, { AIModelInfo, isReasoningSupported } from "./ModelSelectorDropdown";
 import InteractiveQuestionCard, { InteractiveQuestionData } from "../chat/InteractiveQuestionCard";
 import { DockPlanChecklist } from "./DockPlanChecklist";
 import { DockAudioWaveform } from "./DockAudioWaveform";
@@ -58,8 +58,8 @@ export interface BottomDockProps {
   showAgentModeToggle?: boolean;
   showInteractionModeToggle?: boolean;
   onApprovePlan?: () => void;
-  reasoningEffort?: "low" | "medium" | "high";
-  onSelectReasoningEffort?: (effort: "low" | "medium" | "high") => void;
+  reasoningEffort?: "off" | "low" | "medium" | "high" | string;
+  onSelectReasoningEffort?: (effort: "off" | "low" | "medium" | "high") => void;
 }
 
 export default function BottomDock({
@@ -681,11 +681,12 @@ export default function BottomDock({
               {(() => {
                 const cur = models.find((m) => m.id === activeModelId) || models[0];
                 const displayName = formatModelDisplayName(cur?.name || cur?.id || activeModelId);
+                const hasReasoning = isReasoningSupported(cur);
                 return (
                   <button
                     type="button"
                     onClick={(e) => toggleDropdown("model", e)}
-                    title={`Active Model: ${cur?.id || activeModelId}`}
+                    title={`Active Model: ${cur?.id || activeModelId}${hasReasoning ? ` · Reasoning: ${reasoningEffort || "medium"}` : ""}`}
                     className={`flex items-center gap-1.5 py-1 px-2.5 rounded-lg border text-[11px] font-medium font-mono transition-all cursor-pointer ${
                       isModelDropdownOpen
                         ? "bg-white/15 border-white/30 text-white"
@@ -693,9 +694,14 @@ export default function BottomDock({
                     }`}
                   >
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.7)] shrink-0" />
-                    <span className="truncate max-w-[130px] sm:max-w-[180px] font-semibold" suppressHydrationWarning>
+                    <span className="truncate max-w-[120px] sm:max-w-[160px] font-semibold" suppressHydrationWarning>
                       {displayName}
                     </span>
+                    {hasReasoning && interactionMode === "chat" && (
+                      <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-200 border border-purple-400/30 text-[9px] uppercase font-bold shrink-0">
+                        {reasoningEffort || "med"}
+                      </span>
+                    )}
                     <svg className="w-3 h-3 text-slate-400 opacity-60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>

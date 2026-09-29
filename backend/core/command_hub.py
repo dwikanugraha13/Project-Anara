@@ -281,31 +281,54 @@ async def _handle_cmd_model(ctx: UniversalCommandContext) -> UniversalCommandRes
     all_models = await get_all_dynamic_models()
     configured = [m for m in all_models if m.get("is_configured")] or all_models[:10]
 
+    cur_m = get_active_model_id()
     if clean_arg:
-        target_m = None
         if clean_arg.isdigit() and 1 <= int(clean_arg) <= len(configured):
             target_m = configured[int(clean_arg) - 1]["id"]
+            set_active_model_id(target_m)
+            return UniversalCommandResponse(text=f"✅ <b>Active model updated!</b>\n\nNow using: <code>{target_m}</code>")
+
+        # Exact match
+        exact = [m["id"] for m in configured if m["id"].lower() == clean_arg.lower()]
+        if exact:
+            target_m = exact[0]
+            set_active_model_id(target_m)
+            return UniversalCommandResponse(text=f"✅ <b>Active model updated!</b>\n\nNow using: <code>{target_m}</code>")
+
+        # Fuzzy search
+        matched = [
+            m for m in configured
+            if clean_arg.lower() in m["id"].lower() or clean_arg.lower() in m.get("name", "").lower()
+        ]
+        if len(matched) == 1:
+            target_m = matched[0]["id"]
+            set_active_model_id(target_m)
+            return UniversalCommandResponse(text=f"✅ <b>Active model updated!</b>\n\nNow using: <code>{target_m}</code>")
+        elif len(matched) > 1:
+            lines = [f"🔍 <b>FOUND {len(matched)} MODELS MATCHING '<code>{clean_arg}</code>':</b>\n"]
+            for idx, m in enumerate(matched[:15], 1):
+                ind = "● (Active)" if m["id"] == cur_m else "○"
+                lines.append(f"{idx}. {ind} <b>{m.get('name', m['id'])}</b> [{m.get('provider', '').upper()}]\n   ID: <code>{m['id']}</code>")
+            if len(matched) > 15:
+                lines.append(f"\n<i>... and {len(matched) - 15} more matches.</i>")
+            lines.append("\n<i>Type <code>/model &lt;exact ID&gt;</code> to switch.</i>")
+            return UniversalCommandResponse(text="\n".join(lines))
         else:
-            matched = [
-                m["id"] for m in configured
-                if clean_arg.lower() in m["id"].lower() or clean_arg.lower() in m.get("name", "").lower()
-            ]
-            target_m = matched[0] if matched else clean_arg
+            set_active_model_id(clean_arg)
+            return UniversalCommandResponse(text=f"✅ <b>Active model updated!</b>\n\nNow using: <code>{clean_arg}</code>")
 
-        set_active_model_id(target_m)
-        return UniversalCommandResponse(text=f"✅ <b>Active model updated!</b>\n\nNow using: <code>{target_m}</code>")
-
-    cur_m = get_active_model_id()
     if ctx.channel == "telegram":
         from integrations.telegram.keyboards import send_telegram_provider_selector
         await send_telegram_provider_selector(chat_id=ctx.channel_id)
         return UniversalCommandResponse(text="", handled_silently=True)
 
     lines = [f"🤖 <b>SELECT AI MODEL (Current: <code>{cur_m}</code>)</b>:\n"]
-    for idx, m in enumerate(configured[:12], 1):
+    for idx, m in enumerate(configured[:15], 1):
         ind = "● (Active)" if m["id"] == cur_m else "○"
         lines.append(f"{idx}. {ind} <b>{m.get('name', m['id'])}</b> [{m.get('provider', '').upper()}]\n   ID: <code>{m['id']}</code>")
 
+    if len(configured) > 15:
+        lines.append(f"\n<i>Showing 15 of {len(configured)} available models. Use <code>/model &lt;search keyword&gt;</code> to filter.</i>")
     lines.append("\n<i>Type <code>/model &lt;number or ID&gt;</code> to switch.</i>")
     return UniversalCommandResponse(text="\n".join(lines))
 

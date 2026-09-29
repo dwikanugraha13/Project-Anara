@@ -1729,6 +1729,7 @@ async def _make_gemini_native_turn(
     temperature: float = 0.7,
     max_tokens: Optional[int] = None,
     on_chunk: Optional[Callable[[str], Any]] = None,
+    reasoning_effort: Optional[str] = None,
 ) -> Any:
     """Executes a single native tool-calling turn via Google GenAI SDK (Hermes/Gemini Parity)."""
     from core.key_manager import key_manager
@@ -1752,6 +1753,15 @@ async def _make_gemini_native_turn(
         cfg_kwargs["max_output_tokens"] = max_tokens
     if system_instruction and system_instruction.strip():
         cfg_kwargs["system_instruction"] = system_instruction.strip()
+    if reasoning_effort:
+        try:
+            from core.reasoning_effort import to_gemini_thinking
+            t_conf = to_gemini_thinking(reasoning_effort, model_name)
+            if "thinking_config" in t_conf:
+                cfg_kwargs["thinking_config"] = t_conf["thinking_config"]
+        except Exception as e_think:
+            logger.debug(f"[GeminiNativeTurn] thinking_config setup warning: {e_think}")
+
     config = types.GenerateContentConfig(**cfg_kwargs)
 
     async def _exec(client):
@@ -1820,6 +1830,7 @@ async def call_universal_chat_model(
     token_cb: Optional[Callable[[str], Any]] = None,
     intercept_mutating_tools: bool = False,
     platform: Optional[str] = None,
+    reasoning_effort: Optional[str] = None,
 ) -> Any:
     """
     Polymorphic universal model caller (Anara Standard).
@@ -1843,6 +1854,7 @@ async def call_universal_chat_model(
             token_cb=token_cb,
             intercept_mutating_tools=intercept_mutating_tools,
             platform=platform,
+            reasoning_effort=reasoning_effort,
         )
     except Exception as e_prim:
         fallback_model = get_fallback_model_id()
@@ -1874,6 +1886,7 @@ async def call_universal_chat_model(
                     token_cb=token_cb,
                     intercept_mutating_tools=intercept_mutating_tools,
                     platform=platform,
+                    reasoning_effort=reasoning_effort,
                 )
             except Exception as e_fb:
                 logger.error(f"[ModelCaller] Fallback model '{fallback_model}' also failed: {e_fb}")

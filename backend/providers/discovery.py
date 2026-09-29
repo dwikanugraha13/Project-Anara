@@ -27,7 +27,7 @@ _VISION_REGEX = re.compile(
 )
 
 _REASONING_REGEX = re.compile(
-    r'\b(o[1-9]|o[1-9]-mini|o[1-9]-preview|r1|deepseek-r1|deepseek-reasoner|qwq|claude-3[-.]7|thinking)\b',
+    r'(\b(o[1-9]|o[1-9]-mini|o[1-9]-preview|r1|deepseek-r1|deepseek-reasoner|qwq|claude-3[-.]7|thinking)\b|gemini-(?:2\.5|3\.[0-9]|flash-thinking))',
     re.IGNORECASE
 )
 
@@ -467,7 +467,7 @@ async def fetch_custom_providers_models(force_refresh: bool = False) -> List[Dic
             headers["Authorization"] = f"Bearer {api_key}"
         discovered: List[Dict[str, Any]] = []
         try:
-            async with httpx.AsyncClient(timeout=6.0) as client:
+            async with httpx.AsyncClient(timeout=15.0) as client:
                 res = await client.get(f"{base_url}/models", headers=headers)
                 if res.status_code == 404:
                     res = await client.get(f"{base_url}/api/tags", headers=headers)
@@ -555,6 +555,69 @@ async def fetch_custom_providers_models(force_refresh: bool = False) -> List[Dic
     return all_custom_models
 
 
+async def fetch_native_open_endpoints_models(force_refresh: bool = False) -> List[Dict[str, Any]]:
+    """Discovers models from configured standard providers (OpenRouter, Groq, DeepSeek, xAI, OpenAI)."""
+    from .constants import NATIVE_OPEN_ENDPOINTS
+    endpoints_to_check = dict(NATIVE_OPEN_ENDPOINTS)
+    endpoints_to_check["openai"] = "https://api.openai.com/v1"
+
+    async def _fetch_endpoint(prov: str, base_url: str) -> List[Dict[str, Any]]:
+        if not is_provider_configured(prov):
+            return []
+        key = get_provider_key(prov)
+        if not key:
+            return []
+        cache_key = f"native_{prov}"
+        now = time.time()
+        with _DYNAMIC_CACHE_LOCK:
+            if not force_refresh and cache_key in _DYNAMIC_CACHE:
+                entry = _DYNAMIC_CACHE[cache_key]
+                if now - entry["timestamp"] < _CACHE_TTL_SECONDS:
+                    return entry["models"]
+
+        discovered = []
+        try:
+            headers = {"Authorization": f"Bearer {key}"}
+            async with httpx.AsyncClient(timeout=12.0) as client:
+                res = await client.get(f"{base_url.rstrip('/')}/models", headers=headers)
+                if res.status_code == 200:
+                    d_json = res.json()
+                    raw_data = d_json.get("data") or d_json.get("models") if isinstance(d_json, dict) else (d_json if isinstance(d_json, list) else [])
+                    for item in (raw_data or []):
+                        m_id = item.get("id") or item.get("name") if isinstance(item, dict) else str(item)
+                        if m_id:
+                            full_mid = f"{prov}/{m_id}"
+                            badge, cat, icon = _infer_model_badge_and_category(m_id, m_id, prov)
+                            caps = detect_model_capabilities(item, m_id)
+                            discovered.append({
+                                "id": full_mid,
+                                "name": f"{m_id} ({prov.capitalize()})",
+                                "provider": prov,
+                                "category": cat,
+                                "badge": badge,
+                                "description": f"{prov.capitalize()} model: {m_id}",
+                                "icon": icon,
+                                "supports_voice": caps["supports_audio"],
+                                "supports_text": True,
+                                "supports_vision": caps["supports_vision"],
+                                "supports_reasoning": caps["supports_reasoning"],
+                            })
+        except Exception as e:
+            logger.debug(f"[ModelRouter] Error fetching models for {prov}: {e}")
+
+        with _DYNAMIC_CACHE_LOCK:
+            _DYNAMIC_CACHE[cache_key] = {"timestamp": now, "models": discovered}
+        return discovered
+
+    tasks = [_fetch_endpoint(p, url) for p, url in endpoints_to_check.items()]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    all_open = []
+    for r in results:
+        if isinstance(r, list):
+            all_open.extend(r)
+    return all_open
+
+
 async def get_all_dynamic_models(force_refresh: bool = False) -> List[Dict[str, Any]]:
     """Fetches all models ONLY from connected providers and prunes hidden models."""
     from memory import memory_engine
@@ -562,9 +625,10 @@ async def get_all_dynamic_models(force_refresh: bool = False) -> List[Dict[str, 
     anthropic_task = fetch_anthropic_models(force_refresh)
     codex_task = fetch_codex_models(force_refresh)
     custom_task = fetch_custom_providers_models(force_refresh)
+    native_open_task = fetch_native_open_endpoints_models(force_refresh)
 
     results = await asyncio.gather(
-        gemini_task, anthropic_task, codex_task, custom_task,
+        gemini_task, anthropic_task, codex_task, custom_task, native_open_task,
         return_exceptions=True
     )
 
@@ -597,7 +661,8 @@ async def get_all_dynamic_models(force_refresh: bool = False) -> List[Dict[str, 
 
     try:
         from core import ModelCapabilityRegistry
-        with ModelCapabilityRegistry._get_lock():
+        lock = await ModelCapabilityRegistry._get_lock()
+        async with lock:
             for m in all_models:
                 mid = m["id"]
                 supports_voice = bool(m.get("supports_voice", False))
