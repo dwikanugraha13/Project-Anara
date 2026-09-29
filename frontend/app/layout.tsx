@@ -33,8 +33,8 @@ export default async function RootLayout({
 }>) {
   const cookieStore = await cookies();
   const rawWidth = cookieStore.get("anara_sidebar_width")?.value;
-  const parsedWidth = rawWidth ? parseInt(rawWidth, 10) : 380;
-  const sidebarWidth = !isNaN(parsedWidth) && parsedWidth >= 380 && parsedWidth <= 1050 ? parsedWidth : 380;
+  const parsedWidth = rawWidth ? parseInt(rawWidth, 10) : 260;
+  const sidebarWidth = !isNaN(parsedWidth) && parsedWidth >= 200 && parsedWidth <= 600 ? parsedWidth : 260;
 
   const rawTree = cookieStore.get("anara_tree_width")?.value;
   const parsedTree = rawTree ? parseInt(rawTree, 10) : 210;
@@ -69,7 +69,7 @@ export default async function RootLayout({
               try {
                 var w = localStorage.getItem('anara_sidebar_width');
                 var p = w ? parseInt(w, 10) : ${sidebarWidth};
-                if (!isNaN(p) && p >= 380 && p <= 1050) {
+                if (!isNaN(p) && p >= 200 && p <= 600) {
                   document.documentElement.style.setProperty('--sidebar-width', p + 'px');
                   document.cookie = 'anara_sidebar_width=' + p + '; path=/; max-age=31536000; SameSite=Lax';
                 }

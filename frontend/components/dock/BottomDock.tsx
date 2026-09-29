@@ -313,7 +313,7 @@ export default function BottomDock({
                 : "bottom-3 sm:bottom-4 max-w-2xl lg:max-w-3xl"
             }`
       }
-      style={!embedded ? { left: "var(--sidebar-width, 380px)", right: 0 } : undefined}
+      style={!embedded ? { left: "var(--sidebar-width, 260px)", right: 0 } : undefined}
       suppressHydrationWarning
     >
       {/* Non-intrusive Mic Denied Alert Pill */}

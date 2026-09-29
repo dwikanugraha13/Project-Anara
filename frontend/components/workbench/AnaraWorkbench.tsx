@@ -532,7 +532,7 @@ export default function AnaraWorkbench({
           {/* LEFT PANEL: SIDEBAR CHAT SESSION & EDITOR (Default Left Pane) */}
           <div
             className="hidden md:flex flex-col min-w-0 h-full shrink-0 border-r border-white/10"
-            style={{ width: "var(--sidebar-width, 380px)", transition: "none" }}
+            style={{ width: "var(--sidebar-width, 260px)", transition: "none" }}
             suppressHydrationWarning
           >
             <ChatSessionSidebar
@@ -639,7 +639,7 @@ export default function AnaraWorkbench({
       {interactionMode === "voice" && latestVisual && (
         <div
           className="fixed mx-auto max-w-2xl lg:max-w-3xl px-4 z-20 pointer-events-auto animate-fade-in transition-all duration-300 bottom-36 sm:bottom-40"
-          style={{ left: "var(--sidebar-width, 380px)", right: 0 }}
+          style={{ left: "var(--sidebar-width, 260px)", right: 0 }}
         >
           <AnaraHUD
             visualType={latestVisual.visualType === "interactive_question" ? "none" : latestVisual.visualType}

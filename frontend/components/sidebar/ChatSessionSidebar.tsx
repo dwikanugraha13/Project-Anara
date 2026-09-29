@@ -479,13 +479,13 @@ export default function ChatSessionSidebar({
     <aside
       className={`${embedded ? "relative w-full" : "fixed top-0 left-0 z-40"} h-full flex flex-col pointer-events-auto select-none group/sidebar`}
       style={{
-        ...(!embedded ? { width: "var(--sidebar-width, 380px)" } : {}),
+        ...(!embedded ? { width: "var(--sidebar-width, 260px)" } : {}),
         transition: "none",
-        background: embedded ? "#070c18" : "rgba(255,255,255,0.035)",
+        background: embedded ? "#050811" : "rgba(6,9,19,0.85)",
         backdropFilter: embedded ? "none" : "blur(28px) saturate(140%)",
         WebkitBackdropFilter: embedded ? "none" : "blur(28px) saturate(140%)",
-        borderRight: "1px solid rgba(255,255,255,0.10)",
-        boxShadow: embedded ? "none" : "6px 0 40px rgba(0,0,0,0.55), inset -1px 0 0 rgba(34,211,238,0.10)",
+        borderRight: "1px solid rgba(255,255,255,0.08)",
+        boxShadow: embedded ? "none" : "6px 0 40px rgba(0,0,0,0.55)",
       }}
     >
       {/* ── Top Header: Chat Sessions & Anara Code Navigation ── */}

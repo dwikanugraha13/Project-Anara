@@ -84,7 +84,7 @@ export default function HomePageClient({
       const savedWidth = localStorage.getItem("anara_sidebar_width");
       if (savedWidth) {
         const parsed = parseInt(savedWidth, 10);
-        if (!isNaN(parsed) && parsed >= 380 && parsed <= 1050) {
+        if (!isNaN(parsed) && parsed >= 200 && parsed <= 600) {
           setSidebarWidth(parsed);
           document.documentElement.style.setProperty("--sidebar-width", `${parsed}px`);
           document.cookie = `anara_sidebar_width=${parsed}; path=/; max-age=31536000; SameSite=Lax`;
@@ -1002,7 +1002,7 @@ export default function HomePageClient({
               : "opacity-0 pointer-events-none"
           }`}
           style={{
-            transform: interactionMode === "voice" ? "translateX(calc(var(--sidebar-width, 380px) / 2))" : "none",
+            transform: interactionMode === "voice" ? "translateX(calc(var(--sidebar-width, 260px) / 2))" : "none",
           }}
           suppressHydrationWarning
         >

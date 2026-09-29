@@ -1,8 +1,8 @@
 export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
-export const DEFAULT_SIDEBAR_WIDTH = 380;
-export const MIN_SIDEBAR_WIDTH = 380;
-export const MAX_SIDEBAR_WIDTH = 1050;
+export const DEFAULT_SIDEBAR_WIDTH = 260;
+export const MIN_SIDEBAR_WIDTH = 200;
+export const MAX_SIDEBAR_WIDTH = 600;
 
 export interface ChatSession {
   id: number;
