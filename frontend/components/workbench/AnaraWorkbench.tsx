@@ -599,6 +599,8 @@ export default function AnaraWorkbench({
               <div className="max-w-3xl xl:max-w-4xl mx-auto w-full">
                 <BottomDock
                   embedded={true}
+                  showAgentModeToggle={false}
+                  showInteractionModeToggle={true}
                   inputMessage={inputMessage}
                   setInputMessage={setInputMessage}
                   onSend={(text: string, mode: "plan" | "build") => onSendText?.(text, mode)}
@@ -668,6 +670,8 @@ export default function AnaraWorkbench({
       {interactionMode === "voice" && (
         <BottomDock
           embedded={false}
+          showAgentModeToggle={false}
+          showInteractionModeToggle={true}
           inputMessage={inputMessage}
           setInputMessage={setInputMessage}
           onSend={(text: string, mode: "plan" | "build") => onSendText?.(text, mode)}

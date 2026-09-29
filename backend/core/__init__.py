@@ -138,6 +138,18 @@ _EXPORTS: dict[str, str] = {
     "parse_context_limit_from_error": ".token_budget",
     "budget_aware_slot_assembly": ".token_budget",
     "TokenBudgetTracker": ".token_budget",
+    # windows_service
+    "WindowsAutostartManager": ".windows_service",
+    "windows_autostart": ".windows_service",
+    # worktree
+    "GitWorktreeManager": ".worktree",
+    "worktree_manager": ".worktree",
+    # process_registry
+    "ProcessRegistry": ".process_registry",
+    "process_registry": ".process_registry",
+    # sandbox
+    "CommandSandbox": ".sandbox",
+    "command_sandbox": ".sandbox",
 }
 
 __all__ = sorted(_EXPORTS.keys())

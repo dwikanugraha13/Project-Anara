@@ -239,7 +239,9 @@ class WorkspaceSentinel:
             file_size = len(disk_content)
             snippet_matched = True
             if expected_snippet and expected_snippet.strip():
-                snippet_matched = (expected_snippet.strip() in disk_content)
+                norm_disk = "\n".join(disk_content.splitlines())
+                norm_snippet = "\n".join(expected_snippet.strip().splitlines())
+                snippet_matched = (norm_snippet in norm_disk)
                 is_verified = snippet_matched and file_size > 0
             else:
                 is_verified = True  # Existence of physical file confirmed (permits empty files like __init__.py)

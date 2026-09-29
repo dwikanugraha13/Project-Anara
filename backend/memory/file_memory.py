@@ -141,8 +141,8 @@ class FileMemoryManager:
     @classmethod
     def get_soul_content(cls) -> str:
         """Returns SOUL.md content (Identity & Core Persona)."""
-        from cognition.soul import get_soul_prompt
-        return get_soul_prompt().strip()
+        from cognition.soul import get_soul_raw
+        return get_soul_raw().strip()
 
     @classmethod
     def get_user_profile(cls) -> str:

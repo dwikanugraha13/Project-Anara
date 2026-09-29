@@ -9,14 +9,13 @@ Anara Enterprise Architecture:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Optional, Tuple
 
 logger = logging.getLogger("anara.core.worktree")
 
@@ -164,14 +163,14 @@ class GitWorktreeManager:
                 cls.remove_worktree(repo_dir, worktree_dir, branch_name)
             else:
                 logger.warning(f"[Worktree] Squash merge conflict: {apply_res.stderr.strip()}")
-                # Abort conflicting index in main repo to prevent leaving repo dirty
-                subprocess.run(["git", "merge", "--abort"], cwd=repo_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                # Reset conflicting index in main repo to prevent leaving repo dirty
+                subprocess.run(["git", "reset", "--merge"], cwd=repo_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
                 # Preserve worktree directory and branch for inspection rather than permanent data loss
                 logger.info(f"[Worktree] Preserved worktree at '{worktree_dir}' and branch '{branch_name}' for manual inspection.")
             return success
         except Exception as e:
             logger.error(f"[Worktree] Error merging worktree changes: {e}")
-            subprocess.run(["git", "merge", "--abort"], cwd=repo_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+            subprocess.run(["git", "reset", "--merge"], cwd=repo_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
             return False
 
     @classmethod

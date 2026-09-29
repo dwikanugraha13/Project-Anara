@@ -56,6 +56,7 @@ export interface BottomDockProps {
   onHeightChange?: (height: number) => void;
   embedded?: boolean;
   showAgentModeToggle?: boolean;
+  showInteractionModeToggle?: boolean;
   onApprovePlan?: () => void;
   reasoningEffort?: "low" | "medium" | "high";
   onSelectReasoningEffort?: (effort: "low" | "medium" | "high") => void;
@@ -92,11 +93,13 @@ export default function BottomDock({
   onHeightChange,
   embedded = false,
   showAgentModeToggle,
+  showInteractionModeToggle,
   onApprovePlan,
   reasoningEffort,
   onSelectReasoningEffort,
 }: BottomDockProps) {
-  const isAgentToggleVisible = showAgentModeToggle !== undefined ? showAgentModeToggle : embedded;
+  const isAgentToggleVisible = showAgentModeToggle !== undefined ? showAgentModeToggle : false;
+  const isInteractionModeVisible = showInteractionModeToggle !== undefined ? showInteractionModeToggle : Boolean(onSetInteractionMode);
   const footerDockRef = useRef<HTMLElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -515,8 +518,8 @@ export default function BottomDock({
               )}
             </div>
 
-            {/* Interaction Mode: Voice vs Chat (Only on 3D Companion page, hidden completely in embedded Code Studio) */}
-            {!embedded && (
+            {/* Interaction Mode: Voice vs Chat (Active in Main Workbench/Companion, hidden in pure Code Studio) */}
+            {isInteractionModeVisible && (
               <div className="relative shrink-0">
                 <button
                   type="button"

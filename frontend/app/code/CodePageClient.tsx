@@ -1192,6 +1192,8 @@ export default function CodePageClient({
             {/* Dedicated Agent Command & Prompt Input Dock */}
             <BottomDock
               embedded={true}
+              showAgentModeToggle={true}
+              showInteractionModeToggle={false}
               inputMessage={inputMessage}
               setInputMessage={setInputMessage}
               onSend={(text: string, mode: "plan" | "build") => handleSendText(text, mode)}

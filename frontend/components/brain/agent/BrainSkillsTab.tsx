@@ -382,16 +382,20 @@ export default function BrainSkillsTab() {
             )}
           </div>
 
-          {/* Form Tambah Skill Manual Modal */}
+          {/* Form Add Skill Manual Modal */}
           {isAddSkillOpen && (
             <form onSubmit={handleAddSkillSubmit} className="p-5 rounded-2xl liquid-glass border border-white/20 space-y-3.5 animate-scale-up">
               <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <span className="text-xs font-bold font-mono text-cyan-300 uppercase">Tambah Keahlian Mandiri (agentskills.io v2)</span>
-                <button type="button" onClick={() => setIsAddSkillOpen(false)} className="text-slate-400 hover:text-white text-xs">✕</button>
+                <span className="text-xs font-bold font-mono text-cyan-300 uppercase">Create Custom Skill (agentskills.io v2)</span>
+                <button type="button" onClick={() => setIsAddSkillOpen(false)} className="text-slate-400 hover:text-white text-xs cursor-pointer">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-2 space-y-1">
-                  <label className="text-[11px] font-mono text-slate-400">Nama Keahlian / Skill</label>
+                  <label className="text-[11px] font-mono text-slate-400">Skill Name</label>
                   <input
                     type="text"
                     placeholder="Example: Excel Financial Report Analysis"
@@ -402,7 +406,7 @@ export default function BrainSkillsTab() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[11px] font-mono text-slate-400">Kategori</label>
+                  <label className="text-[11px] font-mono text-slate-400">Category</label>
                   <select
                     value={newSkillCategory}
                     onChange={(e) => setNewSkillCategory(e.target.value)}
@@ -411,18 +415,18 @@ export default function BrainSkillsTab() {
                     <option value="coding">Coding &amp; Software</option>
                     <option value="architecture">Architecture</option>
                     <option value="devops">DevOps &amp; Infra</option>
-                    <option value="research">Riset &amp; Web</option>
-                    <option value="document">Dokumen &amp; PDF</option>
-                    <option value="communication">Komunikasi</option>
-                    <option value="general">Umum</option>
+                    <option value="research">Research &amp; Web</option>
+                    <option value="document">Documents &amp; PDF</option>
+                    <option value="communication">Communication</option>
+                    <option value="general">General</option>
                   </select>
                 </div>
               </div>
               <div className="space-y-1">
-                <label className="text-[11px] font-mono text-slate-400">Deskripsi Keahlian</label>
+                <label className="text-[11px] font-mono text-slate-400">Description</label>
                 <input
                   type="text"
-                   placeholder="Describe what this skill does..."
+                  placeholder="Describe what this skill does..."
                   value={newSkillDesc}
                   onChange={(e) => setNewSkillDesc(e.target.value)}
                   className="w-full px-3 py-1.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400"
@@ -431,7 +435,7 @@ export default function BrainSkillsTab() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[11px] font-mono text-slate-400">Kata Kunci Pemicu (pisahkan koma)</label>
+                  <label className="text-[11px] font-mono text-slate-400">Trigger Keywords (comma separated)</label>
                   <input
                     type="text"
                     placeholder="report, excel, revenue, finance"
@@ -441,10 +445,10 @@ export default function BrainSkillsTab() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[11px] font-mono text-slate-400">Langkah Prosedur (1 langkah per baris)</label>
+                  <label className="text-[11px] font-mono text-slate-400">Procedure Steps (1 step per line)</label>
                   <textarea
                     rows={2}
-                    placeholder={"1. Baca file excel\n2. Hitung rasio\n3. Buat ringkasan"}
+                    placeholder={"1. Read data file\n2. Compute metrics\n3. Generate summary report"}
                     value={newSkillSteps}
                     onChange={(e) => setNewSkillSteps(e.target.value)}
                     className="w-full px-3 py-1 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 font-mono"
@@ -452,7 +456,7 @@ export default function BrainSkillsTab() {
                 </div>
               </div>
               <div className="flex justify-end gap-2 pt-1">
-                <button type="button" onClick={() => setIsAddSkillOpen(false)} className="px-3 py-1.5 rounded-xl text-xs text-slate-400 hover:text-white">Batal</button>
+                <button type="button" onClick={() => setIsAddSkillOpen(false)} className="px-3 py-1.5 rounded-xl text-xs text-slate-400 hover:text-white cursor-pointer">Cancel</button>
                 <button type="submit" className="px-4 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-400/40 text-xs font-semibold text-white transition-all cursor-pointer">Save Skill</button>
               </div>
             </form>
