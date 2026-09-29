@@ -118,11 +118,11 @@ export default function BrainToolsTab() {
           </p>
         </div>
 
-        <div className="flex items-center gap-1 p-0.5 rounded-lg bg-black/40 border border-white/[0.08] font-mono text-xs flex-wrap">
+        <div className="flex items-center gap-1 p-0.5 rounded-lg bg-black/40 border border-white/[0.08] font-mono text-xs overflow-x-auto no-scrollbar">
           <button
             type="button"
             onClick={() => setToolsSubTab("tools")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all cursor-pointer select-none ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all cursor-pointer select-none shrink-0 ${
               toolsSubTab === "tools"
                 ? "bg-white/[0.08] text-white border-white/[0.14] shadow-sm"
                 : "border-transparent text-slate-400 hover:text-white hover:bg-white/[0.03]"
@@ -137,7 +137,7 @@ export default function BrainToolsTab() {
           <button
             type="button"
             onClick={() => setToolsSubTab("autonomous")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all cursor-pointer select-none ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all cursor-pointer select-none shrink-0 ${
               toolsSubTab === "autonomous"
                 ? "bg-white/[0.08] text-white border-white/[0.14] shadow-sm"
                 : "border-transparent text-slate-400 hover:text-white hover:bg-white/[0.03]"
@@ -151,7 +151,7 @@ export default function BrainToolsTab() {
           <button
             type="button"
             onClick={() => setToolsSubTab("subagents")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all cursor-pointer select-none ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all cursor-pointer select-none shrink-0 ${
               toolsSubTab === "subagents"
                 ? "bg-white/[0.08] text-white border-white/[0.14] shadow-sm"
                 : "border-transparent text-slate-400 hover:text-white hover:bg-white/[0.03]"
@@ -193,52 +193,57 @@ export default function BrainToolsTab() {
             ))}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-stretch">
             {filteredTools.map((tool) => {
               const isExpanded = expandedToolSchema === tool.name;
               return (
                 <div
                   key={tool.name}
-                  className="p-3.5 rounded-xl bg-white/[0.025] hover:bg-white/[0.04] border border-white/[0.08] hover:border-white/[0.15] space-y-2 transition-all font-mono shadow-sm"
+                  className="p-3.5 rounded-xl bg-white/[0.025] hover:bg-white/[0.04] border border-white/[0.08] hover:border-white/[0.15] transition-all font-mono shadow-sm flex flex-col justify-between"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-white">{tool.name}</span>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs sm:text-sm font-bold text-white tracking-tight">{tool.name}</span>
                       <span
-                        className={`px-2 py-0.5 rounded-md text-[9px] font-bold uppercase border ${
+                        className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase border font-mono ${
                           tool.is_read_only
                             ? "bg-emerald-500/15 text-emerald-300 border-emerald-400/30"
-                            : "bg-amber-500/15 text-amber-300 border-amber-400/30"
+                            : "bg-cyan-500/15 text-cyan-300 border-cyan-400/30"
                         }`}
                       >
                         {tool.mode_label}
                       </span>
                     </div>
+
+                    <p className="text-xs text-slate-300 font-sans leading-relaxed">
+                      {tool.description}
+                    </p>
                   </div>
 
-                  <p className="text-xs text-slate-400 font-sans leading-relaxed">
-                    {tool.description}
-                  </p>
-
-                  <div className="pt-1 flex items-center justify-between border-t border-white/5 text-[10px] text-slate-500">
-                    <span>Kategori: {tool.category}</span>
-                    <button
-                      type="button"
-                      onClick={() => setExpandedToolSchema(isExpanded ? null : tool.name)}
-                      className="text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer"
-                    >
-                      {isExpanded ? "Close Schema ▲" : "View Parameters ▼"}
-                    </button>
-                  </div>
-
-                  {isExpanded && tool.parameters && (
-                    <div className="p-2.5 rounded-xl bg-black/60 border border-white/10 text-[10px] space-y-1">
-                      <div className="text-slate-400 font-bold">Parameter Input:</div>
-                      <pre className="text-slate-300 overflow-x-auto whitespace-pre-wrap max-h-36 custom-scrollbar">
-                        {JSON.stringify(tool.parameters, null, 2)}
-                      </pre>
+                  <div className="space-y-2 mt-3 pt-2 border-t border-white/[0.06]">
+                    <div className="flex items-center justify-between text-[11px] text-slate-400">
+                      <span>Category: <span className="text-slate-300 font-medium">{tool.category}</span></span>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedToolSchema(isExpanded ? null : tool.name)}
+                        className="text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer flex items-center gap-1 font-mono text-[10.5px]"
+                      >
+                        <span>{isExpanded ? "Close Schema" : "Parameters"}</span>
+                        <svg className={`w-3 h-3 transition-transform ${isExpanded ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
                     </div>
-                  )}
+
+                    {isExpanded && tool.parameters && (
+                      <div className="p-2.5 rounded-lg bg-black/60 border border-white/[0.08] text-[10.5px] space-y-1 font-mono">
+                        <div className="text-slate-400 font-bold">Input Schema:</div>
+                        <pre className="text-slate-300 overflow-x-auto whitespace-pre-wrap max-h-36 custom-scrollbar text-[10px]">
+                          {JSON.stringify(tool.parameters, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}

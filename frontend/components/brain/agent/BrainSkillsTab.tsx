@@ -250,7 +250,7 @@ export default function BrainSkillsTab() {
               Anara Skill Ecosystem
             </h3>
             <span className="px-2 py-0.5 rounded-md text-[9px] font-mono uppercase bg-cyan-500/10 border border-cyan-400/20 text-cyan-300">
-              100.000+ Community Hub
+              100k+ Skills Catalog
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1 leading-relaxed">
@@ -346,7 +346,7 @@ export default function BrainSkillsTab() {
                 filterStatus === "all" ? "bg-white/15 text-white font-bold" : "text-slate-400 hover:text-white"
               }`}
             >
-              Semua ({skills.length})
+              All ({skills.length})
             </button>
             <button
               type="button"
@@ -478,12 +478,12 @@ export default function BrainSkillsTab() {
                 return (
                   <div
                     key={s.slug}
-                    className={`p-5 rounded-2xl border flex flex-col justify-between transition-all space-y-3.5 ${
+                    className={`p-4 sm:p-5 rounded-xl border flex flex-col justify-between transition-all space-y-3.5 ${
                       isPending
                         ? "bg-amber-950/20 border-amber-500/40 shadow-[0_0_20px_rgba(251,191,36,0.12)]"
                         : isDisabled
                         ? "bg-white/[0.02] border-white/5 opacity-70 hover:opacity-90"
-                        : "liquid-glass border-white/15 hover:border-cyan-400/30 shadow-lg"
+                        : "bg-white/[0.025] hover:bg-white/[0.04] border-white/[0.08] hover:border-white/[0.15] shadow-sm"
                     }`}
                   >
                     <div>
@@ -505,7 +505,7 @@ export default function BrainSkillsTab() {
                               </h4>
                               {s.learned_from_experience && (
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-400/25">
-                                  Otomatis
+                                  Autonomous
                                 </span>
                               )}
                               {isPending && (
@@ -568,9 +568,9 @@ export default function BrainSkillsTab() {
 
                       {s.trigger_keywords && s.trigger_keywords.length > 0 && (
                         <div className="mt-2.5 flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[10px] font-mono text-slate-500">Pemicu:</span>
+                          <span className="text-[10px] font-mono text-slate-500">Triggers:</span>
                           {s.trigger_keywords.map((kw, i) => (
-                            <span key={i} className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/8 text-[10px] font-mono text-slate-300">
+                            <span key={i} className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.06] text-[10px] font-mono text-slate-300">
                               {kw}
                             </span>
                           ))}
@@ -579,9 +579,9 @@ export default function BrainSkillsTab() {
                     </div>
 
                     {s.body && (
-                      <div className="p-3 rounded-xl bg-black/50 border border-white/10 space-y-1 text-[11px] font-mono text-slate-300 max-h-40 overflow-y-auto custom-scrollbar">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                          Dokumen SKILL.md:
+                      <div className="p-3 rounded-lg bg-black/60 border border-white/[0.08] space-y-1 text-[11px] font-mono text-slate-300 max-h-36 overflow-y-auto custom-scrollbar">
+                        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                          SKILL.md Definition:
                         </span>
                         <pre className="whitespace-pre-wrap font-mono text-[10.5px] leading-relaxed text-slate-300">
                           {s.body}
@@ -589,16 +589,20 @@ export default function BrainSkillsTab() {
                       </div>
                     )}
 
-                    <div className="flex items-center justify-between pt-1 border-t border-white/5 text-[10px] font-mono text-slate-500">
-                      <span className="truncate max-w-[220px]" title={s.file_path}>
+                    <div className="flex items-center justify-between pt-1 border-t border-white/[0.06] text-[10px] font-mono text-slate-500">
+                      <span className="truncate max-w-[240px]" title={s.file_path}>
                         📁 skills/{s.slug}/SKILL.md
                       </span>
                       {!isPending && (
                         <button
                           type="button"
                           onClick={() => handleDeleteSkill(s.slug, s.name)}
-                          className="text-[11px] text-slate-500 hover:text-rose-400 transition-colors cursor-pointer flex items-center gap-1"
+                          className="px-2 py-0.5 rounded text-[10.5px] font-mono text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-all cursor-pointer flex items-center gap-1"
+                          title="Delete skill"
                         >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
                           <span>Delete</span>
                         </button>
                       )}

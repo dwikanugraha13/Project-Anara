@@ -4,12 +4,12 @@ Parity with Anara Agent image_generate: supports high-speed creative visual gene
 via free Pollinations.ai Flux endpoint (zero API key needed) and OpenAI DALL-E 3 fallback.
 """
 
-import asyncio
 import hashlib
 import logging
 import os
 import time
 import urllib.parse
+import uuid
 from typing import Any, Dict, Optional
 import httpx
 
@@ -74,7 +74,7 @@ async def _tool_image_generate(
                 if res.status_code == 200:
                     d = res.json()
                     img_url = d["data"][0]["url"]
-                    local_filename = f"img_{int(time.time())}_{hashlib.md5(full_prompt.encode()).hexdigest()[:8]}.png"
+                    local_filename = f"img_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}.png"
                     local_path = os.path.join(STAGING_DIR, local_filename)
 
                     # Download local copy if requested
@@ -109,7 +109,7 @@ async def _tool_image_generate(
     seed = int(time.time() * 1000) % 999999
     pollinations_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={width}&height={height}&model=flux&seed={seed}&nologo=true&enhance=true"
 
-    local_filename = f"img_flux_{int(time.time())}_{hashlib.md5(full_prompt.encode()).hexdigest()[:8]}.jpg"
+    local_filename = f"img_flux_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}.jpg"
     local_path = os.path.join(STAGING_DIR, local_filename)
 
     if save_to_disk:

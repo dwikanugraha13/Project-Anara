@@ -353,8 +353,8 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                   </div>
                   <p className="text-xs text-slate-400 mt-0.5">
                     {waStatus === "connected" && waUser
-                      ? `${waUser.name || "Akun"} (+${waUser.phone})`
-                      : "Scan QR code to read &amp; send messages"}
+                      ? `${waUser.name || "Account"} (+${waUser.phone})`
+                      : "Scan QR code to read and send messages"}
                   </p>
                 </div>
               </div>
@@ -365,16 +365,16 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                 <>
                   <button
                     onClick={fetchWhatsAppStatus}
-                    className="px-3 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-slate-300 hover:text-white text-xs font-medium transition-all cursor-pointer"
+                    className="px-3 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-slate-300 hover:text-white text-xs font-medium transition-all cursor-pointer"
                   >
-                    Cek Status
+                    Check Status
                   </button>
                   <button
                     onClick={handleWhatsAppLogout}
                     disabled={isWaLoading}
-                    className="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-medium transition-all cursor-pointer"
+                    className="px-3 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-medium transition-all cursor-pointer"
                   >
-                    Putuskan Sambungan
+                    Disconnect
                   </button>
                 </>
               ) : (
@@ -406,14 +406,14 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
               <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="misal: 6281234567890 (kosongkan jika terima semua)"
+                  placeholder="e.g. 6281234567890 (leave empty to allow all)"
                   value={waAllowedNumbersInput}
                   onChange={(e) => setWaAllowedNumbersInput(e.target.value)}
-                  className="flex-1 px-3 py-1.5 rounded-xl bg-black/40 border border-white/15 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-400 font-mono"
+                  className="flex-1 px-3 py-1.5 rounded-lg bg-black/40 border border-white/15 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-400 font-mono"
                 />
                 <button
                   type="submit"
-                  className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 text-xs font-mono font-semibold transition-all cursor-pointer shrink-0"
+                  className="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 text-xs font-mono font-semibold transition-all cursor-pointer shrink-0"
                 >
                   Save
                 </button>
@@ -425,14 +425,14 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
           </div>
     
           {/* 2. KARTU TELEGRAM */}
-          <div className={`p-5 rounded-2xl border flex flex-col justify-between transition-all ${
+          <div className={`p-4 sm:p-5 rounded-xl border flex flex-col justify-between transition-all shadow-sm ${
             tgStatus === "connected"
-              ? "liquid-glass border-sky-400/40 shadow-[0_0_25px_rgba(56,189,248,0.1)]"
-              : "liquid-glass-subtle hover:border-white/20"
+              ? "bg-white/[0.035] border-sky-400/40 shadow-[0_0_20px_rgba(56,189,248,0.06)]"
+              : "bg-white/[0.02] border-white/[0.08] hover:border-white/[0.15]"
           }`}>
             <div className="flex items-start gap-3.5">
-              <div className="w-11 h-11 rounded-2xl bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-sky-400 shadow-md shrink-0">
-                <BrandIcon name="telegram" className="w-6 h-6" />
+              <div className="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-sky-400 shadow-md shrink-0">
+                <BrandIcon name="telegram" className="w-5 h-5" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
@@ -449,14 +449,14 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                 <p className="text-xs text-slate-400 mt-0.5">
                   {tgStatus === "connected" && tgBot
                     ? `@${tgBot.username || "Bot"} (${tgBot.first_name || "Anara"})`
-                    : "Link Telegram bot token to send &amp; read messages"}
+                    : "Link Telegram bot token to send and read messages"}
                 </p>
               </div>
             </div>
             <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between gap-2">
               <button
                 onClick={() => setIsTgModalOpen(true)}
-                className="px-3 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 hover:text-white border border-sky-400/30 text-xs font-medium transition-all cursor-pointer"
+                className="px-3 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 hover:text-white border border-sky-400/30 text-xs font-medium transition-all cursor-pointer"
               >
                 {tgStatus === "connected" ? "Change Settings" : "Connect Telegram"}
               </button>
@@ -467,14 +467,14 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
           </div>
     
           {/* 3. KARTU GOOGLE WORKSPACE */}
-          <div className={`p-5 rounded-2xl border flex flex-col justify-between transition-all ${
+          <div className={`p-4 sm:p-5 rounded-xl border flex flex-col justify-between transition-all shadow-sm ${
             googleStatus === "connected"
-              ? "liquid-glass border-rose-400/40 shadow-[0_0_25px_rgba(251,113,133,0.1)]"
-              : "liquid-glass-subtle hover:border-white/20"
+              ? "bg-white/[0.035] border-rose-400/40 shadow-[0_0_20px_rgba(251,113,133,0.06)]"
+              : "bg-white/[0.02] border-white/[0.08] hover:border-white/[0.15]"
           }`}>
             <div className="flex items-start gap-3.5">
-              <div className="w-11 h-11 rounded-2xl bg-rose-500/15 border border-rose-400/30 flex items-center justify-center text-rose-300 shadow-md shrink-0">
-                <BrandIcon name="google" className="w-6 h-6" />
+              <div className="w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-400/30 flex items-center justify-center text-rose-300 shadow-md shrink-0">
+                <BrandIcon name="google" className="w-5 h-5" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
@@ -491,7 +491,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                 <p className="text-xs text-slate-400 mt-0.5">
                   {googleStatus === "connected" && googleEmail
                     ? `${googleEmail} (Gmail &amp; Calendar)`
-                    : "Reading incoming Gmail emails &amp; Google Calendar schedule"}
+                    : "Reading incoming Gmail emails and Google Calendar schedule"}
                 </p>
               </div>
             </div>
@@ -501,15 +501,15 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                   <span className="text-rose-300 text-xs font-mono">Gmail &amp; Calendar Active</span>
                   <button
                     onClick={handleGoogleDisconnect}
-                    className="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-medium transition-all cursor-pointer"
+                    className="px-3 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-medium transition-all cursor-pointer"
                   >
-                    Putuskan
+                    Disconnect
                   </button>
                 </>
               ) : (
                 <button
                   onClick={() => setIsGoogleModalOpen(true)}
-                  className="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-200 hover:text-white border border-rose-400/30 text-xs font-medium transition-all cursor-pointer"
+                  className="px-3 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-200 hover:text-white border border-rose-400/30 text-xs font-medium transition-all cursor-pointer"
                 >
                   Link Google Account
                 </button>
@@ -518,10 +518,10 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
           </div>
     
           {/* 4. KARTU SPOTIFY DESKTOP */}
-          <div className="p-5 rounded-2xl liquid-glass-subtle border border-white/10 hover:border-white/20 flex flex-col justify-between">
+          <div className="p-4 sm:p-5 rounded-xl bg-white/[0.02] border border-white/[0.08] hover:border-white/[0.15] flex flex-col justify-between shadow-sm">
             <div className="flex items-start gap-3.5">
-              <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-emerald-400 shadow-md shrink-0">
-                <BrandIcon name="spotify" className="w-6 h-6" />
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-emerald-400 shadow-md shrink-0">
+                <BrandIcon name="spotify" className="w-5 h-5" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
@@ -532,13 +532,13 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Buka aplikasi &amp; putar lagu langsung di desktop laptop Anda
+                  Open native desktop player and control playback via autonomous agent
                 </p>
               </div>
             </div>
             <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-xs text-slate-400">
               <span>Direct voice commands:</span>
-              <span className="text-emerald-300 font-mono">&quot;Buka Spotify&quot;</span>
+              <span className="text-emerald-300 font-mono">&quot;Play Music&quot;</span>
             </div>
           </div>
         </div>

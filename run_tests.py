@@ -16,6 +16,8 @@ if str(_BACKEND_DIR) not in sys.path:
 # Ensure hermetic environment
 os.environ["ANARA_HOME"] = str(_REPO_ROOT / ".test_home")
 os.environ["ANARA_TESTING"] = "1"
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 import backend.tests.test_subsystems as ts
 

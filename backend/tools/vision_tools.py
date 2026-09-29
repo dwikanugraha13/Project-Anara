@@ -10,10 +10,10 @@ Anara Standard Vision & Video Understanding Engine:
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import mimetypes
 import os
-from pathlib import Path
 from typing import Any, Dict, Optional
 import httpx
 
@@ -170,6 +170,9 @@ async def _tool_vision_analyze(
         norm_path = os.path.abspath(os.path.expanduser(clean_target))
         if not os.path.isfile(norm_path):
             return {"status": "error", "message": f"Image file not found on disk: {clean_target}"}
+        ext = os.path.splitext(norm_path)[1].lower()
+        if ext and ext not in SUPPORTED_IMAGE_EXTS:
+            return {"status": "error", "message": f"Unsupported image file extension '{ext}'. Supported: {', '.join(sorted(SUPPORTED_IMAGE_EXTS))}"}
         try:
             with open(norm_path, "rb") as f:
                 img_bytes = f.read()
@@ -407,6 +410,10 @@ async def _tool_video_analyze(
     norm_path = os.path.abspath(os.path.expanduser(clean_target))
     if not os.path.isfile(norm_path):
         return {"status": "error", "message": f"Video file not found on disk: {clean_target}"}
+
+    ext = os.path.splitext(norm_path)[1].lower()
+    if ext and ext not in SUPPORTED_VIDEO_EXTS:
+        return {"status": "error", "message": f"Unsupported video file extension '{ext}'. Supported: {', '.join(sorted(SUPPORTED_VIDEO_EXTS))}"}
 
     file_size_mb = os.path.getsize(norm_path) / (1024 * 1024)
     if file_size_mb > 50.0:

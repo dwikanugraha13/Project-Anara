@@ -4,12 +4,12 @@ Anara Standard video_generate: creates short AI videos from
 text prompts or reference images using Pollinations Video and Fal.ai fallback.
 """
 
-import asyncio
 import hashlib
 import logging
 import os
 import time
 import urllib.parse
+import uuid
 from typing import Any, Dict, Optional
 import httpx
 
@@ -72,7 +72,7 @@ async def _tool_video_generate(
                     d = res.json()
                     video_url = d.get("video", {}).get("url") or d.get("url")
                     if video_url:
-                        local_name = f"video_{int(time.time())}_{hashlib.md5(clean_prompt.encode()).hexdigest()[:8]}.mp4"
+                        local_name = f"video_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}.mp4"
                         local_path = os.path.join(STAGING_DIR, local_name)
 
                         # Download local copy
@@ -107,7 +107,7 @@ async def _tool_video_generate(
     seed = int(time.time() * 1000) % 999999
     pollinations_video_url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&model=cogvideox&seed={seed}&nologo=true"
 
-    local_name = f"video_cog_{int(time.time())}_{hashlib.md5(clean_prompt.encode()).hexdigest()[:8]}.mp4"
+    local_name = f"video_cog_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}.mp4"
     local_path = os.path.join(STAGING_DIR, local_name)
 
     try:

@@ -39,7 +39,7 @@ const TAB_DESCRIPTIONS: Record<BrainTabId, { title: string; subtitle: string; ca
     category: "Autonomous Agent",
   },
   providers: {
-    title: "Providers & Gateway",
+    title: "Providers & Keys",
     subtitle: "Dynamic multi-provider pool, model routing, and token telemetry",
     category: "AI Gateway & Network",
   },
@@ -114,30 +114,28 @@ export default function AnaraBrain({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 lg:p-6 bg-black/65 backdrop-blur-md pointer-events-auto animate-fade-in select-none"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 lg:p-6 bg-black/75 backdrop-blur-xl pointer-events-auto animate-fade-in select-none"
       onClick={onClose}
     >
-      {/* ── Ambient Liquid Light Blobs ── */}
-      <div className="absolute top-0 left-1/4 w-[560px] h-[560px] bg-cyan-500/[0.04] rounded-full blur-[160px] pointer-events-none animate-liquid-1 [transform:translateZ(0)] [will-change:transform]" />
-      <div className="absolute bottom-0 right-1/5 w-[520px] h-[520px] bg-indigo-600/[0.06] rounded-full blur-[160px] pointer-events-none animate-liquid-2 [transform:translateZ(0)] [will-change:transform]" />
-      <div className="absolute top-1/3 right-1/3 w-[380px] h-[380px] bg-purple-600/[0.03] rounded-full blur-[140px] pointer-events-none animate-liquid-3 [transform:translateZ(0)] [will-change:transform]" />
+      {/* Restrained Ambient Radial Sheen (Zero GPU Thrashing, Pure Obsidian) */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_0%,rgba(56,189,248,0.05),transparent_70%)] pointer-events-none" />
 
       {/* ── Main Framed Window (Liquid Glass Obsidian Studio) ── */}
       <div
-        className="relative w-full h-full max-w-7xl max-h-[92vh] rounded-2xl border border-white/[0.08] bg-[#060913] shadow-[0_24px_80px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col md:flex-row pointer-events-auto"
+        className="relative w-full h-full max-w-7xl max-h-[92vh] rounded-2xl border border-white/[0.10] bg-[#060913]/90 shadow-[0_24px_80px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.10)] overflow-hidden flex flex-col md:flex-row pointer-events-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Specular Sheen Highlight */}
-        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/[0.12] to-transparent pointer-events-none z-20" />
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/[0.15] to-transparent pointer-events-none z-20" />
 
         {/* ── SIDEBAR KIRI: Navigasi Terpusat ── */}
-        <div className="w-full md:w-60 shrink-0 border-b md:border-b-0 md:border-r border-white/[0.08] bg-[#080d1a]/90 backdrop-blur-xl flex flex-col overflow-y-auto no-scrollbar p-3 space-y-4 select-none">
+        <div className="w-full md:w-60 shrink-0 border-b md:border-b-0 md:border-r border-white/[0.08] bg-[#080d1a]/80 backdrop-blur-xl flex flex-col overflow-y-auto no-scrollbar p-3 space-y-4 select-none">
           {/* Section 1: AUTONOMOUS AGENT */}
           <div className="space-y-1">
-            <span className="px-2.5 text-[10px] font-mono font-semibold tracking-wider text-slate-500 uppercase">
+            <span className="px-2.5 text-[11px] font-sans font-semibold tracking-wider text-slate-400 uppercase">
               Autonomous Agent
             </span>
-            <div className="space-y-0.5 font-mono">
+            <div className="space-y-0.5 font-sans">
               {([
                 {
                   id: "soul" as BrainTabId,
@@ -150,7 +148,7 @@ export default function AnaraBrain({
                 },
                 {
                   id: "tools" as BrainTabId,
-                  label: "Tools Catalog",
+                  label: "Tools & Automation",
                   icon: (
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -173,21 +171,19 @@ export default function AnaraBrain({
                   <button
                     key={item.id}
                     onClick={() => setActiveTab(item.id)}
-                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium border transition-all cursor-pointer select-none ${
+                    className={`w-full group relative flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium border transition-all cursor-pointer select-none ${
                       isActive
-                        ? "bg-white/[0.08] text-white border-white/[0.12] shadow-sm"
+                        ? "bg-white/[0.08] text-white border-white/[0.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]"
                         : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]"
                     }`}
                   >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className={`transition-colors duration-150 ${isActive ? "text-cyan-300" : "text-slate-400"}`}>{item.icon}</span>
+                    {isActive && (
+                      <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r bg-cyan-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
+                    )}
+                    <div className="flex items-center gap-2.5 min-w-0 pl-1">
+                      <span className={`transition-colors duration-150 ${isActive ? "text-cyan-300" : "text-slate-400 group-hover:text-slate-300"}`}>{item.icon}</span>
                       <span className="truncate">{item.label}</span>
                     </div>
-                    {item.badge !== undefined && item.badge > 0 && (
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors duration-150 ${isActive ? "bg-cyan-400/20 text-cyan-200" : "bg-white/[0.06] text-slate-400"}`}>
-                        {item.badge}
-                      </span>
-                    )}
                   </button>
                 );
               })}
@@ -196,10 +192,10 @@ export default function AnaraBrain({
 
           {/* Section 2: AI GATEWAY & NETWORK */}
           <div className="space-y-1">
-            <span className="px-2.5 text-[10px] font-mono font-semibold tracking-wider text-slate-500 uppercase">
+            <span className="px-2.5 text-[11px] font-sans font-semibold tracking-wider text-slate-400 uppercase">
               AI Gateway &amp; Network
             </span>
-            <div className="space-y-0.5 font-mono">
+            <div className="space-y-0.5 font-sans">
               {[
                 {
                   id: "providers" as BrainTabId,
@@ -225,14 +221,17 @@ export default function AnaraBrain({
                   <button
                     key={item.id}
                     onClick={() => setActiveTab(item.id)}
-                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium border transition-all cursor-pointer select-none ${
+                    className={`w-full group relative flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium border transition-all cursor-pointer select-none ${
                       isActive
-                        ? "bg-white/[0.08] text-white border-white/[0.12] shadow-sm"
+                        ? "bg-white/[0.08] text-white border-white/[0.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]"
                         : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]"
                     }`}
                   >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className={`transition-colors duration-150 ${isActive ? "text-cyan-300" : "text-slate-400"}`}>{item.icon}</span>
+                    {isActive && (
+                      <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r bg-cyan-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
+                    )}
+                    <div className="flex items-center gap-2.5 min-w-0 pl-1">
+                      <span className={`transition-colors duration-150 ${isActive ? "text-cyan-300" : "text-slate-400 group-hover:text-slate-300"}`}>{item.icon}</span>
                       <span className="truncate">{item.label}</span>
                     </div>
                   </button>

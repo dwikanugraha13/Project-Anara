@@ -32,11 +32,9 @@ from memory import memory_engine, file_memory
 from core import (
     ChannelRequest,
     process_channel_request,
-    needs_plan,
-    is_explicit_plan_approval,
     skill_library,
 )
-from core.channel_adapter import _execute_build_mode, _PENDING_PLANS
+from core.channel_adapter import _execute_build_mode
 from providers import get_active_model_id
 
 # ANSI terminal colors
@@ -53,15 +51,11 @@ try:
     from integrations.platforms.terminal import (
         terminal_ui,
         AnaraCliCompleter,
-        ToolActivitySpinner,
-        StreamTokenRenderer,
     )
 except ImportError:
     from backend.integrations.platforms.terminal import (
         terminal_ui,
         AnaraCliCompleter,
-        ToolActivitySpinner,
-        StreamTokenRenderer,
     )
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
@@ -93,7 +87,7 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
     active_workspace = resolve_workspace_root()
 
     # Resolve speaker from profile if available
-    user_name = "Agnan"
+    user_name = os.environ.get("USERNAME") or os.environ.get("USER") or "User"
     try:
         prof = file_memory.get_user_profile()
         for line in prof.splitlines():
@@ -159,7 +153,12 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
     async def _read_cli_line(prompt_text: str) -> str:
         if session is not None:
             try:
-                return await session.prompt_async(prompt_text)
+                try:
+                    from prompt_toolkit.patch_stdout import patch_stdout
+                    with patch_stdout():
+                        return await session.prompt_async(prompt_text)
+                except ImportError:
+                    return await session.prompt_async(prompt_text)
             except Exception:
                 pass
         return await asyncio.to_thread(input, prompt_text)
@@ -315,7 +314,7 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
             text=effective_text,
             channel="cli",
             channel_id=terminal_id,
-            user_id="agnan",
+            user_id=user_name.lower().replace(" ", "_"),
             sender_name=user_name,
             trigger_type="interactive",
             session_id=session_id,
@@ -355,6 +354,8 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
             )
         finally:
             terminal_ui.spinner.finish_tool(True)
+            if streamed_any:
+                terminal_ui.streamer.finish()
 
         if res.plan_pending and res.plan_id:
             # Plan Mode Gate triggered
@@ -391,17 +392,15 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
                     )
                 finally:
                     terminal_ui.spinner.finish_tool(True)
+                    if b_streamed:
+                        terminal_ui.streamer.finish()
 
-                if b_streamed:
-                    terminal_ui.streamer.finish()
-                else:
+                if not b_streamed:
                     terminal_ui.print_response(build_res.text, speaker_name="Anara")
             else:
                 terminal_ui.console.print("\n[bold red]Plan cancelled. No changes were made.[/bold red]\n")
         else:
-            if streamed_any:
-                terminal_ui.streamer.finish()
-            else:
+            if not streamed_any:
                 terminal_ui.print_response(res.text, speaker_name="Anara")
 
         return True
@@ -417,9 +416,9 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
             prompt_text = f"{user_name} ({session_mode}) > "
             user_input = await _read_cli_line(prompt_text)
 
-            # Support multiline trailing backslash continuation
-            while user_input.endswith("\\"):
-                user_input = user_input[:-1] + "\n"
+            # Support multiline trailing backslash continuation (explicit ' \\')
+            while user_input.endswith(" \\"):
+                user_input = user_input[:-2] + "\n"
                 continuation = await _read_cli_line("... ")
                 user_input += continuation
 
@@ -789,16 +788,23 @@ def main():
     sk_p.add_argument("--limit", type=int, default=15, help="Max results for search")
     sk_p.add_argument("--all", action="store_true", help="List all skills including disabled ones")
 
-    KNOWN_SUBCOMMANDS = {"daemon", "autostart", "gateway", "computer-use", "skills"}
+    KNOWN_SUBCOMMANDS = {
+        "daemon": {"status", "stop", "start", "restart"},
+        "autostart": {"status", "enable", "disable"},
+        "gateway": {"status", "tunnel", "stop-tunnel", "set-password"},
+        "computer-use": {"status", "install"},
+        "skills": {"list", "sync", "search", "install", "enable", "disable", "uninstall", "remove", "sources"},
+    }
     argv = sys.argv[1:]
 
-    first_non_flag = None
-    for a in argv:
-        if not a.startswith("-"):
-            first_non_flag = a
-            break
-
-    is_subcommand = (first_non_flag in KNOWN_SUBCOMMANDS) or any(h in argv for h in ("-h", "--help"))
+    is_subcommand = False
+    if argv:
+        sub = argv[0]
+        if sub in KNOWN_SUBCOMMANDS:
+            if len(argv) == 1 or argv[1].startswith("-") or argv[1] in KNOWN_SUBCOMMANDS[sub]:
+                is_subcommand = True
+        elif sub in ("-h", "--help") and len(argv) == 1:
+            is_subcommand = True
 
     if is_subcommand:
         args = parser.parse_args(argv)

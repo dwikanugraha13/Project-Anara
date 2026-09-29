@@ -12,7 +12,6 @@ import json
 import logging
 import re
 import sqlite3
-import os
 import threading
 from typing import Optional, Dict, Any, List
 

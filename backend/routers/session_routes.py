@@ -7,7 +7,7 @@ import shutil
 import time as _time
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from memory import memory_engine
 from core import anara_agent
@@ -32,7 +32,7 @@ class PlanProposalRequest(BaseModel):
     title: str
     summary: str
     steps: List[str]
-    tech_stack: Optional[List[str]] = []
+    tech_stack: Optional[List[str]] = Field(default_factory=list)
     estimated_effort: Optional[str] = "Normal"
 
 @router.get("/api/chat/sessions")
@@ -64,6 +64,10 @@ async def get_session_endpoint(session_id: str):
 @router.patch("/api/chat/sessions/{session_id}")
 async def patch_session_endpoint(session_id: str, req: SessionPatchRequest):
     """Renames, pins, archives, or switches mode of a thread."""
+    existing = memory_engine.get_session(session_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Session not found")
+
     ok = memory_engine.patch_session(
         session_id,
         title=req.title,
@@ -72,7 +76,7 @@ async def patch_session_endpoint(session_id: str, req: SessionPatchRequest):
         session_mode=req.session_mode
     )
     if not ok:
-        raise HTTPException(status_code=400, detail="Session not found or no changes applied")
+        raise HTTPException(status_code=400, detail="No changes applied")
     return {"status": "success", "session": memory_engine.get_session(session_id)}
 
 @router.post("/api/chat/sessions/{session_id}/fork")
@@ -119,7 +123,8 @@ async def bulk_delete_sessions_endpoint(archived_only: bool = True, keep_pinned:
                         pass
     except Exception as e:
         logger.debug(f"[Workspace Cleanup] {e}")
-    return {"status": "success", "deleted_count": deleted}
+    count = deleted.get("sessions", 0) if isinstance(deleted, dict) else (deleted or 0)
+    return {"status": "success", "deleted_count": count, "deleted_stats": deleted}
 
 # ── Project Planning Mode (Plan/Build protocol) Endpoints ──
 

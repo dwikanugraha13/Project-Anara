@@ -93,14 +93,23 @@ async def proxy_image_endpoint(url: str):
     # SSRF Protection: block private IPs, loopback, and cloud metadata endpoints
     try:
         from urllib.parse import urlparse
+        import socket
+        import ipaddress
         parsed = urlparse(url)
         host = (parsed.hostname or "").lower().strip()
-        if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0") or host.startswith(
-            ("10.", "192.168.", "169.254.", "172.16.", "172.17.", "172.18.", "172.19.",
-             "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.", "172.26.",
-             "172.27.", "172.28.", "172.29.", "172.30.", "172.31.")
-        ):
-            raise HTTPException(status_code=403, detail="Access to private or local network resources is forbidden.")
+        if not host:
+            raise HTTPException(status_code=400, detail="Invalid hostname.")
+
+        # Resolve hostname to actual IP to prevent DNS rebinding attacks
+        try:
+            addr_info = socket.getaddrinfo(host, None)
+            for family, _, _, _, sockaddr in addr_info:
+                ip_str = sockaddr[0]
+                ip = ipaddress.ip_address(ip_str)
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                    raise HTTPException(status_code=403, detail="Access to private or local network resources is forbidden.")
+        except socket.gaierror:
+            raise HTTPException(status_code=400, detail="Cannot resolve hostname.")
     except HTTPException:
         raise
     except Exception:
@@ -112,10 +121,15 @@ async def proxy_image_endpoint(url: str):
             "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
             "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
         }
-        import httpx
-        async with httpx.AsyncClient(timeout=8.0, follow_redirects=False) as client:
-            resp = await client.get(url, headers=headers)
+        client = get_shared_http_client()
+        resp = await client.get(url, headers=headers, timeout=8.0, follow_redirects=False)
         if resp.status_code == 200:
+            c_len = resp.headers.get("content-length")
+            if c_len and int(c_len) > 15 * 1024 * 1024:
+                raise HTTPException(status_code=413, detail="Image size exceeds 15 MB limit.")
+            if len(resp.content) > 15 * 1024 * 1024:
+                raise HTTPException(status_code=413, detail="Image payload exceeds 15 MB limit.")
+
             c_type = resp.headers.get("content-type", "image/jpeg")
             if "image" not in c_type:
                 c_type = "image/jpeg"
@@ -123,6 +137,8 @@ async def proxy_image_endpoint(url: str):
                 "Cache-Control": "public, max-age=86400",
                 "Access-Control-Allow-Origin": "*"
             })
+    except HTTPException:
+        raise
     except Exception as e:
         logger.warning(f"[ImageProxy] Error fetching image {url[:60]}: {e}")
     raise HTTPException(status_code=404, detail="Image could not be retrieved")

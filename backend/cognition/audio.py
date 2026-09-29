@@ -1,10 +1,14 @@
 """
 Audio utilities for processing audio chunks between browser and Gemini API.
 """
+import asyncio
 import base64
-import io
+import os
 import re
 from typing import Optional, Dict, Any, List
+
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
 import numpy as np
 
 
@@ -44,8 +48,14 @@ def estimate_audio_intensity(pcm_bytes: bytes) -> float:
     if not pcm_bytes:
         return 0.0
     clean = pcm_bytes[:len(pcm_bytes) - (len(pcm_bytes) % 2)]
+    if len(clean) < 2:
+        return 0.0
     arr = np.frombuffer(clean, dtype=np.int16).astype(np.float32)
+    if arr.size == 0:
+        return 0.0
     rms = np.sqrt(np.mean(arr ** 2))
+    if np.isnan(rms):
+        return 0.0
     # Normalize to 0-1 range (max PCM16 value is 32767)
     return float(np.clip(rms / 32767.0, 0.0, 1.0))
 
@@ -357,10 +367,24 @@ async def transcribe_audio_file(audio_path: str) -> Optional[str]:
     if not audio_path or not os.path.isfile(audio_path):
         return None
 
-    ext = os.path.splitext(audio_path)[1].lower()
+    norm_path = os.path.abspath(audio_path)
+    ext = os.path.splitext(norm_path)[1].lower()
     clean_fmt = ext.lstrip(".") or "ogg"
 
-    audio_bytes = await asyncio.to_thread(lambda: open(audio_path, "rb").read())
+    mime_map = {
+        ".ogg": "audio/ogg",
+        ".mp3": "audio/mpeg",
+        ".wav": "audio/wav",
+        ".m4a": "audio/mp4",
+        ".webm": "audio/webm",
+    }
+    mime = mime_map.get(ext, "audio/ogg")
+
+    def _read_bytes():
+        with open(norm_path, "rb") as f:
+            return f.read()
+
+    audio_bytes = await asyncio.to_thread(_read_bytes)
 
     # ── TIER 1: User's Active Provider Probe (Dynamic & Zero-Hardcode) ──
     try:
@@ -431,15 +455,6 @@ async def transcribe_audio_file(audio_path: str) -> Optional[str]:
     try:
         from core import key_manager
         from google.genai import types
-
-        mime_map = {
-            ".ogg": "audio/ogg",
-            ".mp3": "audio/mpeg",
-            ".wav": "audio/wav",
-            ".m4a": "audio/mp4",
-            ".webm": "audio/webm",
-        }
-        mime = mime_map.get(ext, "audio/ogg")
 
         async def _transcribe_call(client: Any) -> str:
             audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime)
@@ -696,7 +711,10 @@ async def synthesize_speech_audio(
             )
             for part in audio_resp.candidates[0].content.parts:
                 if getattr(part, "inline_data", None) and part.inline_data.data:
-                    await asyncio.to_thread(lambda: open(target_path, "wb").write(part.inline_data.data))
+                    def _write_part(path, data):
+                        with open(path, "wb") as f:
+                            f.write(data)
+                    await asyncio.to_thread(_write_part, target_path, part.inline_data.data)
                     return target_path
     except Exception as e_genai:
         import logging

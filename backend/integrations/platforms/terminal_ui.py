@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.markup import escape
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
@@ -50,9 +51,9 @@ class ToolActivitySpinner:
         if len(clean_detail) > 65:
             clean_detail = clean_detail[:62] + "..."
 
-        self._current_label = f"[bold cyan]⚡ {tool_name}[/bold cyan]"
+        self._current_label = f"[bold cyan]⚡ {escape(tool_name)}[/bold cyan]"
         if clean_detail:
-            self._current_label += f": [dim]{clean_detail}[/dim]"
+            self._current_label += f": [dim]{escape(clean_detail)}[/dim]"
 
         if self._status is not None:
             try:
@@ -68,7 +69,7 @@ class ToolActivitySpinner:
             clean = detail.strip().replace("\n", " ")
             if len(clean) > 65:
                 clean = clean[:62] + "..."
-            self._status.update(f"{self._current_label} [dim]({clean})[/dim]")
+            self._status.update(f"{self._current_label} [dim]({escape(clean)})[/dim]")
 
     def finish_tool(self, success: bool = True, summary: str = ""):
         if not self._current_label and self._status is None:
@@ -88,7 +89,7 @@ class ToolActivitySpinner:
             clean_sum = summary.strip().replace("\n", " ")
             if len(clean_sum) > 55:
                 clean_sum = clean_sum[:52] + "..."
-            msg += f" → [dim]{clean_sum}[/dim]"
+            msg += f" → [dim]{escape(clean_sum)}[/dim]"
         self.console.print(msg)
         self._current_label = ""
         self._start_time = 0.0
@@ -107,10 +108,12 @@ class StreamTokenRenderer:
         self._header_printed = False
 
     def start(self, speaker_name: str = "Anara"):
+        if self._is_active:
+            return
         self._is_active = True
         self._buffer = []
         self._header_printed = False
-        self.console.print(f"\n[bold cyan]╭─ {speaker_name} ─╮[/bold cyan]")
+        self.console.print(f"\n[bold cyan]╭─ {escape(speaker_name)} ─╮[/bold cyan]")
 
     def feed(self, token: str):
         if not self._is_active:
@@ -125,6 +128,11 @@ class StreamTokenRenderer:
             sys.stdout.flush()
             self.console.print("[bold cyan]╰─────────────╯[/bold cyan]\n")
             self._is_active = False
+
+    def reset(self):
+        self._is_active = False
+        self._buffer = []
+        self._header_printed = False
 
     def get_full_text(self) -> str:
         return "".join(self._buffer)
@@ -186,7 +194,7 @@ class AnaraTerminalUI:
         syntax = Syntax(diff_text, "diff", theme="monokai", line_numbers=True)
         panel = Panel(
             syntax,
-            title=f"[bold yellow]Diff: {file_path}[/bold yellow]",
+            title=f"[bold yellow]Diff: {escape(file_path)}[/bold yellow]",
             title_align="left",
             border_style="yellow"
         )

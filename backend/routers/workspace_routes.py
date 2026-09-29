@@ -2,18 +2,18 @@
 Agent Workspace, File Management, Terminal Shell, Git, Skills, and Soul Routes for Project Anara.
 """
 import asyncio
+import base64
 import json
 import logging
 import os
 import re
 import subprocess
 import tempfile
-import time as _time
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from memory import memory_engine
 from core import anara_agent, subagent_manager
@@ -27,32 +27,32 @@ router = APIRouter(tags=["Agent Workspace"])
 
 class FolderImportRequest(BaseModel):
     folder_path: str
-    session_id: Optional[int] = None
+    session_id: Optional[Union[int, str]] = None
 
 class InitEmptyWorkspaceRequest(BaseModel):
     folder_name: str
-    session_id: Optional[int] = None
+    session_id: Optional[Union[int, str]] = None
 
 class SaveWorkspaceFileRequest(BaseModel):
     path: str
     content: str
-    session_id: Optional[int] = None
+    session_id: Optional[Union[int, str]] = None
 
 class TerminalExecRequest(BaseModel):
     command: str
-    session_id: Optional[int] = None
+    session_id: Optional[Union[int, str]] = None
     workdir: Optional[str] = None
 
 class CheckpointRevertRequest(BaseModel):
     checkpoint_id: str
-    session_id: Optional[int] = None
+    session_id: Optional[Union[int, str]] = None
 
 class SkillAddRequest(BaseModel):
     name: str
     category: str
     description: str
-    trigger_keywords: List[str] = []
-    procedure_steps: List[str] = []
+    trigger_keywords: List[str] = Field(default_factory=list)
+    procedure_steps: List[str] = Field(default_factory=list)
 
 class SoulUpdateRequest(BaseModel):
     content: str
@@ -104,18 +104,21 @@ async def pick_local_folder_endpoint(req: FolderImportRequest):
 async def upload_agent_file(
     file: UploadFile = File(...),
     relative_path: Optional[str] = Form(None),
-    session_id: Optional[int] = Form(None)
+    session_id: Optional[Union[int, str]] = Form(None)
 ):
     """Uploads a file into Anara Agent Workspace."""
     content = await file.read()
-    res = anara_agent.save_uploaded_file(file.filename, content, relative_path=relative_path, session_id=session_id)
-    return res
+    try:
+        res = anara_agent.save_uploaded_file(file.filename, content, relative_path=relative_path, session_id=session_id)
+        return res
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/api/agent/upload-folder")
 async def upload_agent_folder(
     files: List[UploadFile] = File(...),
     paths: Optional[str] = Form(None),
-    session_id: Optional[int] = Form(None)
+    session_id: Optional[Union[int, str]] = Form(None)
 ):
     """Uploads an entire multi-file project directory into Anara Agent Workspace."""
     path_list = []
@@ -133,7 +136,10 @@ async def upload_agent_folder(
     for i, file in enumerate(files):
         rel_p = path_list[i] if i < len(path_list) else file.filename
         content = await file.read()
-        anara_agent.save_uploaded_file(file.filename, content, relative_path=rel_p, session_id=session_id)
+        try:
+            anara_agent.save_uploaded_file(file.filename, content, relative_path=rel_p, session_id=session_id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     tree = anara_agent.get_workspace_tree(session_id=session_id)
     if session_id is not None:
@@ -164,13 +170,13 @@ async def init_empty_workspace_endpoint(req: InitEmptyWorkspaceRequest):
 # ── Workspace Tree & File Inspection/Saving ──
 
 @router.get("/api/agent/workspace/tree")
-async def get_agent_workspace_tree(session_id: Optional[int] = None):
+async def get_agent_workspace_tree(session_id: Optional[Union[int, str]] = None):
     """Returns the current file tree of the Anara Agent workspace."""
     return anara_agent.get_workspace_tree(session_id=session_id)
 
 @router.get("/api/agent/workspace/file-content")
 @router.get("/api/agent/workspace/file")
-async def get_agent_workspace_file_content(path: str, session_id: Optional[int] = None):
+async def get_agent_workspace_file_content(path: str, session_id: Optional[Union[int, str]] = None):
     """Returns raw file content for integrated IDE editor."""
     target_dir = anara_agent.get_session_dir(session_id)
     clean_p = path.lstrip("/\\")
@@ -255,7 +261,7 @@ async def save_agent_workspace_file(req: SaveWorkspaceFileRequest):
     }
 
 @router.delete("/api/agent/workspace")
-async def clear_agent_workspace(session_id: Optional[int] = None):
+async def clear_agent_workspace(session_id: Optional[Union[int, str]] = None):
     """Resets and clears the active workspace for a specific session."""
     anara_agent.clear_workspace(session_id=session_id)
     broadcast_agent_event({"type": "workspace_updated", "session_id": session_id, "cleared": True})
@@ -283,13 +289,15 @@ async def execute_terminal_command_endpoint(req: TerminalExecRequest):
 
     try:
         if os.name == "nt":
+            encoded_bytes = f"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8;\n{cmd}".encode("utf-16le")
+            encoded_cmd = base64.b64encode(encoded_bytes).decode("ascii")
             ps_cmd = [
                 "powershell.exe",
                 "-NoProfile",
                 "-NonInteractive",
                 "-ExecutionPolicy", "Bypass",
-                "-Command",
-                f"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; {cmd}"
+                "-EncodedCommand",
+                encoded_cmd
             ]
             use_shell = False
         else:
@@ -350,13 +358,15 @@ async def stream_terminal_command_endpoint(req: TerminalExecRequest):
         proc = None
         try:
             if os.name == "nt":
+                encoded_bytes = f"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8;\n{cmd}".encode("utf-16le")
+                encoded_cmd = base64.b64encode(encoded_bytes).decode("ascii")
                 ps_cmd = [
                     "powershell.exe",
                     "-NoProfile",
                     "-NonInteractive",
                     "-ExecutionPolicy", "Bypass",
-                    "-Command",
-                    f"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; {cmd}"
+                    "-EncodedCommand",
+                    encoded_cmd
                 ]
                 proc = await asyncio.create_subprocess_exec(
                     *ps_cmd,
@@ -383,7 +393,10 @@ async def stream_terminal_command_endpoint(req: TerminalExecRequest):
         except (asyncio.CancelledError, GeneratorExit):
             if proc and proc.returncode is None:
                 try:
-                    proc.kill()
+                    if os.name == "nt":
+                        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True, timeout=5)
+                    else:
+                        proc.kill()
                     await proc.wait()
                 except Exception:
                     pass
@@ -393,7 +406,10 @@ async def stream_terminal_command_endpoint(req: TerminalExecRequest):
         finally:
             if proc and proc.returncode is None:
                 try:
-                    proc.kill()
+                    if os.name == "nt":
+                        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True, timeout=5)
+                    else:
+                        proc.kill()
                     await proc.wait()
                 except Exception:
                     pass
@@ -413,7 +429,9 @@ async def stream_terminal_command_endpoint(req: TerminalExecRequest):
 @router.post("/api/agent/checkpoint/revert")
 async def revert_checkpoint_endpoint(req: CheckpointRevertRequest):
     """Restores workspace files to a snapshot backup."""
-    ok = anara_agent.rollback_checkpoint(req.checkpoint_id, req.session_id)
+    def _rollback():
+        return anara_agent.rollback_checkpoint(req.checkpoint_id, req.session_id)
+    ok = await asyncio.to_thread(_rollback)
     if not ok:
         raise HTTPException(status_code=404, detail="Checkpoint not found or failed to restore.")
     broadcast_agent_event({"type": "workspace_updated", "session_id": req.session_id})
@@ -422,7 +440,7 @@ async def revert_checkpoint_endpoint(req: CheckpointRevertRequest):
 # ── Git Integration ──
 
 @router.get("/api/agent/git/status")
-async def get_agent_git_status(session_id: Optional[int] = None):
+async def get_agent_git_status(session_id: Optional[Union[int, str]] = None):
     """Returns real git status strictly for the active session project workspace."""
     sid = session_id if session_id is not None else anara_agent.get_active_session_id()
     if sid is None:
@@ -474,7 +492,7 @@ async def get_agent_git_status(session_id: Optional[int] = None):
         return {"is_git": False, "error": str(e), "changed_count": 0, "files": []}
 
 @router.post("/api/agent/git/init")
-async def init_agent_git_repo(session_id: Optional[int] = None):
+async def init_agent_git_repo(session_id: Optional[Union[int, str]] = None):
     """Initializes a git repository strictly within the active workspace folder."""
     ok = anara_agent.ensure_git_repo(session_id)
     if not ok:
@@ -484,12 +502,14 @@ async def init_agent_git_repo(session_id: Optional[int] = None):
 
 class GitRollbackRequest(BaseModel):
     commit_sha: str
-    session_id: Optional[int] = None
+    session_id: Optional[Union[int, str]] = None
 
 @router.post("/api/agent/git/rollback")
 async def rollback_agent_git_commit(req: GitRollbackRequest):
     """Rolls back or reverts a specific git commit in the project workspace (FR-18)."""
-    ok = anara_agent.rollback_git_commit(req.commit_sha, req.session_id)
+    def _rollback_git():
+        return anara_agent.rollback_git_commit(req.commit_sha, req.session_id)
+    ok = await asyncio.to_thread(_rollback_git)
     if not ok:
         raise HTTPException(status_code=400, detail=f"Failed to rollback commit '{req.commit_sha}'.")
     broadcast_agent_event({"type": "workspace_updated", "session_id": req.session_id})
@@ -624,7 +644,9 @@ async def delete_autonomous_task_endpoint(task_id: str):
     """Removes an autonomous task from the scheduler."""
     from core.autonomous_engine import autonomous_engine
     ok = autonomous_engine.delete_task(task_id)
-    return {"status": "success" if ok else "error"}
+    if not ok:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {"status": "success"}
 
 @router.post("/api/agent/autonomous/tasks/{task_id}/trigger")
 async def trigger_autonomous_task_endpoint(task_id: str):
@@ -638,11 +660,15 @@ async def pause_autonomous_task_endpoint(task_id: str):
     """Pauses a scheduled autonomous task."""
     from core.autonomous_engine import autonomous_engine
     ok = autonomous_engine.pause_task(task_id)
-    return {"status": "success" if ok else "error"}
+    if not ok:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {"status": "success"}
 
 @router.post("/api/agent/autonomous/tasks/{task_id}/resume")
 async def resume_autonomous_task_endpoint(task_id: str):
     """Resumes a paused autonomous task."""
     from core.autonomous_engine import autonomous_engine
     ok = autonomous_engine.resume_task(task_id)
-    return {"status": "success" if ok else "error"}
+    if not ok:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {"status": "success"}
