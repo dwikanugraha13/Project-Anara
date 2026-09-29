@@ -278,11 +278,8 @@ export interface GoogleStatus {
 
 export type BrainTabId =
   | "soul"
-  | "skills"
-  | "memories"
   | "tools"
-  | "projects"
-  | "todos"
+  | "skills"
   | "providers"
   | "integrations";
 

@@ -12,11 +12,6 @@ import {
 import BrainSoulTab from "./agent/BrainSoulTab";
 import BrainToolsTab from "./agent/BrainToolsTab";
 import BrainSkillsTab from "./agent/BrainSkillsTab";
-
-import BrainMemoriesTab from "./context/BrainMemoriesTab";
-import BrainTodosTab from "./context/BrainTodosTab";
-import BrainProjectsTab from "./context/BrainProjectsTab";
-
 import BrainProvidersTab from "./network/BrainProvidersTab";
 import BrainIntegrationsTab from "./network/BrainIntegrationsTab";
 
@@ -30,43 +25,28 @@ interface BrainNavTab {
 const TAB_DESCRIPTIONS: Record<BrainTabId, { title: string; subtitle: string; category: string }> = {
   soul: {
     title: "Soul & Rules",
-    subtitle: "Core agent directives, persona, user preferences, and durable facts",
+    subtitle: "Core directives, agent persona, user preferences, and persistent MEMORY.md",
     category: "Autonomous Agent",
   },
   tools: {
-    title: "Tools Catalog",
-    subtitle: "Physical execution instruments, subagent delegates, and background runners",
+    title: "Tools & Automation",
+    subtitle: "Execution instruments, autonomous task scheduler, and subagent swarms",
     category: "Autonomous Agent",
   },
   skills: {
     title: "Skills Catalog",
-    subtitle: "Procedural workflows, custom capabilities, and extensible skill hub",
+    subtitle: "Procedural workflows, custom capabilities, and extensible community hub",
     category: "Autonomous Agent",
-  },
-  memories: {
-    title: "Persistent Memory",
-    subtitle: "Durable SQLite knowledge store, episodic memory nodes, and semantic indexing",
-    category: "Memory & Context",
-  },
-  todos: {
-    title: "Tasks & Todos",
-    subtitle: "Autonomous task scratchpad, multi-step checklists, and durable priorities",
-    category: "Memory & Context",
-  },
-  projects: {
-    title: "Project Workspaces",
-    subtitle: "Tracked codebase roots, git branches, architectural contexts, and goals",
-    category: "Memory & Context",
   },
   providers: {
     title: "Providers & Gateway",
-    subtitle: "LLM inference backends, model routing, API accounts pool, and token telemetry",
-    category: "AI & Network",
+    subtitle: "Dynamic multi-provider pool, model routing, and token telemetry",
+    category: "AI Gateway & Network",
   },
   integrations: {
     title: "Integrations & Channels",
-    subtitle: "Omnichannel gateways (Telegram, WhatsApp, CLI) and external platform connectors",
-    category: "AI & Network",
+    subtitle: "Omnichannel gateways (Telegram, WhatsApp, CLI) and messaging channels",
+    category: "AI Gateway & Network",
   },
 };
 
@@ -214,73 +194,10 @@ export default function AnaraBrain({
             </div>
           </div>
 
-          {/* Section 2: MEMORY & CONTEXT */}
+          {/* Section 2: AI GATEWAY & NETWORK */}
           <div className="space-y-1">
             <span className="px-2.5 text-[10px] font-mono font-semibold tracking-wider text-slate-500 uppercase">
-              Memory &amp; Context
-            </span>
-            <div className="space-y-0.5 font-mono">
-              {([
-                {
-                  id: "memories" as BrainTabId,
-                  label: "Persistent Memory",
-                  icon: (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-                    </svg>
-                  ),
-                  badge: stats?.memories_count,
-                },
-                {
-                  id: "todos" as BrainTabId,
-                  label: "Tasks & Todos",
-                  icon: (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                    </svg>
-                  ),
-                  badge: stats?.notes_count,
-                },
-                {
-                  id: "projects" as BrainTabId,
-                  label: "Project Workspaces",
-                  icon: (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                    </svg>
-                  ),
-                },
-              ] as BrainNavTab[]).map((item) => {
-                const isActive = activeTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => setActiveTab(item.id)}
-                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium border transition-all cursor-pointer select-none ${
-                      isActive
-                        ? "bg-white/[0.08] text-white border-white/[0.12] shadow-sm"
-                        : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className={`transition-colors duration-150 ${isActive ? "text-cyan-300" : "text-slate-400"}`}>{item.icon}</span>
-                      <span className="truncate">{item.label}</span>
-                    </div>
-                    {item.badge !== undefined && item.badge > 0 && (
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors duration-150 ${isActive ? "bg-cyan-400/20 text-cyan-200" : "bg-white/[0.06] text-slate-400"}`}>
-                        {item.badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Section 3: AI & NETWORK */}
-          <div className="space-y-1">
-            <span className="px-2.5 text-[10px] font-mono font-semibold tracking-wider text-slate-500 uppercase">
-              AI &amp; Network
+              AI Gateway &amp; Network
             </span>
             <div className="space-y-0.5 font-mono">
               {[
@@ -380,25 +297,6 @@ export default function AnaraBrain({
             {activeTab === "soul" && <BrainSoulTab />}
             {activeTab === "tools" && <BrainToolsTab />}
             {activeTab === "skills" && <BrainSkillsTab />}
-            {activeTab === "memories" && (
-              <BrainMemoriesTab
-                activeSpeaker={activeSpeaker}
-                speakers={speakers}
-                onRefreshStats={fetchBrainData}
-              />
-            )}
-            {activeTab === "todos" && (
-              <BrainTodosTab
-                activeSpeaker={activeSpeaker}
-                onRefreshAll={fetchBrainData}
-              />
-            )}
-            {activeTab === "projects" && (
-              <BrainProjectsTab
-                activeSpeaker={activeSpeaker}
-                onRefreshAll={fetchBrainData}
-              />
-            )}
             {activeTab === "providers" && <BrainProvidersTab onRefreshAll={fetchBrainData} />}
             {activeTab === "integrations" && <BrainIntegrationsTab onRefreshAll={fetchBrainData} />}
           </div>
