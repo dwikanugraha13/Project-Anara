@@ -40,6 +40,8 @@ export {
   MAX_SIDEBAR_WIDTH,
   toDate,
   formatFullDateTime,
+  formatSmartDateTime,
+  resolveSessionDisplay,
   groupSessions,
   renderFileSvgIcon,
   nodeHasMatch,

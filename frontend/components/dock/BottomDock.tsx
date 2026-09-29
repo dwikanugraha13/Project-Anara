@@ -357,7 +357,7 @@ export default function BottomDock({
           } ${isInputExpanded ? "h-full flex-1 min-h-0" : ""}`}
         >
           {/* Top Specular Sheen Highlight */}
-          <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-cyan-400/30 to-transparent pointer-events-none z-10" />
+          <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/[0.12] to-transparent pointer-events-none z-10" />
           {isDragOver && (
             <div className="absolute inset-0 z-40 rounded-2xl bg-slate-950/85 backdrop-blur-md border-2 border-dashed border-cyan-400 flex items-center justify-center gap-2.5 text-cyan-200 text-xs font-mono font-medium animate-fade-in pointer-events-none select-none">
               <svg className="w-5 h-5 text-cyan-300 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -408,7 +408,7 @@ export default function BottomDock({
                     value={inputMessage}
                     onChange={(e) => setInputMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Ask anything, / for commands, @ for context..."
+                    placeholder="Plan architecture, edit code, or run commands..."
                     className={`w-full bg-transparent border-none py-1.5 px-1 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none font-sans resize-none custom-scrollbar leading-relaxed ${
                       isInputOverflowed || isInputExpanded ? "overflow-y-auto" : "overflow-hidden"
                     } ${isInputExpanded ? "flex-1 h-full max-h-none" : ""}`}

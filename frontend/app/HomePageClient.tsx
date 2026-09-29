@@ -983,6 +983,16 @@ export default function HomePageClient({
       {/* Subtle Refractive Shimmer Grid */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:32px_32px] pointer-events-none opacity-25" />
 
+      {/* Atmospheric Cosmic Aura Spotlight for 3D Holographic Stage */}
+      <div
+        className={`absolute inset-0 pointer-events-none transition-opacity duration-700 ${
+          interactionMode === "voice" ? "opacity-100" : "opacity-0"
+        }`}
+        style={{
+          background: "radial-gradient(circle at 62% 42%, rgba(34, 211, 238, 0.09) 0%, rgba(99, 102, 241, 0.05) 30%, transparent 65%)",
+        }}
+      />
+
       {/* 3D Scene — Kept mounted in WebGL memory to eliminate T-Pose re-initialization glitch, hidden smoothly via CSS GPU in Chat Mode */}
       {isMounted && (
         <div

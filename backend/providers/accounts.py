@@ -173,7 +173,7 @@ def is_provider_configured(provider: str) -> bool:
 def has_any_active_provider() -> bool:
     """Checks whether ANY provider (standard or custom) is configured and ready to use."""
     from memory import memory_engine
-    for prov in ("gemini", "openai", "codex", "anthropic", "groq", "deepseek"):
+    for prov in PROVIDER_METADATA.keys():
         if is_provider_configured(prov):
             return True
     try:
@@ -207,6 +207,9 @@ def sync_env_to_accounts() -> None:
 
     for prov, key_val in env_keys.items():
         if not key_val or not key_val.strip():
+            continue
+        # Do not resurrect explicitly disconnected providers upon restart
+        if memory_engine.get_app_setting(f"provider_disconnected_{prov}") == "true":
             continue
         clean_key = key_val.strip()
         existing = memory_engine.get_ai_accounts(prov)
@@ -375,8 +378,10 @@ def save_provider_api_key(provider: str, api_key: str) -> bool:
     """Saves provider API key safely and enables the provider."""
     prov = provider.strip().lower()
     clean_key = (api_key or "").strip()
-    add_provider_account(prov, f"{prov.capitalize()} Account", clean_key)
-    return True
+    if not clean_key:
+        return False
+    res = add_provider_account(prov, f"{prov.capitalize()} Account", clean_key)
+    return bool(res)
 
 
 async def get_providers_status_list_async(force_refresh: bool = False) -> List[Dict[str, Any]]:

@@ -580,7 +580,7 @@ export default function AnaraWorkbench({
                 activeSpeaker={activeSpeaker}
                 activeModelId={activeModelId}
                 liveToolProgress={liveToolProgress}
-                footerDockHeight={0}
+                footerDockHeight={24}
                 onApprovePlan={onApprovePlan}
                 activeThinkingText={activeThinkingText}
                 onAnswerQuestion={onAnswerQuestion}

@@ -119,32 +119,35 @@ _CACHE_TTL_SECONDS = 600  # 10 minutes cache TTL
 def _infer_model_badge_and_category(model_id: str, name: str, provider: str) -> Tuple[str, str, str]:
     """Generates appropriate badge, category, and icon based on model properties without brittle substring collisions."""
     m_lower = f"{model_id} {name}".lower()
+    prov_icon = provider if provider not in ("openai_compatible", "custom") else "custom"
 
     if re.search(r'\b(live-preview|realtime|audio|voice)\b', m_lower) or ("live" in m_lower and "gemini" in m_lower):
-        return "Live Audio", "voice_native", provider if provider != "openai_compatible" else "gemini"
+        return "Live Audio", "voice_native", "gemini" if "gemini" in m_lower else prov_icon
     if re.search(r'\bclaude-3[-.]7\b', m_lower):
-        return "Hybrid Reasoning", "deep_reasoning", provider
+        return "Hybrid Reasoning", "deep_reasoning", "anthropic"
     if re.search(r'\bclaude-3[-.]5\b', m_lower):
-        return "Advanced Logic", "deep_reasoning", provider
+        return "Advanced Logic", "deep_reasoning", "anthropic"
     if re.search(r'\b(gpt-4o-mini)\b', m_lower):
         return "Fast General", "fast_general", "openai"
     if re.search(r'\b(o[3-9]|o[3-9]-mini)\b', m_lower):
         return "High Reasoning", "deep_reasoning", "openai"
     if re.search(r'\b(o1|o1-mini|o1-preview)\b', m_lower):
         return "Deep Reasoning", "reasoning", "openai"
-    if re.search(r'\b(deepseek-r1|r1)\b', m_lower):
+    if re.search(r'\b(deepseek-r1|deepseek/.*r1)\b', m_lower) or (provider == "deepseek" and "r1" in m_lower):
         return "Deep Reasoning", "reasoning", "deepseek"
     if re.search(r'\b(gpt-4o|gpt-4\.5|chatgpt)\b', m_lower):
         return "Omnimodal", "deep_reasoning", "openai"
     if re.search(r'\bcodex\b', m_lower):
         return "Code & Logic", "agentic", "openai"
-    if re.search(r'\bflash-lite\b', m_lower):
+    if "gemini" in m_lower and "flash-lite" in m_lower:
         return "Ultra Fast", "fast_general", "gemini"
-    if re.search(r'\bflash\b', m_lower):
+    if "gemini" in m_lower and "flash" in m_lower:
         return "Multimodal", "reasoning", "gemini"
     if "gemini" in m_lower and "pro" in m_lower:
         return "Deep Reasoning", "deep_reasoning", "gemini"
     if re.search(r'\bgemma\b', m_lower):
         return "Lightweight", "fast_general", "gemini"
+    if re.search(r'\b(r1|reasoner|reasoning|thinking|qwq)\b', m_lower):
+        return "Deep Reasoning", "deep_reasoning", prov_icon
 
-    return "General AI", "fast_general", provider
+    return "General AI", "fast_general", prov_icon

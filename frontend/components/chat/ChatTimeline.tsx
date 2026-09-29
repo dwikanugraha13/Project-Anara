@@ -55,9 +55,26 @@ export default function ChatTimeline({
   };
 
   const scrollToBottom = (smooth = true) => {
-    transcriptEndRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
+    const el = scrollContainerRef.current;
+    if (el) {
+      if (smooth) {
+        el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      } else {
+        el.scrollTop = el.scrollHeight;
+      }
+    } else {
+      transcriptEndRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
+    }
     setIsNearBottom(true);
   };
+
+  // Immediate auto-scroll when active session changes
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+      setIsNearBottom(true);
+    }
+  }, [activeSessionId]);
 
   // Smart auto-scroll: Only auto-scroll when user is already near bottom (no scroll hijacking)
   useEffect(() => {
@@ -135,99 +152,60 @@ export default function ChatTimeline({
       <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto custom-scrollbar px-2 sm:px-4">
         <div className="max-w-3xl xl:max-w-4xl mx-auto w-full flex flex-col gap-3 py-3">
           {transcript.length === 0 ? (
-            <div className="flex flex-col items-center justify-center min-h-[50vh] text-center px-4 animate-fade-in select-none my-auto">
-              <div className="w-12 h-12 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center shadow-inner mb-4">
-                <svg className="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex flex-col items-center justify-center min-h-[45vh] text-center px-4 animate-fade-in select-none my-auto">
+              <div className="w-10 h-10 rounded-xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-center mb-3 text-slate-300">
+                <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
               </div>
-              <h2 className="text-xl sm:text-2xl font-semibold text-slate-100 tracking-tight leading-relaxed">
-                Hello{activeSpeaker ? <> <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-slate-100 to-indigo-300 font-bold">{activeSpeaker}</span></> : ""}, what should we build today?
+              <h2 className="text-base sm:text-lg font-semibold text-slate-100 tracking-tight">
+                Anara Studio
               </h2>
-              <p className="text-xs text-slate-400 mt-1.5 max-w-md mx-auto">
-                Discuss architecture in Plan Mode, or execute autonomous code modifications in Build Mode.
+              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                Autonomous coding agent · Plan or execute directly from prompt
               </p>
 
-              {/* Clean Starter Prompt Chips */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-6 w-full max-w-xl">
-                <button
-                  type="button"
-                  onClick={() => onSelectPrompt?.("Create an architectural implementation plan for this project")}
-                  className="p-3.5 rounded-2xl starter-card-glow text-left cursor-pointer group flex items-start gap-3 select-none"
-                >
-                  <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-400/25 flex items-center justify-center text-cyan-400 shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-100 group-hover:text-cyan-300 transition-colors">
-                      Architecture Blueprint
-                    </p>
-                    <p className="text-[11px] text-slate-400 mt-0.5 font-sans leading-relaxed">
-                      Formulate blueprint &amp; dependencies in Plan Mode
-                    </p>
-                  </div>
-                </button>
+              {/* Developer Quick Reference HUD */}
+              <div className="flex flex-wrap items-center justify-center gap-2 mt-4 text-[11px] font-mono text-slate-400">
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/[0.025] border border-white/[0.06]">
+                  <kbd className="px-1 py-0.5 rounded bg-white/[0.06] text-[10px] text-slate-300">Enter</kbd>
+                  <span>Send</span>
+                </span>
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/[0.025] border border-white/[0.06]">
+                  <kbd className="px-1 py-0.5 rounded bg-white/[0.06] text-[10px] text-slate-300">Shift + Enter</kbd>
+                  <span>Newline</span>
+                </span>
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/[0.025] border border-white/[0.06]">
+                  <kbd className="px-1 py-0.5 rounded bg-white/[0.06] text-[10px] text-slate-300">@</kbd>
+                  <span>File mention</span>
+                </span>
+              </div>
 
+              {/* Minimalist Command Chips */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-5 w-full max-w-lg">
                 <button
                   type="button"
-                  onClick={() => onSelectPrompt?.("Analyze the project files and identify potential improvements")}
-                  className="p-3.5 rounded-2xl starter-card-glow text-left cursor-pointer group flex items-start gap-3 select-none"
+                  onClick={() => onSelectPrompt?.("Inspect repository structure and status")}
+                  className="px-3 py-2 rounded-lg bg-white/[0.025] hover:bg-white/[0.06] border border-white/[0.06] hover:border-white/[0.12] text-slate-300 hover:text-white text-xs font-mono transition-all text-left flex items-center justify-between group cursor-pointer"
                 >
-                  <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-400/25 flex items-center justify-center text-indigo-400 shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                    </svg>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-100 group-hover:text-indigo-300 transition-colors">
-                      Code Analysis &amp; Review
-                    </p>
-                    <p className="text-[11px] text-slate-400 mt-0.5 font-sans leading-relaxed">
-                      Inspect workspace files and logic optimizations
-                    </p>
-                  </div>
+                  <span className="truncate">Inspect repository</span>
+                  <span className="text-slate-600 group-hover:text-slate-400 transition-colors ml-1">→</span>
                 </button>
-
                 <button
                   type="button"
-                  onClick={() => onSelectPrompt?.("Create a priority task checklist for this session")}
-                  className="p-3.5 rounded-2xl starter-card-glow text-left cursor-pointer group flex items-start gap-3 select-none"
+                  onClick={() => onSelectPrompt?.("Create implementation plan for current workspace")}
+                  className="px-3 py-2 rounded-lg bg-white/[0.025] hover:bg-white/[0.06] border border-white/[0.06] hover:border-white/[0.12] text-slate-300 hover:text-white text-xs font-mono transition-all text-left flex items-center justify-between group cursor-pointer"
                 >
-                  <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-400/25 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                    </svg>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-100 group-hover:text-emerald-300 transition-colors">
-                      Task Checklist
-                    </p>
-                    <p className="text-[11px] text-slate-400 mt-0.5 font-sans leading-relaxed">
-                      Record priority deliverables to memory
-                    </p>
-                  </div>
+                  <span className="truncate">Create plan</span>
+                  <span className="text-slate-600 group-hover:text-slate-400 transition-colors ml-1">→</span>
                 </button>
-
                 <button
                   type="button"
-                  onClick={() => onSelectPrompt?.("What tools and capabilities do you have available?")}
-                  className="p-3.5 rounded-2xl starter-card-glow text-left cursor-pointer group flex items-start gap-3 select-none"
+                  onClick={() => onSelectPrompt?.("Review recent code changes and audit")}
+                  className="px-3 py-2 rounded-lg bg-white/[0.025] hover:bg-white/[0.06] border border-white/[0.06] hover:border-white/[0.12] text-slate-300 hover:text-white text-xs font-mono transition-all text-left flex items-center justify-between group cursor-pointer"
                 >
-                  <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-400/25 flex items-center justify-center text-amber-400 shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-100 group-hover:text-amber-300 transition-colors">
-                      Agent Capabilities
-                    </p>
-                    <p className="text-[11px] text-slate-400 mt-0.5 font-sans leading-relaxed">
-                      Explore multi-modal tools and skill catalog
-                    </p>
-                  </div>
+                  <span className="truncate">Code review</span>
+                  <span className="text-slate-600 group-hover:text-slate-400 transition-colors ml-1">→</span>
                 </button>
               </div>
             </div>
@@ -250,20 +228,17 @@ export default function ChatTimeline({
                   const isLatestAi = isAi && idx === transcript.length - 1;
 
                   const footerElement = item.text ? (
-                    <div className="flex items-center gap-1.5 pt-1.5 text-slate-400 select-none opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100 transition-opacity duration-150">
+                    <div className="flex items-center gap-1.5 pt-1.5 opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100 transition-opacity duration-150 select-none">
                       <button
                         type="button"
                         onClick={() => handleCopyMessage(item.text, idx)}
-                        className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.10] border border-white/8 hover:border-white/20 text-slate-400 hover:text-white transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 text-xs font-sans"
-                        title={copiedMessageIndex === idx ? "Copied!" : "Copy message"}
+                        className="p-1 rounded-md text-slate-500 hover:text-slate-300 hover:bg-white/[0.06] transition-colors cursor-pointer"
+                        title={copiedMessageIndex === idx ? "Copied!" : "Copy markdown"}
                       >
                         {copiedMessageIndex === idx ? (
-                          <>
-                            <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                            </svg>
-                            <span className="text-[10px] text-emerald-400 font-mono font-medium">Copied</span>
-                          </>
+                          <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                          </svg>
                         ) : (
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -275,8 +250,8 @@ export default function ChatTimeline({
 
                   if (item.speaker === "input") {
                     return (
-                      <div key={idx} className="flex flex-col items-end my-2 animate-fade-in">
-                        <div className="max-w-[85%] sm:max-w-[75%] px-4 py-2.5 rounded-2xl rounded-br-sm obsidian-bubble-user text-white text-[13.5px] leading-relaxed select-text transition-all font-sans">
+                      <div key={idx} className="flex flex-col items-end my-2.5 animate-fade-in group/user">
+                        <div className="max-w-[85%] sm:max-w-[75%] px-4 py-2.5 rounded-xl bg-[#0b1120]/90 border border-white/[0.08] hover:border-white/[0.14] text-slate-100 text-[13.5px] leading-relaxed select-text transition-all font-sans shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
                           <p className="whitespace-pre-wrap">{item.text}</p>
                         </div>
                       </div>
@@ -307,10 +282,10 @@ export default function ChatTimeline({
                     );
                   }
 
-                  // ── Narrative Markdown Turn (Clean World-Class Assistant Response) ──
+                  // ── Narrative Markdown Turn (Direct Canvas Stream, Zero Slop Card-itis) ──
                   return (
-                    <div key={idx} className="flex flex-col items-start w-full my-2 px-1 animate-fade-in select-text group/turn">
-                      <div className="w-full text-slate-100">
+                    <div key={idx} className="flex flex-col items-start w-full my-2.5 px-1 animate-fade-in select-text group/turn relative">
+                      <div className="w-full text-slate-200">
                         {!item.text ? (
                           <div className="space-y-2 w-full max-w-xl">
                             <div className="py-2 text-xs text-slate-400 font-mono select-none animate-pulse flex items-center gap-2">
@@ -318,18 +293,18 @@ export default function ChatTimeline({
                               <span>
                                 {isLatestAi && liveToolProgress
                                   ? `Executing ${liveToolProgress.toolName}...`
-                                  : "Processing..."}
+                                  : "Thinking..."}
                               </span>
                             </div>
                           </div>
                         ) : (
                           <>
                             {item.thinkingText && (
-                              <div className="w-full mb-2">
+                              <div className="w-full mb-3">
                                 <ThinkingCard text={item.thinkingText} durationSec={item.thinkingDuration} />
                               </div>
                             )}
-                            <div className="relative">
+                            <div className="relative text-slate-200 leading-relaxed font-sans text-[13.5px]">
                               <AgentMarkdown
                                 content={item.text}
                                 isStreaming={Boolean(item.isStreaming)}
@@ -352,10 +327,10 @@ export default function ChatTimeline({
               </>
             );
           })()}
-          {/* Dynamic bottom spacer */}
+          {/* Dynamic bottom spacer with generous breathing room */}
           <div
             style={{
-              height: `${footerDockHeight ? footerDockHeight + 12 : 24}px`,
+              height: `${Math.max(48, (footerDockHeight || 0) + 16)}px`,
             }}
             className="w-full shrink-0 pointer-events-none transition-[height] duration-150 ease-out"
           />

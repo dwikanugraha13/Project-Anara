@@ -9,9 +9,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import re
-from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Tuple
 import httpx
 from config import cfg_get
 
@@ -27,6 +26,15 @@ class GeminiProviderProfile(BaseProviderProfile):
 
     def can_handle(self, model_id: str) -> bool:
         clean = model_id.lower()
+        if any(clean.startswith(f"{p}/") for p in ("ag", "9router", "openrouter", "groq", "deepseek", "xai", "codex", "openai", "anthropic")):
+            return False
+        from memory import memory_engine
+        try:
+            custom_nodes = memory_engine.get_custom_providers()
+            if any(clean.startswith(f"{c['prefix'].lower()}/") for c in custom_nodes):
+                return False
+        except Exception:
+            pass
         return clean.startswith("gemini") or clean.startswith("gemma") or clean.startswith("models/")
 
     async def stream_chat(
@@ -42,7 +50,7 @@ class GeminiProviderProfile(BaseProviderProfile):
         from google import genai
         from google.genai import types
 
-        gemini_model_name = model_id.replace("models/", "")
+        gemini_model_name = model_id.replace("models/", "").replace("gemini/", "")
 
         cfg_kwargs: Dict[str, Any] = {"temperature": temperature}
         if max_tokens is not None and max_tokens > 0:
@@ -93,7 +101,7 @@ class GeminiProviderProfile(BaseProviderProfile):
     ) -> Any:
         from .caller import _make_gemini_raw_call, _execute_json_agent_loop
 
-        gemini_model_name = model_id.replace("models/", "")
+        gemini_model_name = model_id.replace("models/", "").replace("gemini/", "")
         active_target_model = gemini_model_name
 
         # 1. Native Structured Tool-Use API Path (Hermes & Gemini Parity)
@@ -175,10 +183,14 @@ def _redact_error(text: str) -> str:
     """Anara Enterprise Architecture: Redacts keys, tokens, and credentials from HTTP error responses."""
     if not text:
         return ""
-    s = re.sub(r'(?:Bearer\s+|api[_-]?key["\']?\s*[:=]\s*["\']?|key=)(sk-[A-Za-z0-9_\-]+|eyJ[A-Za-z0-9_\-\.]+)', r'[REDACTED]', text, flags=re.IGNORECASE)
-    s = re.sub(r'sk-[A-Za-z0-9_\-]{20,}', '[REDACTED]', s)
-    s = re.sub(r'AIza[0-9A-Za-z-_]{35}', '[REDACTED]', s)
-    return s[:300]
+    try:
+        from core.logger import redact_sensitive_text
+        return redact_sensitive_text(str(text))[:300]
+    except Exception:
+        s = re.sub(r'(?:Bearer\s+|api[_-]?key["\']?\s*[:=]\s*["\']?|key=)(sk-[A-Za-z0-9_\-]+|eyJ[A-Za-z0-9_\-\.]+)', r'[REDACTED]', text, flags=re.IGNORECASE)
+        s = re.sub(r'sk-[A-Za-z0-9_\-]{20,}', '[REDACTED]', s)
+        s = re.sub(r'AIza[0-9A-Za-z-_]{35}', '[REDACTED]', s)
+        return s[:300]
 
 
 def _parse_openai_compatible_native_payload(
@@ -361,18 +373,18 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
         usage_out: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[str, None]:
         from memory import memory_engine
+        active_key = get_provider_key("codex") or get_provider_key("openai")
         accounts = memory_engine.get_ai_accounts("codex") or memory_engine.get_ai_accounts("openai")
-        keys_to_try = [a["api_key"] for a in accounts if a.get("api_key")]
-        if not keys_to_try:
-            k = get_provider_key("codex") or get_provider_key("openai")
-            if k:
-                keys_to_try.append(k)
-        if not keys_to_try:
+        if not active_key:
+            enabled = [a["api_key"] for a in accounts if a.get("api_key") and a.get("is_enabled", 1) == 1]
+            if enabled:
+                active_key = enabled[0]
+        if not active_key:
             return
 
         target_model = model_id.replace("codex/", "").replace("openai/", "")
-        active_key = keys_to_try[0]
-        acc_id = accounts[0]["id"] if accounts else None
+        matched_acc = next((a for a in accounts if a.get("api_key") == active_key), None)
+        acc_id = matched_acc["id"] if matched_acc else (accounts[0]["id"] if accounts else None)
         is_oauth_jwt = active_key.startswith("eyJ")
 
         if is_oauth_jwt:
@@ -493,11 +505,14 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
     ) -> Any:
         from memory import memory_engine
         from .caller import _execute_json_agent_loop
+        active_key = get_provider_key("codex") or get_provider_key("openai")
         accounts = memory_engine.get_ai_accounts("codex") or memory_engine.get_ai_accounts("openai")
-        keys_to_try = [a["api_key"] for a in accounts if a.get("api_key")]
-        if not keys_to_try:
-            k = get_provider_key("codex") or get_provider_key("openai")
-            if k:
+        enabled_keys = [a["api_key"] for a in accounts if a.get("api_key") and a.get("is_enabled", 1) == 1 and a.get("status") != "invalid"]
+        keys_to_try = []
+        if active_key:
+            keys_to_try.append(active_key)
+        for k in enabled_keys:
+            if k not in keys_to_try:
                 keys_to_try.append(k)
 
         if not keys_to_try:
@@ -650,15 +665,27 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
                         "Content-Type": "application/json",
                     }
                     endpoint_url = "https://api.openai.com/v1/chat/completions"
-                    payload = {
-                        "model": target_model,
-                        "messages": [{"role": "system", "content": sys_msg}] + chat_msgs,
-                        "temperature": temperature,
-                        "stream": True,
-                        "stream_options": {"include_usage": True},
-                    }
-                    if max_tokens is not None and max_tokens > 0:
-                        payload["max_tokens"] = max_tokens
+                    is_reasoning_model = bool(re.match(r'^o[1-9]', target_model))
+                    if is_reasoning_model:
+                        messages = [{"role": "developer", "content": sys_msg}] + chat_msgs if sys_msg else chat_msgs
+                        payload = {
+                            "model": target_model,
+                            "messages": messages,
+                            "stream": True,
+                            "stream_options": {"include_usage": True},
+                        }
+                        if max_tokens is not None and max_tokens > 0:
+                            payload["max_completion_tokens"] = max_tokens
+                    else:
+                        payload = {
+                            "model": target_model,
+                            "messages": [{"role": "system", "content": sys_msg}] + chat_msgs,
+                            "temperature": temperature,
+                            "stream": True,
+                            "stream_options": {"include_usage": True},
+                        }
+                        if max_tokens is not None and max_tokens > 0:
+                            payload["max_tokens"] = max_tokens
 
                     gen_timeout = float(cfg_get("agent.generation.timeout", 45.0))
                     async with httpx.AsyncClient(timeout=gen_timeout) as client:
@@ -701,6 +728,9 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
                                  if not res_text.strip() and reasoning_chunks:
                                      res_text = "".join(reasoning_chunks)
                                  return res_text
+                            else:
+                                 err_body = await resp.aread()
+                                 logger.warning(f"[CodexProfile] API call returned HTTP {resp.status_code}: {_redact_error(err_body.decode('utf-8', errors='replace'))}")
             return ""
 
         return await _execute_json_agent_loop(
@@ -739,11 +769,14 @@ class AnthropicProviderProfile(BaseProviderProfile):
         from memory import memory_engine
         from config import cfg_get
 
+        active_key = get_provider_key("anthropic")
         accounts = memory_engine.get_ai_accounts("anthropic")
-        keys_to_try = [a["api_key"] for a in accounts if a.get("api_key")]
-        if not keys_to_try:
-            k = get_provider_key("anthropic")
-            if k:
+        enabled_keys = [a["api_key"] for a in accounts if a.get("api_key") and a.get("is_enabled", 1) == 1 and a.get("status") != "invalid"]
+        keys_to_try = []
+        if active_key:
+            keys_to_try.append(active_key)
+        for k in enabled_keys:
+            if k not in keys_to_try:
                 keys_to_try.append(k)
 
         if not keys_to_try:
@@ -886,11 +919,14 @@ class AnthropicProviderProfile(BaseProviderProfile):
         from memory import memory_engine
         from .caller import _execute_json_agent_loop
 
+        active_key = get_provider_key("anthropic")
         accounts = memory_engine.get_ai_accounts("anthropic")
-        keys_to_try = [a["api_key"] for a in accounts if a.get("api_key")]
-        if not keys_to_try:
-            k = get_provider_key("anthropic")
-            if k:
+        enabled_keys = [a["api_key"] for a in accounts if a.get("api_key") and a.get("is_enabled", 1) == 1 and a.get("status") != "invalid"]
+        keys_to_try = []
+        if active_key:
+            keys_to_try.append(active_key)
+        for k in enabled_keys:
+            if k not in keys_to_try:
                 keys_to_try.append(k)
 
         if not keys_to_try:
@@ -1215,13 +1251,16 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
         clean = model_id.lower()
         if any(clean.startswith(f"{prov}/") for prov in self.NATIVE_OPEN_ENDPOINTS):
             return True
+        if clean in self.NATIVE_OPEN_ENDPOINTS or any(clean.startswith(f"{prov}-") for prov in ("deepseek", "groq", "grok")):
+            return True
         if clean.startswith("9router/") or clean.startswith("ag/"):
             return True
         from memory import memory_engine
         try:
             custom_nodes = memory_engine.get_custom_providers()
             for c in custom_nodes:
-                if clean.startswith(f"{c['prefix'].lower()}/"):
+                p = (c.get("prefix") or "").lower()
+                if p and (clean.startswith(f"{p}/") or clean.startswith(f"{p}-") or clean == p):
                     return True
         except Exception:
             pass
@@ -1232,13 +1271,19 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
             if model_id.startswith(f"{prov_name}/"):
                 target_model = model_id.replace(f"{prov_name}/", "")
                 api_key = get_provider_key(prov_name) or ""
-                headers = {
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {api_key}"
-                }
+                headers = {"Content-Type": "application/json"}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
                 if prov_name == "openrouter":
                     headers["HTTP-Referer"] = "https://project-anara.local"
                     headers["X-Title"] = "Project Anara"
+                return f"{base_url}/chat/completions", headers, target_model
+            elif model_id.startswith(f"{prov_name}-") or model_id == prov_name:
+                target_model = model_id
+                api_key = get_provider_key(prov_name) or ""
+                headers = {"Content-Type": "application/json"}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
                 return f"{base_url}/chat/completions", headers, target_model
 
         from memory import memory_engine
@@ -1248,13 +1293,14 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                 prefix = (c.get("prefix") or "").lower()
                 base_url = c.get("base_url", "").rstrip("/")
                 api_key = c.get("api_key") or ""
-                headers = {
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {api_key}"
-                }
+                headers = {"Content-Type": "application/json"}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
                 if prefix and model_id.lower().startswith(f"{prefix}/"):
                     target_model = model_id[len(prefix) + 1:]
                     return f"{base_url}/chat/completions", headers, target_model
+                if prefix and (model_id.lower().startswith(f"{prefix}-") or model_id.lower() == prefix):
+                    return f"{base_url}/chat/completions", headers, model_id
                 # Auto-route 9Router sub-prefixes (ag/, atr/, cf/, cl/) directly to 9router node
                 if prefix == "9router" and any(model_id.lower().startswith(sub) for sub in ("ag/", "atr/", "cf/", "cl/")):
                     return f"{base_url}/chat/completions", headers, model_id
@@ -1285,8 +1331,9 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
             ],
             "temperature": temperature,
             "stream": True,
-            "stream_options": {"include_usage": True},
         }
+        if any(h in endpoint for h in ("openrouter.ai", "api.groq.com", "api.deepseek.com", "api.x.ai")):
+            payload["stream_options"] = {"include_usage": True}
         if max_tokens is not None and max_tokens > 0:
             payload["max_tokens"] = max_tokens
 

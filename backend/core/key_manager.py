@@ -244,3 +244,12 @@ class GeminiKeyManager:
 
 # Global singleton instance
 key_manager = GeminiKeyManager()
+
+
+def __getattr__(name: str) -> Any:
+    """Module-level attribute forwarding to key_manager singleton (PEP 562)."""
+    return getattr(key_manager, name)
+
+
+def __dir__() -> List[str]:
+    return sorted(list(globals().keys()) + dir(key_manager))

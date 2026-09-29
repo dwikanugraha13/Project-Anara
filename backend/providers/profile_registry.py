@@ -57,10 +57,13 @@ def register_provider_profile(profile: BaseProviderProfile) -> None:
 
 def unregister_provider_profile(name: str) -> bool:
     """Removes a provider profile by name."""
+    global _DEFAULT_FALLBACK_PROFILE
     _init_default_profiles_if_needed()
     with _LOCK:
         initial_len = len(_REGISTERED_PROFILES)
         _REGISTERED_PROFILES[:] = [p for p in _REGISTERED_PROFILES if p.name != name]
+        if _DEFAULT_FALLBACK_PROFILE and _DEFAULT_FALLBACK_PROFILE.name == name:
+            _DEFAULT_FALLBACK_PROFILE = _REGISTERED_PROFILES[-1] if _REGISTERED_PROFILES else None
         return len(_REGISTERED_PROFILES) < initial_len
 
 

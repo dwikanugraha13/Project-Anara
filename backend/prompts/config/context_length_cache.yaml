@@ -778,6 +778,7 @@ context_lengths:
   9router/xkiro/x-ai/grok-build-0.1@http://localhost:20128/v1: 256000
   9router/xkiro/xiaomi/mimo-v2.5-pro@http://localhost:20128/v1: 1048576
   9router/xkiro/xiaomi/mimo-v2.5@http://localhost:20128/v1: 1048576
+  9router/xkiro/xiaomi/mimo-v2.6-flash:free@http://localhost:20128/v1: 1048576
   9router/xkiro/xiaomi/mimo-v2.6-flash@http://localhost:20128/v1: 1048576
   9router/xkiro/xiaomi/mimo-v2.6-pro@http://localhost:20128/v1: 1048576
   9router/xkiro/z-ai/glm-4.5-air@http://localhost:20128/v1: 200000
@@ -1648,6 +1649,7 @@ context_lengths:
   xkiro/x-ai/grok-build-0.1@http://localhost:20128/v1: 256000
   xkiro/xiaomi/mimo-v2.5-pro@http://localhost:20128/v1: 1048576
   xkiro/xiaomi/mimo-v2.5@http://localhost:20128/v1: 1048576
+  xkiro/xiaomi/mimo-v2.6-flash:free@http://localhost:20128/v1: 1048576
   xkiro/xiaomi/mimo-v2.6-flash@http://localhost:20128/v1: 1048576
   xkiro/xiaomi/mimo-v2.6-pro@http://localhost:20128/v1: 1048576
   xkiro/z-ai/glm-4.5-air@http://localhost:20128/v1: 200000
