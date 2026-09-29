@@ -44,9 +44,9 @@ export function DockAudioWaveform({
             : status === "thinking"
             ? "AI Thinking..."
             : isMuted
-            ? "Mikrofon Dibisukan"
+            ? "Microphone Muted"
             : isMicActive
-            ? "Mendengarkan suara Anda..."
+            ? "Listening to speech..."
             : "Microphone Ready (Click Voice to Speak)"}
         </p>
       </div>

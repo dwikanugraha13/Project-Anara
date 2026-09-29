@@ -185,6 +185,20 @@ export default function BottomDock({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // IME composition guard (Japanese, Chinese, accented character composition)
+    if (e.nativeEvent.isComposing || e.keyCode === 229) {
+      return;
+    }
+
+    // Escape shortcut to stop/interrupt generating response
+    if (e.key === "Escape") {
+      if (status === "thinking" || status === "speaking" || liveToolProgress !== null) {
+        e.preventDefault();
+        onInterrupt();
+        return;
+      }
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleFormSubmit();
@@ -354,7 +368,7 @@ export default function BottomDock({
                         type="button"
                         onClick={() => setIsInputExpanded((v) => !v)}
                         className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer active:scale-95"
-                        title={isInputExpanded ? "Kecilkan input" : "Perbesar input"}
+                        title={isInputExpanded ? "Collapse input" : "Expand input"}
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           {isInputExpanded ? (
@@ -423,7 +437,7 @@ export default function BottomDock({
                     </svg>
                     <div>
                       <p className="font-bold text-slate-200">Upload File</p>
-                      <p className="text-[10px] text-slate-400 font-sans">PDF, Gambar, Teks, Code</p>
+                      <p className="text-[10px] text-slate-400 font-sans">PDF, Images, Text, Code</p>
                     </div>
                   </button>
 
@@ -439,8 +453,8 @@ export default function BottomDock({
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                     </svg>
                     <div>
-                      <p className="font-bold text-slate-200">Import Folder Lokal</p>
-                      <p className="text-[10px] text-slate-400 font-sans">Select original folder via Windows dialog</p>
+                      <p className="font-bold text-slate-200">Import Local Folder</p>
+                      <p className="text-[10px] text-slate-400 font-sans">Select project directory via native file dialog</p>
                     </div>
                   </button>
                 </div>
@@ -518,7 +532,7 @@ export default function BottomDock({
                       </div>
                       <div>
                         <p className="font-bold">Chat Mode</p>
-                        <p className="text-[10px] text-slate-400">Workspace teks hening murni (full dual-pane workbench).</p>
+                        <p className="text-[10px] text-slate-400">Pure silent text workspace (full dual-pane workbench).</p>
                       </div>
                     </button>
                   </div>
@@ -648,10 +662,11 @@ export default function BottomDock({
             {status === "speaking" && (
               <button
                 onClick={onInterrupt}
-                className="p-1 px-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 transition-all active:scale-95 cursor-pointer flex items-center gap-1 text-[11px] font-mono"
-                title="Sela AI"
+                className="p-1 px-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 text-[11px] font-mono"
+                title="Interrupt AI"
               >
-                <span className="text-[10px]">■ Sela</span>
+                <span className="w-2 h-2 rounded-xs bg-rose-400" />
+                <span className="text-[10px]">Interrupt</span>
               </button>
             )}
 
@@ -713,7 +728,7 @@ export default function BottomDock({
                   type="button"
                   onClick={onInterrupt}
                   className="w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200 cursor-pointer shadow-md bg-rose-500/20 hover:bg-rose-500/35 text-rose-200 border border-rose-400/40 shadow-[0_0_12px_rgba(244,63,94,0.3)] active:scale-95"
-                  title="Hentikan pembuatan respon AI (Stop)"
+                  title="Stop generating response (Escape or Click)"
                 >
                   <div className="w-2.5 h-2.5 rounded-[2px] bg-rose-300 shadow-sm animate-pulse" />
                 </button>

@@ -66,7 +66,7 @@ export function DockPlanChecklist({ checklistData, isExpanded, onToggle }: DockP
           {checklistData.items.map((step, sIdx) => {
             const isDone = step.isCompleted;
             const isActive = step.isInProgress;
-            const cleanTitle = step.title.replace(/^Langkah\s*\d+\s*:\s*/i, "");
+            const cleanTitle = step.title.replace(/^(?:Step|Langkah)\s*\d+\s*:\s*/i, "");
 
             return (
               <div

@@ -5,9 +5,7 @@ architectural and procedural workflow, and commits it into SQLite agent_skills f
 """
 
 import asyncio
-import json
 import logging
-import re
 from typing import Dict, List, Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -38,8 +36,9 @@ class SkillExtractor:
 
         # Check existing skills across filesystem library AND SQLite database (Anara Standard)
         from core.skill_library import skill_library, slugify
-        existing_slugs = {s["slug"].lower() for s in skill_library.list_skills(status_filter="all")}
-        existing_names = {s["name"].lower() for s in skill_library.list_skills(status_filter="all")}
+        all_skills = skill_library.list_skills(status_filter="all")
+        existing_slugs = {s["slug"].lower() for s in all_skills}
+        existing_names = {s["name"].lower() for s in all_skills}
         try:
             from memory import memory_engine
             for s in memory_engine.get_all_agent_skills():
@@ -105,10 +104,10 @@ class SkillExtractor:
                 logger.info(f"[SkillExtractor] Skill '{skill_name}' ({candidate_slug}) already exists. Skipping duplicate.")
                 return None
 
-            # Enforce Anara Agent Hardline standard: description <= 60 chars ending with a period
+            # Enforce Anara Agent Hardline standard: description <= 200 chars ending with a period
             desc = str(data.get("description", "")).strip()
-            if len(desc) > 60:
-                desc = desc[:57].rstrip() + "..."
+            if len(desc) > 200:
+                desc = desc[:197].rstrip() + "..."
             if desc and not desc.endswith("."):
                 desc += "."
 

@@ -51,7 +51,7 @@ export default function ModelSelectorDropdown({
     >
       <div className="px-2 py-1 border-b border-white/10 flex items-center justify-between">
         <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-300">
-          {interactionMode === "voice" ? "Model Live Audio" : "Model AI Teks"} ({modeFilteredModels.length})
+          {interactionMode === "voice" ? "Live Audio Models" : "AI Text Models"} ({modeFilteredModels.length})
         </span>
         <button
           type="button"

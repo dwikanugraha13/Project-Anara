@@ -196,7 +196,7 @@ class SkillLibraryManager:
             "updated_at": now_iso,
         }
 
-        steps_md = "\n".join([f"{idx + 1}. {s.lstrip('0123456789. ')}" for idx, s in enumerate(procedure_steps)])
+        steps_md = "\n".join([f"{idx + 1}. {re.sub(r'^\d+\.\s*', '', str(s).strip())}" for idx, s in enumerate(procedure_steps)])
 
         body = f"""# {name}
 
@@ -371,8 +371,14 @@ Use this skill when requested or when detecting tasks with keywords: {', '.join(
 
     def approve_skill(self, slug: str) -> bool:
         """Promotes a skill from 'pending' to 'active'."""
-        folder = os.path.join(self.root_dir, slug)
-        skill_file = os.path.join(folder, "SKILL.md")
+        skill_meta = self.get_skill(slug)
+        if skill_meta and skill_meta.get("dir_path"):
+            folder = skill_meta["dir_path"]
+            skill_file = skill_meta.get("file_path") or os.path.join(folder, "SKILL.md")
+        else:
+            folder = os.path.join(self.root_dir, slug)
+            skill_file = os.path.join(folder, "SKILL.md")
+
         parsed = self.parse_skill_file(skill_file)
         if not parsed:
             return False
@@ -386,11 +392,17 @@ Use this skill when requested or when detecting tasks with keywords: {', '.join(
     def reject_skill(self, slug: str, delete_folder: bool = True) -> bool:
         """Rejects and optionally deletes a skill folder with root protection (Anara Standard)."""
         clean_slug = (slug or "").strip().lower()
-        if not clean_slug or any(c in clean_slug for c in ("/", "\\", "..")) or clean_slug in {".", "~"}:
+        if not clean_slug or clean_slug in {".", "~"}:
             return False
 
+        skill_meta = self.get_skill(clean_slug)
         root_p = Path(self.root_dir).resolve()
-        target_dir = (root_p / clean_slug).resolve()
+        if skill_meta and skill_meta.get("dir_path"):
+            target_dir = Path(skill_meta["dir_path"]).resolve()
+        else:
+            if any(c in clean_slug for c in ("/", "\\", "..")):
+                return False
+            target_dir = (root_p / clean_slug).resolve()
 
         if target_dir == root_p or not target_dir.is_relative_to(root_p):
             return False

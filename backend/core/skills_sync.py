@@ -15,6 +15,7 @@ import logging
 import os
 import shutil
 import stat
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -23,6 +24,7 @@ from constants import get_anara_skills_dir, get_bundled_skills_dir
 logger = logging.getLogger("anara.skills.sync")
 
 MANIFEST_FILENAME = ".bundled_manifest"
+_SYNC_LOCK = threading.Lock()
 IGNORED_PATTERNS = {"__pycache__", ".git", ".pytest_cache", ".DS_Store", "desktop.ini"}
 
 
@@ -99,23 +101,25 @@ def sync_bundled_skills() -> Dict[str, int]:
     """
     Synchronizes in-tree bundled skills into active user runtime skills (Anara Standard).
     Preserves user customizations and agent-learned skills.
+    Thread-safe and race-condition free.
     """
-    bundled_dir = get_bundled_skills_dir()
-    runtime_dir = get_anara_skills_dir()
-    manifest_file = runtime_dir / MANIFEST_FILENAME
+    with _SYNC_LOCK:
+        bundled_dir = get_bundled_skills_dir()
+        runtime_dir = get_anara_skills_dir()
+        manifest_file = runtime_dir / MANIFEST_FILENAME
 
-    stats = {
-        "seeded": 0,
-        "updated": 0,
-        "preserved": 0,
-        "unchanged": 0,
-        "total_bundled": 0,
-        "total_runtime": 0,
-    }
+        stats = {
+            "seeded": 0,
+            "updated": 0,
+            "preserved": 0,
+            "unchanged": 0,
+            "total_bundled": 0,
+            "total_runtime": 0,
+        }
 
-    if not bundled_dir.is_dir():
-        logger.debug(f"[SkillsSync] Bundled directory '{bundled_dir}' not found. Skipping sync.")
-        return stats
+        if not bundled_dir.is_dir():
+            logger.debug(f"[SkillsSync] Bundled directory '{bundled_dir}' not found. Skipping sync.")
+            return stats
 
     manifest = _read_manifest(manifest_file)
     updated_manifest = dict(manifest)

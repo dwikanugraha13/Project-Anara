@@ -19,11 +19,11 @@ import yaml
 import shutil
 import logging
 import urllib.request
-import urllib.error
+import urllib.parse
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from constants import get_anara_skills_dir, get_anara_home
+from constants import get_anara_skills_dir
 
 logger = logging.getLogger("anara.skills.hub")
 
@@ -174,11 +174,19 @@ def get_installed_skill_slugs() -> set[str]:
 
 
 def slugify_name(text: str) -> str:
-    """Safe slug for folder names."""
+    """Safe slug for folder names with Windows device name collision protection."""
     s = text.lower().strip()
     s = re.sub(r"[^\w\s-]", "", s)
     s = re.sub(r"[\s_-]+", "-", s)
-    return s.strip("-") or "skill"
+    slug = s.strip("-") or "skill"
+    windows_reserved = {
+        "con", "prn", "aux", "nul",
+        "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
+        "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9"
+    }
+    if slug in windows_reserved:
+        slug = f"{slug}_skill"
+    return slug
 
 
 def search_skills(
@@ -376,7 +384,7 @@ def validate_skill_content_safety(content: str) -> Tuple[bool, Optional[str]]:
         (r"\b(?:cat|type|head|tail|get-content)\b[^\n]*(?:\.env|\.ssh|credentials|\.aws|\.kube)", "Attempted access to secret/credential store."),
 
         # 5. Agent Configuration Persistence Hijacking
-        (r"(?:>>|>\s*)[~\w./-]*(?:AGENTS\.md|CLAUDE\.md|\.anara[/\\]config\.yaml|\.cursorrules)", "Unauthorized agent configuration tampering."),
+        (r"(?:>>|>\s*)[~\w./-]*(?:agents\.md|\.anara[/\\]config\.yaml|\.cursorrules)", "Unauthorized agent configuration tampering."),
     ]
     for pattern, reason in hostile_patterns:
         if re.search(pattern, lower):

@@ -45,6 +45,9 @@ def check_prompt_injection(text: str) -> Tuple[bool, Optional[str]]:
     if not clean_text:
         return True, None
 
+    # Strip harmless leading UTF-8 BOM if present (common when pasting text from Windows editors)
+    clean_text = clean_text.lstrip("\ufeff")
+
     # 1. Structural guard against invisible or bidirectional Trojan Source unicode (Anara Standard)
     if any(c in INVISIBLE_CHARS for c in clean_text):
         return False, "Input rejected: invisible or bidirectional unicode override characters detected."
@@ -105,10 +108,6 @@ def is_authorized_approver(user_id: str, plan_owner_id: str, channel: str = "tel
     logger.warning(f"[SecurityAuthorization] User {clean_user} is NOT authorized to approve plan owned by {clean_owner}.")
     return False
 
-
-import hashlib
-import hmac
-import time
 
 _GATEWAY_SALT = "anara_gateway_salt_v2"
 
