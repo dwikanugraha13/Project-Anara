@@ -652,9 +652,9 @@ export default function AnaraCodeIDE({
         </div>
       )}
 
-      {/* ── Multi-File Tab Strip (VS Code / OpenCode style) ── */}
+      {/* ── Multi-File Tab Strip (Antigravity Obsidian Glass) ── */}
       {tabs && tabs.length > 0 && (
-        <div className="flex items-center gap-1 px-2 pt-1 bg-black/60 border-b border-white/10 overflow-x-auto no-scrollbar font-mono text-xs select-none shrink-0">
+        <div className="flex items-center gap-0.5 px-2 pt-1 bg-[#050811] border-b border-white/[0.08] overflow-x-auto no-scrollbar font-mono text-xs select-none shrink-0">
           {tabs.map((tab) => {
             const isTabActive = tab.filePath === filePath;
             const tabExt = (tab.fileExt || "").toLowerCase().replace(/^\./, "");
@@ -665,28 +665,31 @@ export default function AnaraCodeIDE({
               <div
                 key={tab.filePath}
                 onClick={() => onSelectTab?.(tab.filePath, tab.fileName)}
-                className={`group/tab flex items-center gap-2 px-2.5 py-1 rounded-t-lg border-t border-x cursor-pointer transition-all duration-150 ${
+                className={`group/tab relative flex items-center gap-2 px-3 py-1.5 rounded-t-md border-t border-x cursor-pointer transition-all duration-150 ${
                   isTabActive
-                    ? "bg-slate-900/95 border-white/20 text-white font-medium shadow-inner"
+                    ? "bg-[#070c18] border-white/[0.12] text-white font-medium shadow-sm"
                     : "bg-white/[0.02] border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]"
                 }`}
                 title={tab.filePath}
               >
-                <span className={`text-[9.5px] font-bold uppercase ${isTabActive ? "text-slate-400" : "text-slate-500"}`}>
+                {isTabActive && (
+                  <div className="absolute top-0 inset-x-0 h-0.5 bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
+                )}
+                <span className={`text-[9px] font-bold uppercase ${isTabActive ? "text-cyan-400" : "text-slate-500"}`}>
                   {tabExt || "FILE"}
                 </span>
-                <span className="truncate max-w-[120px] text-[11px]">{tab.fileName}</span>
+                <span className="truncate max-w-[140px] text-[11px]">{tab.fileName}</span>
 
                 {onCloseTab && (
                   <button
                     type="button"
                     onClick={(e) => handleTabCloseClick(e, tab)}
-                    className="w-4 h-4 rounded flex items-center justify-center hover:bg-white/20 transition-colors cursor-pointer text-[10px] group/tabbtn ml-0.5"
+                    className="w-4 h-4 rounded flex items-center justify-center hover:bg-white/10 transition-colors cursor-pointer text-[10px] group/tabbtn ml-0.5"
                     title={tabIsDirty ? "Unsaved changes (Click to close)" : "Close tab"}
                   >
                     {tabIsDirty ? (
                       <>
-                        <span className="w-2 h-2 rounded-full bg-slate-300 group-hover/tabbtn:hidden shadow-sm" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 group-hover/tabbtn:hidden shadow-sm" />
                         <span className="hidden group-hover/tabbtn:inline text-slate-300 hover:text-white">✕</span>
                       </>
                     ) : (
@@ -700,12 +703,12 @@ export default function AnaraCodeIDE({
         </div>
       )}
 
-      {/* ── VS Code / OpenCode Clean Header: Breadcrumb, Diff Stats, Status ── */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-black/50 border-b border-white/10 font-mono text-xs select-none shrink-0">
+      {/* ── Antigravity Studio Clean Breadcrumbs: Breadcrumb, Diff Stats, Status ── */}
+      <div className="flex items-center justify-between px-3 py-1 bg-[#060913]/95 border-b border-white/[0.08] font-mono text-xs select-none shrink-0">
         {/* Left: Status Badge M/A + Language Icon + File Name & Path */}
         <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
           <span
-            className={`px-1 py-0.2 rounded font-bold text-[10px] shrink-0 ${
+            className={`px-1.5 py-0.2 rounded font-bold text-[9.5px] font-mono shrink-0 ${
               isDirty
                 ? "bg-amber-500/20 text-amber-300 border border-amber-400/40"
                 : originalContent
@@ -713,25 +716,25 @@ export default function AnaraCodeIDE({
                 : "bg-emerald-500/20 text-emerald-300 border border-emerald-400/40"
             }`}
           >
-            {isDirty ? "M" : originalContent ? "M" : "A"}
+            {isDirty ? "MODIFIED" : originalContent ? "DIFF" : "READY"}
           </span>
 
           {renderLanguageSvgIcon()}
 
           <div className="flex items-baseline gap-1.5 truncate">
-            <span className="font-bold text-slate-100 text-xs truncate" title={cleanName}>
+            <span className="font-semibold text-slate-100 text-xs truncate" title={cleanName}>
               {cleanName}
             </span>
             {dirPath && (
               <span className="text-[11px] text-slate-500 truncate" title={dirPath}>
-                {dirPath}
+                {dirPath.replace(/\\/g, " > ").replace(/\//g, " > ")}
               </span>
             )}
           </div>
 
           {/* Code vs Diff Mode Toggle Switch */}
           {originalContent && originalContent !== activeCode && (
-            <div className="flex items-center bg-white/[0.06] rounded-lg p-0.5 border border-white/10 ml-2 shrink-0">
+            <div className="flex items-center bg-white/[0.04] rounded-lg p-0.5 border border-white/[0.08] ml-2 shrink-0">
               <button
                 type="button"
                 onClick={() => setViewMode("code")}

@@ -379,10 +379,10 @@ export default function WorkspaceTreeView({
             </div>
           </div>
 
-          {/* Project Switcher Popover Dropdown (Screenshot match) */}
+          {/* Project Switcher Popover Dropdown */}
           {isProjectDropdownOpen && (
             <div
-              className="absolute left-2 top-10 z-50 w-56 rounded-xl bg-[#18181b] border border-white/15 shadow-2xl p-1.5 space-y-1 font-sans text-xs animate-scale-up select-none"
+              className="absolute left-2 top-10 z-50 w-56 rounded-xl bg-[#060913]/95 backdrop-blur-2xl border border-white/[0.08] shadow-2xl p-1.5 space-y-1 font-sans text-xs animate-scale-up select-none"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Search Box with SVG Search Icon (No emoji) */}

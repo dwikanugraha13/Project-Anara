@@ -8,6 +8,7 @@ import type { TranscriptItem, AssistantStatus } from "@/components/workbench";
 import ChatTimeline from "@/components/chat/ChatTimeline";
 import BottomDock from "@/components/dock/BottomDock";
 import { AIModelInfo } from "@/components/dock/ModelSelectorDropdown";
+import { formatModelDisplayName } from "@/lib/modelFormat";
 import type { AnaraBrainProps } from "@/components/brain/types";
 import type { AnaraCodeIDEProps, WorkbenchTerminalProps, IdeTabFile } from "@/components/ide";
 import WorkspaceTreeView from "@/components/sidebar/WorkspaceTreeView";
@@ -770,37 +771,39 @@ export default function CodePageClient({
   return (
     <main className="relative w-screen h-screen overflow-hidden flex flex-col font-sans select-none bg-[#030712] text-slate-100">
       {/* ══════════════════════════════════════════════════════════════════════
-          1. STUDIO TOP NAVIGATION BAR (Liquid Glass Antigravity Standard)
+          1. STUDIO TOP NAVIGATION BAR (Antigravity Obsidian Standard)
          ══════════════════════════════════════════════════════════════════════ */}
-      <header className="h-11 shrink-0 px-3.5 border-b border-white/[0.08] flex items-center justify-between bg-[#060913]/90 backdrop-blur-2xl z-30 select-none shadow-[0_4px_24px_rgba(0,0,0,0.5)] relative">
+      <header className="h-10 shrink-0 px-3 border-b border-white/[0.08] flex items-center justify-between bg-[#060913]/95 backdrop-blur-2xl z-30 select-none shadow-[0_4px_24px_rgba(0,0,0,0.5)] relative">
         <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-cyan-400/25 to-transparent pointer-events-none" />
 
-        {/* Left Side: Brand Logo and Session Switcher Dropdown */}
+        {/* Left Side: Brand Logo, Workspace / Git Branch Badge, Session Switcher */}
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="flex items-center gap-2 shrink-0">
-            <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_10px_#22d3ee]" />
-            <h1 className="text-xs font-bold font-mono text-white tracking-widest uppercase bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
-              Anara Studio
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_10px_#22d3ee]" />
+            <h1 className="text-xs font-bold font-mono text-white tracking-wider uppercase bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
+              Anara Code
             </h1>
-            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-400/25 text-cyan-300 font-semibold tracking-tight">
-              Liquid Glass
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-400/25 text-cyan-300 font-semibold tracking-tight flex items-center gap-1.5">
+              <span>{workspaceTree?.workspace_name || "Project Anara"}</span>
+              <span className="text-slate-500">·</span>
+              <span className="text-slate-300 font-normal">{gitStatus?.branch || "main"}</span>
             </span>
           </div>
 
-          <div className="h-4 w-px bg-white/10 shrink-0 mx-1" />
+          <div className="h-3.5 w-px bg-white/10 shrink-0 mx-1" />
 
           {/* Session Selector Popover */}
           <div className="relative" ref={sessionDropdownRef}>
             <button
               type="button"
               onClick={() => setIsSessionDropdownOpen((v) => !v)}
-              className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] hover:border-cyan-400/30 text-xs font-mono text-slate-200 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
-              title="Select or switch project session"
+              className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] hover:border-cyan-400/30 text-xs font-mono text-slate-200 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
+              title="Select or switch coding workspace session"
             >
               <svg className="w-3.5 h-3.5 text-cyan-400/80 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
               </svg>
-              <span className="font-semibold text-white truncate max-w-[150px]">
+              <span className="font-medium text-white truncate max-w-[150px]">
                 {activeSession?.title || `Session #${activeSessionId || 1}`}
               </span>
               <svg className={`w-3 h-3 text-slate-400 transition-transform duration-150 ${isSessionDropdownOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -809,9 +812,9 @@ export default function CodePageClient({
             </button>
 
             {isSessionDropdownOpen && (
-              <div className="absolute left-0 top-full mt-1.5 w-64 max-h-80 overflow-y-auto custom-scrollbar rounded-xl liquid-glass border border-white/15 shadow-2xl z-50 p-1.5 select-none font-mono animate-fade-in">
+              <div className="absolute left-0 top-full mt-1.5 w-64 max-h-80 overflow-y-auto custom-scrollbar rounded-xl bg-[#060913]/95 backdrop-blur-2xl border border-white/15 shadow-2xl z-50 p-1.5 select-none font-mono animate-fade-in">
                 <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-white/10 flex items-center justify-between">
-                  <span>Project Sessions</span>
+                  <span>Workspace Sessions</span>
                   <span>{sessions.length} sessions</span>
                 </div>
 
@@ -863,8 +866,8 @@ export default function CodePageClient({
           <button
             type="button"
             onClick={handleNewSession}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/25 hover:border-cyan-400/40 text-xs font-mono text-cyan-300 hover:text-cyan-100 transition-all cursor-pointer shadow-sm active:scale-95"
-            title="Create new coding session"
+            className="flex items-center gap-1 px-2 py-1 rounded-md bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/25 hover:border-cyan-400/40 text-xs font-mono text-cyan-300 hover:text-cyan-100 transition-all cursor-pointer shadow-sm active:scale-95"
+            title="Create new coding workspace session"
           >
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -873,14 +876,25 @@ export default function CodePageClient({
           </button>
         </div>
 
+        {/* Center: Quick Search Affordance (Antigravity Palette Bar) */}
+        <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-md bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.08] text-xs text-slate-400 font-mono cursor-pointer transition-colors max-w-xs w-full justify-between select-none">
+          <span className="flex items-center gap-2 truncate">
+            <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <span className="truncate">Search files &amp; actions...</span>
+          </span>
+          <kbd className="px-1.5 py-0.2 rounded bg-white/[0.06] text-[10px] text-slate-400 shrink-0">Ctrl+P</kbd>
+        </div>
+
         {/* Right Side: View Toggles, 3D Companion Link, and Brain */}
         <div className="flex items-center gap-2 shrink-0">
           {/* View Toggles: Explorer, Terminal & Agent */}
-          <div className="flex items-center p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.08] text-xs font-mono shadow-inner">
+          <div className="flex items-center p-0.5 rounded-md bg-white/[0.03] border border-white/[0.08] text-xs font-mono">
             <button
               type="button"
               onClick={() => setIsLeftOpen((v) => !v)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-all cursor-pointer ${
                 isLeftOpen ? "bg-white/10 text-white font-medium shadow-sm" : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
               }`}
               title="Toggle File Explorer (Sidebar)"
@@ -888,7 +902,7 @@ export default function CodePageClient({
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
               </svg>
-              <span className="hidden md:inline">Explorer</span>
+              <span className="hidden md:inline text-[11px]">Explorer</span>
             </button>
             <button
               type="button"
@@ -901,7 +915,7 @@ export default function CodePageClient({
                   return !v;
                 });
               }}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-all cursor-pointer ${
                 isTerminalOpen ? "bg-white/10 text-white font-medium shadow-sm" : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
               }`}
               title="Toggle Integrated Terminal"
@@ -909,12 +923,12 @@ export default function CodePageClient({
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
-              <span className="hidden md:inline">Terminal</span>
+              <span className="hidden md:inline text-[11px]">Terminal</span>
             </button>
             <button
               type="button"
               onClick={() => setIsRightOpen((v) => !v)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-all cursor-pointer ${
                 isRightOpen ? "bg-cyan-500/20 text-cyan-200 font-semibold border border-cyan-400/30 shadow-sm" : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
               }`}
               title="Toggle Anara Agent Console"
@@ -922,34 +936,33 @@ export default function CodePageClient({
               <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
-              <span className="hidden md:inline">Agent</span>
+              <span className="hidden md:inline text-[11px]">Agent</span>
             </button>
           </div>
 
-          {/* Link back to 3D Companion */}
           <a
             href="/"
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-slate-300 hover:text-white transition-all cursor-pointer active:scale-95 shadow-sm"
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-slate-300 hover:text-white transition-all cursor-pointer active:scale-95 shadow-sm"
             title="Switch to 3D Avatar & Voice Studio"
           >
             <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span className="hidden sm:inline">3D Avatar</span>
+            <span className="hidden sm:inline text-[11px]">3D Studio</span>
           </a>
 
           <button
             type="button"
             onClick={() => setIsBrainDrawerOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-slate-300 hover:text-white transition-all cursor-pointer active:scale-95 shadow-sm"
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-slate-300 hover:text-white transition-all cursor-pointer active:scale-95 shadow-sm"
             title="Open Brain & Model Settings"
           >
             <svg className="w-3.5 h-3.5 text-purple-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
-            <span className="hidden sm:inline">Brain</span>
+            <span className="hidden sm:inline text-[11px]">Brain</span>
           </button>
         </div>
       </header>
@@ -958,6 +971,135 @@ export default function CodePageClient({
           2. THREE-PANE AUTONOMOUS CODING STUDIO WORKBENCH
          ══════════════════════════════════════════════════════════════════════ */}
       <div className="flex-1 flex min-h-0 items-stretch overflow-hidden relative">
+        {/* ── ACTIVITY BAR (Antigravity Studio Primary Icon Rail) ── */}
+        <aside className="w-11 shrink-0 h-full bg-[#050811] border-r border-white/[0.08] flex flex-col items-center py-2 z-20 select-none">
+          {/* Top Activity Actions */}
+          <div className="flex flex-col items-center gap-1.5 w-full">
+            {/* Explorer Toggle */}
+            <button
+              type="button"
+              onClick={() => {
+                if (isLeftOpen && explorerMode === "tree") {
+                  setIsLeftOpen(false);
+                } else {
+                  setIsLeftOpen(true);
+                  setExplorerMode("tree");
+                }
+              }}
+              className={`relative w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
+                isLeftOpen && explorerMode === "tree"
+                  ? "bg-white/[0.08] text-cyan-300 shadow-sm"
+                  : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
+              }`}
+              title="File Explorer (Toggle Sidebar)"
+            >
+              {isLeftOpen && explorerMode === "tree" && (
+                <div className="absolute left-0 inset-y-1.5 w-0.5 bg-cyan-400 rounded-r shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
+              )}
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+              </svg>
+            </button>
+
+            {/* Source Control (Git) Toggle */}
+            <button
+              type="button"
+              onClick={() => {
+                if (isLeftOpen && explorerMode === "git") {
+                  setIsLeftOpen(false);
+                } else {
+                  setIsLeftOpen(true);
+                  setExplorerMode("git");
+                }
+              }}
+              className={`relative w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
+                isLeftOpen && explorerMode === "git"
+                  ? "bg-white/[0.08] text-cyan-300 shadow-sm"
+                  : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
+              }`}
+              title={`Source Control (Git Changes${gitStatus?.changed_count ? `: ${gitStatus.changed_count} files` : ""})`}
+            >
+              {isLeftOpen && explorerMode === "git" && (
+                <div className="absolute left-0 inset-y-1.5 w-0.5 bg-cyan-400 rounded-r shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
+              )}
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7a3 3 0 100-6 3 3 0 000 6zm0 0v10m0 0a3 3 0 100 6 3 3 0 000-6zm8-4a3 3 0 100-6 3 3 0 000 6zm0 0v3a4 4 0 01-4 4h-4" />
+              </svg>
+              {gitStatus && gitStatus.changed_count > 0 && (
+                <span className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-cyan-400 text-black font-mono font-bold text-[8.5px] flex items-center justify-center shadow-sm">
+                  {gitStatus.changed_count > 9 ? "9+" : gitStatus.changed_count}
+                </span>
+              )}
+            </button>
+
+            {/* Integrated Terminal Toggle */}
+            <button
+              type="button"
+              onClick={() => setIsTerminalOpen((v) => !v)}
+              className={`relative w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
+                isTerminalOpen
+                  ? "bg-white/[0.08] text-cyan-300 shadow-sm"
+                  : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
+              }`}
+              title="Integrated Terminal (Toggle)"
+            >
+              {isTerminalOpen && (
+                <div className="absolute left-0 inset-y-1.5 w-0.5 bg-cyan-400 rounded-r shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
+              )}
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </button>
+
+            {/* Agent Console Toggle */}
+            <button
+              type="button"
+              onClick={() => setIsRightOpen((v) => !v)}
+              className={`relative w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
+                isRightOpen
+                  ? "bg-white/[0.08] text-cyan-300 shadow-sm"
+                  : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
+              }`}
+              title="Anara Autonomous Agent Console"
+            >
+              {isRightOpen && (
+                <div className="absolute left-0 inset-y-1.5 w-0.5 bg-cyan-400 rounded-r shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
+              )}
+              <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Bottom Activity Actions: 3D Avatar & Brain */}
+          <div className="flex flex-col items-center gap-1.5 w-full pt-2 border-t border-white/[0.06]">
+            <a
+              href="/"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-cyan-300 hover:bg-white/[0.04] transition-all cursor-pointer"
+              title="Switch to 3D Avatar & Voice Studio"
+            >
+              <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </a>
+
+            <button
+              type="button"
+              onClick={() => setIsBrainDrawerOpen(true)}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-purple-300 hover:bg-white/[0.04] transition-all cursor-pointer"
+              title="Anara Brain & Model Settings"
+            >
+              <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
+          </div>
+        </aside>
         {/* ── PANE 1 (LEFT): File Explorer & Git Status ── */}
         {isLeftOpen && (
           <>
@@ -1050,8 +1192,8 @@ export default function CodePageClient({
                 <div className="absolute w-[450px] h-[450px] rounded-full bg-cyan-500/[0.04] blur-[120px] pointer-events-none" />
                 <div className="absolute w-[300px] h-[300px] rounded-full bg-purple-500/[0.03] blur-[100px] pointer-events-none" />
 
-                {/* Central Liquid Glass Card */}
-                <div className="max-w-md w-full liquid-glass rounded-2xl p-6 border border-white/[0.12] shadow-2xl flex flex-col items-center text-center gap-4 relative z-10 animate-fade-in">
+                {/* Central Antigravity Studio Hub */}
+                <div className="max-w-md w-full rounded-2xl bg-[#060913]/90 border border-white/[0.08] shadow-2xl p-6 flex flex-col items-center text-center gap-4 relative z-10 animate-fade-in">
                   <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-400/30 flex items-center justify-center text-cyan-300 shadow-[0_0_20px_rgba(34,211,238,0.15)]">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
@@ -1062,7 +1204,7 @@ export default function CodePageClient({
                       Anara Code Studio
                     </h3>
                     <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                      Select a file from the explorer on the left or prompt Anara Agent to inspect and build your codebase.
+                      Autonomous agentic software engineering workbench. Open files from the explorer or prompt Anara Agent to plan and build.
                     </p>
                   </div>
 
@@ -1070,7 +1212,10 @@ export default function CodePageClient({
                   <div className="w-full grid grid-cols-2 gap-2 pt-2 border-t border-white/[0.08] text-xs font-mono">
                     <button
                       type="button"
-                      onClick={() => setIsLeftOpen(true)}
+                      onClick={() => {
+                        setIsLeftOpen(true);
+                        setExplorerMode("tree");
+                      }}
                       className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] hover:border-cyan-400/30 text-slate-300 hover:text-white transition-all text-left cursor-pointer active:scale-95"
                     >
                       <svg className="w-4 h-4 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1091,19 +1236,23 @@ export default function CodePageClient({
                       </svg>
                       <div>
                         <div className="font-semibold text-white">Terminal</div>
-                        <div className="text-[10px] text-slate-500">PowerShell shell</div>
+                        <div className="text-[10px] text-slate-500">Integrated shell</div>
                       </div>
                     </button>
                   </div>
 
                   {/* Keyboard Shortcuts Bar */}
                   <div className="w-full flex items-center justify-between text-[11px] font-mono text-slate-400 pt-2 border-t border-white/[0.06] px-1">
-                    <span>Find in File</span>
-                    <kbd className="px-2 py-0.5 rounded bg-white/[0.06] border border-white/10 text-[10px] text-slate-300">Ctrl + F</kbd>
+                    <span>Quick Open File</span>
+                    <kbd className="px-2 py-0.5 rounded bg-white/[0.06] border border-white/10 text-[10px] text-slate-300">Ctrl + P</kbd>
                   </div>
                   <div className="w-full flex items-center justify-between text-[11px] font-mono text-slate-400 px-1">
                     <span>Save Buffer</span>
                     <kbd className="px-2 py-0.5 rounded bg-white/[0.06] border border-white/10 text-[10px] text-slate-300">Ctrl + S</kbd>
+                  </div>
+                  <div className="w-full flex items-center justify-between text-[11px] font-mono text-slate-400 px-1">
+                    <span>Find in File</span>
+                    <kbd className="px-2 py-0.5 rounded bg-white/[0.06] border border-white/10 text-[10px] text-slate-300">Ctrl + F</kbd>
                   </div>
                 </div>
               </div>
@@ -1157,18 +1306,28 @@ export default function CodePageClient({
             style={{ width: `var(--studio-right-width, ${rightWidth}px)`, transition: "none" }}
             className="h-full shrink-0 flex flex-col overflow-hidden bg-[#060913]/90 backdrop-blur-xl relative select-none studio-pane border-l border-white/[0.08]"
           >
-            {/* Liquid Glass Agent Console Header */}
-            <div className="h-9 shrink-0 px-3.5 border-b border-white/[0.08] flex items-center justify-between bg-[#070c18]/90 font-mono text-xs select-none">
+            {/* Antigravity Agent Console Header */}
+            <div className="h-9 shrink-0 px-3 border-b border-white/[0.08] flex items-center justify-between bg-[#060913]/95 font-mono text-xs select-none">
               <div className="flex items-center gap-2">
                 <span className={`w-2 h-2 rounded-full ${assistantStatus === "thinking" ? "bg-cyan-400 animate-pulse shadow-[0_0_8px_#22d3ee]" : "bg-emerald-400 shadow-[0_0_8px_#34d399]"}`} />
                 <span className="font-bold text-white tracking-wider text-[11px] uppercase">Agent Console</span>
-                <span className={`px-1.5 py-0.2 rounded text-[10px] font-semibold uppercase ${agentMode === "build" ? "bg-purple-500/15 border border-purple-400/30 text-purple-300" : "bg-cyan-500/15 border border-cyan-400/30 text-cyan-300"}`}>
+                <button
+                  type="button"
+                  onClick={() => setAgentMode((m) => (m === "plan" ? "build" : "plan"))}
+                  className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase cursor-pointer transition-all active:scale-95 ${
+                    agentMode === "build"
+                      ? "bg-purple-500/15 border border-purple-400/30 text-purple-300 hover:bg-purple-500/25"
+                      : "bg-cyan-500/15 border border-cyan-400/30 text-cyan-300 hover:bg-cyan-500/25"
+                  }`}
+                  title="Click to toggle Plan / Build mode"
+                >
                   {agentMode}
-                </span>
+                </button>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[10.5px] text-slate-400 font-mono truncate max-w-[120px]" title={activeModelId}>
-                  {activeModelId}
+                <span className="text-[11px] text-slate-300 font-mono flex items-center gap-1.5" title={activeModelId}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/80" />
+                  {formatModelDisplayName(activeModelId)}
                 </span>
               </div>
             </div>
