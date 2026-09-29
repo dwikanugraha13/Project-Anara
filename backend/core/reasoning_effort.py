@@ -5,7 +5,7 @@ Anara Standard Reasoning Effort Ladder.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 EFFORT_LADDER: List[str] = ["none", "low", "medium", "high", "max"]
 
@@ -31,7 +31,8 @@ def clamp_effort(requested: Optional[str], allowed: List[str]) -> str:
         "false": "none",
         "0": "none",
     }
-    target = alias_map.get(clean, "none")
+    # Preserve standard ladder items before falling back to aliases
+    target = clean if clean in EFFORT_LADDER else alias_map.get(clean, "none")
     if target in allowed:
         return target
 

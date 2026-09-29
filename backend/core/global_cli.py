@@ -14,7 +14,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 logger = logging.getLogger("anara.core.global_cli")
 
@@ -67,16 +67,17 @@ class GlobalCLIInstaller:
         """Permanently appends directory to Windows HKCU\\Environment\\Path via PowerShell."""
         if os.name != "nt":
             return False
-        dir_str = str(directory.resolve())
+        dir_str = str(directory.resolve()).replace("'", "''")
         ps_cmd = (
-            f"[Environment]::GetEnvironmentVariable('Path', 'User') -split ';' | "
-            f"Where-Object {{ $_ -eq '{dir_str}' }} | Measure-Object | ForEach-Object {{ "
-            f"if ($_.Count -eq 0) {{ "
-            f"$old = [Environment]::GetEnvironmentVariable('Path', 'User'); "
-            f"$new = ($old.TrimEnd(';') + ';' + '{dir_str}').TrimStart(';'); "
-            f"[Environment]::SetEnvironmentVariable('Path', $new, 'User'); "
-            f"Write-Output 'ADDED' "
-            f"}} else {{ Write-Output 'ALREADY' }} }}"
+            f"$target = '{dir_str}'; "
+            "[Environment]::GetEnvironmentVariable('Path', 'User') -split ';' | "
+            "Where-Object { $_ -eq $target } | Measure-Object | ForEach-Object { "
+            "if ($_.Count -eq 0) { "
+            "$old = [Environment]::GetEnvironmentVariable('Path', 'User'); "
+            "$new = ($old.TrimEnd(';') + ';' + $target).TrimStart(';'); "
+            "[Environment]::SetEnvironmentVariable('Path', $new, 'User'); "
+            "Write-Output 'ADDED' "
+            "} else { Write-Output 'ALREADY' } }"
         )
         try:
             res = subprocess.run(
@@ -123,6 +124,10 @@ class GlobalCLIInstaller:
         sh_path = anara_bin / "anara"
         with open(sh_path, "w", encoding="utf-8", newline="\n") as f:
             f.write(bash_content)
+        try:
+            os.chmod(sh_path, 0o755)
+        except Exception:
+            pass
 
         # 3. Add anara_bin to Windows User PATH
         cls.add_to_windows_user_path(anara_bin)
@@ -138,8 +143,8 @@ class GlobalCLIInstaller:
             p_obj = Path(p_strip)
             if p_obj.is_dir() and os.access(p_obj, os.W_OK):
                 # Identify user-owned bin directories
-                p_lower = str(p_obj).lower()
-                user_home_lower = str(Path.home()).lower()
+                p_lower = str(p_obj).lower().replace("/", "\\")
+                user_home_lower = str(Path.home()).lower().replace("/", "\\")
                 if user_home_lower in p_lower and any(kw in p_lower for kw in ("python\\bin", "npm", "local\\bin", "scripts")):
                     try:
                         shutil.copy2(cmd_path, p_obj / "anara.cmd")

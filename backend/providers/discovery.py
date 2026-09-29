@@ -1,9 +1,8 @@
 import asyncio
-import json
 import logging
 import re
 import time
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional
 import httpx
 
 from .constants import (
@@ -20,7 +19,6 @@ from .accounts import (
 
 logger = logging.getLogger(__name__)
 
-_DISCOVERY_LOCK = asyncio.Lock()
 _OAUTH_REFRESH_LOCK = asyncio.Lock()
 
 _VISION_REGEX = re.compile(
@@ -29,7 +27,7 @@ _VISION_REGEX = re.compile(
 )
 
 _REASONING_REGEX = re.compile(
-    r'\b(o[1-9]|o[1-9]-mini|o[1-9]-preview|r1|deepseek-r1|deepseek-reasoner|qwq|claude-3[-.]7)\b',
+    r'\b(o[1-9]|o[1-9]-mini|o[1-9]-preview|r1|deepseek-r1|deepseek-reasoner|qwq|claude-3[-.]7|thinking)\b',
     re.IGNORECASE
 )
 
@@ -113,7 +111,7 @@ def _is_reasoning_model(model_id: str, item: Any = None) -> bool:
 
 async def fetch_gemini_models(force_refresh: bool = False) -> List[Dict[str, Any]]:
     """Discovers live models available on Google AI Studio if API key is configured."""
-    from core import key_manager
+    from core.key_manager import key_manager
     from google import genai
     
     if not is_provider_configured("gemini"):
@@ -121,10 +119,11 @@ async def fetch_gemini_models(force_refresh: bool = False) -> List[Dict[str, Any
 
     cache_key = "gemini"
     now = time.time()
-    if not force_refresh and cache_key in _DYNAMIC_CACHE:
-        entry = _DYNAMIC_CACHE[cache_key]
-        if now - entry["timestamp"] < _CACHE_TTL_SECONDS:
-            return entry["models"]
+    with _DYNAMIC_CACHE_LOCK:
+        if not force_refresh and cache_key in _DYNAMIC_CACHE:
+            entry = _DYNAMIC_CACHE[cache_key]
+            if now - entry["timestamp"] < _CACHE_TTL_SECONDS:
+                return entry["models"]
 
     models_list = []
     live_models = [
@@ -164,7 +163,7 @@ async def fetch_gemini_models(force_refresh: bool = False) -> List[Dict[str, Any
 
     fetch_ok = False
     try:
-        active_key = get_provider_key("gemini")
+        active_key = key_manager.get_active_key() or get_provider_key("gemini")
         if active_key:
             client = genai.Client(api_key=active_key.split(",")[0].strip())
             def _list():
@@ -214,14 +213,15 @@ async def fetch_gemini_models(force_refresh: bool = False) -> List[Dict[str, Any
     except Exception as e:
         if not isinstance(e, TimeoutError):
             logger.warning(f"[ModelRouter] Failed to fetch live Gemini models: {e}")
-        if cache_key in _DYNAMIC_CACHE and _DYNAMIC_CACHE[cache_key].get("models"):
+    with _DYNAMIC_CACHE_LOCK:
+        if not fetch_ok and cache_key in _DYNAMIC_CACHE and _DYNAMIC_CACHE[cache_key].get("models"):
             logger.info("[ModelRouter] Gemini fetch failed — returning stale cache")
             return _DYNAMIC_CACHE[cache_key]["models"]
 
-    if fetch_ok:
-        _DYNAMIC_CACHE[cache_key] = {"timestamp": now, "models": models_list}
-    else:
-        _DYNAMIC_CACHE[cache_key] = {"timestamp": now - (_CACHE_TTL_SECONDS - 30), "models": models_list}
+        if fetch_ok:
+            _DYNAMIC_CACHE[cache_key] = {"timestamp": now, "models": models_list}
+        else:
+            _DYNAMIC_CACHE[cache_key] = {"timestamp": now - (_CACHE_TTL_SECONDS - 30), "models": models_list}
     return models_list
 
 
@@ -589,8 +589,9 @@ async def get_all_dynamic_models(force_refresh: bool = False) -> List[Dict[str, 
         m["is_configured"] = prov_configured_map.get(prov, False)
         m["is_active"] = (m["id"] == active_id)
         m_id_lower = m["id"].lower()
-        m["supports_voice"] = (
-            "live-preview" in m_id_lower
+        m["supports_voice"] = bool(
+            m.get("supports_voice", False)
+            or "live-preview" in m_id_lower
             or "realtime" in m_id_lower
             or "audio" in m_id_lower
         )

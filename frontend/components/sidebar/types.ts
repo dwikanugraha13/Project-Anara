@@ -128,6 +128,91 @@ export function formatFullDateTime(iso: string): string {
   return `${dateStr} • ${timeStr} WIB`;
 }
 
+export function formatSmartDateTime(iso: string): string {
+  const d = toDate(iso);
+  if (!d) return "";
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfYesterday = startOfToday - 86400_000;
+  const time = d.getTime();
+
+  const timeStr = d.toLocaleTimeString("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  if (time >= startOfToday) {
+    return timeStr;
+  }
+  if (time >= startOfYesterday) {
+    return `Kemarin ${timeStr}`;
+  }
+  const dateStr = d.toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "short",
+  });
+  return `${dateStr}, ${timeStr}`;
+}
+
+export interface SessionDisplayInfo {
+  title: string;
+  subtitle: string;
+  channel: "telegram" | "cli" | "whatsapp" | "web";
+  speaker: string;
+}
+
+export function resolveSessionDisplay(s: ChatSession): SessionDisplayInfo {
+  const rawTitle = (s.title || "").trim();
+  const tgMatch = rawTitle.match(/Telegram Chat \((.*?)\)(?:\s*\[.*?\])?/i);
+  const waMatch = rawTitle.match(/Whatsapp Chat \((.*?)\)(?:\s*\[.*?\])?/i);
+  const cliMatch = rawTitle.match(/Cli Chat \((.*?)\)(?:\s*\[.*?\])?/i);
+
+  let channel: "telegram" | "cli" | "whatsapp" | "web" = "web";
+  let speaker = s.speaker_name || "User";
+
+  if (tgMatch) {
+    channel = "telegram";
+    speaker = tgMatch[1] || speaker;
+  } else if (waMatch) {
+    channel = "whatsapp";
+    speaker = waMatch[1] || speaker;
+  } else if (cliMatch || rawTitle.toLowerCase().includes("anara cli") || rawTitle.toLowerCase().includes("cli session")) {
+    channel = "cli";
+    if (cliMatch) speaker = cliMatch[1] || speaker;
+  }
+
+  const isGenericTitle =
+    !rawTitle ||
+    rawTitle === "New Chat" ||
+    rawTitle === "New Project" ||
+    rawTitle.startsWith("Conversation #") ||
+    tgMatch !== null ||
+    waMatch !== null ||
+    cliMatch !== null;
+
+  let title = rawTitle.replace(/\s*\[.*?:.*?\]/g, "").replace(/\s*\[.*?\]/g, "").trim();
+  let subtitle = "";
+
+  if (isGenericTitle && s.last_user_text) {
+    title = s.last_user_text.trim().replace(/\n+/g, " ");
+    if (title.length > 46) {
+      title = title.substring(0, 44).trim() + "…";
+    }
+  } else if (!title || isGenericTitle) {
+    title = s.session_type === "code" ? "Coding Workspace" : "Percakapan Baru";
+  }
+
+  if (s.last_user_text && title !== s.last_user_text.trim()) {
+    subtitle = s.last_user_text.trim().replace(/\n+/g, " ");
+    if (subtitle.length > 55) {
+      subtitle = subtitle.substring(0, 52).trim() + "…";
+    }
+  }
+
+  return { title, subtitle, channel, speaker };
+}
+
 export function groupSessions(sessions: ChatSession[]) {
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();

@@ -8,10 +8,9 @@ from __future__ import annotations
 
 import logging
 from logging.handlers import RotatingFileHandler
-import os
 from pathlib import Path
 import re
-import sys
+import time
 from typing import Optional
 
 from constants import get_anara_logs_dir
@@ -22,8 +21,8 @@ from constants import get_anara_logs_dir
 _SECRET_PATTERNS = [
     re.compile(r"AIzaSy[A-Za-z0-9_-]{33}"),                         # Google AI Studio Legacy
     re.compile(r"AQ\.[A-Za-z0-9_-]{30,}"),                         # Google AI Studio Modern
-    re.compile(r"sk-[A-Za-z0-9_-]{20,}"),                          # OpenAI / General API Keys
     re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"),                      # Anthropic API Keys
+    re.compile(r"sk-[A-Za-z0-9_-]{20,}"),                          # OpenAI / General API Keys
     re.compile(r"ghp_[A-Za-z0-9]{36}"),                            # GitHub PAT Classic
     re.compile(r"github_pat_[A-Za-z0-9_]{40,}"),                   # GitHub PAT Fine-grained
     re.compile(r"hf_[A-Za-z0-9]{34,}"),                            # Hugging Face Token
@@ -32,7 +31,8 @@ _SECRET_PATTERNS = [
     re.compile(r"\b[A-Za-z0-9_-]{24,26}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,38}\b"),  # Discord Bot Token
     re.compile(r"(https://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks/\d+/)[A-Za-z0-9_-]+"),  # Discord Webhook
     re.compile(r"(?i)(authorization:\s*(?:Bearer\s+|Bot\s+|Basic\s+)?)[^\s,;]+"),  # Authorization Headers
-    re.compile(r"(?i)(token=|api_key=|key=|password=|secret=|client_secret=|passwd=|access_token=|auth_token=|refresh_token=)[^&\s]+"),  # Sensitive Query/Form params
+    re.compile(r"(?i)(?<=[?&])(token=|api_key=|api-key=|key=|password=|secret=|client_secret=|passwd=|access_token=|auth_token=|refresh_token=)[^&\s]+"),  # Sensitive Query params
+    re.compile(r"(?i)\b(api_key=|api-key=|client_secret=|access_token=|auth_token=|refresh_token=|passwd=|password=)[^&\s,;]+"),  # CLI/Assignment params
     re.compile(r"-----BEGIN (?:[A-Z0-9_-]+ )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z0-9_-]+ )?PRIVATE KEY-----"),  # Private Keys
     re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"),               # Slack Tokens
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),                           # AWS Access Key ID
@@ -80,12 +80,21 @@ class AnaraRedactingFormatter(logging.Formatter):
 class WindowsSafeRotatingFileHandler(RotatingFileHandler):
     """RotatingFileHandler that catches Windows permission errors on file rollover gracefully."""
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._next_rollover_retry = 0.0
+
     def doRollover(self):
+        now = time.time()
+        if now < self._next_rollover_retry:
+            return
         try:
             super().doRollover()
+            self._next_rollover_retry = 0.0
         except (PermissionError, OSError):
             # On Windows, open handles from other threads or virus scanners can trigger WinError 32
-            pass
+            # Defer next rollover retry by 30 seconds to prevent file churn/thrashing
+            self._next_rollover_retry = now + 30.0
 
 
 def setup_anara_logging(log_level: int = logging.INFO):

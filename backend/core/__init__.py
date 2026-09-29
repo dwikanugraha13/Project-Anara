@@ -150,6 +150,10 @@ _EXPORTS: dict[str, str] = {
     # sandbox
     "CommandSandbox": ".sandbox",
     "command_sandbox": ".sandbox",
+    # session_ids
+    "new_session_key": ".session_ids",
+    "is_valid_session_key": ".session_ids",
+    "SESSION_KEY_PATTERN": ".session_ids",
 }
 
 __all__ = sorted(_EXPORTS.keys())

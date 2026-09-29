@@ -6,7 +6,6 @@ import AgentToolCard, { ExplorationGroupCard, ThinkingCard } from "./AgentToolCa
 import InteractiveQuestionCard from "./InteractiveQuestionCard";
 import type { TranscriptItem, AssistantStatus } from "../workbench/AnaraWorkbench";
 import type { ToolProgressPayload, AgentActionPayload } from "@/hooks/useWebSocket";
-import { formatModelDisplayName } from "@/lib/modelFormat";
 
 export interface ChatTimelineProps {
   transcript: TranscriptItem[];
@@ -249,74 +248,28 @@ export default function ChatTimeline({
                   const { item, idx } = block;
                   const isAi = item.speaker === "output";
                   const isLatestAi = isAi && idx === transcript.length - 1;
-                  const rawModel = item.modelId || activeModelId || "model";
-                  const footerModel = rawModel.startsWith("9router/9router/")
-                    ? rawModel.replace("9router/9router/", "9router/")
-                    : rawModel;
-                  const cleanModel = formatModelDisplayName(footerModel);
-                  const footerUsage = item.tokenUsage && item.tokenUsage.contextLimit > 0 ? item.tokenUsage : null;
-                  const footerUsed = footerUsage ? Math.max(0, footerUsage.contextLimit - footerUsage.contextRemaining) : 0;
-                  const footerPercent = footerUsage ? Math.min(100, Math.max(0, (footerUsed / footerUsage.contextLimit) * 100)) : 0;
 
-                  const isLatestAiMessage = idx === lastAiIndex;
                   const footerElement = item.text ? (
-                    <div className={`flex min-w-0 items-center gap-2 pt-2.5 text-[11px] font-mono text-white select-none whitespace-nowrap transition-opacity duration-200 ${
-                      isLatestAiMessage
-                        ? "opacity-100"
-                        : "opacity-0 group-hover/turn:opacity-100 active:opacity-100 focus-within:opacity-100"
-                    }`}>
+                    <div className="flex items-center gap-1.5 pt-1.5 text-slate-400 select-none opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100 transition-opacity duration-150">
                       <button
                         type="button"
                         onClick={() => handleCopyMessage(item.text, idx)}
-                        className="p-1.5 -ml-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.12] border border-white/10 hover:border-white/20 text-slate-400 hover:text-white transition-all cursor-pointer flex items-center gap-1 active:scale-95 shadow-sm"
+                        className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.10] border border-white/8 hover:border-white/20 text-slate-400 hover:text-white transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 text-xs font-sans"
                         title={copiedMessageIndex === idx ? "Copied!" : "Copy message"}
                       >
                         {copiedMessageIndex === idx ? (
-                          <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                          </svg>
+                          <>
+                            <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                            </svg>
+                            <span className="text-[10px] text-emerald-400 font-mono font-medium">Copied</span>
+                          </>
                         ) : (
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                           </svg>
                         )}
                       </button>
-                      {/* Operational Mode Badge (Plan / Build) */}
-                      <span
-                        className={`px-2 py-0.5 rounded-md border text-[10px] font-mono font-bold shrink-0 ${
-                          (item.agentMode || "plan") === "plan"
-                            ? "bg-cyan-500/15 border-cyan-400/30 text-cyan-300 shadow-[0_0_8px_rgba(34,211,238,0.15)]"
-                            : "bg-amber-500/15 border-amber-400/30 text-amber-300 shadow-[0_0_8px_rgba(245,158,11,0.15)]"
-                        }`}
-                      >
-                        {(item.agentMode || "plan") === "plan" ? "Plan" : "Build"}
-                      </span>
-                      <span className="text-slate-600">·</span>
-                      <span className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/10 text-slate-200 font-semibold text-[10.5px] truncate max-w-[200px]" title={footerModel}>
-                        {cleanModel}
-                      </span>
-                      {footerUsage && (
-                        <>
-                          <span className="text-slate-600">|</span>
-                          <span className="text-slate-300 shrink-0 font-medium">
-                            {compactTokenCount(footerUsed)}/{compactTokenCount(footerUsage.contextLimit)}
-                          </span>
-                          <span className="text-slate-600">|</span>
-                          <span className="inline-flex items-center gap-1.5 text-slate-300 shrink-0">
-                            <span className="inline-block h-2 w-16 overflow-hidden rounded-full bg-white/10 align-middle shadow-inner">
-                              <span
-                                className={`block h-full transition-all duration-300 ${footerPercent >= 85 ? "bg-rose-400" : footerPercent >= 60 ? "bg-amber-400" : "bg-emerald-400"}`}
-                                style={{ width: `${Math.max(footerPercent, 1)}%` }}
-                              />
-                            </span>
-                            <span className="text-[10px] font-bold tabular-nums">{footerPercent.toFixed(0)}%</span>
-                          </span>
-                        </>
-                      )}
-                      <span className="text-slate-600">|</span>
-                      <span className="text-slate-400 shrink-0">
-                        {item.durationText || (item.startTime ? `${Math.max(1, Math.round((Date.now() - item.startTime) / 1000))}s` : "1s")}
-                      </span>
                     </div>
                   ) : null;
 
@@ -354,24 +307,10 @@ export default function ChatTimeline({
                     );
                   }
 
-                  // ── Narrative Markdown Turn ──
+                  // ── Narrative Markdown Turn (Clean World-Class Assistant Response) ──
                   return (
-                    <div key={idx} className="flex flex-col items-start w-full my-3 px-1 animate-fade-in select-text group/turn">
-                      {/* Studio AI Micro Header */}
-                      <div className="flex items-center gap-2 mb-1.5 select-none">
-                        <div className="w-5 h-5 rounded-md bg-cyan-500/10 border border-cyan-400/25 flex items-center justify-center text-cyan-300 shadow-[0_0_8px_rgba(34,211,238,0.15)]">
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                          </svg>
-                        </div>
-                        <span className="text-xs font-semibold text-slate-200 font-sans tracking-tight">Anara Agent</span>
-                        <span className="text-slate-600 text-xs">·</span>
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.08] text-slate-300">
-                          {cleanModel}
-                        </span>
-                      </div>
-
-                      <div className="w-full text-slate-100 pl-1 sm:pl-7">
+                    <div key={idx} className="flex flex-col items-start w-full my-2 px-1 animate-fade-in select-text group/turn">
+                      <div className="w-full text-slate-100">
                         {!item.text ? (
                           <div className="space-y-2 w-full max-w-xl">
                             <div className="py-2 text-xs text-slate-400 font-mono select-none animate-pulse flex items-center gap-2">

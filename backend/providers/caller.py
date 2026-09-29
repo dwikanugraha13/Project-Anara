@@ -4,14 +4,7 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
-import httpx
-from config import cfg_get
-
-from .accounts import (
-    get_provider_key,
-)
-from .discovery import refresh_codex_oauth_token_if_needed
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -534,7 +527,7 @@ async def _execute_native_agent_loop(
     - Workspace Sentinel Ground-Truth Test Verification
     - ContextMicroCompactor & Head:Tail Output Compaction
     """
-    from tools import dispatch_tool_call, READ_ONLY_TOOL_NAMES, get_tool_risk, AnaraLoopBreaker
+    from tools import dispatch_tool_call, READ_ONLY_TOOL_NAMES, get_tool_risk
     from tools.catalog import is_safe_read_only_cli_command
     from tools.output_manager import compact_tool_output
     from tools.self_correction import (
@@ -542,7 +535,6 @@ async def _execute_native_agent_loop(
         ContextMicroCompactor,
         ErrorClassifier,
         SelfCorrectionTracker,
-        format_recovery_guidance,
         format_graceful_diagnostic_card,
     )
     from core.token_budget import TokenBudgetTracker
@@ -1739,9 +1731,18 @@ async def _make_gemini_native_turn(
     on_chunk: Optional[Callable[[str], Any]] = None,
 ) -> Any:
     """Executes a single native tool-calling turn via Google GenAI SDK (Hermes/Gemini Parity)."""
-    from core import key_manager
+    from core.key_manager import key_manager
     from google.genai import types
     from .native_turn import NativeToolCall, NativeTurnResult
+
+    def _deep_to_dict(obj: Any) -> Any:
+        if isinstance(obj, dict):
+            return {k: _deep_to_dict(v) for k, v in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [_deep_to_dict(v) for v in obj]
+        elif hasattr(obj, "items"):
+            return {k: _deep_to_dict(v) for k, v in obj.items()}
+        return obj
 
     cfg_kwargs: Dict[str, Any] = {
         "temperature": temperature,
@@ -1775,7 +1776,7 @@ async def _make_gemini_native_turn(
                     if getattr(part, "function_call", None):
                         fc = part.function_call
                         call_id = f"call_{fc.name}_{idx}"
-                        args_dict = dict(fc.args) if fc.args else {}
+                        args_dict = _deep_to_dict(fc.args) if fc.args else {}
                         tool_calls.append(NativeToolCall(
                             call_id=call_id,
                             name=fc.name,

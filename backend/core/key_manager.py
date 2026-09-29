@@ -36,16 +36,21 @@ class GeminiKeyManager:
         Falls back to environment variables (if provided) for backward compatibility.
         """
         parsed = []
+        disabled_keys = set()
 
         # 1. Primary Source: Read dynamically stored keys from SQLite ai_accounts (enabled only)
         try:
             from memory import memory_engine
             accs = memory_engine.get_ai_accounts("gemini")
             for a in accs:
+                k = a.get("api_key", "").strip()
+                if not k:
+                    continue
                 if a.get("is_enabled", 1) == 1:
-                    k = a.get("api_key", "").strip()
-                    if k and k not in parsed:
+                    if k not in parsed:
                         parsed.append(k)
+                else:
+                    disabled_keys.add(k)
 
             # Legacy app_settings fallback
             db_gemini_val = memory_engine.get_app_setting("gemini_api_key")
@@ -53,9 +58,9 @@ class GeminiKeyManager:
                 for line in db_gemini_val.splitlines():
                     for part in line.split(","):
                         k = part.strip().strip("'\"")
-                        if (k.startswith("AIzaSy") or k.startswith("AQ.")) and k not in parsed:
+                        if (k.startswith("AIzaSy") or k.startswith("AQ.")) and k not in parsed and k not in disabled_keys:
                             parsed.append(k)
-                        elif len(k) > 20 and k not in parsed and not k.startswith("http"):
+                        elif len(k) > 20 and k not in parsed and k not in disabled_keys and not k.startswith("http"):
                             parsed.append(k)
         except Exception as e_db:
             logger.debug(f"[KeyManager] Error reading ai_accounts from DB: {e_db}")
@@ -71,7 +76,7 @@ class GeminiKeyManager:
                 for line in env_v.splitlines():
                     for part in line.split(","):
                         k = part.strip().strip("'\"")
-                        if (k.startswith("AIzaSy") or k.startswith("AQ.") or len(k) > 20) and k not in parsed and not k.startswith("http"):
+                        if (k.startswith("AIzaSy") or k.startswith("AQ.") or len(k) > 20) and k not in parsed and k not in disabled_keys and not k.startswith("http"):
                             parsed.append(k)
 
         # 3. Check if Gemini provider was explicitly disconnected
@@ -105,11 +110,11 @@ class GeminiKeyManager:
         Returns the currently active healthy API key without side-effect rotation.
         If all keys are in cooldown, picks the one whose cooldown expires soonest.
         """
-        if not self._keys:
-            return ""
-
         now = time.time()
         with self._thread_lock:
+            if not self._keys:
+                return ""
+
             # Check if current key is healthy
             if 0 <= self._current_index < len(self._keys):
                 curr = self._keys[self._current_index]

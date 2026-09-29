@@ -16,6 +16,8 @@ import {
   ChatSessionSidebarProps,
   toDate,
   formatFullDateTime,
+  formatSmartDateTime,
+  resolveSessionDisplay,
   groupSessions,
 } from "./types";
 

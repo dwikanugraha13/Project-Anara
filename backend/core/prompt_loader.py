@@ -12,7 +12,7 @@ import os
 import re
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import yaml
 
@@ -136,10 +136,13 @@ def load_config_yaml(relative_name: str, default: Any = None) -> Any:
         logger.warning(f"[PromptLoader] Blocked path traversal attempt in YAML load: {relative_name}")
         return default
 
-    if not clean_name.endswith(".yaml") and not clean_name.endswith(".yml"):
-        clean_name = f"{clean_name}.yaml"
-
     prompts_dir = _get_prompts_dir()
+    if not clean_name.endswith(".yaml") and not clean_name.endswith(".yml"):
+        if (prompts_dir / f"{clean_name}.yml").is_file():
+            clean_name = f"{clean_name}.yml"
+        else:
+            clean_name = f"{clean_name}.yaml"
+
     file_path = prompts_dir / clean_name
 
     if not file_path.is_file():

@@ -23,21 +23,33 @@ logger = logging.getLogger("anara.lifecycle")
 _IS_WINDOWS = sys.platform == "win32"
 
 
+def _parse_proc_stat_fields(pid: int) -> Optional[List[str]]:
+    """Safely extracts space-separated fields after ') ' from Linux /proc/[pid]/stat."""
+    try:
+        content = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+        rparen = content.rfind(")")
+        if rparen == -1:
+            return None
+        # Returns fields starting after ') ' where:
+        # fields[0] is state (field 3 of /proc/pid/stat)
+        # fields[19] is starttime (field 22 of /proc/pid/stat)
+        return content[rparen + 2:].split()
+    except Exception:
+        return None
+
+
 def _posix_is_zombie(pid: int) -> bool:
     """Detects if a POSIX process is an unreaped zombie/defunct process."""
-    try:
-        stat_fields = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").split()
-        return len(stat_fields) > 2 and stat_fields[2] == "Z"
-    except FileNotFoundError:
-        with contextlib.suppress(Exception):
-            import subprocess
-            r = subprocess.run(
-                ["ps", "-o", "state=", "-p", str(pid)],
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=2,
-            )
-            return r.returncode == 0 and r.stdout.strip().startswith("Z")
-    except (IndexError, PermissionError, OSError):
-        pass
+    stat_fields = _parse_proc_stat_fields(pid)
+    if stat_fields and len(stat_fields) > 0:
+        return stat_fields[0] == "Z"
+    with contextlib.suppress(Exception):
+        import subprocess
+        r = subprocess.run(
+            ["ps", "-o", "state=", "-p", str(pid)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=2,
+        )
+        return r.returncode == 0 and r.stdout.strip().startswith("Z")
     return False
 
 
@@ -71,8 +83,10 @@ def get_process_start_time(pid: Optional[int]) -> Optional[int]:
             return None
     else:
         try:
-            stat_path = Path(f"/proc/{pid}/stat")
-            return int(stat_path.read_text(encoding="utf-8").split()[21])
+            stat_fields = _parse_proc_stat_fields(pid)
+            if stat_fields and len(stat_fields) > 19:
+                return int(stat_fields[19])
+            return None
         except Exception:
             return None
 
