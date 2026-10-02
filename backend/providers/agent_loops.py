@@ -211,7 +211,7 @@ async def _execute_native_agent_loop(
 
         last_text = turn.clean_text
 
-        # If turn has NO tool calls, check Negative Verification Stop-Gate (Anara Standard: turn_stop_gates.py & Claude Code)
+        # If turn has NO tool calls, check Negative Verification Stop-Gate (Anara Standard: turn_stop_gates.py & Anara Agent Protocol)
         if not turn.has_tool_calls:
             stop_gate_nudge = convergence_detector.evaluate_final_stop_gate(agent_mode="plan" if read_only else "build")
             if stop_gate_nudge and step < max_steps - 1:
@@ -839,7 +839,7 @@ async def _execute_json_agent_loop(
             continue
 
         if not calls:
-            # Check Negative Verification Stop-Gate (Anara Standard: turn_stop_gates.py & Claude Code)
+            # Check Negative Verification Stop-Gate (Anara Standard: turn_stop_gates.py & Anara Agent Protocol)
             stop_gate_nudge = convergence_detector.evaluate_final_stop_gate(agent_mode="plan" if read_only else "build")
             if stop_gate_nudge and step < max_steps - 1:
                 logger.info(f"[AgentLoop] Stop-gate intercepted turn: verification tests required before reporting completion.")
@@ -870,7 +870,7 @@ async def _execute_json_agent_loop(
             # Model responded with actual conversational narrative text!
             # Strip any leaked or orphaned tool tags before presenting to user (Anara Standard)
             cleaned_text = _clean_model_chat_text(last_response)
-            # CRITICAL HERMES FIX: If text only contained tool calls or stray braces, invoke dynamic narrative synthesis pass
+            # CRITICAL ANARA FIX: If text only contained tool calls or stray braces, invoke dynamic narrative synthesis pass
             if not cleaned_text or '"action": "tool_call"' in cleaned_text or '<tool_call>' in cleaned_text:
                 try:
                     synth = await provider_caller([

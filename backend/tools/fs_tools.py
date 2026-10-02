@@ -12,52 +12,14 @@ from .events import _emit_agent_event
 logger = logging.getLogger(__name__)
 
 
-def _extract_text_from_docx(file_path: str) -> str:
-    """Extracts text from Microsoft Word .docx files including paragraphs and tables."""
-    try:
-        import docx
-        doc = docx.Document(file_path)
-        paragraphs = []
-        for p in doc.paragraphs:
-            if p.text.strip():
-                paragraphs.append(p.text.strip())
-        for table in doc.tables:
-            for row in table.rows:
-                row_txt = " | ".join([cell.text.strip() for cell in row.cells if cell.text.strip()])
-                if row_txt:
-                    paragraphs.append(f"| {row_txt} |")
-        return "\n\n".join(paragraphs)
-    except Exception as e:
-        logger.warning(f"[AgentTools] Docx extract error: {e}")
-        return ""
-
-
-def _extract_text_from_pdf(file_path: str) -> str:
-    """Extracts raw text from PDF file with multiple fallback strategies."""
-    text_content = ""
-    try:
-        import pypdf
-        reader = pypdf.PdfReader(file_path)
-        pages_text = []
-        for idx, page in enumerate(reader.pages[:30]):
-            t = page.extract_text() or ""
-            if t.strip():
-                pages_text.append(f"[Halaman {idx+1}]\n{t}")
-        text_content = "\n\n".join(pages_text)
-    except Exception:
-        pass
-
-    if not text_content:
-        try:
-            with open(file_path, "rb") as f:
-                raw = f.read()
-                matches = re.findall(rb"[(](.*?)[)]\s*Tj", raw)
-                if matches:
-                    text_content = " ".join([m.decode("latin1", errors="ignore") for m in matches])
-        except Exception:
-            pass
-
-    return text_content.strip() or "[PDF Terdeteksi: Berisi dokumen digital visual]"
+from tools.document_extractors import (
+    _extract_text_from_docx,
+    _extract_text_from_pdf,
+)
+from tools.fuzzy_match import (
+    _perform_fuzzy_replace,
+    resolve_fuzzy_folder_path,
+)
 
 
 def _resolve_local_file_path(path: str) -> Optional[str]:
@@ -199,71 +161,6 @@ async def _tool_read_local_file(file_path: str, offset: Optional[int] = None, li
     except Exception as e:
         logger.warning(f"[AgentTools] Read file error: {e}")
         return {"status": "error", "message": str(e)}
-
-
-def _perform_fuzzy_replace(
-    content: str,
-    old_string: str,
-    new_string: str,
-    replace_all: bool = False
-) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    """
-    Multi-strategy fuzzy replacement (Anara Enterprise Standard):
-    1. Exact substring match
-    2. Universal newline (CRLF <-> LF) normalization
-    3. Trailing-whitespace normalized block match
-    Returns (new_content, matched_old, error_message).
-    """
-    # Strategy 1: Exact match
-    if old_string in content:
-        count = content.count(old_string)
-        if not replace_all and count > 1:
-            return None, None, f"Found {count} matches for old_string. Provide more surrounding context lines or use replace_all=True."
-        new_content = content.replace(old_string, new_string) if replace_all else content.replace(old_string, new_string, 1)
-        return new_content, old_string, None
-
-    # Strategy 2: Line-ending normalization (CRLF / LF mismatch)
-    crlf = chr(13) + chr(10)
-    norm_content = content.replace(crlf, "\n")
-    norm_old = old_string.replace(crlf, "\n")
-    norm_new = new_string.replace(crlf, "\n")
-    if norm_old in norm_content:
-        count = norm_content.count(norm_old)
-        if not replace_all and count > 1:
-            return None, None, f"Found {count} matches for old_string under newline normalization. Provide more surrounding context lines."
-        res = norm_content.replace(norm_old, norm_new) if replace_all else norm_content.replace(norm_old, norm_new, 1)
-        if crlf in content:
-            res = res.replace("\n", crlf)
-        return res, old_string, None
-
-    # Strategy 3: Trailing whitespace tolerance per line
-    c_lines = content.splitlines(keepends=True)
-    o_lines = [l.rstrip() for l in old_string.splitlines()]
-    if o_lines and len(o_lines) <= len(c_lines):
-        window_size = len(o_lines)
-        matches = []
-        for i in range(len(c_lines) - window_size + 1):
-            window = [c_lines[i + j].rstrip() for j in range(window_size)]
-            if window == o_lines:
-                matches.append(i)
-        if matches:
-            if not replace_all and len(matches) > 1:
-                return None, None, f"Found {len(matches)} whitespace-normalized matches. Provide more context lines."
-            new_lines = new_string.splitlines(keepends=True)
-            res_lines = list(c_lines)
-            for m_idx in reversed(matches if replace_all else [matches[0]]):
-                sub_new_lines = list(new_lines)
-                if sub_new_lines and (m_idx + window_size - 1) < len(c_lines):
-                    target_last_line = c_lines[m_idx + window_size - 1]
-                    ends_with_nl = target_last_line.endswith(chr(10)) or target_last_line.endswith(chr(13))
-                    last_has_nl = sub_new_lines[-1].endswith(chr(10)) or sub_new_lines[-1].endswith(chr(13))
-                    if ends_with_nl and not last_has_nl:
-                        nl = (chr(13) + chr(10)) if target_last_line.endswith(chr(13) + chr(10)) else chr(10)
-                        sub_new_lines[-1] += nl
-                res_lines[m_idx:m_idx + window_size] = sub_new_lines
-            return "".join(res_lines), old_string, None
-
-    return None, None, "old_string not found in file. Ensure the text to replace matches the file content."
 
 
 async def _tool_edit_file(
@@ -740,47 +637,6 @@ async def _tool_scan_workspace_folder(folder_path: str) -> Dict[str, Any]:
     except Exception as e:
         logger.warning(f"[AgentTools] Scan folder error: {e}")
         return {"status": "error", "message": str(e)}
-
-
-def resolve_fuzzy_folder_path(folder_path: str) -> Optional[str]:
-    """Resolves fuzzy path strings (e.g. 'Downloads', 'C: download', '~/Documents') to valid directories."""
-    raw = (folder_path or "").strip().strip('"\'')
-    if not raw:
-        return None
-
-    candidates = [
-        os.path.abspath(os.path.expanduser(raw)),
-        os.path.abspath(os.path.expanduser(raw.replace(":", ":/").replace("//", "/"))),
-    ]
-
-    lower_raw = raw.lower().replace("\\", "/").strip()
-    user_home = os.path.expanduser("~")
-
-    if "download" in lower_raw:
-        candidates.extend([
-            os.path.join(user_home, "Downloads"),
-            "C:\\Downloads",
-            "D:\\Downloads",
-        ])
-    elif "document" in lower_raw:
-        candidates.extend([
-            os.path.join(user_home, "Documents"),
-            "C:\\Documents",
-        ])
-    elif "desktop" in lower_raw:
-        candidates.extend([
-            os.path.join(user_home, "Desktop"),
-        ])
-    elif "project" in lower_raw or "anara" in lower_raw:
-        candidates.extend([
-            os.path.join(user_home, "Documents", "Project Anara"),
-            os.path.abspath("."),
-        ])
-
-    for cand in candidates:
-        if cand and os.path.exists(cand) and os.path.isdir(cand):
-            return os.path.normpath(cand)
-    return None
 
 
 async def _tool_switch_workspace(folder_path: str) -> Dict[str, Any]:
