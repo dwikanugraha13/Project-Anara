@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import tempfile
+import time
 from typing import Any, Dict, Optional, List
 
 from .events import _emit_agent_event
@@ -49,11 +50,13 @@ async def _tool_execute_cli_command(command: str, workdir: Optional[str] = None)
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "execute_cli_command",
-        "action_title": "Terminal Execution",
-        "detail": f"CMD: {cmd[:50]}",
+        "action_title": f"Run {cmd}",
+        "detail": cmd,
+        "command": cmd,
         "icon": "terminal"
     })
 
+    t0 = time.time()
     try:
         from core.sandbox import command_sandbox
         sandbox_res = await command_sandbox.execute(
@@ -62,6 +65,10 @@ async def _tool_execute_cli_command(command: str, workdir: Optional[str] = None)
             timeout_seconds=120.0
         )
 
+        elapsed = time.time() - t0
+        duration_ms = int(elapsed * 1000)
+        duration_text = f"{duration_ms}ms" if elapsed < 1.0 else f"{elapsed:.1f}s"
+
         combined = sandbox_res.get("output", "").strip()
         return_code = sandbox_res.get("exit_code", 0)
         is_ok = sandbox_res.get("status") == "success"
@@ -69,9 +76,14 @@ async def _tool_execute_cli_command(command: str, workdir: Optional[str] = None)
         status_label = "Success" if is_ok else f"Failed (exit code {return_code})"
         _emit_agent_event("agent_action_complete", {
             "tool_name": "execute_cli_command",
-            "action_title": f"Terminal: {status_label}",
-            "summary": f"Finished (exit code {return_code}).",
-            "raw_result": combined[:800],
+            "action_title": f"Run {cmd}",
+            "detail": cmd,
+            "command": cmd,
+            "exit_code": return_code,
+            "duration_ms": duration_ms,
+            "duration_text": duration_text,
+            "summary": f"exit {return_code}",
+            "raw_result": combined[:2500],
             "icon": "terminal"
         })
 

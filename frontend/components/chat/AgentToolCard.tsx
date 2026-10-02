@@ -133,8 +133,52 @@ export function ThinkingCard({
   );
 }
 
-// ── 2. EXPLORATION GROUP CARD ───────────────────────────────────────────────
-export function ExplorationGroupCard({
+// ── 2. TERMINAL TRANSCRIPT (Anara Standard) ──────────────────────────────────
+export function TerminalTranscript({
+  command,
+  exitCode,
+  rawResult,
+}: {
+  command?: string;
+  exitCode?: number;
+  rawResult?: string;
+}) {
+  if (!command && exitCode === undefined && !rawResult) return null;
+
+  return (
+    <div className="flex flex-col gap-1.5 w-full my-1 font-mono text-[11px] select-text">
+      {(command || exitCode !== undefined) && (
+        <div className="flex min-w-0 items-center justify-between gap-2 rounded border border-white/[0.08] bg-black/60 px-2.5 py-1.5 leading-relaxed">
+          {command && (
+            <code className="min-w-0 flex-1 whitespace-pre-wrap break-all text-slate-300">
+              <span className="text-cyan-400 select-none font-bold">$ </span>
+              {command}
+            </code>
+          )}
+          {exitCode !== undefined && (
+            <span
+              className={`shrink-0 rounded px-1.5 py-px text-[10px] font-bold tabular-nums border ${
+                exitCode === 0
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                  : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+              }`}
+            >
+              exit {exitCode}
+            </span>
+          )}
+        </div>
+      )}
+      {rawResult && (
+        <pre className="p-2.5 rounded border border-white/[0.06] bg-black/50 text-slate-300 text-[10.5px] leading-relaxed max-h-[220px] overflow-auto custom-scrollbar whitespace-pre-wrap break-all shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
+          {rawResult}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+// ── 3. TOOL RUN GROUP CARD (Hermes Parity: "Explored X files, ran Y commands") ──
+export function ToolRunGroupCard({
   items,
   isRunning = false,
   onOpenFile,
@@ -144,59 +188,75 @@ export function ExplorationGroupCard({
   onOpenFile?: (filePath: string, fileName?: string) => void;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [expandedRowIdx, setExpandedRowIdx] = useState<number | null>(null);
+  const [dismissedIndices, setDismissedIndices] = useState<Set<number>>(new Set());
 
   if (!items || items.length === 0) return null;
+
+  const activeItems = useMemo(
+    () => items.filter((_, idx) => !dismissedIndices.has(idx)),
+    [items, dismissedIndices]
+  );
+
+  if (activeItems.length === 0) return null;
 
   const summary = useMemo(() => {
     let readCount = 0;
     let searchCount = 0;
+    let commandCount = 0;
     const fileSet = new Set<string>();
 
-    for (const item of items) {
+    for (const item of activeItems) {
       const tool = (item.toolName || "").toLowerCase();
+      const isShell = SHELL_TOOLS.has(tool) || tool.includes("cli") || tool.includes("terminal") || tool.includes("exec");
       const isRead = READ_TOOLS.has(tool) || tool.includes("read") || tool.includes("scan");
       const isSearch = SEARCH_TOOLS.has(tool) || tool.includes("grep") || tool.includes("glob") || tool.includes("search") || tool.includes("list");
 
-      if (isRead) readCount++;
-      if (isSearch) searchCount++;
+      if (isShell) {
+        commandCount++;
+      } else if (isRead) {
+        readCount++;
+      } else if (isSearch) {
+        searchCount++;
+      }
 
-      const target = item.filePath || item.detail || item.actionTitle || "";
-      const cleaned = target.replace(/^(read|scan|grep|glob|list|search)\s+/i, "").trim();
-      if (cleaned) {
-        fileSet.add(cleaned);
+      if (!isShell) {
+        const target = item.filePath || item.detail || item.actionTitle || "";
+        const cleaned = target.replace(/^(read|scan|grep|glob|list|search)\s+/i, "").trim();
+        if (cleaned) {
+          fileSet.add(cleaned);
+        }
       }
     }
 
     const uniqueFiles = fileSet.size;
-    let label = "";
+    const clauses: string[] = [];
 
     if (uniqueFiles > 0) {
-      const ops = [
-        readCount > 0 ? `${readCount} read${readCount > 1 ? "s" : ""}` : "",
-        searchCount > 0 ? `${searchCount} search${searchCount > 1 ? "es" : ""}` : "",
-      ].filter(Boolean).join(", ");
-      label = `${uniqueFiles} file${uniqueFiles > 1 ? "s" : ""}${ops ? ` (${ops})` : ""}`;
-    } else if (readCount > 0 && searchCount > 0) {
-      label = `${readCount} reads, ${searchCount} searches`;
-    } else if (readCount > 0) {
-      label = `${readCount} read${readCount > 1 ? "s" : ""}`;
-    } else if (searchCount > 0) {
-      label = `${searchCount} search${searchCount > 1 ? "es" : ""}`;
-    } else {
-      label = `${items.length} operation${items.length > 1 ? "s" : ""}`;
+      clauses.push(`${isRunning ? "Exploring" : "Explored"} ${uniqueFiles} file${uniqueFiles > 1 ? "s" : ""}`);
+    } else if (readCount > 0 || searchCount > 0) {
+      const totalOps = readCount + searchCount;
+      clauses.push(`${isRunning ? "Exploring" : "Explored"} ${totalOps} file${totalOps > 1 ? "s" : ""}`);
     }
 
-    return { label, uniqueFiles };
-  }, [items]);
+    if (commandCount > 0) {
+      clauses.push(`${isRunning ? "running" : "ran"} ${commandCount} command${commandCount > 1 ? "s" : ""}`);
+    }
 
-  const prefix = isRunning ? "Exploring" : "Explored";
+    if (clauses.length === 0) {
+      clauses.push(`${isRunning ? "Running" : "Executed"} ${activeItems.length} tool${activeItems.length > 1 ? "s" : ""}`);
+    }
+
+    return clauses.join(", ");
+  }, [activeItems, isRunning]);
 
   return (
     <div className="my-1.5 font-mono text-xs select-none">
+      {/* Group Header Button */}
       <button
         type="button"
         onClick={() => setIsExpanded((v) => !v)}
-        className="flex items-center gap-2 text-left text-slate-300 hover:text-white transition-colors cursor-pointer py-1 group"
+        className="flex items-center gap-2 text-left text-slate-400 hover:text-slate-200 transition-colors cursor-pointer py-1 group"
       >
         <span className="relative flex h-2 w-2 shrink-0">
           {isRunning ? (
@@ -205,13 +265,14 @@ export function ExplorationGroupCard({
               <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
             </>
           ) : (
-            <span className="inline-flex rounded-full h-2 w-2 bg-slate-500 group-hover:bg-cyan-400 transition-colors" />
+            <span className="inline-flex rounded-full h-1.5 w-1.5 bg-slate-500 group-hover:bg-cyan-400 transition-colors" />
           )}
         </span>
-        <span className="font-semibold text-slate-200 tracking-tight">{prefix}</span>
-        <span className="text-slate-400">{summary.label}</span>
+        <span className={`text-[12px] font-medium tracking-tight ${isRunning ? "text-cyan-300 animate-pulse" : "text-slate-400 group-hover:text-slate-200"}`}>
+          {summary}
+        </span>
         <svg
-          className={`w-3 h-3 text-slate-500 group-hover:text-slate-300 transition-transform duration-150 shrink-0 ${
+          className={`w-3.5 h-3.5 text-slate-500 group-hover:text-slate-300 transition-transform duration-150 shrink-0 ml-0.5 ${
             isExpanded ? "rotate-90" : ""
           }`}
           fill="none"
@@ -222,48 +283,124 @@ export function ExplorationGroupCard({
         </svg>
       </button>
 
-      {/* Smooth Nested Expansion */}
+      {/* Expanded List of Tool Rows */}
       <div
         className={`grid transition-[grid-template-rows] duration-200 ease-out ${
           isExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
         }`}
       >
         <div className="overflow-hidden">
-          <div className="pl-4 py-1 space-y-1 border-l border-white/[0.08] my-1 font-mono text-[11px]">
-            {items.map((sub, sIdx) => {
+          <div className="pl-3.5 py-1 space-y-1.5 border-l border-white/[0.08] my-1 font-mono text-[11px]">
+            {activeItems.map((sub, sIdx) => {
               const tool = (sub.toolName || "").toLowerCase();
+              const isShell = SHELL_TOOLS.has(tool) || tool.includes("cli") || tool.includes("terminal") || tool.includes("exec");
               const isRead = READ_TOOLS.has(tool) || tool.includes("read") || tool.includes("scan");
               const isGrep = tool.includes("grep");
               const isGlob = tool.includes("glob");
-              const opBadge = isRead ? "READ" : isGrep ? "GREP" : isGlob ? "GLOB" : "ACTION";
-              const rawTarget = sub.filePath || sub.detail || sub.actionTitle || "";
-              const cleanTarget = rawTarget.replace(/^(read|scan|grep|glob|list)\s+/i, "").trim();
 
+              const rawTarget = sub.command || sub.filePath || sub.detail || sub.actionTitle || "";
+              const cmdText = sub.command || sub.detail || sub.actionTitle || "command";
+              const exitCode = sub.exitCode;
+              const duration = sub.durationText;
+
+              const isRowExpanded = expandedRowIdx === sIdx;
+
+              if (isShell) {
+                return (
+                  <div key={sIdx} className="flex flex-col group/row">
+                    <div className="flex items-center gap-2 py-0.5 px-1.5 rounded hover:bg-white/[0.04] transition-colors cursor-pointer">
+                      {/* Terminal Icon */}
+                      <svg className="w-3.5 h-3.5 text-slate-500 group-hover/row:text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      
+                      <button
+                        type="button"
+                        onClick={() => setExpandedRowIdx(isRowExpanded ? null : sIdx)}
+                        className="flex-1 min-w-0 text-left truncate text-slate-300 group-hover/row:text-white font-mono text-[11px]"
+                      >
+                        {cmdText}
+                      </button>
+
+                      {/* Duration Tag */}
+                      {duration && (
+                        <span className="text-[10px] text-slate-500 font-mono tabular-nums shrink-0 ml-auto">
+                          {duration}
+                        </span>
+                      )}
+
+                      {/* Expand Chevron */}
+                      <button
+                        type="button"
+                        onClick={() => setExpandedRowIdx(isRowExpanded ? null : sIdx)}
+                        className="text-slate-500 hover:text-slate-300 p-0.5 shrink-0"
+                      >
+                        <svg
+                          className={`w-3 h-3 transition-transform duration-150 ${isRowExpanded ? "rotate-90" : ""}`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+
+                      {/* Dismiss X button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDismissedIndices((prev) => new Set([...prev, sIdx]));
+                        }}
+                        className="text-slate-600 hover:text-slate-300 p-0.5 rounded opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0"
+                        title="Dismiss"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {/* Inline Terminal Transcript */}
+                    {isRowExpanded && (
+                      <div className="pl-5 pr-1 py-1">
+                        <TerminalTranscript
+                          command={cmdText}
+                          exitCode={exitCode ?? 0}
+                          rawResult={sub.rawResult || sub.summary}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              // File exploration item
+              const cleanTarget = rawTarget.replace(/^(read|scan|grep|glob|list)\s+/i, "").trim();
               const lastSlash = Math.max(cleanTarget.lastIndexOf("/"), cleanTarget.lastIndexOf("\\"));
               const dir = lastSlash !== -1 ? cleanTarget.slice(0, lastSlash + 1) : "";
               const file = lastSlash !== -1 ? cleanTarget.slice(lastSlash + 1) : cleanTarget;
+              const opBadge = isRead ? "READ" : isGrep ? "GREP" : isGlob ? "GLOB" : "EXPLORE";
 
               return (
                 <div
                   key={sIdx}
                   onClick={() => onOpenFile && cleanTarget && onOpenFile(cleanTarget, file)}
-                  className={`flex items-center gap-2 py-0.5 px-1.5 rounded transition-colors ${
-                    onOpenFile ? "hover:bg-white/[0.04] cursor-pointer group/row" : "text-slate-300"
+                  className={`flex items-center gap-2 py-0.5 px-1.5 rounded transition-colors group/row ${
+                    onOpenFile ? "hover:bg-white/[0.04] cursor-pointer" : "text-slate-300"
                   }`}
                 >
                   <span
-                    className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold shrink-0 tracking-wider ${
+                    className={`px-1.5 py-px rounded text-[9.5px] font-bold shrink-0 tracking-wider border ${
                       isRead
-                        ? "bg-cyan-500/10 text-cyan-300 border border-cyan-400/20"
+                        ? "bg-cyan-500/10 text-cyan-300 border-cyan-400/20"
                         : isGrep
-                        ? "bg-purple-500/10 text-purple-300 border border-purple-400/20"
-                        : "bg-amber-500/10 text-amber-300 border border-amber-400/20"
+                        ? "bg-purple-500/10 text-purple-300 border-purple-400/20"
+                        : "bg-amber-500/10 text-amber-300 border-amber-400/20"
                     }`}
                   >
                     {opBadge}
                   </span>
                   <div className="truncate flex items-baseline gap-0.5 min-w-0">
-                    {dir && <span className="text-slate-500 truncate">{dir}</span>}
+                    {dir && <span className="text-slate-500 truncate text-[10px]">{dir}</span>}
                     <span className="text-slate-200 font-medium group-hover/row:text-cyan-300 transition-colors truncate">
                       {file}
                     </span>
@@ -273,6 +410,17 @@ export function ExplorationGroupCard({
                       ↗
                     </span>
                   )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDismissedIndices((prev) => new Set([...prev, sIdx]));
+                    }}
+                    className="text-slate-600 hover:text-slate-300 p-0.5 rounded opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0 ml-1"
+                    title="Dismiss"
+                  >
+                    ✕
+                  </button>
                 </div>
               );
             })}
@@ -282,6 +430,9 @@ export function ExplorationGroupCard({
     </div>
   );
 }
+
+// Backward-compatibility export
+export const ExplorationGroupCard = ToolRunGroupCard;
 
 // ── 3. TODO CHECKLIST CARD ──────────────────────────────────────────────────
 export function TodoChecklistCard({
@@ -653,41 +804,50 @@ export function AgentActionCard({
     );
   }
 
-  // ── Render Shell Execution Card ──
+  // ── Render Shell Execution Card (Hermes Parity) ──
   if (isShell) {
-    const cmd = action.detail || action.actionTitle || "command";
+    const cmd = action.command || action.detail || action.actionTitle || "command";
+    const duration = action.durationText;
 
     return (
       <div className="my-1.5 font-mono text-xs select-none">
-        <button
-          onClick={() => setIsExpanded((v) => !v)}
-          className="flex items-center gap-2 text-left text-slate-300 hover:text-white transition-colors cursor-pointer py-1 group"
-        >
-          <span className="relative flex h-2 w-2 shrink-0">
-            {isStart ? (
-              <>
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
-              </>
-            ) : (
-              <span className="inline-flex rounded-full h-1.5 w-1.5 bg-slate-500 group-hover:bg-cyan-400 transition-colors" />
-            )}
-          </span>
-          <span className="text-emerald-400 font-bold text-[11px] tracking-tight">Run</span>
-          <span className="text-slate-300 group-hover:text-white truncate font-mono text-[11px] font-medium transition-colors">
-            {cmd}
-          </span>
-          <svg
-            className={`w-3 h-3 text-slate-500 group-hover:text-slate-300 transition-transform duration-150 shrink-0 ml-1 ${
-              isExpanded ? "rotate-90" : ""
-            }`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        <div className="flex items-center justify-between py-1 group/cmd">
+          <button
+            onClick={() => setIsExpanded((v) => !v)}
+            className="flex items-center gap-2 text-left text-slate-300 hover:text-white transition-colors cursor-pointer flex-1 min-w-0"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
+            <span className="relative flex h-2 w-2 shrink-0">
+              {isStart ? (
+                <>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
+                </>
+              ) : (
+                <span className="inline-flex rounded-full h-1.5 w-1.5 bg-slate-500 group-hover:bg-cyan-400 transition-colors" />
+              )}
+            </span>
+            <span className="text-emerald-400 font-bold text-[11px] tracking-tight">Run</span>
+            <span className="text-slate-300 group-hover:text-white truncate font-mono text-[11px] font-medium transition-colors">
+              {cmd}
+            </span>
+            <svg
+              className={`w-3 h-3 text-slate-500 group-hover:text-slate-300 transition-transform duration-150 shrink-0 ml-1 ${
+                isExpanded ? "rotate-90" : ""
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+
+          {duration && (
+            <span className="text-[10px] text-slate-500 font-mono tabular-nums shrink-0 ml-2">
+              {duration}
+            </span>
+          )}
+        </div>
 
         {action.summary || action.rawResult ? (
           <div
@@ -695,10 +855,12 @@ export function AgentActionCard({
               isExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
             }`}
           >
-            <div className="overflow-hidden">
-              <div className="mt-1.5 rounded-lg border border-white/[0.08] p-3 bg-black/50 font-mono text-[10.5px] text-slate-300 max-h-[220px] overflow-auto custom-scrollbar select-text whitespace-pre-wrap leading-relaxed shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
-                {action.rawResult || action.summary}
-              </div>
+            <div className="overflow-hidden mt-1">
+              <TerminalTranscript
+                command={cmd}
+                exitCode={action.exitCode ?? 0}
+                rawResult={action.rawResult || action.summary}
+              />
             </div>
           </div>
         ) : null}

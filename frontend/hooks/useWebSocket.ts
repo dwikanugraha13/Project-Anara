@@ -319,6 +319,10 @@ export function useWebSocket({
                       checkpointId: msg.checkpoint_id,
                       added: msg.added,
                       deleted: msg.deleted,
+                      exitCode: msg.exit_code,
+                      durationMs: msg.duration_ms,
+                      durationText: msg.duration_text,
+                      command: msg.command,
                     },
                   });
                 }

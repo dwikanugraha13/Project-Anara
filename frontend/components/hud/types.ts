@@ -77,6 +77,10 @@ export interface AgentActionData {
   checkpointId?: string;
   added?: number;
   deleted?: number;
+  exitCode?: number;
+  durationMs?: number;
+  durationText?: string;
+  command?: string;
 }
 
 export interface DocumentViewerData {

@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState, useMemo } from "react";
 import AgentMarkdown from "./AgentMarkdown";
-import AgentToolCard, { ExplorationGroupCard, ThinkingCard } from "./AgentToolCard";
+import AgentToolCard, { ToolRunGroupCard, ExplorationGroupCard, ThinkingCard } from "./AgentToolCard";
 import InteractiveQuestionCard from "./InteractiveQuestionCard";
 import type { TranscriptItem, AssistantStatus } from "../workbench/AnaraWorkbench";
 import type { ToolProgressPayload } from "@/hooks/useWebSocket";
@@ -143,21 +143,21 @@ export default function ChatTimeline({
   const renderBlocks = useMemo(() => {
     const blocks: Array<
       | { kind: "item"; item: TranscriptItem; idx: number }
-      | { kind: "exploration"; items: any[]; isRunning: boolean; key: string }
+      | { kind: "tool_run"; items: any[]; isRunning: boolean; key: string }
     > = [];
 
-    let currentExploration: any[] = [];
-    let explorationStartIdx = 0;
+    let currentRun: any[] = [];
+    let runStartIdx = 0;
 
-    const flushExploration = (running: boolean) => {
-      if (currentExploration.length > 0) {
+    const flushRun = (running: boolean) => {
+      if (currentRun.length > 0) {
         blocks.push({
-          kind: "exploration",
-          items: [...currentExploration],
+          kind: "tool_run",
+          items: [...currentRun],
           isRunning: running,
-          key: `explore-group-${explorationStartIdx}`,
+          key: `tool-run-${runStartIdx}`,
         });
-        currentExploration = [];
+        currentRun = [];
       }
     };
 
@@ -165,30 +165,29 @@ export default function ChatTimeline({
       const item = transcript[i];
       if (item.visualType === "agent_action" && item.agentActionData) {
         const tool = (item.agentActionData.toolName || "").toLowerCase();
-        const isExploration =
-          tool.includes("read") ||
-          tool.includes("scan") ||
-          tool.includes("grep") ||
-          tool.includes("glob") ||
-          tool.includes("list");
+        // Standalone card tools (file edits with diffs) render as dedicated cards
+        const isDiffCard =
+          (tool.includes("patch") || tool.includes("write") || tool.includes("edit")) &&
+          Boolean(item.agentActionData.rawResult || item.agentActionData.content || item.agentActionData.checkpointId);
 
-        if (isExploration) {
-          if (currentExploration.length === 0) {
-            explorationStartIdx = i;
-          }
-          currentExploration.push(item.agentActionData);
-          continue;
-        } else {
-          flushExploration(false);
+        if (isDiffCard) {
+          flushRun(false);
           blocks.push({ kind: "item", item, idx: i });
+        } else {
+          // Group consecutive activity runs (file reads, searches, terminal commands)
+          if (currentRun.length === 0) {
+            runStartIdx = i;
+          }
+          currentRun.push(item.agentActionData);
+          continue;
         }
       } else {
-        flushExploration(false);
+        flushRun(false);
         blocks.push({ kind: "item", item, idx: i });
       }
     }
 
-    flushExploration(status === "thinking");
+    flushRun(status === "thinking");
     return blocks;
   }, [transcript, status]);
 
@@ -259,10 +258,10 @@ export default function ChatTimeline({
             return (
               <>
                 {renderBlocks.map((block) => {
-                  if (block.kind === "exploration") {
+                  if (block.kind === "tool_run") {
                     return (
                       <div key={block.key} className="w-full my-1 px-1 animate-fade-in">
-                        <ExplorationGroupCard
+                        <ToolRunGroupCard
                           items={block.items}
                           isRunning={block.isRunning}
                           onOpenFile={onOpenFile}

@@ -235,6 +235,9 @@ export interface WebSocketMessage {
   checkpoint_id?: string;
   added?: number;
   deleted?: number;
+  exit_code?: number;
+  duration_ms?: number;
+  command?: string;
   icon?: string;
   emotion?: EmotionType;
   gesture?: GestureType;
