@@ -1,16 +1,12 @@
-import { cookies } from "next/headers";
+"use client";
+
 import HomePageClient from "./HomePageClient";
 
-export default async function Page() {
-  const cookieStore = await cookies();
-  const rawWidth = cookieStore.get("anara_sidebar_width")?.value;
-  const parsedWidth = rawWidth ? parseInt(rawWidth, 10) : 260;
-  const initialSidebarWidth = !isNaN(parsedWidth) && parsedWidth >= 200 && parsedWidth <= 600 ? parsedWidth : 260;
-
+export default function Page() {
   return (
     <HomePageClient
       initialSidebarTab="history"
-      initialSidebarWidth={initialSidebarWidth}
+      initialSidebarWidth={260}
     />
   );
 }

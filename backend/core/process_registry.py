@@ -5,6 +5,7 @@ with bounded log tailing, PID lifecycle supervision, session isolation, and clea
 termination with PID-reuse protection (Anara Enterprise Architecture).
 """
 
+import json
 import logging
 import os
 import re
@@ -17,7 +18,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from constants import get_anara_cache_dir
+from constants import get_anara_cache_dir, get_anara_run_dir
 from core.lifecycle import is_pid_alive, record_process_start, record_process_exit, get_process_start_time
 
 logger = logging.getLogger("anara.core.process_registry")
@@ -63,6 +64,37 @@ class ProcessRegistry:
         self._processes: Dict[str, Dict[str, Any]] = {}
         self._log_dir = get_anara_cache_dir("process_logs")
         self._log_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.rehydrate_daemons()
+        except Exception as e_reh:
+            logger.debug(f"[ProcessRegistry] Daemon rehydration notice: {e_reh}")
+
+    def rehydrate_daemons(self) -> int:
+        """
+        Scans ANARA_HOME/run for *.lifecycle.json sentinel files on startup.
+        Re-attaches live OS processes into self._processes to prevent orphaned daemons and port collisions.
+        """
+        run_dir = get_anara_run_dir()
+        loaded = 0
+        with self._lock:
+            for meta_file in run_dir.glob("daemon_*.lifecycle.json"):
+                proc_id = meta_file.stem.replace("daemon_", "").replace(".lifecycle", "")
+                try:
+                    meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                    pid = meta.get("pid")
+                    start_time = meta.get("start_time")
+                    if is_pid_alive(pid):
+                        curr_start = get_process_start_time(pid)
+                        if start_time is None or curr_start is None or start_time == curr_start:
+                            self._processes[proc_id] = meta
+                            loaded += 1
+                    else:
+                        record_process_exit(f"daemon_{proc_id}")
+                except Exception:
+                    continue
+        if loaded > 0:
+            logger.info(f"[ProcessRegistry] Rehydrated {loaded} active background daemon(s) from lifecycle sentinel files.")
+        return loaded
 
     def _generate_id(self, command: str) -> str:
         words = re.sub(r"[^\w\s-]", "", command.lower()).split()
@@ -248,15 +280,15 @@ class ProcessRegistry:
                             os.kill(pid, signal.SIGKILL)
                 except (ProcessLookupError, OSError):
                     pass
-
+        except Exception as e:
+            logger.warning(f"[ProcessRegistry] Error executing termination on '{proc_id}': {e}")
+        finally:
             with self._lock:
                 self._processes.pop(proc_id, None)
             record_process_exit(f"daemon_{proc_id}")
-            logger.info(f"[ProcessRegistry] Stopped daemon #{proc_id} (PID {pid})")
-            return {"status": "success", "process_id": proc_id, "message": f"Process '{proc_id}' (PID {pid}) terminated successfully."}
-        except Exception as e:
-            logger.warning(f"[ProcessRegistry] Error stopping '{proc_id}': {e}")
-            return {"status": "error", "message": f"Failed to stop process: {e}"}
+
+        logger.info(f"[ProcessRegistry] Stopped daemon #{proc_id} (PID {pid})")
+        return {"status": "success", "process_id": proc_id, "message": f"Process '{proc_id}' (PID {pid}) terminated successfully."}
 
 
 # Global process registry singleton

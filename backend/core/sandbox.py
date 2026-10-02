@@ -49,7 +49,7 @@ HOST_TAKEOVER_PATTERNS = [
     r"curl\s+.*\|\s*(?:iex|bash|sh|powershell)",
     r"wget\s+.*\|\s*(?:iex|bash|sh|powershell)",
     # Destructive interpreter commands
-    r"\bpython\s+-c\s+['\"].*(?:shutil\.rmtree|os\.remove).*(?:/|[a-z]:\\).*['\"]",
+    r"\bpython\s+-c\s+['\"].*(?:shutil\.rmtree|os\.remove|os\.unlink).*['\"]",
 ]
 
 
@@ -99,7 +99,7 @@ def check_command_safety(command: str) -> Tuple[bool, Optional[str]]:
     normalized = re.sub(r'["\']([a-zA-Z0-9_.\-\/\\]+)["\']', r'\1', cleaned).lower()
 
     for pattern in HOST_TAKEOVER_PATTERNS:
-        if re.search(pattern, normalized) or re.search(pattern, cmd_raw.lower()):
+        if re.search(pattern, normalized):
             logger.warning(f"[SandboxSecurity] Blocked dangerous command pattern: {pattern} in '{command}'")
             return False, f"SANDBOX SECURITY ERROR: Command '{command}' triggered high-risk host takeover restrictions."
 
@@ -180,10 +180,19 @@ class CommandSandbox:
         # 5. Process execution with real-time PID tracking and instant reaper
         from core.channel_adapter import get_active_channel_context
         from core.session_manager import session_state_manager
+        from core.agent import anara_agent
 
         act_ctx = get_active_channel_context()
-        channel = act_ctx.get("channel", "cli") if act_ctx else "cli"
-        channel_id = str(act_ctx.get("channel_id", "default") if act_ctx else "default")
+        active_sid = anara_agent.get_active_session_id()
+        if act_ctx:
+            channel = act_ctx.get("channel", "cli")
+            channel_id = str(act_ctx.get("channel_id", "default"))
+        elif active_sid:
+            channel = "web_studio"
+            channel_id = str(active_sid)
+        else:
+            channel = "cli"
+            channel_id = "default"
 
         proc: Optional[subprocess.Popen] = None
         try:
@@ -203,6 +212,8 @@ class CommandSandbox:
             proc = subprocess.Popen(exec_args, **popen_kwargs)
             if proc.pid:
                 session_state_manager.register_process_pid(channel, channel_id, proc.pid)
+                if channel == "web_studio":
+                    session_state_manager.register_process_pid("web", channel_id, proc.pid)
 
             stdout, stderr = await asyncio.wait_for(
                 asyncio.to_thread(proc.communicate),

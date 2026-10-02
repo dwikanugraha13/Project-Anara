@@ -10,15 +10,18 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Tuple
+from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Set, Tuple
 import httpx
 from config import cfg_get
 
 from .base_profile import BaseProviderProfile
 from .accounts import get_provider_key
+from .constants import NATIVE_OPEN_ENDPOINTS, ROUTER_CODENAME_MAP
 from .discovery import refresh_codex_oauth_token_if_needed
 
 logger = logging.getLogger(__name__)
+
+_BG_TASKS: Set[asyncio.Task] = set()
 
 
 class GeminiProviderProfile(BaseProviderProfile):
@@ -61,7 +64,7 @@ class GeminiProviderProfile(BaseProviderProfile):
         cfg = types.GenerateContentConfig(**cfg_kwargs)
         active_key = key_manager.get_active_key()
         if not active_key:
-            return
+            raise ValueError("Google Gemini API Key not configured. Add an account in the Providers tab.")
 
         client = genai.Client(api_key=active_key)
         try:
@@ -117,11 +120,11 @@ class GeminiProviderProfile(BaseProviderProfile):
             ))
             gemini_tools = get_agent_tools(read_only=read_only, enabled_set=active_tool_names)
 
-            async def _gemini_native_turn_caller(contents: List[Any]) -> Any:
+            async def _gemini_native_turn_caller(contents: List[Any], allow_tools: bool = True) -> Any:
                 return await _make_gemini_native_turn(
                     model_name=active_target_model,
                     contents=contents,
-                    tools=gemini_tools,
+                    tools=gemini_tools if allow_tools else [],
                     system_instruction=system_instruction,
                     temperature=temperature,
                     max_tokens=max_tokens,
@@ -247,7 +250,9 @@ def _parse_openai_compatible_native_payload(
                             if asyncio.iscoroutine(r):
                                 try:
                                     loop = asyncio.get_running_loop()
-                                    loop.create_task(r)
+                                    t = loop.create_task(r)
+                                    _BG_TASKS.add(t)
+                                    t.add_done_callback(_BG_TASKS.discard)
                                 except RuntimeError:
                                     pass
                     for tc in delta.get("tool_calls") or []:
@@ -268,7 +273,11 @@ def _parse_openai_compatible_native_payload(
                             new_name = fn_info["name"]
                             if not curr_name:
                                 tool_calls_map[t_idx]["name"] = new_name
-                            elif not curr_name.endswith(new_name):
+                            elif new_name == curr_name:
+                                pass
+                            elif new_name.startswith(curr_name):
+                                tool_calls_map[t_idx]["name"] = new_name
+                            else:
                                 tool_calls_map[t_idx]["name"] += new_name
                         if fn_info.get("arguments"):
                             tool_calls_map[t_idx]["arguments"] += fn_info["arguments"]
@@ -329,7 +338,9 @@ def _parse_openai_compatible_native_payload(
             if asyncio.iscoroutine(r):
                 try:
                     loop = asyncio.get_running_loop()
-                    loop.create_task(r)
+                    t = loop.create_task(r)
+                    _BG_TASKS.add(t)
+                    t.add_done_callback(_BG_TASKS.discard)
                 except RuntimeError:
                     pass
 
@@ -381,7 +392,7 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
             if enabled:
                 active_key = enabled[0]
         if not active_key:
-            return
+            raise ValueError("OpenAI / Codex API Key not configured. Add an account in the Providers tab.")
 
         target_model = model_id.replace("codex/", "").replace("openai/", "")
         matched_acc = next((a for a in accounts if a.get("api_key") == active_key), None)
@@ -537,7 +548,7 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
                 openai_tools = get_native_tools_openai(read_only=read_only, enabled_set=active_tool_names)
                 active_key = standard_keys[0]
 
-                async def _openai_native_turn_caller(history: List[Dict[str, Any]]) -> NativeTurnResult:
+                async def _openai_native_turn_caller(history: List[Dict[str, Any]], allow_tools: bool = True) -> NativeTurnResult:
                     headers = {
                         "Authorization": f"Bearer {active_key}",
                         "Content-Type": "application/json",
@@ -549,7 +560,7 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
                     is_reasoning_model = bool(re.match(r'^o[1-9]', target_model))
                     if not is_reasoning_model:
                         payload["temperature"] = temperature
-                    if openai_tools:
+                    if openai_tools and allow_tools:
                         payload["tools"] = openai_tools
                     if max_tokens is not None and max_tokens > 0:
                         if is_reasoning_model:
@@ -1165,12 +1176,7 @@ class AnthropicProviderProfile(BaseProviderProfile):
 class OpenAICompatibleProviderProfile(BaseProviderProfile):
     name = "openai_compatible"
 
-    NATIVE_OPEN_ENDPOINTS = {
-        "openrouter": "https://openrouter.ai/api/v1",
-        "groq": "https://api.groq.com/openai/v1",
-        "deepseek": "https://api.deepseek.com",
-        "xai": "https://api.x.ai/v1",
-    }
+    NATIVE_OPEN_ENDPOINTS = NATIVE_OPEN_ENDPOINTS
 
     async def _try_native_agent_loop(
         self,
@@ -1205,13 +1211,13 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
         ))
         openai_tools = get_native_tools_openai(read_only=read_only, enabled_set=active_tool_names)
 
-        async def _openai_native_turn_caller(history: List[Dict[str, Any]]) -> NativeTurnResult:
+        async def _openai_native_turn_caller(history: List[Dict[str, Any]], allow_tools: bool = True) -> NativeTurnResult:
             payload: Dict[str, Any] = {
                 "model": target_model,
                 "messages": history,
                 "temperature": temperature,
             }
-            if openai_tools:
+            if openai_tools and allow_tools:
                 payload["tools"] = openai_tools
             if max_tokens is not None and max_tokens > 0:
                 payload["max_tokens"] = max_tokens
@@ -1263,7 +1269,7 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
             return True
         if clean in self.NATIVE_OPEN_ENDPOINTS or any(clean.startswith(f"{prov}-") for prov in ("deepseek", "groq", "grok")):
             return True
-        if clean.startswith("9router/") or clean.startswith("ag/"):
+        if clean.startswith("9router/") or clean.startswith("ag/") or any(clean.startswith(f"{k}/") for k in ROUTER_CODENAME_MAP):
             return True
         from memory import memory_engine
         try:
@@ -1311,8 +1317,11 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                     return f"{base_url}/chat/completions", headers, target_model
                 if prefix and (model_id.lower().startswith(f"{prefix}-") or model_id.lower() == prefix):
                     return f"{base_url}/chat/completions", headers, model_id
-                # Auto-route 9Router sub-prefixes (ag/, atr/, cf/, cl/) directly to 9router node
-                if prefix == "9router" and any(model_id.lower().startswith(sub) for sub in ("ag/", "atr/", "cf/", "cl/")):
+                # Auto-route 9Router sub-prefixes (ag/, cl/, kr/, cx/, etc.) directly to 9router node
+                if prefix == "9router" and (
+                    any(model_id.lower().startswith(f"{sub}/") for sub in ROUTER_CODENAME_MAP)
+                    or any(model_id.lower().startswith(sub) for sub in ("ag/", "atr/", "cf/", "cl/"))
+                ):
                     return f"{base_url}/chat/completions", headers, model_id
         except Exception:
             pass
@@ -1534,7 +1543,7 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
         for c_node in custom_nodes:
             c_prefix = c_node["prefix"]
             if model_id.startswith(f"{c_prefix}/") or (c_prefix == "9router" and model_id.startswith("ag/")):
-                target_model = model_id.replace(f"{c_prefix}/", "")
+                target_model = model_id[len(f"{c_prefix}/"):] if model_id.startswith(f"{c_prefix}/") else model_id
                 base_url = c_node["base_url"].rstrip("/")
                 api_key = c_node.get("api_key") or ""
 

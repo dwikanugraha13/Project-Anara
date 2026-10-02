@@ -58,10 +58,16 @@ export function useSpeechKeywordDetector({
       clearTimeout(restartTimerRef.current);
       restartTimerRef.current = null;
     }
-    try {
-      recognitionRef.current?.abort();
-    } catch {
-      // ignore
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.abort();
+      } catch {
+        // ignore
+      }
+      recognitionRef.current = null;
     }
   }, []);
 

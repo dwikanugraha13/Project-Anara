@@ -39,6 +39,8 @@ export function DockAudioWaveform({
     const barWidth = 3;
     const barGap = 4;
 
+    const shouldAnimate = status !== "idle" || isMicActive;
+
     const render = () => {
       ctx.clearRect(0, 0, width, height);
       phase += 0.12;
@@ -78,14 +80,18 @@ export function DockAudioWaveform({
         ctx.fill();
       }
 
-      rafRef.current = requestAnimationFrame(render);
+      if (shouldAnimate || intensityRef.current > 0.02) {
+        rafRef.current = requestAnimationFrame(render);
+      } else {
+        rafRef.current = null;
+      }
     };
 
-    rafRef.current = requestAnimationFrame(render);
+    render();
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [status]);
+  }, [status, isMicActive]);
 
   return (
     <div className="w-full flex items-center justify-between py-1 px-1">
@@ -98,7 +104,7 @@ export function DockAudioWaveform({
             ? "Anara is speaking..."
             : status === "thinking"
             ? "Anara is thinking..."
-            : isMuted
+            : isMicActive && isMuted
             ? "Microphone Muted"
             : isMicActive
             ? "Listening..."

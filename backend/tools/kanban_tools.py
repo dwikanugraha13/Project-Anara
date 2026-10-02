@@ -122,11 +122,13 @@ async def _tool_kanban_list_tasks(status: Optional[str] = None) -> Dict[str, Any
 async def _tool_kanban_update_task(
     task_id: int,
     status: str,
-    notes: Optional[str] = None
+    notes: Optional[str] = None,
+    expected_status: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Updates the status of a Kanban task card.
+    Updates the status of a Kanban task card with CAS (Compare-And-Swap) concurrency protection.
     status: 'todo', 'in_progress', 'review', 'blocked', 'done'
+    expected_status: optional current status gate to prevent lost updates across parallel agents.
     """
     clean_status = (status or "").strip().lower()
     valid_statuses = {"todo", "in_progress", "review", "blocked", "done"}
@@ -144,17 +146,31 @@ async def _tool_kanban_update_task(
     })
 
     try:
+        clean_expected = expected_status.strip().lower() if expected_status else None
         with memory_engine._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE kanban_tasks
-                SET status = ?, review_notes = COALESCE(?, review_notes), updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            """, (clean_status, notes, int(task_id)))
+            if clean_expected:
+                cursor.execute("""
+                    UPDATE kanban_tasks
+                    SET status = ?, review_notes = COALESCE(?, review_notes), updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND status = ?
+                """, (clean_status, notes, int(task_id), clean_expected))
+            else:
+                cursor.execute("""
+                    UPDATE kanban_tasks
+                    SET status = ?, review_notes = COALESCE(?, review_notes), updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (clean_status, notes, int(task_id)))
             conn.commit()
             updated = cursor.rowcount > 0
 
         if not updated:
+            if clean_expected:
+                return {
+                    "status": "error",
+                    "conflict": True,
+                    "message": f"CAS status conflict for Task #{task_id}: current status does not match expected '{clean_expected}'."
+                }
             return {"status": "error", "message": f"Task #{task_id} was not found in Kanban board."}
 
         _emit_agent_event("hud_project", {

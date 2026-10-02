@@ -267,12 +267,27 @@ class TasksProjectsMixin:
                 proj_id = cursor.lastrowid or 0
             conn.commit()
 
-            self._emit_mutation("project_saved", {
-                "id": proj_id,
-                "name": name.strip(),
-                "speaker_name": speaker_name.strip().title() if speaker_name else None,
-                "status": status.strip().lower()
-            })
+            idx_emb = getattr(self, "index_embedding", None)
+            if callable(idx_emb):
+                content_to_embed = f"Project: {name.strip()}. Tech stack: {tech_stack.strip()}. Goal: {goal.strip()}. Status: {status.strip()}."
+                try:
+                    idx_emb(
+                        source_type="project",
+                        source_id=name.strip(),
+                        content=content_to_embed,
+                        speaker_name=speaker_name.strip().title() if speaker_name else None
+                    )
+                except Exception as e_emb:
+                    logger.debug(f"[TasksProjects] Project embedding index note: {e_emb}")
+
+            emit_fn = getattr(self, "_emit_mutation", None)
+            if callable(emit_fn):
+                emit_fn("project_saved", {
+                    "id": proj_id,
+                    "name": name.strip(),
+                    "speaker_name": speaker_name.strip().title() if speaker_name else None,
+                    "status": status.strip().lower()
+                })
             return proj_id
 
     def save_project(
@@ -379,11 +394,29 @@ class TasksProjectsMixin:
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO playlists (name, speaker_name, last_index, updated_at)
-                VALUES (?, ?, 0, CURRENT_TIMESTAMP)
-            """, (clean_name, speaker_name))
-            pl_id = cursor.lastrowid
+            if speaker_name:
+                cursor.execute(
+                    "SELECT id FROM playlists WHERE name = ? AND speaker_name = ?",
+                    (clean_name, speaker_name)
+                )
+            else:
+                cursor.execute(
+                    "SELECT id FROM playlists WHERE name = ? AND (speaker_name IS NULL OR speaker_name = '')",
+                    (clean_name,)
+                )
+            existing_row = cursor.fetchone()
+            if existing_row:
+                pl_id = existing_row["id"]
+                cursor.execute(
+                    "UPDATE playlists SET last_index = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (pl_id,)
+                )
+            else:
+                cursor.execute("""
+                    INSERT INTO playlists (name, speaker_name, last_index, updated_at)
+                    VALUES (?, ?, 0, CURRENT_TIMESTAMP)
+                """, (clean_name, speaker_name))
+                pl_id = cursor.lastrowid
             cursor.execute(
                 "DELETE FROM playlist_tracks WHERE playlist_id NOT IN (SELECT id FROM playlists)"
             )

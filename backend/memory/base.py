@@ -3,6 +3,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import sqlite3
 import threading
 from typing import Optional, Dict, Any, List, Tuple, Callable
@@ -28,6 +29,14 @@ class BaseMemoryEngine:
         self._last_adapt_ts: Dict[int, float] = {}
         self._prompt_context_cache: Dict[Tuple[str, bool], Tuple[float, str]] = {}
         self._init_db()
+
+    @staticmethod
+    def normalize_memory_key(raw_key: str) -> str:
+        """Normalizes memory key to clean snake_case without trailing temporal noise (Anara Standard)."""
+        k = re.sub(r'[\s\-]+', '_', raw_key.lower().strip())
+        k = re.sub(r'[^a-z0-9_]', '', k)
+        k = re.sub(r'_(baru|current|latest|now|update|recent)$', '', k)
+        return k.strip('_')
 
     def register_mutation_listener(self, listener: Callable[[str, Dict[str, Any]], Any]):
         """Registers a callback for real-time memory/todo mutations (for live WebSocket sync)."""

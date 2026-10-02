@@ -1,6 +1,6 @@
 """
 Soul Loader for Project Anara.
-Dynamically reads soul.md (Anara multi-tools + OpenCode plan/build philosophy)
+Dynamically reads soul.md (Anara multi-tools + plan/build philosophy)
 with mtime-based hot-reloading and atomic writing (Anara Standard),
 ensuring Anara's core identity is always up to date without backend restart.
 """
@@ -91,15 +91,16 @@ def get_soul_prompt(mode: str = "chat") -> str:
 
 
 def get_soul_raw() -> str:
-    """Returns the raw unparsed soul.md content directly from disk."""
-    soul_path = _find_soul_file()
-    if soul_path and os.path.exists(soul_path):
-        try:
-            with open(soul_path, "r", encoding="utf-8") as f:
-                return f.read()
-        except Exception as e:
-            logger.warning(f"[Soul] Error reading raw soul.md: {e}")
-    return get_soul_prompt()
+    """Returns the raw unparsed soul.md content directly from disk (thread-safe)."""
+    with _SOUL_LOCK:
+        soul_path = _find_soul_file()
+        if soul_path and os.path.exists(soul_path):
+            try:
+                with open(soul_path, "r", encoding="utf-8") as f:
+                    return f.read()
+            except Exception as e:
+                logger.warning(f"[Soul] Error reading raw soul.md: {e}")
+        return get_soul_prompt()
 
 
 def _atomic_write_soul(target_path: str, content: str) -> bool:

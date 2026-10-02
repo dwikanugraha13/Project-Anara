@@ -1,31 +1,30 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import dynamic from "next/dynamic";
+import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from "react";
+import Link from "next/link";
 import { useWebSocket } from "@/hooks/useWebSocket";
-import type { TranscriptPayload } from "@/hooks/useWebSocket";
+import type { TranscriptPayload, ToolProgressPayload } from "@/hooks/useWebSocket";
 import type { TranscriptItem, AssistantStatus } from "@/components/workbench";
 import ChatTimeline from "@/components/chat/ChatTimeline";
 import BottomDock from "@/components/dock/BottomDock";
 import { AIModelInfo } from "@/components/dock/ModelSelectorDropdown";
 import { formatModelDisplayName } from "@/lib/modelFormat";
+import { anaraApi, apiRequest, getWebSocketUrl } from "@/lib/apiClient";
+import {
+  ReasoningEffortLevel,
+  saveReasoningEffortForModel,
+  getSavedReasoningEffortForModel,
+  resolveSiblingTierModelId,
+} from "@/lib/reasoningEffort";
 import type { AnaraBrainProps } from "@/components/brain/types";
 import type { AnaraCodeIDEProps, WorkbenchTerminalProps, IdeTabFile } from "@/components/ide";
 import WorkspaceTreeView from "@/components/sidebar/WorkspaceTreeView";
 import type { WorkspaceTreeData, GitStatusData, ChatSession } from "@/components/sidebar/types";
 
-const AnaraBrain = dynamic<AnaraBrainProps>(() => import("@/components/brain/AnaraBrain"), {
-  ssr: false,
-});
-const AnaraCodeIDE = dynamic<AnaraCodeIDEProps>(() => import("@/components/ide/AnaraCodeIDE"), {
-  ssr: false,
-});
-const WorkbenchTerminal = dynamic<WorkbenchTerminalProps>(() => import("@/components/ide/WorkbenchTerminal"), {
-  ssr: false,
-});
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || BACKEND_URL.replace(/^http/, "ws") + "/ws";
+const AnaraBrain = lazy(() => import("@/components/brain/AnaraBrain"));
+const AnaraCodeIDE = lazy(() => import("@/components/ide/AnaraCodeIDE"));
+const WorkbenchTerminal = lazy(() => import("@/components/ide/WorkbenchTerminal"));
+const ReviewGitPane = lazy(() => import("@/components/sidebar/ReviewGitPane"));
 
 export interface CodePageClientProps {
   initialSidebarWidth?: number;
@@ -41,13 +40,19 @@ export default function CodePageClient({
   initialTerminalOpen = true,
 }: CodePageClientProps) {
   // ── Session & Chat State ──
+  const [isMounted, setIsMounted] = useState(false);
+  const [footerDockHeight, setFooterDockHeight] = useState(120);
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
   const [sessionRefreshKey, setSessionRefreshKey] = useState(0);
   const [activeSpeaker, setActiveSpeaker] = useState<string>("Agnan");
   const [speakerRoster, setSpeakerRoster] = useState<string[]>([]);
   const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
   const [assistantStatus, setAssistantStatus] = useState<AssistantStatus>("idle");
-  const [liveToolProgress, setLiveToolProgress] = useState<any>(null);
+  const [liveToolProgress, setLiveToolProgress] = useState<ToolProgressPayload | null>(null);
   const [activeThinkingText, setActiveThinkingText] = useState<string | null>(null);
   const [inputMessage, setInputMessage] = useState("");
   const [agentMode, setAgentMode] = useState<"plan" | "build">("plan");
@@ -110,23 +115,22 @@ export default function CodePageClient({
   const isIdeHydratedRef = useRef(false);
 
   // ── Reasoning Effort State ──
-  const [reasoningEffort, setReasoningEffort] = useState<"off" | "low" | "medium" | "high">("medium");
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffortLevel>("medium");
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("anara_reasoning_effort");
-      if (saved && ["off", "low", "medium", "high"].includes(saved)) {
-        setReasoningEffort(saved as any);
-      }
+      const active = localStorage.getItem("anara_code_model") || activeModelId || "";
+      const saved = getSavedReasoningEffortForModel(active);
+      setReasoningEffort(saved);
     } catch {}
-  }, []);
+  }, [activeModelId]);
 
-  const handleSelectReasoningEffort = useCallback((lvl: "off" | "low" | "medium" | "high") => {
+  const handleSelectReasoningEffort = useCallback((lvl: ReasoningEffortLevel) => {
     setReasoningEffort(lvl);
     try {
-      localStorage.setItem("anara_reasoning_effort", lvl);
+      saveReasoningEffortForModel(activeModelId, lvl);
     } catch {}
-  }, []);
+  }, [activeModelId]);
 
   // ── Load saved pane preferences from localStorage & release transition freeze ──
   useEffect(() => {
@@ -175,7 +179,16 @@ export default function CodePageClient({
       if (savedFile) {
         const parsed = JSON.parse(savedFile);
         if (parsed && typeof parsed === "object" && parsed.isOpen) {
-          setActiveIdeFile(parsed);
+          setActiveIdeFile({ ...parsed, content: parsed.content || "" });
+          if (parsed.filePath) {
+            anaraApi.workspace.getFileContent(parsed.filePath)
+              .then((res) => {
+                if (res && res.status === "success" && res.content !== undefined) {
+                  setActiveIdeFile((cur) => (cur.filePath === parsed.filePath ? { ...cur, content: res.content, originalContent: res.content } : cur));
+                }
+              })
+              .catch(() => {});
+          }
         }
       }
 
@@ -193,20 +206,42 @@ export default function CodePageClient({
     isIdeHydratedRef.current = true;
   }, []);
 
-  // Persist open tabs and active file
+  // Persist open tabs and active file (metadata only to prevent quota exhaustion and code leaks)
   useEffect(() => {
     if (!isIdeHydratedRef.current) return;
     try {
-      localStorage.setItem("anara_code_ide_active_file", JSON.stringify(activeIdeFile));
+      const meta = {
+        isOpen: activeIdeFile.isOpen,
+        fileName: activeIdeFile.fileName,
+        filePath: activeIdeFile.filePath,
+        fileExt: activeIdeFile.fileExt,
+        fileSizeKb: activeIdeFile.fileSizeKb,
+      };
+      localStorage.setItem("anara_code_ide_active_file", JSON.stringify(meta));
     } catch {}
   }, [activeIdeFile]);
 
   useEffect(() => {
     if (!isIdeHydratedRef.current) return;
     try {
-      localStorage.setItem("anara_code_ide_tabs", JSON.stringify(ideTabs));
+      const tabsMeta = ideTabs.map((t) => ({
+        fileName: t.fileName,
+        filePath: t.filePath,
+        fileExt: t.fileExt,
+        fileSizeKb: t.fileSizeKb,
+      }));
+      localStorage.setItem("anara_code_ide_tabs", JSON.stringify(tabsMeta));
     } catch {}
   }, [ideTabs]);
+
+  const workspaceFilesList = useMemo(() => {
+    if (!workspaceTree || !Array.isArray(workspaceTree.files)) return [];
+    return workspaceTree.files.map((f: any) => ({
+      path: typeof f === "string" ? f : f.path || f.name || "",
+      name: (typeof f === "string" ? f : f.name || f.path || "").split("/").pop() || "",
+      isDir: typeof f === "object" && Boolean(f.is_dir),
+    }));
+  }, [workspaceTree]);
 
   // ── Check URL search params for session_id on initial mount ──
   useEffect(() => {
@@ -235,12 +270,10 @@ export default function CodePageClient({
   // ── Fetch AI Models ──
   const fetchModels = useCallback(async (refresh: boolean = false) => {
     try {
-      const url = refresh ? `${BACKEND_URL}/api/models?refresh=true` : `${BACKEND_URL}/api/models`;
-      const res = await fetch(url);
-      if (!res.ok) return;
-      const data = await res.json();
-      const all: any[] = data.models || [];
-      const configured = all.filter((m: any) => m.is_configured);
+      const endpoint = refresh ? "/api/models?refresh=true" : "/api/models";
+      const data = await apiRequest<{ models?: AIModelInfo[]; active_model_id?: string }>(endpoint);
+      const all = data.models || [];
+      const configured = all.filter((m) => m.is_configured);
       setModels(configured);
       if (data.active_model_id) {
         setActiveModelId(data.active_model_id);
@@ -255,27 +288,25 @@ export default function CodePageClient({
   }, [fetchModels]);
 
   const handleSelectModel = useCallback(async (modelId: string) => {
-    setActiveModelId(modelId);
+    const saved = getSavedReasoningEffortForModel(modelId);
+    setReasoningEffort(saved);
+    const resolvedId = resolveSiblingTierModelId(modelId, saved as any, models);
+    const targetModelId = resolvedId || modelId;
+    setActiveModelId(targetModelId);
     try {
-      await fetch(`${BACKEND_URL}/api/models/active`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model_id: modelId }),
-      });
+      localStorage.setItem("anara_code_model", targetModelId);
+      await anaraApi.models.setActive(targetModelId);
     } catch (err) {
       console.warn("[CodeStudio] setActiveModel error:", err);
     }
-  }, []);
+  }, [models]);
 
   // ── Fetch Sessions List ──
   const loadSessions = useCallback(async () => {
     setSessionsLoading(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/chat/sessions?session_type=code`);
-      if (res.ok) {
-        const data = await res.json();
-        setSessions(data);
-      }
+      const data = await anaraApi.sessions.list("code");
+      setSessions(data || []);
     } catch (err) {
       console.warn("[CodeStudio] loadSessions error:", err);
     } finally {
@@ -286,14 +317,10 @@ export default function CodePageClient({
   // ── Fetch Workspace Tree & Git Status ──
   const loadWorkspaceTree = useCallback(async (sid?: number | null) => {
     try {
-      const q = sid ? `?session_id=${sid}` : "";
-      const res = await fetch(`${BACKEND_URL}/api/agent/workspace/tree${q}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data && (data.total_files > 0 || data.is_custom_folder)) {
-          setWorkspaceTree(data);
-          return;
-        }
+      const data = await anaraApi.workspace.getTree(sid || undefined);
+      if (data && (data.total_files > 0 || data.is_custom_folder)) {
+        setWorkspaceTree(data);
+        return;
       }
       setWorkspaceTree(null);
     } catch (e) {
@@ -308,12 +335,8 @@ export default function CodePageClient({
       return;
     }
     try {
-      const res = await fetch(`${BACKEND_URL}/api/agent/git/status?session_id=${sid}`);
-      if (res.ok) {
-        setGitStatus(await res.json());
-      } else {
-        setGitStatus(null);
-      }
+      const data = await anaraApi.workspace.getGitStatus(sid);
+      setGitStatus(data);
     } catch {
       setGitStatus(null);
     }
@@ -347,21 +370,14 @@ export default function CodePageClient({
   // ── Workspace Folder Actions ──
   const handlePickLocalFolder = useCallback(async (targetPath?: string) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/agent/pick-local-folder`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: activeSessionId || undefined, folder_path: targetPath || "" }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.status === "success" && data.tree) {
-          setWorkspaceTree(data.tree);
-          setExplorerMode("tree");
-          setIsLeftOpen(true);
-          loadGitStatus(activeSessionId);
-          if (typeof window !== "undefined") {
-            window.dispatchEvent(new CustomEvent("anara-brain-sync", { detail: { event: "workspace_updated" } }));
-          }
+      const data = await anaraApi.workspace.importFolder(targetPath || "", activeSessionId || undefined);
+      if (data && data.status === "success" && data.tree) {
+        setWorkspaceTree(data.tree);
+        setExplorerMode("tree");
+        setIsLeftOpen(true);
+        loadGitStatus(activeSessionId);
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("anara-brain-sync", { detail: { event: "workspace_updated" } }));
         }
       }
     } catch (err) {
@@ -370,10 +386,8 @@ export default function CodePageClient({
   }, [activeSessionId, loadGitStatus]);
 
   const handleClearWorkspace = async () => {
-    if (!confirm(`Close & remove folder "${workspaceTree?.workspace_name}" from this session?`)) return;
     try {
-      const q = activeSessionId ? `?session_id=${activeSessionId}` : "";
-      await fetch(`${BACKEND_URL}/api/agent/workspace${q}`, { method: "DELETE" });
+      await anaraApi.workspace.clear(activeSessionId || undefined);
       setWorkspaceTree(null);
       setGitStatus(null);
       setActiveIdeFile({ isOpen: false, fileName: "", filePath: "", fileExt: "", fileSizeKb: 0, content: "" });
@@ -386,10 +400,8 @@ export default function CodePageClient({
   // ── File Management & CodeMirror Actions ──
   const handleOpenFileIDE = async (filePath: string, fileName: string) => {
     try {
-      const q = activeSessionId ? `&session_id=${activeSessionId}` : "";
-      const res = await fetch(`${BACKEND_URL}/api/agent/workspace/file-content?path=${encodeURIComponent(filePath)}${q}`);
-      if (res.ok) {
-        const data = await res.json();
+      const data = await anaraApi.workspace.getFileContent(filePath, activeSessionId || undefined);
+      if (data) {
         const fileObj: IdeTabFile = {
           fileName: data.filename || fileName,
           filePath: data.path || filePath,
@@ -412,7 +424,7 @@ export default function CodePageClient({
 
   const handleSelectIdeTab = (filePath: string, fileName: string) => {
     const existing = ideTabs.find((t) => t.filePath === filePath);
-    if (existing) {
+    if (existing && existing.content !== undefined && existing.content !== "") {
       setActiveIdeFile({ ...existing, isOpen: true });
     } else {
       handleOpenFileIDE(filePath, fileName);
@@ -433,16 +445,8 @@ export default function CodePageClient({
 
   const handleSaveIdeFile = async (filePath: string, newContent: string): Promise<boolean> => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/agent/workspace/save-file`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          path: filePath,
-          content: newContent,
-          session_id: activeSessionId || undefined,
-        }),
-      });
-      if (res.ok) {
+      const res = await anaraApi.workspace.saveFile(filePath, newContent, activeSessionId || undefined);
+      if (res && res.status === "success") {
         setActiveIdeFile((prev) => ({ ...prev, content: newContent }));
         setIdeTabs((prev) => prev.map((t) => (t.filePath === filePath ? { ...t, content: newContent } : t)));
         loadGitStatus(activeSessionId);
@@ -458,15 +462,37 @@ export default function CodePageClient({
   const {
     status: wsStatus,
     sendJSON,
+    sendSteer,
   } = useWebSocket({
-    url: WS_URL,
+    url: getWebSocketUrl(),
     onTranscript: (payload: TranscriptPayload | string, rawSpeaker?: "input" | "output") => {
       const text = typeof payload === "string" ? payload : payload.text;
       const speaker = typeof payload === "string" ? (rawSpeaker ?? "output") : payload.speaker;
       const isPartial = typeof payload === "string" ? false : (payload.isPartial ?? false);
       const visualType = typeof payload === "string" ? undefined : payload.visualType;
+      const imageUrl = typeof payload === "string" ? undefined : payload.imageUrl;
+      const imagePrompt = typeof payload === "string" ? undefined : payload.imagePrompt;
+      const imageTitle = typeof payload === "string" ? undefined : payload.imageTitle;
+      const sourceDomain = typeof payload === "string" ? undefined : payload.sourceDomain;
+      const sourceUrl = typeof payload === "string" ? undefined : payload.sourceUrl;
+      const weatherData = typeof payload === "string" ? undefined : payload.weatherData;
+      const codeData = typeof payload === "string" ? undefined : payload.codeData;
+      const systemHudData = typeof payload === "string" ? undefined : payload.systemHudData;
+      const knowledgeCardData = typeof payload === "string" ? undefined : payload.knowledgeCardData;
+      const todoData = typeof payload === "string" ? undefined : payload.todoData;
+      const briefingData = typeof payload === "string" ? undefined : payload.briefingData;
       const agentActionData = typeof payload === "string" ? undefined : payload.agentActionData;
+      const documentViewerData = typeof payload === "string" ? undefined : payload.documentViewerData;
+      const workspaceFolderData = typeof payload === "string" ? undefined : payload.workspaceFolderData;
       const planData = typeof payload === "string" ? undefined : payload.planData;
+      const images = typeof payload === "string" ? undefined : payload.images;
+      const mediaType = typeof payload === "string" ? undefined : payload.mediaType;
+      const payloadAgentMode = typeof payload === "string" ? undefined : payload.agentMode;
+      const payloadModelId = typeof payload === "string" ? undefined : payload.modelId;
+      const payloadDurationText = typeof payload === "string" ? undefined : payload.durationText;
+      const payloadIsStreaming = typeof payload === "string" ? false : (payload.isStreaming ?? payload.isPartial ?? false);
+      const payloadTokenUsage = typeof payload === "string" ? undefined : payload.tokenUsage;
+      const payloadToolsUsed = typeof payload === "string" ? undefined : (payload.toolsUsed || payload.tokenUsage?.toolsUsed);
 
       // Capture thinking snapshot before clearing
       const thinkingSnapshot = activeThinkingText;
@@ -478,15 +504,36 @@ export default function CodePageClient({
         const lastIdx = prev.length - 1;
         const last = prev[lastIdx];
 
+        const computedDuration = payloadDurationText || (last?.startTime ? `${Math.max(1, Math.round((Date.now() - last.startTime) / 1000))}s` : last?.durationText);
+        const resolvedToolsUsed = payloadToolsUsed || payloadTokenUsage?.toolsUsed || last?.toolsUsed;
+
         const newEntry: TranscriptItem = {
           speaker,
           text,
           visualType,
+          imageUrl,
+          imagePrompt,
+          imageTitle,
+          sourceDomain,
+          sourceUrl,
+          images,
+          weatherData,
+          codeData,
+          systemHudData,
+          knowledgeCardData,
+          todoData,
+          briefingData,
           agentActionData,
+          documentViewerData,
+          workspaceFolderData,
           planData,
-          agentMode,
-          modelId: activeModelId,
-          isStreaming: isPartial,
+          mediaType,
+          agentMode: payloadAgentMode || last?.agentMode || agentMode,
+          modelId: payloadModelId || last?.modelId || activeModelId,
+          durationText: computedDuration,
+          tokenUsage: payloadTokenUsage || last?.tokenUsage,
+          toolsUsed: resolvedToolsUsed,
+          isStreaming: payloadIsStreaming,
           thinkingText: thinkingSnapshot || last?.thinkingText || null,
           startTime: last?.startTime || Date.now(),
         };
@@ -524,6 +571,70 @@ export default function CodePageClient({
         return [...prev.slice(0, lastIdx), { ...last, text: text, isStreaming: false, thinkingText: thinkingSnapshot || last.thinkingText }];
       });
     },
+    onToolProgress: (payload: ToolProgressPayload) => {
+      setLiveToolProgress(payload);
+      if (payload.status === "done") {
+        setTimeout(() => {
+          setLiveToolProgress((prev) => (prev?.toolName === payload.toolName ? null : prev));
+        }, 1000);
+      }
+    },
+    onAgentAction: (payload) => {
+      setTranscript((prev) => {
+        const newEntry: TranscriptItem = {
+          speaker: "output",
+          text: "",
+          visualType: "agent_action",
+          agentActionData: payload,
+          agentMode: agentMode,
+          modelId: activeModelId,
+          startTime: Date.now(),
+        };
+        const lastIdx = prev.length - 1;
+        const last = prev[lastIdx];
+        if (
+          last &&
+          last.speaker === "output" &&
+          last.visualType === "agent_action" &&
+          last.agentActionData?.toolName === payload.toolName
+        ) {
+          return [...prev.slice(0, lastIdx), { ...last, ...newEntry }];
+        }
+        if (last && last.speaker === "output" && !last.text && (!last.visualType || last.visualType === "none")) {
+          return [...prev.slice(0, lastIdx), newEntry];
+        }
+        return [...prev, newEntry];
+      });
+    },
+    onTokenUsage: (usage) => {
+      setTranscript((prev) => {
+        if (prev.length === 0) return prev;
+        const lastIdx = prev.length - 1;
+        const last = prev[lastIdx];
+        if (last && last.speaker === "output") {
+          return [...prev.slice(0, lastIdx), { ...last, tokenUsage: usage }];
+        }
+        return prev;
+      });
+    },
+    onError: (msg) => {
+      if (msg === "Conversation session not found.") {
+        localStorage.removeItem("anara_active_code_session_id");
+        setActiveSessionId(null);
+        setTranscript([]);
+        return;
+      }
+      console.warn("[CodeStudio/WS Notice]", msg);
+      setAssistantStatus("idle");
+    },
+    onInterrupted: () => {
+      setAssistantStatus("idle");
+      setActiveThinkingText(null);
+    },
+    onSpeakerIdentified: (name, roster) => {
+      if (name) setActiveSpeaker(name);
+      if (roster && Array.isArray(roster)) setSpeakerRoster(roster);
+    },
     onAgentThinking: (t: string) => {
       setActiveThinkingText(t && t.trim().length > 0 ? t : null);
     },
@@ -554,13 +665,45 @@ export default function CodePageClient({
         localStorage.setItem("anara_active_code_session_id", String(payload.sessionId));
         setSessionRefreshKey((k) => k + 1);
         if (payload.messages && Array.isArray(payload.messages)) {
-          const mapped: TranscriptItem[] = payload.messages.flatMap((m: any) => {
-            const items: TranscriptItem[] = [];
-            if (m.user_text) items.push({ speaker: "input", text: m.user_text });
-            if (m.ai_text) items.push({ speaker: "output", text: m.ai_text, agentMode: "plan" });
-            return items;
-          });
-          setTranscript(mapped);
+          const restored: TranscriptItem[] = [];
+          for (const m of payload.messages) {
+            const u = (m.user_text || "").trim();
+            const a = (m.ai_text || "").trim();
+            const vis = m.visual_data || {};
+            if (u) {
+              restored.push({ speaker: "input", text: u });
+            }
+            if (a || vis.visualType || m.media_type) {
+              restored.push({
+                speaker: "output",
+                text: a,
+                visualType: vis.visualType || (m.media_type as any),
+                imageUrl: vis.imageUrl || m.media_url,
+                imageTitle: vis.imageTitle,
+                sourceDomain: vis.sourceDomain,
+                sourceUrl: vis.sourceUrl,
+                images: vis.images,
+                weatherData: vis.weatherData,
+                codeData: vis.codeData,
+                systemHudData: vis.systemHudData,
+                knowledgeCardData: vis.knowledgeCardData,
+                todoData: vis.todoData,
+                briefingData: vis.briefingData,
+                agentActionData: vis.agentActionData,
+                documentViewerData: vis.documentViewerData,
+                workspaceFolderData: vis.workspaceFolderData,
+                planData: vis.planData,
+                mediaType: m.media_type as any,
+                agentMode: (vis.agent_mode || vis.agentMode || "plan") as "plan" | "build",
+                modelId: vis.model || vis.model_id || vis.modelId,
+                durationText: vis.duration_text || vis.durationText || (vis.duration ? `${Math.round(vis.duration)}s` : undefined),
+                tokenUsage: vis.tokenUsage || vis.token_usage,
+                toolsUsed: vis.tools_used || vis.toolsUsed || vis.token_usage?.tools_used || vis.tokenUsage?.toolsUsed,
+                toolRecordsCount: vis.tool_records_count || vis.toolRecordsCount,
+              });
+            }
+          }
+          setTranscript(restored);
         }
       }
     },
@@ -575,33 +718,24 @@ export default function CodePageClient({
   useEffect(() => {
     const initCodeSession = async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/api/chat/sessions?session_type=code`);
-        if (res.ok) {
-          const list = await res.json();
-          if (Array.isArray(list) && list.length > 0) {
-            const savedSess = localStorage.getItem("anara_active_code_session_id");
-            const match = savedSess ? list.find((s: any) => s.id === Number(savedSess)) : null;
-            const targetId = match ? match.id : list[0].id;
-            setActiveSessionId(targetId);
-            localStorage.setItem("anara_active_code_session_id", String(targetId));
+        const list = await anaraApi.sessions.list("code");
+        if (Array.isArray(list) && list.length > 0) {
+          const savedSess = localStorage.getItem("anara_active_code_session_id");
+          const match = savedSess ? list.find((s) => s.id === Number(savedSess)) : null;
+          const targetId = match ? match.id : list[0].id;
+          setActiveSessionId(targetId);
+          localStorage.setItem("anara_active_code_session_id", String(targetId));
+          if (wsStatus === "connected") {
+            sendJSON({ type: "switch_session", sessionId: targetId });
+          }
+        } else {
+          const data = await anaraApi.sessions.create({ title: "New Project", session_type: "code" });
+          if (data && (data as any).session?.id) {
+            const sid = (data as any).session.id;
+            setActiveSessionId(sid);
+            localStorage.setItem("anara_active_code_session_id", String(sid));
             if (wsStatus === "connected") {
-              sendJSON({ type: "switch_session", sessionId: targetId });
-            }
-          } else {
-            const createRes = await fetch(`${BACKEND_URL}/api/chat/sessions`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ session_type: "code", title: "New Project" }),
-            });
-            if (createRes.ok) {
-              const data = await createRes.json();
-              if (data.session?.id) {
-                setActiveSessionId(data.session.id);
-                localStorage.setItem("anara_active_code_session_id", String(data.session.id));
-                if (wsStatus === "connected") {
-                  sendJSON({ type: "switch_session", sessionId: data.session.id });
-                }
-              }
+              sendJSON({ type: "switch_session", sessionId: sid });
             }
           }
         }
@@ -627,28 +761,19 @@ export default function CodePageClient({
 
   const handlePatchSession = async (id: number, body: Record<string, unknown>) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/chat/sessions/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (res.ok) {
-        setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, ...body } : s)));
-      }
+      await anaraApi.sessions.update(id, body);
+      setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, ...body } : s)));
     } catch (e) {
       console.warn("[Session] patch error:", e);
     }
   };
 
   const handleDeleteSession = async (s: ChatSession) => {
-    if (!confirm(`Delete "${s.title || `Session #${s.id}`}"?`)) return;
     try {
-      const res = await fetch(`${BACKEND_URL}/api/chat/sessions/${s.id}`, { method: "DELETE" });
-      if (res.ok) {
-        setSessions((prev) => prev.filter((x) => x.id !== s.id));
-        if (activeSessionId === s.id) {
-          handleNewSession();
-        }
+      await anaraApi.sessions.delete(s.id);
+      setSessions((prev) => prev.filter((x) => x.id !== s.id));
+      if (activeSessionId === s.id) {
+        handleNewSession();
       }
     } catch (e) {
       console.warn("[Session] delete error:", e);
@@ -666,12 +791,105 @@ export default function CodePageClient({
     sendJSON({
       type: "text_input",
       text: trimmed,
+      channel: "code",
+      platform: "code",
       agent_mode: mode,
       reasoning_effort: reasoningEffort,
       sessionId: activeSessionId,
     });
     setAssistantStatus("thinking");
   };
+
+  const handleApprovePlan = useCallback(
+    (plan?: any) => {
+      const targetPlan = plan || transcript.slice().reverse().find((t) => t.planData)?.planData || {};
+      const planTitle = targetPlan.title || "Proposed Plan";
+
+      setTranscript((prev) =>
+        prev.map((item) => {
+          if (item.planData && (item.planData.title === planTitle || !item.planData.title)) {
+            return {
+              ...item,
+              planData: {
+                ...item.planData,
+                planStatus: "approved" as const,
+              },
+            };
+          }
+          return item;
+        })
+      );
+
+      const stepsList = (targetPlan.steps || [])
+        .map((st: any, i: number) => {
+          const title = typeof st === "string" ? st : st?.title || st?.name || "";
+          return `${i + 1}. ${title}`;
+        })
+        .join("\n");
+
+      const techStr = (targetPlan.tech_stack || targetPlan.techStack || []).join(", ");
+
+      const richPrompt = [
+        `I approve the plan "${planTitle}". Execute now in Build Mode!`,
+        techStr ? `Tech Stack: ${techStr}` : "",
+        stepsList ? `Tahapan:\n${stepsList}` : "",
+        "Execution Instructions: Implement all required files, components, and logic systematically according to the approved plan.",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+
+      setAgentMode("build");
+      handleSendText(richPrompt, "build");
+    },
+    [transcript, agentMode, reasoningEffort, activeSessionId]
+  );
+
+  const handleRejectPlan = useCallback(
+    (plan?: any) => {
+      const targetPlan = plan || transcript.slice().reverse().find((t) => t.planData)?.planData || {};
+      const planTitle = targetPlan.title || "Proposed Plan";
+
+      setTranscript((prev) =>
+        prev.map((item) => {
+          if (item.planData && (item.planData.title === planTitle || !item.planData.title)) {
+            return {
+              ...item,
+              planData: {
+                ...item.planData,
+                planStatus: "rejected" as const,
+              },
+            };
+          }
+          return item;
+        })
+      );
+
+      sendJSON({
+        type: "text_input",
+        text: `Plan "${planTitle}" rejected. Let's reconsider the implementation approach.`,
+        channel: "code",
+        platform: "code",
+        agent_mode: "plan",
+        sessionId: activeSessionId,
+      });
+    },
+    [transcript, sendJSON, activeSessionId]
+  );
+
+  // Synchronize speaker selection with AnaraBrain
+  useEffect(() => {
+    const handleBrainSpeakerSync = (e: Event) => {
+      const customEvent = e as CustomEvent<{ speaker_name?: string }>;
+      const name = customEvent.detail?.speaker_name;
+      if (name && wsStatus === "connected") {
+        sendJSON({ type: "set_active_speaker", name });
+        setActiveSpeaker(name);
+        setSpeakerRoster((prev) => (prev.includes(name) ? prev : [...prev, name]));
+      }
+    };
+    window.addEventListener("anara-speaker-changed", handleBrainSpeakerSync);
+    return () => window.removeEventListener("anara-speaker-changed", handleBrainSpeakerSync);
+  }, [wsStatus, sendJSON]);
 
   const handleAnswerQuestion = (questionId: string, answers: any, dismissed: boolean = false) => {
     sendJSON({
@@ -724,32 +942,42 @@ export default function CodePageClient({
   useEffect(() => {
     if (!isResizingLeft && !isResizingRight && !isResizingTerminal) return;
 
+    let rafId: number | null = null;
     const handleMouseMove = (e: MouseEvent) => {
       if (isResizingLeft) {
         const dx = e.clientX - leftStartXRef.current;
         const newW = Math.max(180, Math.min(500, startLeftWidthRef.current + dx));
         latestLeftWidthRef.current = newW;
-        setLeftWidth(newW);
         document.documentElement.style.setProperty("--studio-left-width", `${newW}px`);
       }
       if (isResizingRight) {
         const dx = rightStartXRef.current - e.clientX;
         const newW = Math.max(340, Math.min(700, startRightWidthRef.current + dx));
         latestRightWidthRef.current = newW;
-        setRightWidth(newW);
         document.documentElement.style.setProperty("--studio-right-width", `${newW}px`);
       }
       if (isResizingTerminal) {
         const dy = terminalStartYRef.current - e.clientY;
         const newH = Math.max(100, Math.min(600, startTerminalHeightRef.current + dy));
         latestTerminalHeightRef.current = newH;
-        setTerminalHeight(newH);
+        document.documentElement.style.setProperty("--studio-terminal-height", `${newH}px`);
+      }
+
+      if (rafId === null) {
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          if (isResizingLeft) setLeftWidth(latestLeftWidthRef.current);
+          if (isResizingRight) setRightWidth(latestRightWidthRef.current);
+          if (isResizingTerminal) setTerminalHeight(latestTerminalHeightRef.current);
+        });
       }
     };
 
     const handleMouseUp = () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
       if (isResizingLeft) {
         const w = latestLeftWidthRef.current;
+        setLeftWidth(w);
         try {
           localStorage.setItem("anara_studio_left_width", w.toString());
           document.cookie = `anara_studio_left_width=${w}; path=/; max-age=31536000; SameSite=Lax`;
@@ -758,6 +986,7 @@ export default function CodePageClient({
       }
       if (isResizingRight) {
         const w = latestRightWidthRef.current;
+        setRightWidth(w);
         try {
           localStorage.setItem("anara_studio_right_width", w.toString());
           document.cookie = `anara_studio_right_width=${w}; path=/; max-age=31536000; SameSite=Lax`;
@@ -766,6 +995,7 @@ export default function CodePageClient({
       }
       if (isResizingTerminal) {
         const h = latestTerminalHeightRef.current;
+        setTerminalHeight(h);
         try {
           localStorage.setItem("anara_studio_term_height", h.toString());
           document.cookie = `anara_studio_term_height=${h}; path=/; max-age=31536000; SameSite=Lax`;
@@ -793,7 +1023,7 @@ export default function CodePageClient({
       {/* ══════════════════════════════════════════════════════════════════════
           1. STUDIO TOP NAVIGATION BAR (Antigravity Obsidian Standard)
          ══════════════════════════════════════════════════════════════════════ */}
-      <header className="h-10 shrink-0 px-3 border-b border-white/[0.08] flex items-center justify-between bg-[#060913]/95 backdrop-blur-2xl z-30 select-none shadow-[0_4px_24px_rgba(0,0,0,0.5)] relative">
+      <header className="h-[34px] shrink-0 px-3 border-b border-white/[0.08] flex items-center justify-between bg-[#060913]/95 backdrop-blur-2xl z-30 select-none shadow-[0_4px_24px_rgba(0,0,0,0.5)] relative">
         <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-cyan-400/25 to-transparent pointer-events-none" />
 
         {/* Left Side: Brand Logo, Workspace / Git Branch Badge, Session Switcher */}
@@ -960,7 +1190,7 @@ export default function CodePageClient({
             </button>
           </div>
 
-          <a
+          <Link
             href="/"
             className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-slate-300 hover:text-white transition-all cursor-pointer active:scale-95 shadow-sm"
             title="Switch to 3D Avatar & Voice Studio"
@@ -970,7 +1200,7 @@ export default function CodePageClient({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span className="hidden sm:inline text-[11px]">3D Studio</span>
-          </a>
+          </Link>
 
           <button
             type="button"
@@ -1096,7 +1326,7 @@ export default function CodePageClient({
 
           {/* Bottom Activity Actions: 3D Avatar & Brain */}
           <div className="flex flex-col items-center gap-1.5 w-full pt-2 border-t border-white/[0.06]">
-            <a
+            <Link
               href="/"
               className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-cyan-300 hover:bg-white/[0.04] transition-all cursor-pointer"
               title="Switch to 3D Avatar & Voice Studio"
@@ -1105,7 +1335,7 @@ export default function CodePageClient({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-            </a>
+            </Link>
 
             <button
               type="button"
@@ -1127,7 +1357,16 @@ export default function CodePageClient({
               style={{ width: `var(--studio-left-width, ${leftWidth}px)`, transition: "none" }}
               className="h-full shrink-0 flex flex-col bg-[#060913]/90 backdrop-blur-xl overflow-hidden select-none relative studio-pane border-r border-white/[0.08]"
             >
-              {workspaceTree && (workspaceTree.total_files > 0 || workspaceTree.is_custom_folder) ? (
+              {explorerMode === "git" ? (
+                <ReviewGitPane
+                  gitStatus={gitStatus}
+                  onRefreshGit={() => loadGitStatus(activeSessionId)}
+                  sessionId={activeSessionId}
+                  activeFilePath={activeIdeFile?.filePath}
+                  onSelectDiffFile={(path) => handleOpenFileIDE(path, path.split("/").pop() || "file")}
+                  onAgentShip={() => handleSendText("Ship active git changes: review diffs, commit changes, and push PR to origin", "build")}
+                />
+              ) : workspaceTree && (workspaceTree.total_files > 0 || workspaceTree.is_custom_folder) ? (
                 <WorkspaceTreeView
                   workspaceTree={workspaceTree}
                   gitStatus={gitStatus}
@@ -1185,26 +1424,28 @@ export default function CodePageClient({
           {/* Main Editor Surface */}
           <div className="flex-1 min-h-[140px] w-full flex flex-col overflow-hidden relative">
             {activeIdeFile && activeIdeFile.isOpen ? (
-              <AnaraCodeIDE
-                isOpen={true}
-                embedded={true}
-                onClose={() => setActiveIdeFile((prev) => ({ ...prev, isOpen: false }))}
-                fileName={activeIdeFile.fileName}
-                filePath={activeIdeFile.filePath}
-                fileExt={activeIdeFile.fileExt}
-                fileSizeKb={activeIdeFile.fileSizeKb}
-                content={activeIdeFile.content}
-                originalContent={activeIdeFile.originalContent}
-                isTerminalOpen={isTerminalOpen}
-                onToggleTerminal={() => setIsTerminalOpen((v) => !v)}
-                tabs={ideTabs}
-                onSelectTab={handleSelectIdeTab}
-                onCloseTab={handleCloseIdeTab}
-                onSaveFile={handleSaveIdeFile}
-                onAskAnara={(p: string, n: string) => {
-                  handleSendText(`Please analyze and explain the architecture of file @${n} (${p})`, agentMode);
-                }}
-              />
+              <Suspense fallback={null}>
+                <AnaraCodeIDE
+                  isOpen={true}
+                  embedded={true}
+                  onClose={() => setActiveIdeFile((prev) => ({ ...prev, isOpen: false }))}
+                  fileName={activeIdeFile.fileName}
+                  filePath={activeIdeFile.filePath}
+                  fileExt={activeIdeFile.fileExt}
+                  fileSizeKb={activeIdeFile.fileSizeKb}
+                  content={activeIdeFile.content}
+                  originalContent={activeIdeFile.originalContent}
+                  isTerminalOpen={isTerminalOpen}
+                  onToggleTerminal={() => setIsTerminalOpen((v) => !v)}
+                  tabs={ideTabs}
+                  onSelectTab={handleSelectIdeTab}
+                  onCloseTab={handleCloseIdeTab}
+                  onSaveFile={handleSaveIdeFile}
+                  onAskAnara={(p: string, n: string) => {
+                    handleSendText(`Please analyze and explain the architecture of file @${n} (${p})`, agentMode);
+                  }}
+                />
+              </Suspense>
             ) : (
               /* Studio Welcome Empty State: Liquid Glass Antigravity Hub */
               <div className="flex-1 flex flex-col items-center justify-center p-8 select-none bg-gradient-to-b from-[#060a16]/60 via-[#040813]/80 to-[#02050e] text-slate-300 font-sans relative overflow-hidden">
@@ -1279,34 +1520,37 @@ export default function CodePageClient({
             )}
           </div>
 
-          {/* Integrated PowerShell Terminal Dock */}
+          {/* Integrated PowerShell Terminal Dock with Keep-Alive (Hermes Desktop Parity) */}
           {isTerminalOpen && (
-            <>
-              {/* Resizer Splitter between Editor and Terminal (1px Horizontal Line) */}
-              <div
-                onMouseDown={startResizingTerminal}
-                className="relative h-px w-full cursor-row-resize shrink-0 select-none bg-white/[0.08] hover:bg-cyan-400/50 active:bg-cyan-400 transition-colors z-10"
-                title="Drag to resize terminal height"
-              >
-                <div className="absolute inset-x-0 -top-1.5 h-3 cursor-row-resize bg-transparent" />
-              </div>
-
-              <div
-                style={{ height: `${terminalHeight}px` }}
-                className="w-full shrink-0 overflow-hidden bg-black/60 backdrop-blur-md"
-              >
-                <WorkbenchTerminal
-                  logs={[
-                    `[anara-agent] Active mode: ${agentMode.toUpperCase()}`,
-                    `[system] Terminal worker ready (Workspace: ${workspaceTree?.workspace_name || "default"}).`,
-                  ]}
-                  activeTask={assistantStatus === "thinking" ? "AI Model Thinking..." : undefined}
-                  onExecuteCommand={() => {}}
-                  onClose={() => setIsTerminalOpen(false)}
-                />
-              </div>
-            </>
+            <div
+              onMouseDown={startResizingTerminal}
+              className="relative h-px w-full cursor-row-resize shrink-0 select-none bg-white/[0.08] hover:bg-cyan-400/50 active:bg-cyan-400 transition-colors z-10"
+              title="Drag to resize terminal height"
+            >
+              <div className="absolute inset-x-0 -top-1.5 h-3 cursor-row-resize bg-transparent" />
+            </div>
           )}
+
+          <div
+            style={{
+              height: `${terminalHeight}px`,
+              display: isTerminalOpen ? "block" : "none",
+            }}
+            className="w-full shrink-0 overflow-hidden bg-black/60 backdrop-blur-md"
+          >
+            <Suspense fallback={null}>
+              <WorkbenchTerminal
+                logs={[
+                  `[anara-agent] Active mode: ${agentMode.toUpperCase()}`,
+                  `[system] Terminal worker ready (Workspace: ${workspaceTree?.workspace_name || "default"}).`,
+                ]}
+                activeTask={assistantStatus === "thinking" ? "AI Model Thinking..." : undefined}
+                onExecuteCommand={() => {}}
+                onClose={() => setIsTerminalOpen(false)}
+                isVisible={isTerminalOpen}
+              />
+            </Suspense>
+          </div>
         </div>
 
         {/* Resizer Splitter 2: Center Editor ↔ Right Agent (1px Razor-Thin White Hairline) */}
@@ -1357,11 +1601,14 @@ export default function CodePageClient({
               <ChatTimeline
                 transcript={transcript}
                 status={assistantStatus}
+                activeSessionId={activeSessionId || undefined}
                 activeSpeaker={activeSpeaker}
                 activeModelId={activeModelId}
                 liveToolProgress={liveToolProgress}
-                footerDockHeight={140}
+                footerDockHeight={footerDockHeight}
                 activeThinkingText={activeThinkingText}
+                onApprovePlan={handleApprovePlan}
+                onRejectPlan={handleRejectPlan}
                 onAnswerQuestion={handleAnswerQuestion}
                 onOpenFile={(p: string) => handleOpenFileIDE(p, p.split("/").pop() || "file")}
                 onSelectPrompt={(text: string) => setInputMessage(text)}
@@ -1395,28 +1642,34 @@ export default function CodePageClient({
               isConnected={wsStatus === "connected"}
               activeSessionId={activeSessionId}
               onNewSession={handleNewSession}
-              onFolderUpload={() => {}}
+              onFolderUpload={() => handlePickLocalFolder()}
               onFileUpload={() => {}}
               liveToolProgress={liveToolProgress}
               activeQuestion={activeUnansweredQuestion}
               onAnswerQuestion={handleAnswerQuestion}
-              onHeightChange={() => {}}
+              onHeightChange={setFooterDockHeight}
               reasoningEffort={reasoningEffort}
               onSelectReasoningEffort={handleSelectReasoningEffort}
+              onSteer={sendSteer}
+              workspaceFiles={workspaceFilesList}
             />
           </div>
         )}
       </div>
 
       {/* ── Anara Brain Modal Drawer ── */}
-      <AnaraBrain
-        isOpen={isBrainDrawerOpen}
-        onClose={() => {
-          setIsBrainDrawerOpen(false);
-          fetchModels(true);
-        }}
-        activeSpeaker={activeSpeaker}
-      />
+      {isBrainDrawerOpen && (
+        <Suspense fallback={null}>
+          <AnaraBrain
+            isOpen={isBrainDrawerOpen}
+            onClose={() => {
+              setIsBrainDrawerOpen(false);
+              fetchModels(true);
+            }}
+            activeSpeaker={activeSpeaker}
+          />
+        </Suspense>
+      )}
     </main>
   );
 }

@@ -72,9 +72,15 @@ def get_authorized_admins(channel: str = "telegram") -> List[str]:
     """
     Retrieves the list of authorized admin user IDs from memory or environment.
     """
-    from memory import memory_engine
-    setting_key = f"{channel}_admin_ids"
-    raw = memory_engine.get_app_setting(setting_key) or os.getenv(f"{channel.upper()}_ADMIN_IDS", "")
+    raw = ""
+    try:
+        from memory import memory_engine
+        setting_key = f"{channel}_admin_ids"
+        raw = memory_engine.get_app_setting(setting_key)
+    except Exception:
+        pass
+    if not raw:
+        raw = os.getenv(f"{channel.upper()}_ADMIN_IDS", "")
     if not raw:
         return []
     return [uid.strip() for uid in raw.split(",") if uid.strip()]

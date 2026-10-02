@@ -56,7 +56,11 @@ export function useAvatarGestures() {
       speechCadenceRef.current += safeDelta * 2.4;
     }
 
-    const armSpeed = animDriven ? 0.0 : safeDelta * (isGesturing ? 10.0 : isSpeaking ? 6.0 : 4.0);
+    const armSpeed = isGesturing
+      ? Math.min(safeDelta * 10.0, 1.0)
+      : animDriven
+      ? 0.0
+      : Math.min(safeDelta * (isSpeaking ? 6.0 : 4.0), 1.0);
 
     const lerpB = (bone: THREE.Bone | undefined, tx: number, ty: number, tz: number) => {
       if (!bone || armSpeed === 0) return;
@@ -81,23 +85,23 @@ export function useAvatarGestures() {
       const lHandRot = animDriven && bones.leftHand ? bones.leftHand.rotation : lHandBase;
       const rHandRot = animDriven && bones.rightHand ? bones.rightHand.rotation : rHandBase;
 
-      let tLArmX = animDriven ? lArmRot.x : lArmBase.x;
-      let tLArmY = animDriven ? lArmRot.y : lArmBase.y;
+      const tLArmX = animDriven ? lArmRot.x : lArmBase.x;
+      const tLArmY = animDriven ? lArmRot.y : lArmBase.y;
       let tLArmZ = animDriven ? lArmRot.z : lArmBase.z + 1.35;
       let tRArmX = animDriven ? rArmRot.x : rArmBase.x;
-      let tRArmY = animDriven ? rArmRot.y : rArmBase.y;
+      const tRArmY = animDriven ? rArmRot.y : rArmBase.y;
       let tRArmZ = animDriven ? rArmRot.z : rArmBase.z - 1.35;
       let tLForeX = animDriven ? lForeRot.x : lForeBase.x;
-      let tLForeY = animDriven ? lForeRot.y : lForeBase.y;
-      let tLForeZ = animDriven ? lForeRot.z : lForeBase.z;
+      const tLForeY = animDriven ? lForeRot.y : lForeBase.y;
+      const tLForeZ = animDriven ? lForeRot.z : lForeBase.z;
       let tRForeX = animDriven ? rForeRot.x : rForeBase.x;
       let tRForeY = animDriven ? rForeRot.y : rForeBase.y;
       let tRForeZ = animDriven ? rForeRot.z : rForeBase.z;
-      let tLHandX = animDriven ? lHandRot.x : lHandBase.x;
-      let tLHandY = animDriven ? lHandRot.y : lHandBase.y;
-      let tLHandZ = animDriven ? lHandRot.z : lHandBase.z;
+      const tLHandX = animDriven ? lHandRot.x : lHandBase.x;
+      const tLHandY = animDriven ? lHandRot.y : lHandBase.y;
+      const tLHandZ = animDriven ? lHandRot.z : lHandBase.z;
       let tRHandX = animDriven ? rHandRot.x : rHandBase.x;
-      let tRHandY = animDriven ? rHandRot.y : rHandBase.y;
+      const tRHandY = animDriven ? rHandRot.y : rHandBase.y;
       let tRHandZ = animDriven ? rHandRot.z : rHandBase.z;
 
       // Speaking accent

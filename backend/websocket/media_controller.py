@@ -2,11 +2,13 @@
 Media & Playlist Controller for Project Anara WebSocket session.
 Handles real-time YouTube music/video playback, queuing, and playlist navigation.
 """
+import asyncio
 import logging
 from typing import Optional, Dict, Any, List, Callable
 from fastapi import WebSocket
 from memory import memory_engine
 from integrations import search_youtube
+from core.prompt_loader import load_config_yaml, _safe_format
 
 logger = logging.getLogger("anara.websocket.media")
 
@@ -41,16 +43,18 @@ class MediaController:
             "queue": queue or [],
             "playlist": playlist,
         }
-        await self.websocket.send_json(payload)
         try:
-            memory_engine.log_media_play(
-                self.get_speaker_name(),
+            await self.websocket.send_json(payload)
+        except Exception as e:
+            logger.debug(f"[MediaController] Send media play notice: {e}")
+
+        try:
+            speaker = self.get_speaker_name() or "default"
+            await asyncio.to_thread(
+                memory_engine.log_media_play,
+                speaker,
+                track,
                 kind=kind,
-                video_id=track.get("video_id", ""),
-                title=track.get("title", ""),
-                channel=track.get("channel", ""),
-                thumbnail=track.get("thumbnail", ""),
-                duration=track.get("duration", ""),
             )
         except Exception as e:
             logger.debug(f"[MediaEngine] Log play error: {e}")
@@ -72,7 +76,7 @@ class MediaController:
         pid = self.active_playlist.get("id")
         if pid:
             try:
-                memory_engine.set_playlist_last_index(int(pid), new_idx)
+                await asyncio.to_thread(memory_engine.set_playlist_position, int(pid), new_idx)
             except Exception:
                 pass
         await self.send_media_play(track, "music", queue, playlist=self.active_playlist)
@@ -86,30 +90,45 @@ class MediaController:
 
         try:
             if kind == "playlist_create":
-                tracks = await search_youtube(intent["query"], kind="music", limit=8)
+                q = intent.get("query") or intent.get("name") or user_text or ""
+                pl_name = intent.get("name") or q or "Playlist"
+                tracks = await search_youtube(q, kind="music", limit=8)
                 if not tracks:
                     if gemini_service:
-                        from core.prompt_loader import load_config_yaml
                         live_cfg = load_config_yaml("voice/live_directives.yaml", default={})
-                        nf_cmd = live_cfg.get(
+                        tpl = live_cfg.get(
                             "playlist_not_found",
                             "[SYSTEM NOTIFICATION]: No tracks were found for playlist query '{query}'. Inform the user in their active language."
-                        ).format(query=intent["name"])
+                        )
+                        nf_cmd = _safe_format(tpl, query=pl_name)
                         await gemini_service.send_text(nf_cmd)
                     return
-                res = memory_engine.save_playlist(intent["name"], tracks, speaker_name)
+                res = await asyncio.to_thread(memory_engine.save_playlist, pl_name, tracks, speaker_name)
                 if gemini_service:
-                    from core.prompt_loader import load_config_yaml
                     live_cfg = load_config_yaml("voice/live_directives.yaml", default={})
-                    rdy_cmd = live_cfg.get(
+                    tpl = live_cfg.get(
                         "playlist_ready",
                         "[SYSTEM NOTIFICATION]: Playlist '{name}' with {count} tracks is ready and playing. Inform the user in their active language."
-                    ).format(name=res.get("name"), count=res.get("count"))
+                    )
+                    rdy_cmd = _safe_format(tpl, name=res.get("name", pl_name), count=res.get("count", len(tracks)))
                     await gemini_service.send_text(rdy_cmd)
                 await self.send_media_play(
                     tracks[0], "music", tracks[1:],
-                    playlist={"id": res.get("id"), "name": res.get("name"), "tracks": tracks, "index": 0}
+                    playlist={"id": res.get("id"), "name": res.get("name", pl_name), "tracks": tracks, "index": 0}
                 )
+                return
+
+            elif kind in ("playlist_next", "media_next"):
+                await self.playlist_jump(1)
+                return
+
+            elif kind in ("playlist_prev", "media_previous", "media_prev"):
+                await self.playlist_jump(-1)
+                return
+
+            elif kind == "playlist_jump":
+                step = int(intent.get("step") or 1)
+                await self.playlist_jump(step)
                 return
 
             elif kind == "playlist_play":
@@ -127,7 +146,6 @@ class MediaController:
             elif kind == "playlist_add_current":
                 if not self.now_playing:
                     if gemini_service:
-                        from core.prompt_loader import load_config_yaml
                         live_cfg = load_config_yaml("voice/live_directives.yaml", default={})
                         no_track_cmd = live_cfg.get(
                             "no_media_playing",
@@ -135,7 +153,8 @@ class MediaController:
                         )
                         await gemini_service.send_text(no_track_cmd)
                     return
-                memory_engine.add_track_to_playlist(intent["name"], self.now_playing, speaker_name)
+                pl_name = intent.get("name") or "Favorites"
+                await asyncio.to_thread(memory_engine.add_track_to_playlist, pl_name, self.now_playing, speaker_name)
                 return
 
             elif kind == "media_history":

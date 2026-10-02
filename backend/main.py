@@ -16,22 +16,20 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
 import uvicorn
-from dotenv import load_dotenv
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 from memory import memory_engine, get_current_indonesian_time_str
 from core import ModelCapabilityRegistry, require_gateway_auth
-from integrations import start_whatsapp_bridge
 from tools import register_agent_event_listener
 from shared_state import (
-    active_sessions,
     broadcast_agent_event,
     broadcast_brain_sync,
     close_shared_http_client,
+    set_main_event_loop,
 )
 
-# Import Modular Routers
+# Import Modular Routers (Hermes Desktop Parity)
 from routers.brain_routes import router as brain_router
 from routers.provider_routes import router as provider_router
 from routers.workspace_routes import router as workspace_router
@@ -51,6 +49,7 @@ setup_anara_logging()
 
 logger = logging.getLogger("anara.main")
 ANARA_BUILD = "2026-09-12-modular-architecture-v2"
+_background_tasks = set()
 
 # Register real-time cross-service event listeners
 register_agent_event_listener(broadcast_agent_event)
@@ -60,6 +59,8 @@ memory_engine.register_mutation_listener(broadcast_brain_sync)
 async def lifespan(app: FastAPI):
     """Starts background services, initializes provider keys, and manages graceful shutdown."""
     logger.info(f"[Anara] Backend code loaded — build {ANARA_BUILD}")
+    loop = asyncio.get_running_loop()
+    set_main_event_loop(loop)
     _install_signal_handlers()
     try:
         from core.lifecycle import record_process_start, record_process_exit
@@ -73,7 +74,9 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[Startup] Live Voice seed skipped: {e}")
     try:
-        asyncio.create_task(ModelCapabilityRegistry.refresh())
+        t_refresh = asyncio.create_task(ModelCapabilityRegistry.refresh())
+        _background_tasks.add(t_refresh)
+        t_refresh.add_done_callback(_background_tasks.discard)
     except Exception as e:
         logger.warning(f"[Startup] Capability warmup skipped: {e}")
 
@@ -144,7 +147,9 @@ async def lifespan(app: FastAPI):
     # Discover and connect to configured native Model Context Protocol (MCP) servers (Anara Standard)
     try:
         from integrations.mcp import mcp_manager
-        asyncio.create_task(mcp_manager.connect_all_servers())
+        t_mcp = asyncio.create_task(mcp_manager.connect_all_servers())
+        _background_tasks.add(t_mcp)
+        t_mcp.add_done_callback(_background_tasks.discard)
     except Exception as e:
         logger.debug(f"[Startup] MCP discovery task launch note: {e}")
 
@@ -212,13 +217,15 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
-    # 5. Flush SQLite WAL Checkpoint
+    # 5. Flush SQLite WAL Checkpoint (Non-blocking with timeout)
     try:
-        with memory_engine._get_connection() as conn:
-            conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
-            logger.info("[Shutdown] SQLite WAL checkpoint flushed.")
-    except Exception:
-        pass
+        def _flush_wal():
+            with memory_engine._get_connection() as conn:
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+        await asyncio.wait_for(asyncio.to_thread(_flush_wal), timeout=5.0)
+        logger.info("[Shutdown] SQLite WAL checkpoint flushed.")
+    except Exception as e:
+        logger.debug(f"[Shutdown] WAL checkpoint note: {e}")
 
     # 6. Scavenge sentinels & record exit
     try:
@@ -271,7 +278,17 @@ app.add_middleware(
     allow_origin_regex=r"^https?://([a-zA-Z0-9-]+\.)?(trycloudflare\.com|anara\.my\.id)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=["Authorization", "Content-Type", "X-Session-Token", "X-Client-Version"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-Session-Token",
+        "X-Client-Version",
+        "X-Client-Platform",
+        "Accept",
+        "X-Requested-With",
+        "Cache-Control",
+        "Origin",
+    ],
 )
 
 @app.exception_handler(Exception)
@@ -321,14 +338,12 @@ def _assert_port_free(port: int):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.bind(("0.0.0.0", port))
-        sock.close()
     except OSError:
-        sock.close()
         owner_pid = "???"
         try:
             import subprocess
             cmd = f'powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue).OwningProcess"'
-            out = subprocess.check_output(cmd, shell=True, text=True).strip()
+            out = subprocess.check_output(cmd, shell=True, text=True, timeout=5).strip()
             if out:
                 owner_pid = out.split()[0]
         except Exception:
@@ -338,9 +353,21 @@ def _assert_port_free(port: int):
             f"Stop it first with: Stop-Process -Id {owner_pid} -Force"
         )
         raise SystemExit(1)
+    finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
+
+_signal_handlers_installed: bool = False
 
 def _install_signal_handlers():
     """Installs native signal and Windows console control handlers (Anara Enterprise Architecture)."""
+    global _signal_handlers_installed
+    if _signal_handlers_installed:
+        return
+    _signal_handlers_installed = True
+
     if sys.platform == "win32":
         try:
             import ctypes

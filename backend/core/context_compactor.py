@@ -27,12 +27,23 @@ def prune_tool_output(content: str, max_chars: int = 1500) -> str:
     if raw_len > 2000:
         try:
             from constants import get_anara_logs_dir
-            import uuid
+            import uuid, time
             log_dir = get_anara_logs_dir("tool_logs")
             log_dir.mkdir(parents=True, exist_ok=True)
             spill_file = log_dir / f"pruned_{uuid.uuid4().hex[:8]}.log"
             spill_file.write_text(raw_text, encoding="utf-8", errors="replace")
             disk_pointer = f" — full output ({raw_len:,} chars, {raw_text.count(chr(10))+1:,} lines) saved to: {spill_file}"
+            # Keep log directory bounded: prune logs older than 48 hours or when count > 200
+            try:
+                all_logs = list(log_dir.glob("pruned_*.log"))
+                if len(all_logs) > 200:
+                    now = time.time()
+                    for f in sorted(all_logs, key=lambda p: p.stat().st_mtime):
+                        if len(all_logs) > 150 or (now - f.stat().st_mtime > 172800):
+                            f.unlink(missing_ok=True)
+                            all_logs.remove(f)
+            except Exception:
+                pass
         except Exception:
             disk_pointer = f" — {raw_len:,} chars omitted"
 
@@ -176,18 +187,37 @@ class ContextCompactor:
         older_turns = cleaned[:-verbatim_turns]
         recent_turns = cleaned[-verbatim_turns:]
 
-        # Build structured capsule from older turns
+        # Build structured capsule from older turns honoring max_summary_tokens budget
         capsule_lines = []
-        for h in older_turns[-8:]:
+        chars_budget = max(1200, max_summary_tokens * 4)
+        accumulated_chars = 0
+        for h in reversed(older_turns):
             u = (h.get("user_text") or "").strip()
             a = (h.get("ai_text") or "").strip()
+            turn_capsule = []
             if u:
-                first_u = u.split("\n")[0][:90]
-                capsule_lines.append(f"• User: {first_u}")
+                u_clean = re.sub(r"\s+", " ", u).strip()[:180]
+                turn_capsule.append(f"• User: {u_clean}")
             if a:
-                summary_a = re.sub(r"```[\s\S]*?```", "[code block]", a)
-                first_a = summary_a.split("\n")[0][:110]
-                capsule_lines.append(f"  Anara: {first_a}")
+                # Line-bounded head/tail compaction for code blocks rather than destructive blanking
+                def _compact_code(match: re.Match) -> str:
+                    code = match.group(0).strip()
+                    lines = [ln.strip() for ln in code.splitlines() if ln.strip()]
+                    if len(lines) <= 3:
+                        return code
+                    return f"{lines[0]}\n    ... ({len(lines)-2} lines omitted) ...\n    {lines[-1]}"
+
+                a_compact = re.sub(r"```[\s\S]*?```", _compact_code, a)
+                a_clean = re.sub(r"[ \t]+", " ", a_compact).strip()
+                if len(a_clean) > 300:
+                    a_clean = a_clean[:280] + "..."
+                turn_capsule.append(f"  Anara: {a_clean}")
+
+            block_str = "\n".join(turn_capsule)
+            if accumulated_chars + len(block_str) > chars_budget and capsule_lines:
+                break
+            capsule_lines.insert(0, block_str)
+            accumulated_chars += len(block_str)
 
         capsule_header = "[SESSION SUMMARY CAPSULE]:\n" + "\n".join(capsule_lines) + "\n\n"
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import {
   WeatherData,
   CodeData,
@@ -27,8 +27,6 @@ import {
   HudKnowledgeCard,
   HudTodoListCard,
   HudAgentActionCard,
-  HudWhatsAppQrCard,
-  HudWhatsAppChatCard,
 } from "./HudWidgets";
 
 // Re-export all types for 100% backward compatibility
@@ -71,8 +69,39 @@ export default function AnaraHUD({
   onRejectPlan,
   onDismiss,
 }: AnaraHUDProps) {
+  // Global Escape key listener to cleanly dismiss the HUD when requested
+  // Wrapped with typable element guard and clean unmount to prevent orphaned listeners
+  useEffect(() => {
+    if (!onDismiss) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        const target = e.target as HTMLElement | null;
+        if (target) {
+          const tag = target.tagName;
+          if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) {
+            return;
+          }
+        }
+        e.preventDefault();
+        onDismiss();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onDismiss]);
+
+  if (visualType === "none") {
+    return null;
+  }
+
+  let content: React.ReactNode = null;
+
   if (visualType === "plan_card" && planData) {
-    return (
+    content = (
       <HudPlanCard
         planData={planData}
         onApprovePlan={onApprovePlan}
@@ -81,10 +110,11 @@ export default function AnaraHUD({
         onDismiss={onDismiss}
       />
     );
-  }
-
-  if ((visualType === "document_viewer" && documentViewerData) || (visualType === "folder_workspace" && workspaceFolderData)) {
-    return (
+  } else if (
+    (visualType === "document_viewer" && documentViewerData) ||
+    (visualType === "folder_workspace" && workspaceFolderData)
+  ) {
+    content = (
       <HudDocumentViewer
         documentViewerData={documentViewerData}
         workspaceFolderData={workspaceFolderData}
@@ -92,10 +122,8 @@ export default function AnaraHUD({
         onDismiss={onDismiss}
       />
     );
-  }
-
-  if (visualType === "image" && (imageUrl || (images && images.length > 0))) {
-    return (
+  } else if (visualType === "image" && (imageUrl || (images && images.length > 0))) {
+    content = (
       <HudImageGallery
         images={images}
         imageUrl={imageUrl}
@@ -107,43 +135,27 @@ export default function AnaraHUD({
         onDismiss={onDismiss}
       />
     );
+  } else if (visualType === "briefing" && briefingData) {
+    content = <HudBriefingCard briefingData={briefingData} onDismiss={onDismiss} />;
+  } else if (visualType === "weather" && weatherData) {
+    content = <HudWeatherCard weatherData={weatherData} onDismiss={onDismiss} />;
+  } else if (visualType === "code" && codeData) {
+    content = <HudCodeCard codeData={codeData} onDismiss={onDismiss} />;
+  } else if (visualType === "system_hud" && systemHudData) {
+    content = <HudSystemCard systemHudData={systemHudData} onDismiss={onDismiss} />;
+  } else if (visualType === "knowledge_card" && knowledgeCardData) {
+    content = <HudKnowledgeCard knowledgeCardData={knowledgeCardData} onDismiss={onDismiss} />;
+  } else if (visualType === "todo_list" && todoData && todoData.items) {
+    content = <HudTodoListCard todoData={todoData} onDismiss={onDismiss} />;
+  } else if (visualType === "agent_action" && agentActionData) {
+    content = <HudAgentActionCard agentActionData={agentActionData} onOpenFile={onOpenFile} onDismiss={onDismiss} />;
   }
 
-  if (visualType === "briefing" && briefingData) {
-    return <HudBriefingCard briefingData={briefingData} onDismiss={onDismiss} />;
-  }
+  if (!content) return null;
 
-  if (visualType === "weather" && weatherData) {
-    return <HudWeatherCard weatherData={weatherData} onDismiss={onDismiss} />;
-  }
-
-  if (visualType === "code" && codeData) {
-    return <HudCodeCard codeData={codeData} onDismiss={onDismiss} />;
-  }
-
-  if (visualType === "system_hud" && systemHudData) {
-    return <HudSystemCard systemHudData={systemHudData} onDismiss={onDismiss} />;
-  }
-
-  if (visualType === "knowledge_card" && knowledgeCardData) {
-    return <HudKnowledgeCard knowledgeCardData={knowledgeCardData} onDismiss={onDismiss} />;
-  }
-
-  if (visualType === "todo_list" && todoData && todoData.items) {
-    return <HudTodoListCard todoData={todoData} onDismiss={onDismiss} />;
-  }
-
-  if (visualType === "agent_action" && agentActionData) {
-    return <HudAgentActionCard agentActionData={agentActionData} onOpenFile={onOpenFile} onDismiss={onDismiss} />;
-  }
-
-  if (visualType === "whatsapp_qr") {
-    return <HudWhatsAppQrCard imageUrl={imageUrl} onDismiss={onDismiss} />;
-  }
-
-  if (visualType === "whatsapp_chat" && knowledgeCardData) {
-    return <HudWhatsAppChatCard knowledgeCardData={knowledgeCardData} onDismiss={onDismiss} />;
-  }
-
-  return null;
+  return (
+    <div className="w-full relative transition-all duration-200 ease-out" data-hud-active={visualType}>
+      {content}
+    </div>
+  );
 }

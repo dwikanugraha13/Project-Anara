@@ -9,6 +9,7 @@ from .terminal_ui import (
     AnaraTerminalUI,
     ToolActivitySpinner,
     StreamTokenRenderer,
+    ThinkingPreviewRenderer,
     AnaraCliCompleter,
 )
 
@@ -19,5 +20,6 @@ __all__ = [
     "AnaraTerminalUI",
     "ToolActivitySpinner",
     "StreamTokenRenderer",
+    "ThinkingPreviewRenderer",
     "AnaraCliCompleter",
 ]

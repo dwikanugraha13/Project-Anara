@@ -169,9 +169,11 @@ class DiscordPlatformAdapter(BasePlatformAdapter):
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     for chunk in chunks:
                         payload = {"content": chunk, "allowed_mentions": {"parse": []}}
-                        resp = await client.post(webhook, json=payload)
-                        if resp.status_code not in (200, 204):
-                            return {"status": "error", "code": resp.status_code, "detail": redact_sensitive_text(resp.text)}
+                        resp = await _post_discord_with_retry(client, webhook, headers={}, payload=payload)
+                        if not resp or resp.status_code not in (200, 204):
+                            code = resp.status_code if resp else 500
+                            detail = redact_sensitive_text(resp.text) if resp else "No response"
+                            return {"status": "error", "code": code, "detail": detail}
                         if len(chunks) > 1:
                             await asyncio.sleep(0.35)
                 return {"status": "success", "platform": "discord_webhook"}
@@ -198,6 +200,18 @@ class DiscordPlatformAdapter(BasePlatformAdapter):
 
         f_name = os.path.basename(file_path)
         content_text = (caption or "")[:MAX_DISCORD_CAPTION]
+
+        # Enforce Discord 25MB attachment upload ceiling to prevent RAM exhaustion
+        MAX_UPLOAD_SIZE = 25 * 1024 * 1024
+        try:
+            f_size = os.path.getsize(file_path)
+            if f_size > MAX_UPLOAD_SIZE:
+                return {
+                    "status": "error",
+                    "message": f"File '{f_name}' exceeds Discord 25MB upload ceiling ({round(f_size / (1024 * 1024), 2)}MB)."
+                }
+        except OSError:
+            pass
 
         if token and effective_channel:
             try:

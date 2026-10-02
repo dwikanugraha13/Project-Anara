@@ -502,8 +502,40 @@ def _extract_and_parse_tool_call(raw_out: str) -> tuple[Optional[Dict[str, Any]]
     return (calls[0] if calls else None, lead_text, is_malformed)
 
 
+def _build_closing_history(history: List[Any], closing_instruction: str) -> List[Any]:
+    """Builds a closing turn history ensuring strict role alternation (prevents consecutive user messages)."""
+    if not history:
+        return [{"role": "user", "content": closing_instruction}]
+
+    if not isinstance(history[0], dict):
+        from google.genai import types as genai_types
+        closing_history = list(history)
+        if closing_history and getattr(closing_history[-1], "role", "") == "user":
+            last_c = closing_history[-1]
+            if hasattr(last_c, "parts"):
+                last_c.parts.append(genai_types.Part.from_text(text=f"\n\n{closing_instruction}"))
+            else:
+                closing_history.append(genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=closing_instruction)]))
+        else:
+            closing_history.append(genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=closing_instruction)]))
+        return closing_history
+    else:
+        closing_history = list(history)
+        if closing_history and isinstance(closing_history[-1], dict) and closing_history[-1].get("role") == "user":
+            last_c = dict(closing_history[-1])
+            c_val = last_c.get("content")
+            if isinstance(c_val, list):
+                last_c["content"] = [*c_val, {"type": "text", "text": f"\n\n{closing_instruction}"}]
+            elif isinstance(c_val, str):
+                last_c["content"] = f"{c_val}\n\n{closing_instruction}"
+            closing_history[-1] = last_c
+        else:
+            closing_history.append({"role": "user", "content": closing_instruction})
+        return closing_history
+
+
 async def _execute_native_agent_loop(
-    native_turn_caller: Callable[[List[Any]], Awaitable[Any]],
+    native_turn_caller: Callable[..., Awaitable[Any]],
     record_results_fn: Callable[[List[Any], Any, List[Tuple[Any, str, bool]]], None],
     initial_history: List[Any],
     user_prompt: str,
@@ -628,7 +660,10 @@ async def _execute_native_agent_loop(
                 f"Forcing final narrative conclusion."
             )
             try:
-                final_turn = await native_turn_caller(history)
+                try:
+                    final_turn = await native_turn_caller(history, allow_tools=False)
+                except TypeError:
+                    final_turn = await native_turn_caller(history)
                 if final_turn and final_turn.clean_text:
                     final_text = _clean_model_chat_text(final_turn.clean_text) or final_turn.clean_text
                     if token_cb and final_text:
@@ -693,12 +728,14 @@ async def _execute_native_agent_loop(
                     history.append({"role": "user", "content": stop_gate_nudge})
                 continue
 
-            # Anti-Fabrication & Tool-Use Enforcement Stop Gate (Anara Standard: Anti-Fabrication)
-            simulated_execution = re.search(
-                r"(\*\([^\)]*(?:eksekusi|ngeksekusi|menjalankan|mateni|tutup|kill|close|hapus|buka|running|executing|terminating|closing|opening)[^\)]*\)\*|\*(?:ngeksekusi|eksekusi|menjalankan|mematikan|menutup|membuka|running|executing|killing|terminating)[^\*]+\*)",
-                turn.clean_text,
-                flags=re.IGNORECASE
-            )
+            # Anti-Fabrication & Tool-Use Enforcement Stop Gate (Anara Standard)
+            simulated_execution = None
+            if not read_only:
+                simulated_execution = re.search(
+                    r"\*(?:\((?:sedang |mulai |mencoba )?(?:menjalankan|mengeksekusi|eksekusi|executing|running)\s+(?:perintah|command|tool|skrip|script)[^\)]*\)|\b(?:menjalankan|mengeksekusi|eksekusi|executing|running)\s+(?:perintah|command|tool|skrip|script)\b[^\*]+)\*",
+                    turn.clean_text,
+                    flags=re.IGNORECASE
+                )
             if simulated_execution and step < max_steps - 1:
                 logger.warning(f"[NativeAgentLoop] Simulated execution detected without tool call: {simulated_execution.group(0)}")
                 enforcement_nudge = (
@@ -940,8 +977,12 @@ async def _execute_native_agent_loop(
                     await res
             return diag_card
 
+        # Reset retry budget only when mutating operations succeed (actual progress was made),
+        # preserving failure memory during passive/read-only operations to prevent ping-pong loops
         if not turn_had_error:
-            self_correction_tracker.reset()
+            has_mutating = any(item.get("risk") in ("mutating", "ask") for item in parsed_calls)
+            if has_mutating:
+                self_correction_tracker.reset()
 
         # Convergence Tracking (Anara Enterprise Architecture: Gap 3)
         executed_items_for_convergence = []
@@ -968,12 +1009,11 @@ async def _execute_native_agent_loop(
                     "agent_loop/closing_narrative",
                     default="Based on all the work, observations, and attachments above, provide a clear, helpful, and complete final response to the user in natural conversational prose matching the active language."
                 ).strip()
-                if history and not isinstance(history[0], dict):
-                    from google.genai import types as genai_types
-                    closing_history = [*history, genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=closing_instruction)])]
-                else:
-                    closing_history = [*history, {"role": "user", "content": closing_instruction}]
-                final_turn = await native_turn_caller(closing_history)
+                closing_history = _build_closing_history(history, closing_instruction)
+                try:
+                    final_turn = await native_turn_caller(closing_history, allow_tools=False)
+                except TypeError:
+                    final_turn = await native_turn_caller(closing_history)
                 if final_turn and final_turn.clean_text:
                     final_text = _clean_model_chat_text(final_turn.clean_text) or final_turn.clean_text
                     if token_cb and final_text:
@@ -987,6 +1027,29 @@ async def _execute_native_agent_loop(
             cleaned_last = _clean_model_chat_text(last_text)
             if cleaned_last:
                 return cleaned_last
+
+            # High-assurance conversational fallback: synthesize response via fast auxiliary model
+            try:
+                from core.capabilities import get_fast_auxiliary_model
+                aux_model = get_fast_auxiliary_model() or model_id
+                synthesis_prompt = (
+                    f"User asked: \"{user_prompt}\"\n\n"
+                    "The agent completed workspace actions and observations. Provide a direct, helpful, and natural response "
+                    "to the user in their active language, summarizing what was checked or asking for clarification if needed."
+                )
+                fallback_res = await call_universal_chat_model(
+                    model_id=aux_model,
+                    user_prompt=synthesis_prompt,
+                    max_tokens=None,
+                    temperature=0.3,
+                    read_only=True
+                )
+                cleaned_fallback = _clean_model_chat_text(fallback_res or "")
+                if cleaned_fallback:
+                    return cleaned_fallback
+            except Exception as e_synth:
+                logger.debug(f"[NativeAgentLoop] Auxiliary synthesis fallback failed: {e_synth}")
+
             return _format_empty_model_notice(user_prompt)
 
     cleaned_last = _clean_model_chat_text(last_text)
@@ -997,16 +1060,38 @@ async def _execute_native_agent_loop(
                 "agent_loop/closing_narrative",
                 default="Based on all the work, observations, and attachments above, provide a clear, helpful, and complete final response to the user in natural conversational prose matching the active language."
             ).strip()
-            if history and not isinstance(history[0], dict):
-                from google.genai import types as genai_types
-                closing_history = [*history, genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=closing_instruction)])]
-            else:
-                closing_history = [*history, {"role": "user", "content": closing_instruction}]
-            final_turn = await native_turn_caller(closing_history)
+            closing_history = _build_closing_history(history, closing_instruction)
+            try:
+                final_turn = await native_turn_caller(closing_history, allow_tools=False)
+            except TypeError:
+                final_turn = await native_turn_caller(closing_history)
             if final_turn and final_turn.clean_text:
                 return _clean_model_chat_text(final_turn.clean_text) or final_turn.clean_text
         except Exception:
             pass
+
+        # High-assurance conversational fallback
+        try:
+            from core.capabilities import get_fast_auxiliary_model
+            aux_model = get_fast_auxiliary_model() or model_id
+            synthesis_prompt = (
+                f"User asked: \"{user_prompt}\"\n\n"
+                "The agent completed workspace actions and observations. Provide a direct, helpful, and natural response "
+                "to the user in their active language, summarizing what was checked or asking for clarification if needed."
+            )
+            fallback_res = await call_universal_chat_model(
+                model_id=aux_model,
+                user_prompt=synthesis_prompt,
+                max_tokens=None,
+                temperature=0.3,
+                read_only=True
+            )
+            cleaned_fallback = _clean_model_chat_text(fallback_res or "")
+            if cleaned_fallback:
+                return cleaned_fallback
+        except Exception as e_synth:
+            logger.debug(f"[NativeAgentLoop] Auxiliary synthesis fallback failed: {e_synth}")
+
     return cleaned_last or _format_empty_model_notice(user_prompt)
 
 
@@ -1065,7 +1150,7 @@ async def _execute_json_agent_loop(
         interactive=True
     )
 
-    # Token Budget Tracker (Hermes/Anara Standard: token-aware context management)
+    # Token Budget Tracker (Anara Standard: token-aware context management)
     from core.token_budget import TokenBudgetTracker
     from core.convergence import ConvergenceDetector
     token_tracker = TokenBudgetTracker(model_id=model_id)
@@ -1225,7 +1310,7 @@ async def _execute_json_agent_loop(
                 await res
 
         if not raw_out or not raw_out.strip():
-            # Hermes conversation_loop.py & turn_empty_response.py parity:
+            # Anara turn_empty_response standard:
             # Ladder: 1) if empty/reasoning-only, nudge model up to 2 times to produce visible prose
             if empty_turn_retries < 2:
                 empty_turn_retries += 1
@@ -1265,12 +1350,14 @@ async def _execute_json_agent_loop(
                 messages.append({"role": "user", "content": stop_gate_nudge})
                 continue
 
-            # Anti-Fabrication & Tool-Use Enforcement Stop Gate (Anara Standard: Anti-Fabrication)
-            simulated_execution = re.search(
-                r"(\*\([^\)]*(?:eksekusi|ngeksekusi|menjalankan|mateni|tutup|kill|close|hapus|buka|running|executing|terminating|closing|opening)[^\)]*\)\*|\*(?:ngeksekusi|eksekusi|menjalankan|mematikan|menutup|membuka|running|executing|killing|terminating)[^\*]+\*)",
-                last_response,
-                flags=re.IGNORECASE
-            )
+            # Anti-Fabrication & Tool-Use Enforcement Stop Gate (Anara Standard)
+            simulated_execution = None
+            if not read_only:
+                simulated_execution = re.search(
+                    r"\*(?:\((?:sedang |mulai |mencoba )?(?:menjalankan|mengeksekusi|eksekusi|executing|running)\s+(?:perintah|command|tool|skrip|script)[^\)]*\)|\b(?:menjalankan|mengeksekusi|eksekusi|executing|running)\s+(?:perintah|command|tool|skrip|script)\b[^\*]+)\*",
+                    last_response,
+                    flags=re.IGNORECASE
+                )
             if simulated_execution and step < max_steps - 1:
                 logger.warning(f"[AgentLoop] Simulated execution detected without tool call: {simulated_execution.group(0)}")
                 messages.append({"role": "assistant", "content": last_response})
@@ -1548,8 +1635,12 @@ async def _execute_json_agent_loop(
                     await res
             return diag_card
 
+        # Reset retry budget only when mutating operations succeed (actual progress was made),
+        # preserving failure memory during passive/read-only operations to prevent ping-pong loops
         if not turn_had_error:
-            self_correction_tracker.reset()
+            has_mutating = any(item.get("risk") in ("mutating", "ask") for item in parsed_calls)
+            if has_mutating:
+                self_correction_tracker.reset()
 
         # Convergence Tracking (Anara Enterprise Architecture: Gap 3)
         executed_items_for_convergence = []
@@ -1598,7 +1689,7 @@ async def _execute_json_agent_loop(
             except Exception:
                 pass
         
-    # If the loop finished and last_response is STILL a tool call or stray bracket (Hermes Turn-Completion Enforcement):
+    # If the loop finished and last_response is STILL a tool call or stray bracket (Anara Turn-Completion Enforcement):
     # Never return raw JSON tool call or stray bracket artifacts to the user!
     cleaned_last = _clean_model_chat_text(last_response)
     if '"action": "tool_call"' in last_response or '<tool_call>' in last_response or not cleaned_last:
@@ -1731,18 +1822,18 @@ async def _make_gemini_native_turn(
     on_chunk: Optional[Callable[[str], Any]] = None,
     reasoning_effort: Optional[str] = None,
 ) -> Any:
-    """Executes a single native tool-calling turn via Google GenAI SDK (Hermes/Gemini Parity)."""
+    """Executes a single native tool-calling turn via Google GenAI SDK (Anara Architecture)."""
     from core.key_manager import key_manager
     from google.genai import types
     from .native_turn import NativeToolCall, NativeTurnResult
 
+    import collections.abc
+
     def _deep_to_dict(obj: Any) -> Any:
-        if isinstance(obj, dict):
+        if isinstance(obj, collections.abc.Mapping) or hasattr(obj, "items"):
             return {k: _deep_to_dict(v) for k, v in obj.items()}
-        elif isinstance(obj, (list, tuple)):
+        elif isinstance(obj, collections.abc.Sequence) and not isinstance(obj, (str, bytes)):
             return [_deep_to_dict(v) for v in obj]
-        elif hasattr(obj, "items"):
-            return {k: _deep_to_dict(v) for k, v in obj.items()}
         return obj
 
     cfg_kwargs: Dict[str, Any] = {

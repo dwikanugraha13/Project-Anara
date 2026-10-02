@@ -108,7 +108,7 @@ class EpisodicADRManager:
                     "duplicate": True,
                 }
 
-            adr_id = f"adr_{uuid.uuid4().hex[:16]}"
+            adr_id = f"adr_{uuid.uuid4().hex[:32]}"
             files_json = json.dumps(affected_files or [], ensure_ascii=False)
 
             cursor.execute("""

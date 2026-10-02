@@ -79,6 +79,13 @@ async def websocket_endpoint(websocket: WebSocket):
     ai_speaking_ts = 0.0
     dance_mode_until: float = 0.0
     active_text_task: Optional[asyncio.Task] = None
+    session_tasks: Set[asyncio.Task] = set()
+
+    def spawn_session_task(coro) -> asyncio.Task:
+        t = asyncio.create_task(coro)
+        session_tasks.add(t)
+        t.add_done_callback(session_tasks.discard)
+        return t
 
     active_session_id: Optional[int] = None
     try:
@@ -216,7 +223,7 @@ async def websocket_endpoint(websocket: WebSocket):
             audio_copy = bytes(voice_pipeline.user_audio_buffer)
             voice_pipeline.user_audio_buffer.clear()
             voice_pipeline.ser_tracker.reset()
-            asyncio.create_task(voice_pipeline.transcribe_and_subtitle_audio(audio_copy))
+            spawn_session_task(voice_pipeline.transcribe_and_subtitle_audio(audio_copy))
 
         try:
             await websocket.send_json({
@@ -343,7 +350,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 t_ai = turn_ai
                 await auto_hud_enrichment(u, t_ai or "(Anara menjawab secara lisan)", force=True, conversation_context=convo)
 
-            asyncio.create_task(decide_hud_projection())
+            spawn_session_task(decide_hud_projection())
 
             if turn_user:
                 agent_runner.prev_turn_user_text = turn_user
@@ -446,14 +453,14 @@ async def websocket_endpoint(websocket: WebSocket):
                                 flush_ctx = voice_pipeline.pending_speaker_ctx
                                 voice_pipeline.pending_speaker_ctx = None
                                 if live_svc:
-                                    asyncio.create_task(live_svc.inject_context(flush_ctx))
+                                    spawn_session_task(live_svc.inject_context(flush_ctx))
                                 logger.info("[Speaker Sync] Deferred context flushed at turn start")
                             if (
                                 voice_pipeline.sticky_speaker_name
                                 and current_speaker_name != voice_pipeline.sticky_speaker_name
                                 and (_time.time() - voice_pipeline.sticky_speaker_ts) < 90
                             ):
-                                asyncio.create_task(voice_pipeline.notify_speaker_change(voice_pipeline.sticky_speaker_name, reason="sticky_identity"))
+                                spawn_session_task(voice_pipeline.notify_speaker_change(voice_pipeline.sticky_speaker_name, reason="sticky_identity"))
                         voice_pipeline.last_speech_time = now
 
                         buf_len = len(voice_pipeline.user_audio_buffer)
@@ -488,7 +495,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                     audio_copy = bytes(voice_pipeline.user_audio_buffer)
                                     voice_pipeline.user_audio_buffer.clear()
                                     voice_pipeline.ser_tracker.reset()
-                                    asyncio.create_task(voice_pipeline.handle_enrollment_turn(audio_copy))
+                                    spawn_session_task(voice_pipeline.handle_enrollment_turn(audio_copy))
                                 else:
                                     voice_pipeline.user_audio_buffer.clear()
                                     voice_pipeline.ser_tracker.reset()
@@ -509,7 +516,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                     voice_pipeline.user_audio_buffer.clear()
                                     voice_pipeline.ser_tracker.reset()
                                     if key_manager.get_active_key():
-                                        asyncio.create_task(voice_pipeline.transcribe_and_subtitle_audio(audio_copy))
+                                        spawn_session_task(voice_pipeline.transcribe_and_subtitle_audio(audio_copy))
                                 else:
                                     voice_pipeline.user_audio_buffer.clear()
                                     voice_pipeline.ser_tracker.reset()
@@ -533,6 +540,11 @@ async def websocket_endpoint(websocket: WebSocket):
                             if active_session_id:
                                 await session_state_manager.request_hard_interrupt("web_studio", str(active_session_id))
                                 await session_state_manager.request_hard_interrupt("web", str(active_session_id))
+                        except Exception:
+                            pass
+                    elif msg_type == "ping":
+                        try:
+                            await websocket.send_json({"type": "pong", "timestamp": data.get("timestamp")})
                         except Exception:
                             pass
                     elif msg_type == "set_active_speaker":
@@ -564,6 +576,8 @@ async def websocket_endpoint(websocket: WebSocket):
                             await websocket.send_json({
                                 "type": "session_switched",
                                 "sessionId": target,
+                                "session_key": sess.get("session_key"),
+                                "sessionKey": sess.get("session_key"),
                                 "title": sess.get("title"),
                                 "session_type": sess.get("session_type", "chat"),
                                 "messages": msgs,
@@ -583,6 +597,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         await websocket.send_json({
                             "type": "session_switched",
                             "sessionId": created["id"],
+                            "session_key": created.get("session_key"),
+                            "sessionKey": created.get("session_key"),
                             "title": created["title"],
                             "session_type": created.get("session_type", "chat"),
                             "messages": [],
@@ -625,7 +641,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                         audio_copy = bytes(voice_pipeline.user_audio_buffer)
                                         voice_pipeline.user_audio_buffer.clear()
                                         voice_pipeline.ser_tracker.reset()
-                                        asyncio.create_task(voice_pipeline.transcribe_and_subtitle_audio(audio_copy))
+                                        spawn_session_task(voice_pipeline.transcribe_and_subtitle_audio(audio_copy))
                                     else:
                                         voice_pipeline.user_audio_buffer.clear()
                                         voice_pipeline.ser_tracker.reset()
@@ -661,7 +677,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 audio_copy = bytes(voice_pipeline.user_audio_buffer)
                                 voice_pipeline.user_audio_buffer.clear()
                                 if key_manager.get_active_key():
-                                    asyncio.create_task(voice_pipeline.transcribe_and_subtitle_audio(audio_copy))
+                                    spawn_session_task(voice_pipeline.transcribe_and_subtitle_audio(audio_copy))
 
                 except json.JSONDecodeError:
                     logger.warning(f"Invalid JSON from client: {message['text']}")
@@ -675,6 +691,9 @@ async def websocket_endpoint(websocket: WebSocket):
         watchdog_task.cancel()
         if active_text_task and not active_text_task.done():
             active_text_task.cancel()
+        for t in list(session_tasks):
+            if not t.done():
+                t.cancel()
         if proactive_engine:
             proactive_engine.stop()
         if gemini_task:

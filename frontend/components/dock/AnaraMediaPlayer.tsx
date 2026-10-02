@@ -63,7 +63,7 @@ function loadYouTubeApi(): Promise<void> {
   if (window.YT?.Player) return Promise.resolve();
   if (ytApiPromise) return ytApiPromise;
 
-  ytApiPromise = new Promise<void>((resolve) => {
+  ytApiPromise = new Promise<void>((resolve, reject) => {
     const prev = window.onYouTubeIframeAPIReady;
     window.onYouTubeIframeAPIReady = () => {
       prev?.();
@@ -73,6 +73,10 @@ function loadYouTubeApi(): Promise<void> {
       const tag = document.createElement("script");
       tag.src = "https://www.youtube.com/iframe_api";
       tag.async = true;
+      tag.onerror = () => {
+        ytApiPromise = null;
+        reject(new Error("Failed to load YouTube IFrame API script"));
+      };
       document.head.appendChild(tag);
     }
   });
@@ -109,8 +113,6 @@ export default function AnaraMediaPlayer({
   const playerRef = useRef<any>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastNonceRef = useRef<number>(-1);
-  // Guards against React Strict Mode double-mounting the player in dev
-  const initializedRef = useRef(false);
   // Tracks the videoId actually loaded inside the iframe (metadata alone is not enough)
   const loadedVideoIdRef = useRef<string | null>(null);
 
@@ -185,37 +187,40 @@ export default function AnaraMediaPlayer({
 
   // ── Create / destroy the YouTube player ────────────────────────────────────
   useEffect(() => {
-    if (initializedRef.current) return; // Strict Mode double-invoke guard
-    initializedRef.current = true;
-
     let disposed = false;
     let readyTimer: ReturnType<typeof setTimeout> | null = null;
 
-    loadYouTubeApi().then(async () => {
-      if (disposed) return;
-
-      if (!window.YT?.Player) {
-        console.warn("[Media] YouTube IFrame API unavailable");
-        setLoadError("YouTube API could not be loaded");
-        return;
-      }
-
-      // The host div is rendered conditionally, so it may not be attached yet on
-      // the first microtask — wait briefly for the ref to settle.
-      for (let i = 0; i < 20 && !hostRef.current; i++) {
-        await new Promise((r) => setTimeout(r, 50));
+    loadYouTubeApi()
+      .then(async () => {
         if (disposed) return;
-      }
-      if (disposed || !hostRef.current) {
-        console.warn("[Media] Host element never mounted");
-        return;
-      }
 
-      // IMPORTANT: YT.Player REPLACES the element it is given with its own iframe.
-      // Never hand it a React-managed node — create a throwaway child instead,
-      // otherwise React loses the node and the whole card fails to render.
-      const mountTarget = document.createElement("div");
-      hostRef.current.appendChild(mountTarget);
+        if (!window.YT?.Player) {
+          console.warn("[Media] YouTube IFrame API unavailable");
+          setLoadError("YouTube API could not be loaded");
+          return;
+        }
+
+        // The host div is rendered conditionally, so it may not be attached yet on
+        // the first microtask — wait briefly for the ref to settle.
+        for (let i = 0; i < 20 && !hostRef.current; i++) {
+          await new Promise((r) => setTimeout(r, 50));
+          if (disposed) return;
+        }
+        if (disposed || !hostRef.current) {
+          console.warn("[Media] Host element never mounted");
+          return;
+        }
+
+        // Clear any previous child before attaching fresh player instance
+        while (hostRef.current.firstChild) {
+          hostRef.current.removeChild(hostRef.current.firstChild);
+        }
+
+        // IMPORTANT: YT.Player REPLACES the element it is given with its own iframe.
+        // Never hand it a React-managed node — create a throwaway child instead,
+        // otherwise React loses the node and the whole card fails to render.
+        const mountTarget = document.createElement("div");
+        hostRef.current.appendChild(mountTarget);
 
       console.log(`[Media] Creating YT player for ${current.videoId} (${current.kind})`);
       loadedVideoIdRef.current = current.videoId;
@@ -312,6 +317,11 @@ export default function AnaraMediaPlayer({
         console.error("[Media] Failed to create YT player:", err);
         setLoadError("Failed to create YouTube player");
       }
+    })
+    .catch((err) => {
+      if (disposed) return;
+      console.warn("[Media] YouTube API script error:", err);
+      setLoadError("Failed to load YouTube API script");
     });
 
     return () => {
@@ -467,7 +477,7 @@ export default function AnaraMediaPlayer({
           />
           <span className="text-cyan-300 font-bold uppercase tracking-widest truncate">
             {isPlaylist ? current.playlistName : isMusic ? "Anara Music" : "Anara Video"}
-            {ducked && !isPaused && <span className="ml-2 text-cyan-500/70 normal-case">· volume diturunkan</span>}
+            {ducked && !isPaused && <span className="ml-2 text-cyan-500/70 normal-case">· volume ducked</span>}
           </span>
           {isPlaylist && (
             <span className="px-2 py-0.5 rounded bg-indigo-500/20 border border-indigo-400/40 text-indigo-200 text-[10px] font-bold tabular-nums shrink-0">
@@ -594,8 +604,8 @@ export default function AnaraMediaPlayer({
             <button
               type="button"
               onClick={() => jumpToTrack(plIndex - 1)}
-              title="Sebelumnya"
-              aria-label="Sebelumnya"
+              title="Previous"
+              aria-label="Previous"
               className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-slate-300 hover:text-white flex items-center justify-center transition-all active:scale-90 cursor-pointer"
             >
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -606,8 +616,8 @@ export default function AnaraMediaPlayer({
           <button
             type="button"
             onClick={togglePlay}
-            title={isPaused || needsGesture ? "Putar" : "Jeda"}
-            aria-label={isPaused || needsGesture ? "Putar" : "Jeda"}
+            title={isPaused || needsGesture ? "Play" : "Pause"}
+            aria-label={isPaused || needsGesture ? "Play" : "Pause"}
             className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
               needsGesture
                 ? "bg-amber-500/30 hover:bg-amber-500/50 border-amber-400/60 text-amber-100 shadow-[0_0_16px_rgba(251,191,36,0.45)] animate-pulse"
@@ -629,8 +639,8 @@ export default function AnaraMediaPlayer({
             <button
               type="button"
               onClick={() => (isPlaylist ? jumpToTrack(plIndex + 1) : playNext())}
-              title="Berikutnya"
-              aria-label="Berikutnya"
+              title="Next"
+              aria-label="Next"
               className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-slate-300 hover:text-white flex items-center justify-center transition-all active:scale-90 cursor-pointer"
             >
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -642,26 +652,26 @@ export default function AnaraMediaPlayer({
       </div>
 
       {/* ── Collapsible playlist track list ── */}
-      {isPlaylist && showPlaylist && (
-        <div className="border-t border-cyan-400/20 bg-black/40 rounded-b-2xl">
-          <div className="max-h-[220px] overflow-y-auto py-2 px-2 space-y-1 [scrollbar-width:thin] [scrollbar-color:rgba(34,211,238,0.3)_transparent]">
-            {plTracks.map((t, idx) => {
+      {showPlaylist && isPlaylist && plTracks.length > 0 && (
+        <div className="border-t border-white/10 bg-black/60 backdrop-blur-md px-3 py-2 max-h-48 overflow-y-auto custom-scrollbar">
+          <div className="space-y-1">
+            {plTracks.map((t: MediaTrack, idx: number) => {
               const active = idx === plIndex;
               return (
                 <button
-                  key={(t.videoId || t.video_id || "") + idx}
+                  key={`${t.videoId || t.video_id}-${idx}`}
                   type="button"
                   onClick={() => jumpToTrack(idx)}
-                  className={`w-full flex items-center gap-3 py-2 px-2.5 rounded-xl text-left transition-all cursor-pointer border ${
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer ${
                     active
-                      ? "bg-cyan-500/15 border-cyan-400/40 shadow-[0_0_10px_rgba(34,211,238,0.18)]"
-                      : "bg-transparent border-transparent hover:bg-white/[0.06] hover:border-white/10"
+                      ? "bg-cyan-500/20 text-cyan-200 border border-cyan-400/30"
+                      : "hover:bg-white/[0.06] text-slate-400 border border-transparent"
                   }`}
                 >
                   <span
-                    className={`w-6 h-6 rounded-full text-[11px] font-mono font-bold flex items-center justify-center shrink-0 border ${
+                    className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-mono font-bold shrink-0 border ${
                       active
-                        ? "bg-cyan-400/25 border-cyan-400/50 text-cyan-100"
+                        ? "bg-cyan-400 text-slate-950 border-cyan-300 shadow-[0_0_8px_#22d3ee]"
                         : "bg-white/[0.06] border-white/15 text-slate-400"
                     }`}
                   >
@@ -672,7 +682,7 @@ export default function AnaraMediaPlayer({
                       active ? "text-cyan-100 font-semibold" : "text-slate-300"
                     }`}
                   >
-                    {t.title || "Tanpa Judul"}
+                    {t.title || "Untitled Track"}
                   </span>
                   {t.duration && (
                     <span className="text-[10px] font-mono text-slate-500 tabular-nums shrink-0">

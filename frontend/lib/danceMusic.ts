@@ -28,6 +28,9 @@ export function playDanceMusic(audioContext: AudioContext, durationSeconds: numb
     audioContext.resume().catch(() => {});
   }
 
+  const scheduledNodes: Array<{ stop: (time?: number) => void }> = [];
+  let isStopped = false;
+
   const now = audioContext.currentTime + 0.05;
   const masterGain = audioContext.createGain();
   masterGain.gain.setValueAtTime(0.001, now);
@@ -37,6 +40,15 @@ export function playDanceMusic(audioContext: AudioContext, durationSeconds: numb
   masterGain.gain.exponentialRampToValueAtTime(0.001, now + durationSeconds);
 
   masterGain.connect(audioContext.destination);
+
+  // Auto-disconnect masterGain when song completes naturally
+  const naturalEndTimer = setTimeout(() => {
+    if (!isStopped) {
+      try {
+        masterGain.disconnect();
+      } catch {}
+    }
+  }, (durationSeconds + 0.5) * 1000);
 
   const tempo = 124; // BPM (lively Rumba / Salsa tempo)
   const beatSec = 60 / tempo;
@@ -251,12 +263,23 @@ export function playDanceMusic(audioContext: AudioContext, durationSeconds: numb
 
   return {
     stop: () => {
+      if (isStopped) return;
+      isStopped = true;
+      clearTimeout(naturalEndTimer);
       try {
         const stopTime = audioContext.currentTime;
         const currentGain = Math.max(0.001, masterGain.gain.value);
         masterGain.gain.cancelScheduledValues(stopTime);
         masterGain.gain.setValueAtTime(currentGain, stopTime);
         masterGain.gain.exponentialRampToValueAtTime(0.0001, stopTime + 0.4);
+
+        for (const node of scheduledNodes) {
+          try {
+            node.stop(stopTime + 0.4);
+          } catch {}
+        }
+        scheduledNodes.length = 0;
+
         setTimeout(() => {
           try {
             masterGain.disconnect();

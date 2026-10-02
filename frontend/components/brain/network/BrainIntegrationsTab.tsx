@@ -31,8 +31,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
   const [googleEmailInput, setGoogleEmailInput] = useState("");
   const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-
-
+  const [disconnectConfirm, setDisconnectConfirm] = useState<{ type: "whatsapp" | "google"; title: string; message: string } | null>(null);
 
   const fetchWhatsAppStatus = async () => {
     try {
@@ -59,10 +58,12 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
   // Live polling while WhatsApp QR pairing modal is open
   useEffect(() => {
     if (!isWaModalOpen) return;
+    let isMounted = true;
     const interval = setInterval(() => {
       fetch(`${BACKEND_URL}/api/integrations/whatsapp/qr`)
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
+          if (!isMounted) return;
           if (d && d.qr_data_url) {
             setWaQrUrl(d.qr_data_url);
           }
@@ -70,12 +71,16 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
             setWaStatus("connected");
             setWaUser(d.user);
             setIsWaModalOpen(false);
+            if (onRefreshAll) onRefreshAll();
           }
         })
         .catch(() => {});
     }, 2500);
-    return () => clearInterval(interval);
-  }, [isWaModalOpen]);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [isWaModalOpen, onRefreshAll]);
 
   const handleSaveWhatsAppConfig = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,20 +117,56 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
     }
   };
 
-  const handleWhatsAppLogout = async () => {
-    if (!confirm("Are you sure you want to disconnect WhatsApp? The session will be deleted.")) return;
-    setIsWaLoading(true);
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/integrations/whatsapp/logout`, { method: "POST" });
-      if (res.ok) {
-        setWaStatus("disconnected");
-        setWaUser(null);
-        setWaQrUrl(null);
+  const handleWhatsAppLogout = () => {
+    setDisconnectConfirm({
+      type: "whatsapp",
+      title: "Disconnect WhatsApp Bridge",
+      message: "Are you sure you want to disconnect WhatsApp? The session will be deleted from Anara runtime.",
+    });
+  };
+
+  const handleGoogleDisconnect = () => {
+    setDisconnectConfirm({
+      type: "google",
+      title: "Disconnect Google Workspace",
+      message: "Are you sure you want to disconnect this Google Workspace account?",
+    });
+  };
+
+  const handleConfirmDisconnect = async () => {
+    if (!disconnectConfirm) return;
+    const { type } = disconnectConfirm;
+    setDisconnectConfirm(null);
+
+    if (type === "whatsapp") {
+      setIsWaLoading(true);
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/integrations/whatsapp/logout`, { method: "POST" });
+        if (res.ok) {
+          setWaStatus("disconnected");
+          setWaUser(null);
+          setWaQrUrl(null);
+          if (onRefreshAll) onRefreshAll();
+        }
+      } catch (e) {
+        console.error("[WhatsApp] logout error:", e);
+      } finally {
+        setIsWaLoading(false);
       }
-    } catch (e) {
-      console.error("[WhatsApp] logout error:", e);
-    } finally {
-      setIsWaLoading(false);
+    } else if (type === "google") {
+      setIsGoogleLoading(true);
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/integrations/google/disconnect`, { method: "POST" });
+        if (res.ok) {
+          setGoogleStatus("disconnected");
+          setGoogleEmail(null);
+          if (onRefreshAll) onRefreshAll();
+        }
+      } catch (e) {
+        console.error("[Google] disconnect error:", e);
+      } finally {
+        setIsGoogleLoading(false);
+      }
     }
   };
 
@@ -218,17 +259,6 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
     } finally {
       setIsGoogleLoading(false);
     }
-  };
-
-  const handleGoogleDisconnect = async () => {
-    if (!confirm("Putuskan tautan akun Google?")) return;
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/integrations/google/disconnect`, { method: "POST" });
-      if (res.ok) {
-        setGoogleStatus("disconnected");
-        setGoogleEmail(null);
-      }
-    } catch {}
   };
 
   useEffect(() => {
@@ -496,23 +526,25 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
 
     {/* ── MODAL POPUP PAIRING QR CODE WHATSAPP ── */}
     {isWaModalOpen && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in select-none">
       <div className="relative w-full max-w-sm p-6 rounded-3xl liquid-glass border border-emerald-400/40 shadow-[0_0_50px_rgba(52,211,153,0.2)] flex flex-col items-center text-center">
         {/* Close Button */}
         <button
           onClick={() => setIsWaModalOpen(false)}
           className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
         >
-          ✕
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
         </button>
     
         <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-400 mb-3 shadow-lg">
           <BrandIcon name="whatsapp" className="w-6 h-6" />
         </div>
-        <h3 className="text-sm font-semibold text-white tracking-wide">
+        <h3 className="text-sm font-semibold text-white tracking-wide font-mono">
           Connect WhatsApp
         </h3>
-        <p className="text-xs text-slate-300 mt-1 mb-4 leading-relaxed">
+        <p className="text-xs text-slate-300 mt-1 mb-4 leading-relaxed font-sans">
           Open <span className="text-emerald-300 font-semibold">WhatsApp on your phone</span> &gt; Linked Devices &gt; Link a Device, then scan the QR code below:
         </p>
     
@@ -520,8 +552,8 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
         <div className="p-3.5 bg-white rounded-2xl shadow-2xl border-2 border-emerald-400/50 relative">
           {isWaLoading && !waQrUrl ? (
             <div className="w-52 h-52 flex flex-col items-center justify-center text-slate-800 font-mono text-xs gap-3">
-              <span className="w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-              <span>Menghubungkan Bridge...</span>
+              <span className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+              <span>Connecting Bridge...</span>
             </div>
           ) : waQrUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -547,13 +579,15 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
     
     {/* ── MODAL SETUP TELEGRAM BOT ── */}
     {isTgModalOpen && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in select-none">
       <div className="relative w-full max-w-sm p-6 rounded-3xl liquid-glass border border-sky-400/40 shadow-[0_0_50px_rgba(56,189,248,0.2)] flex flex-col text-left">
         <button
           onClick={() => setIsTgModalOpen(false)}
           className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
         >
-          ✕
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
         </button>
     
         <div className="flex items-center gap-3 mb-3">
@@ -561,21 +595,21 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
             <BrandIcon name="telegram" className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-white tracking-wide">
+            <h3 className="text-sm font-semibold text-white tracking-wide font-mono">
               Telegram Settings
             </h3>
-            <p className="text-[11px] text-slate-400">Connect your official Telegram bot</p>
+            <p className="text-[11px] text-slate-400 font-sans">Connect your official Telegram bot</p>
           </div>
         </div>
     
-        <form onSubmit={handleSaveTelegramConfig} className="space-y-3 mt-2">
+        <form onSubmit={handleSaveTelegramConfig} className="space-y-3 mt-2 font-sans">
           <div>
             <label className="text-[11px] font-mono text-slate-300 block mb-1">
               Telegram Bot Token (from @BotFather)
             </label>
             <input
               type="password"
-              placeholder="misal: 123456789:ABCdefGhIJKlmNoPQ..."
+              placeholder="e.g. 123456789:ABCdefGhIJKlmNoPQ..."
               value={tgTokenInput}
               onChange={(e) => setTgTokenInput(e.target.value)}
               className="w-full px-3 py-2 rounded-xl bg-black/50 border border-white/20 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-400 font-mono"
@@ -585,7 +619,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
     
           <div>
             <label className="text-[11px] font-mono text-slate-300 block mb-1">
-              Default Chat ID (Opsional)
+              Default Chat ID (Optional)
             </label>
             <input
               type="text"
@@ -599,15 +633,15 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-[11px] font-mono text-slate-300">
-                Admin User IDs (Otorisasi Approval)
+                Admin User IDs (Approval Authorization)
               </label>
               <span className="text-[9.5px] font-mono text-sky-300">
-                Ketik /status in bot to check ID
+                Send /status in bot to check ID
               </span>
             </div>
             <input
               type="text"
-              placeholder="misal: 7024711852 (pisahkan koma jika banyak)"
+              placeholder="e.g. 7024711852 (comma separated if multiple)"
               value={tgAdminIdsInput}
               onChange={(e) => setTgAdminIdsInput(e.target.value)}
               className="w-full px-3 py-2 rounded-xl bg-black/50 border border-white/20 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-400 font-mono"
@@ -618,23 +652,26 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
           </div>
 
           {tgErrorMsg && (
-            <div className="p-2.5 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-xs font-mono leading-relaxed">
-              ⚠️ {tgErrorMsg}
+            <div className="p-2.5 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-xs font-mono leading-relaxed flex items-center gap-2">
+              <svg className="w-4 h-4 text-rose-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span>{tgErrorMsg}</span>
             </div>
           )}
     
-          <div className="pt-2 flex justify-end gap-2">
+          <div className="pt-2 flex justify-end gap-2 font-mono text-xs">
             <button
               type="button"
               onClick={() => setIsTgModalOpen(false)}
-              className="px-3 py-1.5 text-xs text-slate-400 hover:text-white"
+              className="px-3 py-1.5 text-slate-400 hover:text-white cursor-pointer"
             >
-              Batal
+              Cancel
             </button>
             <button
               type="submit"
               disabled={isTgLoading}
-              className="px-4 py-1.5 rounded-xl bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/40 text-xs font-semibold text-white transition-all cursor-pointer"
+              className="px-4 py-1.5 rounded-xl bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/40 font-semibold text-white transition-all cursor-pointer"
             >
               {isTgLoading ? "Verifying..." : "Save & Connect"}
             </button>
@@ -646,13 +683,15 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
     
     {/* ── MODAL SETUP GOOGLE WORKSPACE ── */}
     {isGoogleModalOpen && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in select-none">
       <div className="relative w-full max-w-sm p-6 rounded-3xl liquid-glass border border-rose-400/40 shadow-[0_0_50px_rgba(251,113,133,0.2)] flex flex-col text-left">
         <button
           onClick={() => setIsGoogleModalOpen(false)}
           className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
         >
-          ✕
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
         </button>
     
         <div className="flex items-center gap-3 mb-3">
@@ -660,40 +699,40 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
             <BrandIcon name="google" className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-white tracking-wide">
+            <h3 className="text-sm font-semibold text-white tracking-wide font-mono">
               Google Workspace
             </h3>
-            <p className="text-[11px] text-slate-400">Gmail Inbox &amp; Google Calendar</p>
+            <p className="text-[11px] text-slate-400 font-sans">Gmail Inbox &amp; Google Calendar</p>
           </div>
         </div>
     
-        <form onSubmit={handleSaveGoogleConfig} className="space-y-3 mt-2">
+        <form onSubmit={handleSaveGoogleConfig} className="space-y-3 mt-2 font-sans">
           <div>
             <label className="text-[11px] font-mono text-slate-300 block mb-1">
-              Alamat Email Google
+              Google Account Email
             </label>
             <input
               type="email"
-              placeholder="nama@gmail.com"
+              placeholder="name@gmail.com"
               value={googleEmailInput}
               onChange={(e) => setGoogleEmailInput(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-black/50 border border-white/20 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-rose-400"
+              className="w-full px-3 py-2 rounded-xl bg-black/50 border border-white/20 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-rose-400 font-mono"
               required
             />
           </div>
     
-          <div className="pt-2 flex justify-end gap-2">
+          <div className="pt-2 flex justify-end gap-2 font-mono text-xs">
             <button
               type="button"
               onClick={() => setIsGoogleModalOpen(false)}
-              className="px-3 py-1.5 text-xs text-slate-400 hover:text-white"
+              className="px-3 py-1.5 text-slate-400 hover:text-white cursor-pointer"
             >
-              Batal
+              Cancel
             </button>
             <button
               type="submit"
               disabled={isGoogleLoading}
-              className="px-4 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/40 text-xs font-semibold text-white transition-all cursor-pointer"
+              className="px-4 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/40 font-semibold text-white transition-all cursor-pointer"
             >
               {isGoogleLoading ? "Connecting..." : "Link Account"}
             </button>
@@ -701,6 +740,43 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
         </form>
       </div>
     </div>
+    )}
+
+    {/* In-app Disconnect Confirmation Modal */}
+    {disconnectConfirm && (
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in select-none"
+      >
+        <div className="w-full max-w-sm p-5 rounded-2xl bg-slate-950/95 border border-white/20 shadow-[0_0_40px_rgba(0,0,0,0.8)] text-white space-y-4 font-sans">
+          <div className="flex items-center gap-2.5 text-rose-400 font-mono text-xs font-semibold">
+            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span>{disconnectConfirm.title}</span>
+          </div>
+          <p className="text-xs text-slate-300 leading-relaxed font-sans">
+            {disconnectConfirm.message}
+          </p>
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10 font-mono text-xs">
+            <button
+              type="button"
+              onClick={() => setDisconnectConfirm(null)}
+              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmDisconnect}
+              className="px-3.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 font-semibold transition-all cursor-pointer shadow-sm active:scale-95"
+            >
+              Disconnect
+            </button>
+          </div>
+        </div>
+      </div>
     )}
     </>
   );

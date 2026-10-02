@@ -6,6 +6,7 @@ Provides real-time event distribution for Web Studio, HUD, WebSocket, and multi-
 from __future__ import annotations
 
 import asyncio
+import collections
 import logging
 import threading
 import time
@@ -44,6 +45,24 @@ class ActivityProvenance(str, Enum):
     WORKSPACE_SENTINEL = "workspace_sentinel"
 
 
+def _safe_serialize_val(val: Any) -> Any:
+    """Recursively converts objects to JSON-serializable primitives."""
+    if val is None or isinstance(val, (str, int, float, bool)):
+        return val
+    if isinstance(val, Enum):
+        return val.value
+    if isinstance(val, dict):
+        return {str(k): _safe_serialize_val(v) for k, v in val.items()}
+    if isinstance(val, (list, tuple, set)):
+        return [_safe_serialize_val(item) for item in val]
+    if hasattr(val, "to_dict") and callable(val.to_dict):
+        try:
+            return _safe_serialize_val(val.to_dict())
+        except Exception:
+            return str(val)
+    return str(val)
+
+
 @dataclass
 class AgentEvent:
     event_type: EventType | str
@@ -58,6 +77,7 @@ class AgentEvent:
         data = asdict(self)
         data["event_type"] = self.event_type.value if hasattr(self.event_type, "value") else str(self.event_type)
         data["provenance"] = self.provenance.value if hasattr(self.provenance, "value") else str(self.provenance)
+        data["payload"] = _safe_serialize_val(self.payload)
         return data
 
 
@@ -69,8 +89,15 @@ class TelemetryEventBus:
         self._listeners: Dict[str, List[asyncio.Queue[AgentEvent]]] = {}
         self._global_hooks: List[Callable[[AgentEvent], Any]] = []
         self._active_tasks: Set[asyncio.Task] = set()
-        self._session_seqs: Dict[str, int] = {}
-        self._session_dropped: Dict[str, int] = {}
+        self._session_seqs: Dict[str, int] = collections.OrderedDict()
+        self._session_dropped: Dict[str, int] = collections.OrderedDict()
+        self._main_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._max_tracked_sessions: int = 2000
+
+    def set_loop(self, loop: asyncio.AbstractEventLoop):
+        """Explicitly registers the main asyncio event loop for threadsafe dispatches."""
+        with self._lock:
+            self._main_loop = loop
 
     def register_hook(self, callback: Callable[[AgentEvent], Any]):
         """Registers a global hook (e.g. terminal logger or metric collector)."""
@@ -86,8 +113,17 @@ class TelemetryEventBus:
 
     def subscribe(self, session_id: str, max_queue_size: int = 500) -> asyncio.Queue[AgentEvent]:
         """Subscribes an SSE or WebSocket client queue to a session's telemetry events with bounded capacity."""
+        try:
+            loop = asyncio.get_running_loop()
+            with self._lock:
+                if not self._main_loop or not self._main_loop.is_running():
+                    self._main_loop = loop
+        except RuntimeError:
+            pass
+
         s_key = str(session_id or "default")
-        queue: asyncio.Queue[AgentEvent] = asyncio.Queue(maxsize=max_queue_size)
+        bounded_size = max(1, min(int(max_queue_size), 5000))
+        queue: asyncio.Queue[AgentEvent] = asyncio.Queue(maxsize=bounded_size)
         with self._lock:
             if s_key not in self._listeners:
                 self._listeners[s_key] = []
@@ -95,7 +131,7 @@ class TelemetryEventBus:
         return queue
 
     def unsubscribe(self, session_id: str, queue: asyncio.Queue[AgentEvent]):
-        """Unsubscribes a client queue when connection closes."""
+        """Unsubscribes a client queue when connection closes, preserving metrics in a bounded window."""
         s_key = str(session_id or "default")
         with self._lock:
             if s_key in self._listeners:
@@ -103,11 +139,19 @@ class TelemetryEventBus:
                     self._listeners[s_key].remove(queue)
                 if not self._listeners[s_key]:
                     del self._listeners[s_key]
-                    self._session_seqs.pop(s_key, None)
-                    self._session_dropped.pop(s_key, None)
+
+            # Bounded LRU-style cleanup of stale historical session metadata
+            while len(self._session_seqs) > self._max_tracked_sessions:
+                oldest = next(iter(self._session_seqs))
+                if oldest not in self._listeners:
+                    self._session_seqs.pop(oldest, None)
+                    self._session_dropped.pop(oldest, None)
+                else:
+                    break
 
     def _hook_done_callback(self, task: asyncio.Task):
-        self._active_tasks.discard(task)
+        with self._lock:
+            self._active_tasks.discard(task)
         if not task.cancelled():
             exc = task.exception()
             if exc:
@@ -122,6 +166,11 @@ class TelemetryEventBus:
         payload: Dict[str, Any],
     ):
         """Broadcasts an agent event to session subscribers and global hooks."""
+        try:
+            self._main_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+
         s_key = str(session_id or "default")
         with self._lock:
             seq = self._session_seqs.get(s_key, 0) + 1
@@ -138,20 +187,21 @@ class TelemetryEventBus:
             seq_id=seq,
         )
 
-        # 1. Run global hooks with strong-reference task retention
+        # 1. Run global hooks with strong-reference task retention and thread safety
         for hook in hooks_snapshot:
             try:
                 res = hook(event)
                 if asyncio.iscoroutine(res):
                     task = asyncio.create_task(res)
-                    self._active_tasks.add(task)
+                    with self._lock:
+                        self._active_tasks.add(task)
                     task.add_done_callback(self._hook_done_callback)
             except Exception as e:
                 logger.error(f"[TelemetryBus] Hook {hook} failed: {e}")
 
         # 2. Forward to session queues with drop-oldest eviction policy to prevent OOM
         for q in listeners_snapshot:
-            while True:
+            for _ in range(5):  # Bounded eviction loop
                 try:
                     q.put_nowait(event)
                     break
@@ -175,15 +225,18 @@ class TelemetryEventBus:
         Thread-safe bridge to emit telemetry from worker threads or sync tools
         without raising 'no running event loop' errors.
         """
+        target_loop = None
         try:
-            loop = asyncio.get_running_loop()
+            target_loop = asyncio.get_running_loop()
         except RuntimeError:
-            loop = None
+            with self._lock:
+                if self._main_loop and self._main_loop.is_running():
+                    target_loop = self._main_loop
 
-        if loop and loop.is_running():
+        if target_loop and target_loop.is_running():
             asyncio.run_coroutine_threadsafe(
                 self.emit(event_type, provenance, session_id, trace_id, payload),
-                loop
+                target_loop
             )
         else:
             logger.debug(f"[TelemetryBus] Event dropped (no active loop for threadsafe emit): {event_type}")
@@ -210,6 +263,17 @@ class TelemetryEventBus:
                 "session_dropped": dict(self._session_dropped),
                 "session_seqs": dict(self._session_seqs),
             }
+
+    async def shutdown(self):
+        """Gracefully cancels active hook tasks and drains listeners."""
+        with self._lock:
+            tasks = list(self._active_tasks)
+            self._active_tasks.clear()
+            self._listeners.clear()
+        for t in tasks:
+            t.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
 
 # Singleton instance

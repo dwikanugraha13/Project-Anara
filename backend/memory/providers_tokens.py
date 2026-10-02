@@ -1,8 +1,9 @@
 import json
 import logging
+import os
 import re
 import time
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +26,9 @@ MODEL_PRICE_PER_M: Dict[str, Tuple[float, float, float]] = {
     "claude-3-5-sonnet": (3.0, 0.30, 15.0),
     "claude-3-5-haiku": (0.80, 0.08, 4.0),
     "claude-3-opus": (15.0, 1.50, 75.0),
-    # OpenAI models (50% discount on cached tokens)
-    "gpt-4o": (2.50, 1.25, 10.0),
+    # OpenAI models (50% discount on cached tokens) — longest pattern first
     "gpt-4o-mini": (0.15, 0.075, 0.60),
+    "gpt-4o": (2.50, 1.25, 10.0),
     "o1": (15.0, 7.50, 60.0),
     "o3-mini": (1.10, 0.55, 4.40),
     # Gemini models (75% discount on cached tokens)
@@ -57,8 +58,8 @@ def calculate_token_cost(
     """
     m_clean = (model_id or "").strip().lower()
     rates = None
-    for pattern, price_tuple in MODEL_PRICE_PER_M.items():
-        if pattern in m_clean:
+    for pattern, price_tuple in sorted(MODEL_PRICE_PER_M.items(), key=lambda x: len(x[0]), reverse=True):
+        if pattern != "default" and pattern in m_clean:
             rates = price_tuple
             break
     if not rates:

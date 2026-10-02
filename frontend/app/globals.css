@@ -9,6 +9,15 @@
 :root {
   --sidebar-width: 260px;
   --tree-width: 210px;
+  --studio-left-width: 260px;
+  --studio-right-width: 450px;
+
+  /* Semantic Liquid Glass Tokens */
+  --liquid-glass-bg: rgba(255, 255, 255, 0.05);
+  --liquid-glass-border: rgba(255, 255, 255, 0.12);
+  --liquid-glass-border-subtle: rgba(255, 255, 255, 0.08);
+  --liquid-glass-blur: 16px;
+  --liquid-glass-highlight: rgba(255, 255, 255, 0.2);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -86,13 +95,14 @@ canvas {
   display: block;
 }
 
-/* Smooth transitions for all interactive elements without layout recalculation */
+/* Smooth transitions for interactive elements without layout recalculation */
 button {
   transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease, transform 0.1s ease;
 }
 
-button:active {
-  transform: scale(0.95);
+button:not([role="tab"]):not([data-no-scale]):active,
+.pressable:active {
+  transform: scale(0.98);
 }
 
 /* ═══════════════════════════════════════════════════════════

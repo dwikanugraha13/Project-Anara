@@ -5,7 +5,7 @@ import AgentMarkdown from "./AgentMarkdown";
 import AgentToolCard, { ExplorationGroupCard, ThinkingCard } from "./AgentToolCard";
 import InteractiveQuestionCard from "./InteractiveQuestionCard";
 import type { TranscriptItem, AssistantStatus } from "../workbench/AnaraWorkbench";
-import type { ToolProgressPayload, AgentActionPayload } from "@/hooks/useWebSocket";
+import type { ToolProgressPayload } from "@/hooks/useWebSocket";
 
 export interface ChatTimelineProps {
   transcript: TranscriptItem[];
@@ -44,17 +44,50 @@ export default function ChatTimeline({
 }: ChatTimelineProps) {
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isFollowingRef = useRef(true);
   const [isNearBottom, setIsNearBottom] = useState(true);
+  const [hasUnread, setHasUnread] = useState(false);
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
 
   const handleScroll = () => {
     const el = scrollContainerRef.current;
     if (!el) return;
     const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    setIsNearBottom(distanceToBottom < 120);
+    const near = distanceToBottom < 100;
+    setIsNearBottom(near);
+    if (near) {
+      isFollowingRef.current = true;
+      setHasUnread(false);
+    }
   };
 
+  // Passive wheel listener: user scrolling up interrupts follow mode immediately
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) {
+        isFollowingRef.current = false;
+        setIsNearBottom(false);
+      } else if (e.deltaY > 0) {
+        const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+        if (distanceToBottom < 80) {
+          isFollowingRef.current = true;
+          setIsNearBottom(true);
+          setHasUnread(false);
+        }
+      }
+    };
+
+    container.addEventListener("wheel", onWheel, { passive: true });
+    return () => container.removeEventListener("wheel", onWheel);
+  }, []);
+
   const scrollToBottom = (smooth = true) => {
+    isFollowingRef.current = true;
+    setIsNearBottom(true);
+    setHasUnread(false);
     const el = scrollContainerRef.current;
     if (el) {
       if (smooth) {
@@ -65,38 +98,47 @@ export default function ChatTimeline({
     } else {
       transcriptEndRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
     }
-    setIsNearBottom(true);
   };
 
   // Immediate auto-scroll when active session changes
   useEffect(() => {
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+      isFollowingRef.current = true;
       setIsNearBottom(true);
+      setHasUnread(false);
     }
   }, [activeSessionId]);
 
-  // Smart auto-scroll: Only auto-scroll when user is already near bottom (no scroll hijacking)
+  // Smart auto-scroll: Follow active stream without trapping user scroll
   useEffect(() => {
-    if (isNearBottom && scrollContainerRef.current) {
+    if (isFollowingRef.current && isNearBottom && scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    } else if (!isNearBottom) {
+      setHasUnread(true);
     }
   }, [transcript, isNearBottom]);
 
-  const handleCopyMessage = (text: string, idx: number) => {
-    navigator.clipboard.writeText(text);
-    setCopiedMessageIndex(idx);
-    setTimeout(() => {
-      setCopiedMessageIndex(null);
-    }, 2000);
-  };
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const compactTokenCount = (value: number) =>
-    value >= 1000000
-      ? `${(value / 1000000).toFixed(value >= 10000000 ? 0 : 1)}M`
-      : value >= 1000
-      ? `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}K`
-      : value.toLocaleString();
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    };
+  }, []);
+
+  const handleCopyMessage = (text: string, idx: number) => {
+    if (!navigator?.clipboard?.writeText) return;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedMessageIndex(idx);
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+      copyTimeoutRef.current = setTimeout(() => {
+        setCopiedMessageIndex(null);
+      }, 2000);
+    }).catch((err) => {
+      console.warn("[Clipboard Error]:", err);
+    });
+  };
 
   const renderBlocks = useMemo(() => {
     const blocks: Array<
@@ -105,6 +147,7 @@ export default function ChatTimeline({
     > = [];
 
     let currentExploration: any[] = [];
+    let explorationStartIdx = 0;
 
     const flushExploration = (running: boolean) => {
       if (currentExploration.length > 0) {
@@ -112,7 +155,7 @@ export default function ChatTimeline({
           kind: "exploration",
           items: [...currentExploration],
           isRunning: running,
-          key: `explore-${blocks.length}`,
+          key: `explore-group-${explorationStartIdx}`,
         });
         currentExploration = [];
       }
@@ -130,6 +173,9 @@ export default function ChatTimeline({
           tool.includes("list");
 
         if (isExploration) {
+          if (currentExploration.length === 0) {
+            explorationStartIdx = i;
+          }
           currentExploration.push(item.agentActionData);
           continue;
         } else {
@@ -210,15 +256,17 @@ export default function ChatTimeline({
               </div>
             </div>
           ) : (() => {
-            const lastAiIndex = transcript.map((t) => t.speaker).lastIndexOf("output");
-
             return (
               <>
                 {renderBlocks.map((block) => {
                   if (block.kind === "exploration") {
                     return (
                       <div key={block.key} className="w-full my-1 px-1 animate-fade-in">
-                        <ExplorationGroupCard items={block.items} isRunning={block.isRunning} />
+                        <ExplorationGroupCard
+                          items={block.items}
+                          isRunning={block.isRunning}
+                          onOpenFile={onOpenFile}
+                        />
                       </div>
                     );
                   }
@@ -228,21 +276,30 @@ export default function ChatTimeline({
                   const isLatestAi = isAi && idx === transcript.length - 1;
 
                   const footerElement = item.text ? (
-                    <div className="flex items-center gap-1.5 pt-1.5 opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100 transition-opacity duration-150 select-none">
+                    <div className="flex items-center justify-between pt-2 min-h-[28px] opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100 transition-opacity duration-200 select-none pointer-events-none group-hover/turn:pointer-events-auto">
+                      <span className="text-[10.5px] font-mono text-slate-500 tabular-nums">
+                        {item.timestamp ? new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null}
+                      </span>
                       <button
                         type="button"
                         onClick={() => handleCopyMessage(item.text, idx)}
-                        className="p-1 rounded-md text-slate-500 hover:text-slate-300 hover:bg-white/[0.06] transition-colors cursor-pointer"
-                        title={copiedMessageIndex === idx ? "Copied!" : "Copy markdown"}
+                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono text-slate-500 hover:text-slate-300 hover:bg-white/[0.05] border border-white/[0.04] hover:border-white/[0.1] transition-all cursor-pointer pointer-events-auto"
+                        title={copiedMessageIndex === idx ? "Copied!" : "Copy message"}
                       >
                         {copiedMessageIndex === idx ? (
-                          <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                          </svg>
+                          <>
+                            <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                            </svg>
+                            <span className="text-emerald-400 font-medium">Copied</span>
+                          </>
                         ) : (
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
+                          <>
+                            <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            <span>Copy</span>
+                          </>
                         )}
                       </button>
                     </div>
@@ -250,8 +307,10 @@ export default function ChatTimeline({
 
                   if (item.speaker === "input") {
                     return (
-                      <div key={idx} className="flex flex-col items-end my-2.5 animate-fade-in group/user">
-                        <div className="max-w-[85%] sm:max-w-[75%] px-4 py-2.5 rounded-xl bg-[#0b1120]/90 border border-white/[0.08] hover:border-white/[0.14] text-slate-100 text-[13.5px] leading-relaxed select-text transition-all font-sans shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
+                      <div key={idx} className="flex flex-col items-end my-3 animate-fade-in group/user">
+                        <div className="relative max-w-[85%] sm:max-w-[75%] px-4 py-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.06] border border-white/[0.09] hover:border-white/[0.15] text-slate-100 text-[13.5px] leading-relaxed select-text backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.35)] transition-all font-sans">
+                          {/* Top specular hairline */}
+                          <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none rounded-t-2xl" />
                           <p className="whitespace-pre-wrap">{item.text}</p>
                         </div>
                       </div>
@@ -273,6 +332,15 @@ export default function ChatTimeline({
                     );
                   }
 
+                  // ── Todo Checklist Card ──
+                  if (item.visualType === "todo_list" && item.todoData) {
+                    return (
+                      <div key={idx} className="w-full my-1 px-1 animate-fade-in">
+                        <AgentToolCard todoData={item.todoData} sessionId={activeSessionId} onOpenFile={onOpenFile} />
+                      </div>
+                    );
+                  }
+
                   // ── Action item (Diff card, shell command, task list) ──
                   if (item.visualType === "agent_action" && item.agentActionData) {
                     return (
@@ -283,12 +351,49 @@ export default function ChatTimeline({
                   }
 
                   // ── Narrative Markdown Turn (Direct Canvas Stream, Zero Slop Card-itis) ──
+                  const currentThinking = item.thinkingText || (isLatestAi ? activeThinkingText : null);
+
                   return (
-                    <div key={idx} className="flex flex-col items-start w-full my-2.5 px-1 animate-fade-in select-text group/turn relative">
+                    <div key={idx} className="flex flex-col items-start w-full my-2 px-1 animate-fade-in select-text group/turn relative">
                       <div className="w-full text-slate-200">
-                        {!item.text ? (
+                        {/* 1. Reasoning / Thought Process Disclosure (if present) */}
+                        {currentThinking && (
+                          <div className="w-full mb-2">
+                            <ThinkingCard
+                              text={currentThinking}
+                              durationSec={item.thinkingDuration}
+                              isLive={Boolean(isLatestAi && !item.text)}
+                            />
+                          </div>
+                        )}
+
+                        {/* Tool Execution Summary Pill in History (Hermes Desktop Parity) */}
+                        {item.toolsUsed && item.toolsUsed.length > 0 && !item.agentActionData && (
+                          <div className="flex items-center gap-2 mb-2 select-none">
+                            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-white/[0.03] hover:bg-white/[0.05] border border-white/[0.08] text-[11px] font-mono text-slate-300 transition-colors">
+                              <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                              </svg>
+                              <span>
+                                {item.toolRecordsCount ? `${item.toolRecordsCount} calls` : `${item.toolsUsed.length} tool${item.toolsUsed.length > 1 ? "s" : ""}`}
+                                <span className="text-slate-500 ml-1.5 font-normal">
+                                  ({Array.from(new Set(item.toolsUsed)).slice(0, 3).join(", ")}
+                                  {new Set(item.toolsUsed).size > 3 ? "..." : ""})
+                                </span>
+                              </span>
+                              {item.durationText && (
+                                <span className="text-[10px] text-slate-500 font-mono pl-1.5 border-l border-white/[0.08] tabular-nums">
+                                  {item.durationText}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 2. In-flight Tool or Initial Wait Indicator (only when NO text and NO thinking card) */}
+                        {!item.text && !currentThinking ? (
                           <div className="space-y-2 w-full max-w-xl">
-                            <div className="py-2 text-xs text-slate-400 font-mono select-none animate-pulse flex items-center gap-2">
+                            <div className="py-1.5 text-xs text-slate-400 font-mono select-none flex items-center gap-2">
                               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
                               <span>
                                 {isLatestAi && liveToolProgress
@@ -297,58 +402,60 @@ export default function ChatTimeline({
                               </span>
                             </div>
                           </div>
-                        ) : (
+                        ) : null}
+
+                        {/* 3. In-flight tool progress when thinking is already showing */}
+                        {!item.text && currentThinking && isLatestAi && liveToolProgress ? (
+                          <div className="py-1 text-xs text-slate-400 font-mono select-none flex items-center gap-2 mb-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                            <span>Executing ${liveToolProgress.toolName}...</span>
+                          </div>
+                        ) : null}
+
+                        {/* 4. Streaming or Final Markdown Content */}
+                        {item.text ? (
                           <>
-                            {item.thinkingText && (
-                              <div className="w-full mb-3">
-                                <ThinkingCard text={item.thinkingText} durationSec={item.thinkingDuration} />
-                              </div>
-                            )}
                             <div className="relative text-slate-200 leading-relaxed font-sans text-[13.5px]">
                               <AgentMarkdown
                                 content={item.text}
                                 isStreaming={Boolean(item.isStreaming)}
                               />
                             </div>
-                            {!item.isStreaming && footerElement}
+                            {footerElement}
                           </>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                   );
                 })}
-
-                {/* Live Thinking Status Pill - Deduplicated */}
-                {activeThinkingText && !(transcript.length > 0 && transcript[transcript.length - 1].thinkingText) && (
-                  <div className="w-full my-1.5 px-1 animate-fade-in">
-                    <ThinkingCard text={activeThinkingText} isLive={true} />
-                  </div>
-                )}
               </>
             );
           })()}
-          {/* Dynamic bottom spacer with generous breathing room */}
+          {/* Dynamic bottom spacer taking footerDockHeight into account */}
           <div
-            style={{
-              height: `${Math.max(48, (footerDockHeight || 0) + 16)}px`,
-            }}
+            style={{ height: `${Math.max(28, (footerDockHeight || 0) + 12)}px` }}
             className="w-full shrink-0 pointer-events-none transition-[height] duration-150 ease-out"
           />
           <div ref={transcriptEndRef} />
         </div>
       </div>
 
-      {/* Floating Circular Scroll Down Button (World-Class Agent Standard) */}
+      {/* Floating Circular Scroll Down Button with Unread Pulse (Hermes Desktop Parity) */}
       {!isNearBottom && (
         <button
           type="button"
           onClick={() => scrollToBottom(true)}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 w-8 h-8 rounded-full bg-[#060913]/90 hover:bg-[#0c1328] border border-white/15 hover:border-cyan-400/40 text-slate-400 hover:text-cyan-300 flex items-center justify-center shadow-[0_8px_24px_rgba(0,0,0,0.65)] backdrop-blur-xl cursor-pointer transition-all active:scale-90 animate-fade-in group"
+          style={{ bottom: `${Math.max(16, (footerDockHeight || 0) + 16)}px` }}
+          className="absolute left-1/2 -translate-x-1/2 z-40 px-3 py-1.5 rounded-full bg-[#060913]/95 hover:bg-[#0c1328] border border-white/20 hover:border-cyan-400/50 text-slate-300 hover:text-white flex items-center gap-2 shadow-[0_8px_32px_rgba(0,0,0,0.85)] backdrop-blur-xl cursor-pointer transition-all active:scale-95 animate-fade-in group font-mono text-xs"
           title="Scroll to bottom"
           aria-label="Scroll to bottom"
         >
-          <svg className="w-4 h-4 text-slate-400 group-hover:text-cyan-300 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M19 9l-7 7-7-7" />
+          {hasUnread && (
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_6px_#22d3ee]" />
+          )}
+          <span>Jump to latest</span>
+          <svg className="w-3.5 h-3.5 text-slate-400 group-hover:text-cyan-300 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
           </svg>
         </button>
       )}

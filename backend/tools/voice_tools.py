@@ -4,9 +4,11 @@ Allows Anara to identify who is speaking, list enrolled speaker profiles,
 and enroll/calibrate user voiceprints into SQLite memory.
 """
 
+import asyncio
 import base64
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .events import _emit_agent_event
@@ -39,7 +41,7 @@ async def _tool_voice_biometrics_manage(
     })
 
     if act == "list":
-        speakers = memory_engine.get_all_speakers() if hasattr(memory_engine, "get_all_speakers") else []
+        speakers = await asyncio.to_thread(memory_engine.get_all_speakers) if hasattr(memory_engine, "get_all_speakers") else []
         summary = [
             {
                 "id": s.get("id"),
@@ -49,7 +51,7 @@ async def _tool_voice_biometrics_manage(
             }
             for s in speakers
         ]
-        last_active = memory_engine.get_last_active_speaker_name() if hasattr(memory_engine, "get_last_active_speaker_name") else None
+        last_active = await asyncio.to_thread(memory_engine.get_last_active_speaker_name) if hasattr(memory_engine, "get_last_active_speaker_name") else None
         return {
             "status": "success",
             "last_active_speaker": last_active,
@@ -57,17 +59,27 @@ async def _tool_voice_biometrics_manage(
             "speakers": summary
         }
 
-    # Helper to resolve audio bytes
+    # Helper to resolve audio bytes safely
     audio_bytes: Optional[bytes] = None
     if audio_base64:
         try:
             audio_bytes = base64.b64decode(audio_base64.strip())
         except Exception:
             return {"status": "error", "message": "Failed to decode audio_base64."}
-    elif audio_file_path and os.path.isfile(audio_file_path):
+    elif audio_file_path:
+        clean_p = audio_file_path.strip().strip("'\"")
+        p = Path(clean_p).resolve()
+        # Security: block sensitive repository and system files
+        forbidden = {".env", "anara_brain.db", "id_rsa", "id_ed25519"}
+        if p.name.lower() in forbidden or any(part.startswith(".env") for part in p.parts):
+            return {"status": "error", "message": "Access to restricted file blocked."}
+        if not p.is_file():
+            return {"status": "error", "message": f"Audio file not found: {clean_p}"}
         try:
-            with open(audio_file_path, "rb") as f:
-                audio_bytes = f.read()
+            def _read_file() -> bytes:
+                with open(p, "rb") as f:
+                    return f.read()
+            audio_bytes = await asyncio.to_thread(_read_file)
         except Exception as e:
             return {"status": "error", "message": f"Failed to read audio file: {e}"}
 
@@ -77,16 +89,27 @@ async def _tool_voice_biometrics_manage(
                 "status": "error",
                 "message": "Parameter 'audio_file_path' or 'audio_base64' is required for speaker identification."
             }
-        match_res = memory_engine.identify_speaker_from_voice(audio_bytes) if hasattr(memory_engine, "identify_speaker_from_voice") else None
-        if match_res and match_res.get("identified"):
-            conf = match_res.get("confidence")
+        speaker_name = None
+        conf = 0.0
+        if hasattr(memory_engine, "identify_speaker"):
+            name, score, _ = await asyncio.to_thread(memory_engine.identify_speaker, audio_bytes)
+            if name:
+                speaker_name = name
+                conf = score
+        elif hasattr(memory_engine, "identify_speaker_from_voice"):
+            match_res = await asyncio.to_thread(getattr(memory_engine, "identify_speaker_from_voice"), audio_bytes)
+            if match_res and match_res.get("identified"):
+                speaker_name = match_res.get("name")
+                conf = match_res.get("confidence") or 0.0
+
+        if speaker_name:
             conf_str = f"{float(conf):.2f}" if conf is not None else "N/A"
             return {
                 "status": "success",
                 "identified": True,
-                "speaker_name": match_res.get("name"),
+                "speaker_name": speaker_name,
                 "confidence": conf,
-                "message": f"Voice identified as: {match_res.get('name')} (confidence: {conf_str})"
+                "message": f"Voice identified as: {speaker_name} (confidence: {conf_str})"
             }
         return {
             "status": "warning",
@@ -97,7 +120,7 @@ async def _tool_voice_biometrics_manage(
     elif act in ("enroll", "calibrate"):
         if not speaker_name:
             return {"status": "error", "message": "Parameter 'speaker_name' is required for voice enrollment."}
-        res = memory_engine.enroll_or_update_speaker(speaker_name, audio_pcm=audio_bytes) if hasattr(memory_engine, "enroll_or_update_speaker") else {}
+        res = await asyncio.to_thread(memory_engine.enroll_or_update_speaker, speaker_name, audio_pcm=audio_bytes) if hasattr(memory_engine, "enroll_or_update_speaker") else {}
         return {
             "status": "success",
             "speaker_name": speaker_name,

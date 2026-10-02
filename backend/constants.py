@@ -10,6 +10,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from typing import Optional
 
 
 def get_anara_home() -> Path:

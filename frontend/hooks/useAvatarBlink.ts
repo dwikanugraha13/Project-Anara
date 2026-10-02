@@ -12,7 +12,7 @@ export function useAvatarBlink() {
   const blinkPhaseTimerRef = useRef(0);
   const blinkIdleTimerRef = useRef(0);
   const nextBlinkWaitRef = useRef(
-    Math.random() * (BLINK_INTERVAL_MAX - BLINK_INTERVAL_MIN) + BLINK_INTERVAL_MIN
+    (BLINK_INTERVAL_MAX + BLINK_INTERVAL_MIN) / 2
   );
   const blinkInfluenceRef = useRef(0);
 

@@ -8,6 +8,7 @@ ensuring uninterrupted 24/7 operation with unlimited free-tier pool.
 import asyncio
 import logging
 import os
+import re
 import threading
 import time
 from typing import List, Dict, Optional, Callable, Any, Awaitable
@@ -103,7 +104,8 @@ class GeminiKeyManager:
 
     @property
     def total_keys(self) -> int:
-        return len(self._keys)
+        with self._thread_lock:
+            return len(self._keys)
 
     def get_active_key(self) -> str:
         """
@@ -136,16 +138,17 @@ class GeminiKeyManager:
 
     def mark_key_dead(self, key: str, reason: str = "permission_denied"):
         """Permanently blacklists an invalid/revoked key (24h cooldown) and persists to SQLite."""
-        if key in self._keys:
-            self._cooldowns[key] = time.time() + 86400.0
-            k_preview = f"{key[:8]}...{key[-4:]}" if len(key) > 12 else key
-            logger.error(f"[KeyManager] API Key [{k_preview}] marked DEAD & banned ({reason}).")
-            try:
-                from memory import memory_engine
-                with memory_engine._get_connection() as conn:
-                    conn.execute("UPDATE ai_accounts SET is_enabled = 0 WHERE api_key = ?", (key,))
-            except Exception:
-                pass
+        with self._thread_lock:
+            if key in self._keys:
+                self._cooldowns[key] = time.time() + 86400.0
+        k_preview = f"{key[:8]}...{key[-4:]}" if len(key) > 12 else key
+        logger.error(f"[KeyManager] API Key [{k_preview}] marked DEAD & banned ({reason}).")
+        try:
+            from memory import memory_engine
+            with memory_engine._get_connection() as conn:
+                conn.execute("UPDATE ai_accounts SET is_enabled = 0 WHERE api_key = ?", (key,))
+        except Exception:
+            pass
 
     def rotate_key(self, failed_key: Optional[str] = None, reason: str = "quota_exhausted", cooldown_seconds: float = 120.0) -> str:
         """
@@ -219,17 +222,18 @@ class GeminiKeyManager:
                 ])
 
                 if is_quota_error or is_permission_error or is_unavailable_error:
+                    safe_err = re.sub(r'(?:key|token|api_key)=[^\s&"\']+', r'key=[REDACTED]', str(e))
                     if len(self._keys) > 1:
                         reason = "403_permission_denied" if is_permission_error else ("503_unavailable" if is_unavailable_error else "429_quota_limit")
                         cooldown = 86400.0 if is_permission_error else (60.0 if is_unavailable_error else 120.0)
                         k_preview = f"{active_key[:8]}...{active_key[-4:]}" if len(active_key) > 12 else active_key
-                        logger.warning(f"[KeyManager] Failover on key [{k_preview}] attempt {attempt + 1}/{attempts}: {e}. Rotating to next key...")
+                        logger.warning(f"[KeyManager] Failover on key [{k_preview}] attempt {attempt + 1}/{attempts}: {safe_err}. Rotating to next key...")
                         self.rotate_key(active_key, reason=reason, cooldown_seconds=cooldown)
                         last_exception = e
                         continue
                     elif attempt < attempts - 1 and (is_quota_error or is_unavailable_error):
                         backoff = min(6.0, 1.5 * (attempt + 1))
-                        logger.warning(f"[KeyManager] Single-key transient error: {e}. Backing off {backoff:.1f}s before retry {attempt + 2}/{attempts}...")
+                        logger.warning(f"[KeyManager] Single-key transient error: {safe_err}. Backing off {backoff:.1f}s before retry {attempt + 2}/{attempts}...")
                         await asyncio.sleep(backoff)
                         last_exception = e
                         continue

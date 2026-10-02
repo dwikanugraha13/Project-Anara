@@ -23,7 +23,7 @@ interface UseLipSyncOptions {
 }
 
 // List of morph targets strictly dedicated to speech & mouth movements
-const SPEECH_MORPH_TARGETS = new Set([
+const SPEECH_MORPH_TARGETS_LIST = [
   "jawOpen",
   "mouthOpen",
   "mouthClose",
@@ -37,7 +37,9 @@ const SPEECH_MORPH_TARGETS = new Set([
   "mouthShrugLower",
   "mouthRollLower",
   "mouthRollUpper",
-]);
+] as const;
+
+const SPEECH_MORPH_TARGETS = new Set<string>(SPEECH_MORPH_TARGETS_LIST);
 
 const GENTLE_PHONEMES: VisemeName[] = [
   "viseme_aa",
@@ -122,13 +124,18 @@ export function useLipSync({ meshesRef }: UseLipSyncOptions) {
     }
 
     // Smoothly lerp current speech morphs toward target morphs
-    const lerpSpeed = safeDelta * 14;
-    for (const [morphName, targetVal] of Object.entries(targetMorphsRef.current)) {
-      const current = currentMorphsRef.current[morphName] ?? 0;
-      const newVal = THREE.MathUtils.lerp(current, targetVal, Math.min(lerpSpeed, 1));
-      currentMorphsRef.current[morphName] = newVal;
+    const lerpSpeed = Math.min(safeDelta * 14, 1);
+    const targets = targetMorphsRef.current;
+    const curMorphs = currentMorphsRef.current;
 
-      for (const mesh of meshes) {
+    for (const morphName in targets) {
+      const targetVal = targets[morphName];
+      const current = curMorphs[morphName] ?? 0;
+      const newVal = THREE.MathUtils.lerp(current, targetVal, lerpSpeed);
+      curMorphs[morphName] = newVal;
+
+      for (let m = 0; m < meshes.length; m++) {
+        const mesh = meshes[m];
         if (!mesh.morphTargetDictionary || !mesh.morphTargetInfluences) continue;
         const idx = mesh.morphTargetDictionary[morphName];
         if (idx !== undefined) {
@@ -138,15 +145,17 @@ export function useLipSync({ meshesRef }: UseLipSyncOptions) {
     }
 
     // Decay unmentioned SPEECH morphs toward 0 smoothly
-    for (const morphName of SPEECH_MORPH_TARGETS) {
-      if (!(morphName in targetMorphsRef.current)) {
-        const current = currentMorphsRef.current[morphName] ?? 0;
+    for (let s = 0; s < SPEECH_MORPH_TARGETS_LIST.length; s++) {
+      const morphName = SPEECH_MORPH_TARGETS_LIST[s];
+      if (!(morphName in targets)) {
+        const current = curMorphs[morphName] ?? 0;
         if (current > 0.0001) {
-          const newVal = THREE.MathUtils.lerp(current, 0, Math.min(lerpSpeed, 1));
+          const newVal = THREE.MathUtils.lerp(current, 0, lerpSpeed);
           const finalVal = newVal < 0.001 ? 0 : newVal;
-          currentMorphsRef.current[morphName] = finalVal;
+          curMorphs[morphName] = finalVal;
 
-          for (const mesh of meshes) {
+          for (let m = 0; m < meshes.length; m++) {
+            const mesh = meshes[m];
             if (!mesh.morphTargetDictionary || !mesh.morphTargetInfluences) continue;
             const idx = mesh.morphTargetDictionary[morphName];
             if (idx !== undefined) {

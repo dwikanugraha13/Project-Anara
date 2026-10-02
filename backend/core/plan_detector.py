@@ -523,6 +523,33 @@ def is_explicit_plan_approval(user_text: str, pending_action_context: str = "") 
     return False
 
 
+async def async_is_explicit_plan_approval(user_text: str, pending_action_context: str = "") -> bool:
+    """Asynchronous variant of is_explicit_plan_approval directly awaiting LLM classification."""
+    clean = (user_text or "").strip()
+    if not clean:
+        return False
+
+    cache_key = _get_intent_cache_key(clean, pending_action_context)
+    cached_val = _lookup_intent_cache(cache_key)
+    if cached_val is not None:
+        return cached_val == "approve"
+
+    lower_tok = clean.lower()
+    if lower_tok in _CLI_MACHINE_CONFIRM_TOKENS:
+        _store_intent_cache(cache_key, "approve")
+        return True
+    if lower_tok in _CLI_MACHINE_CANCEL_TOKENS:
+        _store_intent_cache(cache_key, "reject")
+        return False
+
+    try:
+        res = await classify_approval_intent(clean, pending_action_context)
+        return res == "approve"
+    except Exception as e:
+        logger.debug(f"[async_is_explicit_plan_approval] Error: {e}")
+        return False
+
+
 async def classify_approval_intent(user_text: str, pending_action_context: str = "") -> str:
     """
     Pure Model-Driven Semantic Intent Classifier (Anara Standard).

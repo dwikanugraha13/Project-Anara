@@ -1,11 +1,15 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
+import "@xterm/xterm/css/xterm.css";
+import { getBackendUrl } from "@/lib/apiClient";
 
 export interface TerminalTab {
   id: string;
   name: string;
-  lines: string[];
 }
 
 export interface WorkbenchTerminalProps {
@@ -14,88 +18,158 @@ export interface WorkbenchTerminalProps {
   onExecuteCommand?: (cmd: string) => void;
   onClose?: () => void;
   embedded?: boolean;
+  isVisible?: boolean;
 }
+
+const COSMIC_OBSIDIAN_PALETTE = {
+  background: "#060913",
+  foreground: "#e2e8f0",
+  cursor: "#22d3ee",
+  cursorAccent: "#060913",
+  selectionBackground: "rgba(34, 211, 238, 0.25)",
+  black: "#0f172a",
+  red: "#f43f5e",
+  green: "#10b981",
+  yellow: "#f59e0b",
+  blue: "#38bdf8",
+  magenta: "#c084fc",
+  cyan: "#22d3ee",
+  white: "#f8fafc",
+  brightBlack: "#475569",
+  brightRed: "#fb7185",
+  brightGreen: "#34d399",
+  brightYellow: "#fbbf24",
+  brightBlue: "#60a5fa",
+  brightMagenta: "#e879f9",
+  brightCyan: "#67e8f9",
+  brightWhite: "#ffffff",
+};
 
 export default function WorkbenchTerminal({
   logs = [],
   activeTask,
   onExecuteCommand,
   onClose,
-  embedded = true,
+  embedded = false,
+  isVisible = true,
 }: WorkbenchTerminalProps) {
   const [tabs, setTabs] = useState<TerminalTab[]>([
-    {
-      id: "term-1",
-      name: "Terminal 1",
-      lines: [
-        "[anara-agent] Initializing autonomous workbench...",
-        "[system] Workspace mounted. Ready for plan & build execution.",
-      ],
-    },
-    {
-      id: "term-2",
-      name: "Terminal 2",
-      lines: [
-        "[worker] Sub-agent background daemon listening on WebSocket...",
-      ],
-    },
+    { id: "term-1", name: "Terminal 1" },
   ]);
   const [activeTabId, setActiveTabId] = useState<string>("term-1");
   const [commandInput, setCommandInput] = useState<string>("");
-  const [isExecuting, setIsExecuting] = useState(false);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const terminalEndRef = useRef<HTMLDivElement>(null);
+  const [executingTabs, setExecutingTabs] = useState<Record<string, boolean>>({});
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIdx, setHistoryIdx] = useState<number>(-1);
+
+  const terminalContainerRef = useRef<HTMLDivElement>(null);
+  const termInstanceRef = useRef<Terminal | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
+  const abortControllersRef = useRef<Record<string, AbortController>>({});
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const processedLogIndexRef = useRef<number>(0);
+  const tabCounterRef = useRef<number>(2);
 
-  // Strip ANSI escape codes safely for clean visual rendering
-  const stripAnsi = (text: string) =>
-    text.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, "");
+  const isExecuting = Boolean(executingTabs[activeTabId]);
 
-  // Auto-append incoming live agent tool/build logs without dropping duplicates
+  // ── Initialize Native Xterm.js Instance (Liquid Glass Theme) ──
   useEffect(() => {
+    if (!terminalContainerRef.current) return;
+
+    const term = new Terminal({
+      theme: COSMIC_OBSIDIAN_PALETTE,
+      fontFamily: "var(--font-mono), 'JetBrains Mono', Consolas, monospace",
+      fontSize: 12,
+      lineHeight: 1.4,
+      cursorBlink: true,
+      cursorStyle: "bar",
+      scrollback: 5000,
+      allowTransparency: true,
+    });
+
+    const fitAddon = new FitAddon();
+    const webLinksAddon = new WebLinksAddon();
+
+    term.loadAddon(fitAddon);
+    term.loadAddon(webLinksAddon);
+    term.open(terminalContainerRef.current);
+
+    try {
+      fitAddon.fit();
+    } catch {}
+
+    term.writeln("\x1b[38;2;34;211;238m[anara-terminal]\x1b[0m Session initialized. Cosmic Obsidian PTY ready.");
+
+    termInstanceRef.current = term;
+    fitAddonRef.current = fitAddon;
+
+    // Debounced Resize Observer to prevent PTY wrapping corruption
+    let resizeTimer: NodeJS.Timeout;
+    const ro = new ResizeObserver(() => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        try {
+          fitAddon.fit();
+        } catch {}
+      }, 50);
+    });
+    ro.observe(terminalContainerRef.current);
+    resizeObserverRef.current = ro;
+
+    return () => {
+      clearTimeout(resizeTimer);
+      ro.disconnect();
+      term.dispose();
+      // Terminate any running tab sub-processes on unmount
+      Object.values(abortControllersRef.current).forEach((ctrl) => ctrl.abort());
+    };
+  }, []);
+
+  // Auto-fit xterm canvas whenever visibility is restored (Hermes Desktop keep-alive parity)
+  useEffect(() => {
+    if (isVisible && fitAddonRef.current) {
+      const timer = setTimeout(() => {
+        try {
+          fitAddonRef.current?.fit();
+        } catch {}
+      }, 60);
+      return () => clearTimeout(timer);
+    }
+  }, [isVisible]);
+
+  // Append external agent/tool execution logs with pure ANSI escapes
+  useEffect(() => {
+    if (!termInstanceRef.current) return;
+    if (logs.length < processedLogIndexRef.current) {
+      processedLogIndexRef.current = 0;
+    }
     if (logs.length > processedLogIndexRef.current) {
-      const newLines = logs.slice(processedLogIndexRef.current).map(stripAnsi);
+      const newLines = logs.slice(processedLogIndexRef.current);
       processedLogIndexRef.current = logs.length;
-      if (newLines.length > 0) {
-        setTabs((prev) =>
-          prev.map((t) => {
-            if (t.id === "term-1") {
-              return { ...t, lines: [...t.lines, ...newLines].slice(-1000) };
-            }
-            return t;
-          })
-        );
-      }
+      newLines.forEach((line) => {
+        termInstanceRef.current?.writeln(`\x1b[90m[agent]\x1b[0m ${line}`);
+      });
     }
   }, [logs]);
-
-  useEffect(() => {
-    terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [tabs, activeTabId]);
-
-  const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
 
   const handleRunCommand = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!commandInput.trim()) return;
     const cmd = commandInput.trim();
+    const currentTabId = activeTabId;
+    const term = termInstanceRef.current;
+
+    setHistory((prev) => [cmd, ...prev.filter((c) => c !== cmd)].slice(0, 50));
+    setHistoryIdx(-1);
     setCommandInput("");
-    setIsExecuting(true);
+    setExecutingTabs((prev) => ({ ...prev, [currentTabId]: true }));
 
-    setTabs((prev) =>
-      prev.map((t) =>
-        t.id === activeTabId
-          ? {
-              ...t,
-              lines: [...t.lines, `PS> ${cmd}`],
-            }
-          : t
-      )
-    );
+    term?.writeln(`
+\n\x1b[38;2;34;211;238manara\x1b[0m \x1b[90m>\x1b[0m ${cmd}`);
 
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || (typeof window !== "undefined" ? getBackendUrl() : "http://localhost:8000");
     const controller = new AbortController();
-    abortControllerRef.current = controller;
+    abortControllersRef.current[currentTabId] = controller;
 
     try {
       const res = await fetch(`${backendUrl}/api/agent/terminal/stream`, {
@@ -117,34 +191,20 @@ export default function WorkbenchTerminal({
           const parts = buffer.split("\n\n");
           buffer = parts.pop() || "";
 
-          const newLines: string[] = [];
           for (const part of parts) {
             const line = part.trim();
             if (line.startsWith("data:")) {
               try {
                 const parsed = JSON.parse(line.slice(5).trim());
                 if (parsed.line !== undefined) {
-                  newLines.push(stripAnsi(parsed.line));
+                  term?.writeln(parsed.line);
                 } else if (parsed.done) {
-                  newLines.push(`[Process finished with exit code ${parsed.returncode}]`);
+                  term?.writeln(`\x1b[90m[Process finished with exit code ${parsed.returncode}]\x1b[0m`);
                 } else if (parsed.error) {
-                  newLines.push(`[error]: ${parsed.error}`);
+                  term?.writeln(`\x1b[38;2;244;63;94m[error]: ${parsed.error}\x1b[0m`);
                 }
               } catch {}
             }
-          }
-
-          if (newLines.length > 0) {
-            setTabs((prev) =>
-              prev.map((t) =>
-                t.id === activeTabId
-                  ? {
-                      ...t,
-                      lines: [...t.lines, ...newLines].slice(-1000),
-                    }
-                  : t
-              )
-            );
           }
         }
 
@@ -154,87 +214,80 @@ export default function WorkbenchTerminal({
           if (line.startsWith("data:")) {
             try {
               const parsed = JSON.parse(line.slice(5).trim());
-              const trailing: string[] = [];
               if (parsed.line !== undefined) {
-                trailing.push(stripAnsi(parsed.line));
+                term?.writeln(parsed.line);
               } else if (parsed.done) {
-                trailing.push(`[Process finished with exit code ${parsed.returncode}]`);
-              }
-              if (trailing.length > 0) {
-                setTabs((prev) =>
-                  prev.map((t) =>
-                    t.id === activeTabId
-                      ? { ...t, lines: [...t.lines, ...trailing].slice(-1000) }
-                      : t
-                  )
-                );
+                term?.writeln(`\x1b[90m[Process finished with exit code ${parsed.returncode}]\x1b[0m`);
               }
             } catch {}
           }
         }
       } else {
-        setTabs((prev) =>
-          prev.map((t) =>
-            t.id === activeTabId
-              ? {
-                  ...t,
-                  lines: [...t.lines, `[HTTP Error]: ${res.status} ${res.statusText}`],
-                }
-              : t
-          )
-        );
+        term?.writeln(`\x1b[38;2;244;63;94m[HTTP Error]: ${res.status} ${res.statusText}\x1b[0m`);
       }
     } catch (err: any) {
       if (err.name !== "AbortError") {
-        setTabs((prev) =>
-          prev.map((t) =>
-            t.id === activeTabId
-              ? {
-                  ...t,
-                  lines: [...t.lines, `[error]: ${err.message || String(err)}`],
-                }
-              : t
-          )
-        );
+        term?.writeln(`\x1b[38;2;244;63;94m[error]: ${err.message || String(err)}\x1b[0m`);
       } else {
-        setTabs((prev) =>
-          prev.map((t) =>
-            t.id === activeTabId
-              ? {
-                  ...t,
-                  lines: [...t.lines, "[Process cancelled by user]"],
-                }
-              : t
-          )
-        );
+        term?.writeln(`\x1b[90m[Process cancelled by user]\x1b[0m`);
       }
     } finally {
-      setIsExecuting(false);
-      abortControllerRef.current = null;
+      setExecutingTabs((prev) => {
+        const copy = { ...prev };
+        delete copy[currentTabId];
+        return copy;
+      });
+      delete abortControllersRef.current[currentTabId];
       onExecuteCommand?.(cmd);
     }
   };
 
   const handleStopExecution = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
+    const currentController = abortControllersRef.current[activeTabId];
+    if (currentController) {
+      currentController.abort();
     }
   };
 
   const handleAddTab = () => {
-    const nextIdx = tabs.length + 1;
+    const nextIdx = tabCounterRef.current++;
     const newTab: TerminalTab = {
       id: `term-${nextIdx}`,
       name: `Terminal ${nextIdx}`,
-      lines: [`[terminal] Spawned session ${nextIdx}...`],
     };
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newTab.id);
+    termInstanceRef.current?.writeln(`
+\n\x1b[38;2;34;211;238m[terminal]\x1b[0m Spawned ${newTab.name}.`);
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (history.length === 0) return;
+      const nextIdx = Math.min(history.length - 1, historyIdx + 1);
+      setHistoryIdx(nextIdx);
+      setCommandInput(history[nextIdx] || "");
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (historyIdx <= 0) {
+        setHistoryIdx(-1);
+        setCommandInput("");
+      } else {
+        const nextIdx = historyIdx - 1;
+        setHistoryIdx(nextIdx);
+        setCommandInput(history[nextIdx] || "");
+      }
+    }
   };
 
   const handleCloseTab = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (tabs.length <= 1) return;
+    if (abortControllersRef.current[id]) {
+      abortControllersRef.current[id].abort();
+      delete abortControllersRef.current[id];
+    }
     setTabs((prev) => prev.filter((t) => t.id !== id));
     if (activeTabId === id) {
       const remaining = tabs.filter((t) => t.id !== id);
@@ -244,7 +297,7 @@ export default function WorkbenchTerminal({
 
   return (
     <div
-      className={`w-full h-full flex flex-col bg-[#050811] overflow-hidden font-mono text-xs select-text ${
+      className={`w-full h-full flex flex-col bg-[#060913] overflow-hidden font-mono text-xs select-text ${
         embedded ? "rounded-none border-none shadow-none" : "rounded-xl border border-white/[0.08] shadow-xl"
       }`}
     >
@@ -257,7 +310,7 @@ export default function WorkbenchTerminal({
               <div
                 key={tab.id}
                 onClick={() => setActiveTabId(tab.id)}
-                className={`flex items-center gap-2 px-2.5 py-1 rounded-md text-[11px] font-mono transition-all cursor-pointer border ${
+                className={`flex items-center gap-2 px-2.5 py-1 rounded-lg text-[11px] font-mono transition-all cursor-pointer border ${
                   isActive
                     ? "bg-white/[0.08] text-white border-white/[0.12] shadow-sm font-semibold"
                     : "text-slate-400 hover:text-slate-200 border-transparent hover:bg-white/[0.03]"
@@ -271,9 +324,11 @@ export default function WorkbenchTerminal({
                   <button
                     type="button"
                     onClick={(e) => handleCloseTab(tab.id, e)}
-                    className="text-slate-500 hover:text-rose-400 text-[10px] ml-0.5 cursor-pointer"
+                    className="text-slate-500 hover:text-rose-400 p-0.5 rounded transition-colors cursor-pointer"
                   >
-                    ✕
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
                   </button>
                 )}
               </div>
@@ -294,10 +349,11 @@ export default function WorkbenchTerminal({
         <div className="flex items-center gap-2 shrink-0">
           {activeTask && (
             <div className="flex items-center gap-1.5 text-[10px] text-cyan-300 bg-cyan-500/10 border border-cyan-400/25 px-2 py-0.5 rounded-md truncate max-w-[200px]">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
               <span className="truncate">{activeTask}</span>
             </div>
           )}
+          <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" title="PTY Connected" />
 
           {onClose && (
             <button
@@ -306,53 +362,31 @@ export default function WorkbenchTerminal({
               className="px-2 py-0.5 rounded-md bg-white/[0.04] hover:bg-white/[0.10] text-slate-400 hover:text-white border border-white/[0.08] text-[10px] font-mono transition-all cursor-pointer flex items-center gap-1"
               title="Close Terminal Panel"
             >
-              <span>✕</span>
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
               <span>Close</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* Terminal Output Body */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1 text-slate-300 font-mono text-[11.5px] leading-relaxed">
-        {activeTab.lines.map((line, idx) => {
-          const isCmd = line.startsWith("$") || line.startsWith("PS >") || line.startsWith("PS>");
-          const isWarn = line.includes("WARNING") || line.includes("warn") || line.includes("503");
-          const isErr = line.includes("ERROR") || line.includes("Error") || line.includes("400") || line.includes("429");
-          const isOk = line.includes("SUCCESS") || line.includes("200") || line.includes("✓");
-
-          return (
-            <div
-              key={idx}
-              className={`leading-relaxed whitespace-pre-wrap break-all ${
-                isCmd
-                  ? "text-cyan-300 font-bold"
-                  : isErr
-                  ? "text-rose-300"
-                  : isWarn
-                  ? "text-amber-300"
-                  : isOk
-                  ? "text-emerald-300"
-                  : "text-slate-400"
-              }`}
-            >
-              {line}
-            </div>
-          );
-        })}
-        <div ref={terminalEndRef} />
+      {/* Native Xterm.js Canvas Host */}
+      <div className="flex-1 min-h-0 relative p-2 overflow-hidden bg-[#060913]">
+        <div ref={terminalContainerRef} className="w-full h-full" />
       </div>
 
-      {/* Terminal Command Input Prompt */}
+      {/* Interactive Prompt Command Input */}
       <form
         onSubmit={handleRunCommand}
-        className="flex items-center gap-2 px-3 py-1.5 bg-[#060913]/95 border-t border-white/[0.08]"
+        className="flex items-center gap-2 px-3 py-2 bg-[#060913]/95 border-t border-white/[0.08]"
       >
         <span className="text-cyan-400 font-bold text-[11px] shrink-0 font-mono">anara &gt;</span>
         <input
           type="text"
           value={commandInput}
           onChange={(e) => setCommandInput(e.target.value)}
+          onKeyDown={handleInputKeyDown}
           placeholder={isExecuting ? "Executing command..." : "Type terminal command or build script..."}
           disabled={isExecuting}
           className="flex-1 bg-transparent border-none text-xs text-white placeholder:text-slate-600 focus:outline-none font-mono disabled:opacity-50"
@@ -364,7 +398,7 @@ export default function WorkbenchTerminal({
             className="px-2.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[10px] cursor-pointer flex items-center gap-1.5 font-mono"
             title="Cancel terminal process"
           >
-            <span className="w-1.5 h-1.5 rounded-xs bg-rose-400" />
+            <span className="w-1.5 h-1.5 rounded-sm bg-rose-400" />
             <span>Cancel</span>
           </button>
         ) : commandInput ? (
@@ -372,7 +406,7 @@ export default function WorkbenchTerminal({
             type="submit"
             className="px-2 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-200 border border-cyan-400/40 text-[10px] cursor-pointer"
           >
-            Enter ↵
+            Enter
           </button>
         ) : null}
       </form>

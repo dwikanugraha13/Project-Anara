@@ -2,10 +2,13 @@
 
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import ModelSelectorDropdown, { AIModelInfo, isReasoningSupported } from "./ModelSelectorDropdown";
+import ReasoningPill from "./ReasoningPill";
+import { getModelModalities, resolveSiblingTierModelId } from "@/lib/reasoningEffort";
 import InteractiveQuestionCard, { InteractiveQuestionData } from "../chat/InteractiveQuestionCard";
 import { DockPlanChecklist } from "./DockPlanChecklist";
 import { DockAudioWaveform } from "./DockAudioWaveform";
 import { DockAttachmentChips } from "./DockAttachmentChips";
+import DockTriggerPopover, { TriggerItem } from "./DockTriggerPopover";
 import type { ToolProgressPayload } from "@/hooks/useWebSocket";
 import { formatModelDisplayName } from "@/lib/modelFormat";
 
@@ -19,6 +22,19 @@ export interface AttachedItem {
   previewUrl?: string;
   content?: string;
 }
+
+/** Safely revokes blob: URLs to prevent client memory leaks (Hermes Desktop standard) */
+export function revokeAttachmentPreviews(items: AttachedItem[]) {
+  items.forEach((item) => {
+    if (item.previewUrl?.startsWith("blob:")) {
+      try {
+        URL.revokeObjectURL(item.previewUrl);
+      } catch {}
+    }
+  });
+}
+
+const useIsomorphicLayoutEffect = typeof window !== "undefined" ? React.useLayoutEffect : React.useEffect;
 
 export interface BottomDockProps {
   inputMessage: string;
@@ -57,9 +73,12 @@ export interface BottomDockProps {
   embedded?: boolean;
   showAgentModeToggle?: boolean;
   showInteractionModeToggle?: boolean;
-  onApprovePlan?: () => void;
+  onApprovePlan?: (plan?: any) => void;
+  onRejectPlan?: (plan?: any) => void;
   reasoningEffort?: "off" | "low" | "medium" | "high" | string;
   onSelectReasoningEffort?: (effort: "off" | "low" | "medium" | "high") => void;
+  onSteer?: (text: string) => void;
+  workspaceFiles?: Array<{ path: string; name: string; isDir?: boolean }>;
 }
 
 export default function BottomDock({
@@ -95,8 +114,11 @@ export default function BottomDock({
   showAgentModeToggle,
   showInteractionModeToggle,
   onApprovePlan,
+  onRejectPlan,
   reasoningEffort,
   onSelectReasoningEffort,
+  onSteer,
+  workspaceFiles = [],
 }: BottomDockProps) {
   const isAgentToggleVisible = showAgentModeToggle !== undefined ? showAgentModeToggle : false;
   const isInteractionModeVisible = showInteractionModeToggle !== undefined ? showInteractionModeToggle : Boolean(onSetInteractionMode);
@@ -114,6 +136,12 @@ export default function BottomDock({
   const [attachedFiles, setAttachedFiles] = useState<AttachedItem[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
 
+  // ── Multimodal Autocomplete Trigger State (@ Files & / Slash Commands) ──
+  const [triggerKind, setTriggerKind] = useState<"@" | "/" | null>(null);
+  const [triggerQuery, setTriggerQuery] = useState("");
+  const [triggerSelectedIndex, setTriggerSelectedIndex] = useState(0);
+  const [isTriggerPopoverOpen, setIsTriggerPopoverOpen] = useState(false);
+
   const closeDropdown = useCallback(() => {
     setIsAttachMenuOpen(false);
     setIsVoiceChatDropdownOpen(false);
@@ -122,13 +150,18 @@ export default function BottomDock({
   }, []);
 
   useEffect(() => {
-    const onWindowClick = () => closeDropdown();
+    const onWindowClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.("[data-dropdown-root]")) return;
+      closeDropdown();
+    };
     window.addEventListener("click", onWindowClick);
     return () => window.removeEventListener("click", onWindowClick);
   }, [closeDropdown]);
 
   const toggleDropdown = (which: "attach" | "mode" | "agentMode" | "model", e: React.MouseEvent) => {
     e.stopPropagation();
+    e.nativeEvent?.stopImmediatePropagation?.();
     if (which === "attach") {
       setIsAttachMenuOpen((p) => !p);
       setIsVoiceChatDropdownOpen(false);
@@ -152,13 +185,41 @@ export default function BottomDock({
     }
   };
 
-  // Measure dock height for timeline spacer via ResizeObserver (zero keystroke layout thrashing)
+  // Prompt history ring (Claude Code & Hermes Desktop input history standard)
+  const promptHistoryRef = useRef<string[]>([]);
+  const historyIndexRef = useRef<number>(-1);
+  const draftSnapshotRef = useRef<string>("");
+
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("anara:prompt-history");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          promptHistoryRef.current = parsed.filter((item) => typeof item === "string");
+        }
+      }
+    } catch {}
+  }, []);
+
+  // Cleanup blob preview URLs strictly on unmount (Hermes Desktop store/composer.ts standard)
+  const attachedFilesRef = useRef(attachedFiles);
+  attachedFilesRef.current = attachedFiles;
+  useEffect(() => {
+    return () => {
+      revokeAttachmentPreviews(attachedFilesRef.current);
+    };
+  }, []);
+
+  // Measure dock height for timeline spacer via ResizeObserver (border-box accuracy)
   useEffect(() => {
     const el = footerDockRef.current;
     if (!el || !onHeightChange) return;
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        const height = Math.round(entry.contentRect.height);
+        const height = entry.borderBoxSize?.[0]?.blockSize
+          ? Math.round(entry.borderBoxSize[0].blockSize)
+          : Math.round(el.offsetHeight);
         onHeightChange(height);
       }
     });
@@ -166,26 +227,47 @@ export default function BottomDock({
     return () => observer.disconnect();
   }, [onHeightChange]);
 
-  // Textarea auto-resize
-  useEffect(() => {
+  // Textarea auto-resize (single-pass layout without oscillation or post-paint jumping)
+  useIsomorphicLayoutEffect(() => {
     const el = textareaRef.current;
     if (!el || isInputExpanded) return;
     if (!inputMessage) {
       el.style.height = "36px";
+      el.style.overflowY = "hidden";
       setIsInputOverflowed(false);
       return;
     }
     el.style.height = "auto";
-    const nextH = Math.min(el.scrollHeight, 180);
+    const scrollH = el.scrollHeight;
+    const nextH = Math.min(scrollH, 180);
     el.style.height = `${nextH}px`;
-    setIsInputOverflowed(el.scrollHeight > 180);
+    el.style.overflowY = scrollH > 180 ? "auto" : "hidden";
+    setIsInputOverflowed(scrollH > 180);
   }, [inputMessage, isInputExpanded]);
 
   const handleFormSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!inputMessage.trim() && attachedFiles.length === 0) return;
+
+    const textToSend = inputMessage.trim();
+    if (textToSend) {
+      if (promptHistoryRef.current[0] !== textToSend) {
+        promptHistoryRef.current.unshift(textToSend);
+        if (promptHistoryRef.current.length > 50) {
+          promptHistoryRef.current.pop();
+        }
+        try {
+          sessionStorage.setItem("anara:prompt-history", JSON.stringify(promptHistoryRef.current.slice(0, 50)));
+        } catch {}
+      }
+    }
+
+    historyIndexRef.current = -1;
+    draftSnapshotRef.current = "";
+
     onSend(inputMessage, agentMode);
     setInputMessage("");
+    revokeAttachmentPreviews(attachedFiles);
     setAttachedFiles([]);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -193,24 +275,249 @@ export default function BottomDock({
     setIsInputExpanded(false);
   };
 
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setInputMessage(val);
+
+    const cursor = e.target.selectionStart || 0;
+    const textBeforeCursor = val.slice(0, cursor);
+
+    // Detect @ file mention trigger: matches @ followed by non-whitespace
+    const atMatch = textBeforeCursor.match(/@([^\s]*)$/);
+    // Detect / slash command trigger: matches / at start or after whitespace
+    const slashMatch = textBeforeCursor.match(/(?:^|\s)\/([a-zA-Z0-9_-]*)$/);
+
+    if (atMatch) {
+      setTriggerKind("@");
+      setTriggerQuery(atMatch[1]);
+      setIsTriggerPopoverOpen(true);
+      setTriggerSelectedIndex(0);
+    } else if (slashMatch) {
+      setTriggerKind("/");
+      setTriggerQuery(slashMatch[1]);
+      setIsTriggerPopoverOpen(true);
+      setTriggerSelectedIndex(0);
+    } else {
+      setIsTriggerPopoverOpen(false);
+      setTriggerKind(null);
+      setTriggerQuery("");
+    }
+  };
+
+  const handleSelectTriggerItem = useCallback(
+    (item: TriggerItem) => {
+      const el = textareaRef.current;
+      const cursor = el ? el.selectionStart || 0 : inputMessage.length;
+      const textBeforeCursor = inputMessage.slice(0, cursor);
+      const textAfterCursor = inputMessage.slice(cursor);
+
+      let replacedBefore = textBeforeCursor;
+      if (triggerKind === "@") {
+        replacedBefore = textBeforeCursor.replace(/@([^\s]*)$/, item.value);
+      } else if (triggerKind === "/") {
+        replacedBefore = textBeforeCursor.replace(/(?:^|\s)\/([a-zA-Z0-9_-]*)$/, (match) => {
+          return match.startsWith(" ") ? " " + item.value : item.value;
+        });
+      }
+
+      const nextVal = replacedBefore + textAfterCursor;
+      setInputMessage(nextVal);
+      setIsTriggerPopoverOpen(false);
+      setTriggerKind(null);
+      setTriggerQuery("");
+
+      // Execute mode switch if slash command
+      if (item.id === "cmd-plan") setAgentMode("plan");
+      else if (item.id === "cmd-build") setAgentMode("build");
+      else if (item.id === "cmd-voice") onSetInteractionMode?.("voice");
+      else if (item.id === "cmd-chat") onSetInteractionMode?.("chat");
+      else if (item.id === "cmd-clear") {
+        setInputMessage("");
+        revokeAttachmentPreviews(attachedFiles);
+        setAttachedFiles([]);
+      }
+
+      requestAnimationFrame(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          const newPos = replacedBefore.length;
+          textareaRef.current.setSelectionRange(newPos, newPos);
+        }
+      });
+    },
+    [inputMessage, triggerKind, setInputMessage, setAgentMode, onSetInteractionMode, attachedFiles]
+  );
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // IME composition guard (Japanese, Chinese, accented character composition)
     if (e.nativeEvent.isComposing || e.keyCode === 229) {
       return;
     }
 
-    // Escape shortcut to stop/interrupt generating response
-    if (e.key === "Escape") {
-      if (status === "thinking" || status === "speaking" || liveToolProgress !== null) {
+    // ── Handle Multimodal Trigger Popover Navigation ──
+    if (isTriggerPopoverOpen) {
+      if (e.key === "ArrowDown") {
         e.preventDefault();
-        onInterrupt();
+        setTriggerSelectedIndex((prev) => prev + 1);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setTriggerSelectedIndex((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setIsTriggerPopoverOpen(false);
+        setTriggerKind(null);
         return;
       }
     }
 
+    const isBusy =
+      status === "thinking" ||
+      status === "speaking" ||
+      Boolean(liveToolProgress && liveToolProgress.status === "running");
+
+    // Tab completion for slash directives (/plan, /build, /voice, /chat, /clear)
+    if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const val = inputMessage.trim();
+      if (val.startsWith("/")) {
+        const commands = [
+          { cmd: "/plan", action: () => setAgentMode("plan") },
+          { cmd: "/build", action: () => setAgentMode("build") },
+          { cmd: "/voice", action: () => onSetInteractionMode?.("voice") },
+          { cmd: "/chat", action: () => onSetInteractionMode?.("chat") },
+          {
+            cmd: "/clear",
+            action: () => {
+              setInputMessage("");
+              revokeAttachmentPreviews(attachedFiles);
+              setAttachedFiles([]);
+            },
+          },
+        ];
+        const match = commands.find((c) => c.cmd.startsWith(val.toLowerCase()));
+        if (match) {
+          e.preventDefault();
+          setInputMessage(match.cmd + " ");
+          match.action();
+          return;
+        }
+      }
+    }
+
+    // ArrowUp / ArrowDown prompt history navigation (Hermes & Claude Code REPL standard)
+    if (e.key === "ArrowUp") {
+      const el = textareaRef.current;
+      const isAtStart = !inputMessage || (el ? el.selectionStart === 0 && el.selectionEnd === 0 : false);
+      if (isAtStart && promptHistoryRef.current.length > 0) {
+        e.preventDefault();
+        if (historyIndexRef.current === -1) {
+          draftSnapshotRef.current = inputMessage;
+          historyIndexRef.current = 0;
+        } else if (historyIndexRef.current < promptHistoryRef.current.length - 1) {
+          historyIndexRef.current += 1;
+        }
+        const text = promptHistoryRef.current[historyIndexRef.current];
+        setInputMessage(text);
+        requestAnimationFrame(() => {
+          if (textareaRef.current) {
+            textareaRef.current.setSelectionRange(text.length, text.length);
+          }
+        });
+        return;
+      }
+    }
+
+    if (e.key === "ArrowDown") {
+      if (historyIndexRef.current !== -1) {
+        e.preventDefault();
+        if (historyIndexRef.current > 0) {
+          historyIndexRef.current -= 1;
+          const text = promptHistoryRef.current[historyIndexRef.current];
+          setInputMessage(text);
+          requestAnimationFrame(() => {
+            if (textareaRef.current) {
+              textareaRef.current.setSelectionRange(text.length, text.length);
+            }
+          });
+        } else {
+          // Returned to present draft
+          historyIndexRef.current = -1;
+          const restored = draftSnapshotRef.current;
+          setInputMessage(restored);
+          draftSnapshotRef.current = "";
+          requestAnimationFrame(() => {
+            if (textareaRef.current) {
+              textareaRef.current.setSelectionRange(restored.length, restored.length);
+            }
+          });
+        }
+        return;
+      }
+    }
+
+    // Escape shortcut to close popovers, restore draft, collapse expanded input, stop/interrupt response, or blur
+    if (e.key === "Escape") {
+      if (isAttachMenuOpen || isVoiceChatDropdownOpen || isAgentModeDropdownOpen || isModelDropdownOpen) {
+        e.preventDefault();
+        closeDropdown();
+        return;
+      }
+      if (historyIndexRef.current !== -1) {
+        e.preventDefault();
+        setInputMessage(draftSnapshotRef.current);
+        historyIndexRef.current = -1;
+        draftSnapshotRef.current = "";
+        return;
+      }
+      if (isInputExpanded) {
+        e.preventDefault();
+        setIsInputExpanded(false);
+        return;
+      }
+      if (isBusy) {
+        e.preventDefault();
+        onInterrupt();
+        return;
+      }
+      // REPL blur standard
+      textareaRef.current?.blur();
+      return;
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      if (isBusy) {
+        // Mid-Turn Steering (Claude Code / Hermes Parity)
+        if (inputMessage.trim() && onSteer) {
+          const steerText = inputMessage.trim();
+          setInputMessage("");
+          onSteer(steerText);
+        }
+        return;
+      }
       handleFormSubmit();
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items || items.length === 0) return;
+    const files: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === "file") {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    if (files.length > 0) {
+      e.preventDefault();
+      const dt = new DataTransfer();
+      files.forEach((f) => dt.items.add(f));
+      handleAttachFiles(dt.files);
     }
   };
 
@@ -332,7 +639,8 @@ export default function BottomDock({
           checklistData={checklistData}
           isExpanded={isPlanChecklistExpanded}
           onToggle={() => setIsPlanChecklistExpanded((v) => !v)}
-          onApprovePlan={onApprovePlan}
+          onApprovePlan={() => onApprovePlan?.(checklistData)}
+          onRejectPlan={onRejectPlan ? () => onRejectPlan(checklistData) : undefined}
         />
       )}
 
@@ -344,18 +652,50 @@ export default function BottomDock({
             onSubmitAnswers={(qId, ans, dis) => onAnswerQuestion?.(qId, ans, dis)}
           />
         </div>
-      ) : (
-        /* ── Modern Agent Prompt Card (True Obsidian Liquid Glass) ── */
+      ) : null}
+
+      {/* ── Status Stack: Live Tool Execution Activity (Cursor/Hermes Engineering Standard) ── */}
+      {liveToolProgress && (
+        <div className="w-full flex items-center justify-between px-3 py-1.5 rounded-xl border border-cyan-400/25 bg-[#030712]/95 backdrop-blur-2xl font-mono text-xs text-cyan-200 select-none animate-fade-in shadow-[0_4px_20px_rgba(0,0,0,0.6)]">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping shrink-0" />
+            <span className="font-bold text-slate-100 text-[11px] shrink-0">&gt; executing</span>
+            <span className="text-cyan-300 font-semibold truncate text-[11.5px]">{liveToolProgress.toolName}</span>
+            {liveToolProgress.summary && (
+              <span className="text-slate-400 truncate text-[11px]">{liveToolProgress.summary}</span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onInterrupt}
+            className="px-2 py-0.5 rounded-md text-[10.5px] font-mono text-rose-300 hover:text-white bg-rose-500/15 hover:bg-rose-500/30 border border-rose-400/30 transition-all cursor-pointer shrink-0 ml-2 active:scale-95"
+            title="Interrupt tool execution"
+          >
+            Stop
+          </button>
+        </div>
+      )}
+
+      {/* ── Modern Agent Prompt Card (True Obsidian Liquid Glass) ── */}
+      {(!activeQuestion || activeQuestion.isAnswered) && (
         <div
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`w-full rounded-2xl p-2.5 px-3.5 flex flex-col gap-2 pointer-events-auto bg-[#060913]/90 backdrop-blur-2xl border shadow-[0_20px_50px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.12)] relative transition-[border-color,background-color,box-shadow] duration-200 ${
+          className={`w-full rounded-2xl p-2.5 px-3.5 flex flex-col gap-2 pointer-events-auto border shadow-[0_20px_50px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.12)] relative transition-[border-color,box-shadow] duration-200 isolate ${
             isDragOver
-              ? "border-cyan-400 bg-cyan-950/40 ring-2 ring-cyan-400/50 shadow-[0_0_30px_rgba(34,211,238,0.25)]"
+              ? "border-cyan-400 ring-2 ring-cyan-400/50 shadow-[0_0_30px_rgba(34,211,238,0.25)]"
               : "border-white/[0.10] hover:border-white/[0.20]"
           } ${isInputExpanded ? "h-full flex-1 min-h-0" : ""}`}
         >
+          {/* Isolated Glass Backing: Keep backdrop-filter off the hot editable path to avoid typing frame drops (Hermes composer-dock.ts) */}
+          <div
+            aria-hidden="true"
+            className={`pointer-events-none absolute inset-0 -z-10 rounded-[inherit] transition-[background-color] duration-150 ease-out backdrop-blur-2xl ${
+              isDragOver ? "bg-cyan-950/40" : "bg-[#060913]/90"
+            }`}
+          />
+
           {/* Top Specular Sheen Highlight */}
           <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/[0.12] to-transparent pointer-events-none z-10" />
           {isDragOver && (
@@ -372,7 +712,7 @@ export default function BottomDock({
             ref={fileInputRef}
             type="file"
             multiple
-            accept=".pdf,.txt,.md,.py,.js,.ts,.tsx,.json,.csv,image/*"
+            accept=".pdf,.txt,.md,.py,.js,.ts,.tsx,.json,.csv,.yaml,.yml,.toml,.html,.css,.sql,.sh,.bash,.go,.rs,.java,.c,.cpp,.h,.hpp,image/*"
             className="hidden"
             onChange={(e) => {
               handleAttachFiles(e.target.files);
@@ -396,6 +736,21 @@ export default function BottomDock({
                 onRemove={(idx) => setAttachedFiles((prev) => prev.filter((_, i) => i !== idx))}
               />
 
+              {/* Multimodal Trigger Popover (@ Mentions & / Slash Commands) */}
+              <DockTriggerPopover
+                isOpen={isTriggerPopoverOpen}
+                triggerKind={triggerKind}
+                query={triggerQuery}
+                onSelect={handleSelectTriggerItem}
+                onClose={() => {
+                  setIsTriggerPopoverOpen(false);
+                  setTriggerKind(null);
+                }}
+                workspaceFiles={workspaceFiles}
+                selectedIndex={triggerSelectedIndex}
+                onSelectedIndexChange={setTriggerSelectedIndex}
+              />
+
               {/* Textarea Form */}
               <form
                 onSubmit={handleFormSubmit}
@@ -406,8 +761,9 @@ export default function BottomDock({
                     ref={textareaRef}
                     rows={1}
                     value={inputMessage}
-                    onChange={(e) => setInputMessage(e.target.value)}
+                    onChange={handleTextareaChange}
                     onKeyDown={handleKeyDown}
+                    onPaste={handlePaste}
                     placeholder="Plan architecture, edit code, or run commands..."
                     className={`w-full bg-transparent border-none py-1.5 px-1 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none font-sans resize-none custom-scrollbar leading-relaxed ${
                       isInputOverflowed || isInputExpanded ? "overflow-y-auto" : "overflow-hidden"
@@ -441,6 +797,7 @@ export default function BottomDock({
                         type="button"
                         onClick={() => {
                           setInputMessage("");
+                          revokeAttachmentPreviews(attachedFiles);
                           setAttachedFiles([]);
                           if (textareaRef.current) textareaRef.current.style.height = "auto";
                           setIsInputExpanded(false);
@@ -448,7 +805,9 @@ export default function BottomDock({
                         className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-all text-xs cursor-pointer active:scale-95"
                         title="Clear message"
                       >
-                        ✕
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
                       </button>
                     )}
                   </div>
@@ -463,7 +822,7 @@ export default function BottomDock({
           {/* Left: [+] [Voice/Chat] [Plan/Build] [Model] */}
           <div className="flex items-center gap-2 flex-wrap min-w-0">
             {/* Attachment (+) */}
-            <div className="relative shrink-0">
+            <div className="relative shrink-0" data-dropdown-root="true">
               <button
                 type="button"
                 onClick={(e) => toggleDropdown("attach", e)}
@@ -520,7 +879,7 @@ export default function BottomDock({
 
             {/* Interaction Mode: Voice vs Chat (Active in Main Workbench/Companion, hidden in pure Code Studio) */}
             {isInteractionModeVisible && (
-              <div className="relative shrink-0">
+              <div className="relative shrink-0" data-dropdown-root="true">
                 <button
                   type="button"
                   onClick={(e) => toggleDropdown("mode", e)}
@@ -533,7 +892,7 @@ export default function BottomDock({
                 >
                   {interactionMode === "voice" ? (
                     <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 02-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                     </svg>
                   ) : (
                     <svg className="w-3.5 h-3.5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -563,7 +922,7 @@ export default function BottomDock({
                     >
                       <div className="w-6 h-6 rounded-lg bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center shrink-0 mt-0.5">
                         <svg className="w-3.5 h-3.5 text-cyan-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 02-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                         </svg>
                       </div>
                       <div>
@@ -599,7 +958,7 @@ export default function BottomDock({
 
             {/* Plan / Build Mode Toggle (Only visible in explicit coding workstation, e.g. Anara Code) */}
             {isAgentToggleVisible && (
-              <div className="relative shrink-0">
+              <div className="relative shrink-0" data-dropdown-root="true">
                 <button
                   type="button"
                   onClick={(e) => toggleDropdown("agentMode", e)}
@@ -677,32 +1036,30 @@ export default function BottomDock({
             )}
 
             {/* AI Model Selector Button & Popover */}
-            <div className="relative shrink-0">
+            <div className="relative shrink-0" data-dropdown-root="true">
               {(() => {
                 const cur = models.find((m) => m.id === activeModelId) || models[0];
                 const displayName = formatModelDisplayName(cur?.name || cur?.id || activeModelId);
-                const hasReasoning = isReasoningSupported(cur);
+                const modalities = getModelModalities(cur);
+                const hasVision = modalities.some((m) => m.id === "image");
+                const hasVideo = modalities.some((m) => m.id === "video");
+
                 return (
                   <button
                     type="button"
                     onClick={(e) => toggleDropdown("model", e)}
-                    title={`Active Model: ${cur?.id || activeModelId}${hasReasoning ? ` · Reasoning: ${reasoningEffort || "medium"}` : ""}`}
-                    className={`flex items-center gap-1.5 py-1 px-2.5 rounded-lg border text-[11px] font-medium font-mono transition-all cursor-pointer ${
+                    title={`Active Model: ${cur?.id || activeModelId} (${modalities.map((m) => m.label).join(", ")})`}
+                    className={`flex items-center gap-1.5 py-1 px-2.5 rounded-lg border text-[11px] font-medium font-mono transition-colors cursor-pointer select-none ${
                       isModelDropdownOpen
-                        ? "bg-white/15 border-white/30 text-white"
-                        : "bg-white/[0.04] border-white/10 text-slate-300 hover:text-white hover:border-white/20"
+                        ? "bg-white/[0.08] border-white/20 text-white"
+                        : "bg-white/[0.03] border-white/[0.08] hover:border-white/[0.16] hover:bg-white/[0.06] text-zinc-300 hover:text-white"
                     }`}
                   >
-                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.7)] shrink-0" />
-                    <span className="truncate max-w-[120px] sm:max-w-[160px] font-semibold" suppressHydrationWarning>
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
+                    <span className="truncate max-w-[120px] sm:max-w-[170px] font-semibold tracking-tight" suppressHydrationWarning>
                       {displayName}
                     </span>
-                    {hasReasoning && interactionMode === "chat" && (
-                      <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-200 border border-purple-400/30 text-[9px] uppercase font-bold shrink-0">
-                        {reasoningEffort || "med"}
-                      </span>
-                    )}
-                    <svg className="w-3 h-3 text-slate-400 opacity-60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3 h-3 text-zinc-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </button>
@@ -717,15 +1074,39 @@ export default function BottomDock({
                 onSelectModel={onSelectModel}
                 interactionMode={interactionMode}
                 reasoningEffort={reasoningEffort}
-                onSelectReasoningEffort={onSelectReasoningEffort}
+                onSelectReasoningEffort={onSelectReasoningEffort as any}
               />
             </div>
+
+            {/* Dedicated Reasoning Pill (Directly next to Model Selector, shown when model supports reasoning) */}
+            {(() => {
+              const cur = models.find((m) => m.id === activeModelId) || models[0];
+              const hasReasoning = isReasoningSupported(cur);
+              if (!hasReasoning || interactionMode === "voice") return null;
+              return (
+                <ReasoningPill
+                  model={cur}
+                  modelId={cur?.id || activeModelId}
+                  reasoningEffort={reasoningEffort}
+                  onSelectReasoningEffort={(effort) => {
+                    onSelectReasoningEffort?.(effort as any);
+                    // Sibling model resolution for providers with slug variants (e.g. 9router ag/gemini-3.8-flash-low -> ag/gemini-3.8-flash-high)
+                    const siblingId = resolveSiblingTierModelId(activeModelId, effort as any, models);
+                    if (siblingId && siblingId !== activeModelId) {
+                      onSelectModel(siblingId);
+                    }
+                  }}
+                  modelName={formatModelDisplayName(cur?.name || cur?.id || activeModelId)}
+                />
+              );
+            })()}
           </div>
 
           {/* Right: Mic Quick Button, Interrupt & Send Button */}
           <div className="flex items-center gap-1.5 shrink-0">
-            {status === "speaking" && (
+            {interactionMode === "voice" && status === "speaking" && (
               <button
+                type="button"
                 onClick={onInterrupt}
                 className="p-1 px-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 text-[11px] font-mono"
                 title="Interrupt AI"
@@ -751,7 +1132,7 @@ export default function BottomDock({
                   title="Click to start bidirectional voice chat"
                 >
                   <svg className="w-3.5 h-3.5 text-cyan-300 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 02-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                   </svg>
                   <span>Start Chat</span>
                 </button>
@@ -777,7 +1158,7 @@ export default function BottomDock({
                   ) : (
                     <>
                       <svg className="w-3.5 h-3.5 text-cyan-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 02-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                       </svg>
                       <span>Mute</span>
                     </>
@@ -788,14 +1169,14 @@ export default function BottomDock({
 
             {/* Chat Mode Send / Stop Button */}
             {interactionMode === "chat" && (
-              status === "thinking" || status === "speaking" || liveToolProgress !== null ? (
+              status === "thinking" || status === "speaking" || Boolean(liveToolProgress && liveToolProgress.status === "running") ? (
                 <button
                   type="button"
                   onClick={onInterrupt}
-                  className="w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200 cursor-pointer shadow-md bg-rose-500/20 hover:bg-rose-500/35 text-rose-200 border border-rose-400/40 shadow-[0_0_12px_rgba(244,63,94,0.3)] active:scale-95"
+                  className="w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200 cursor-pointer bg-white/[0.08] hover:bg-rose-500/25 text-white border border-white/20 hover:border-rose-400/40 shadow-sm active:scale-95 group"
                   title="Stop generating response (Escape or Click)"
                 >
-                  <div className="w-2.5 h-2.5 rounded-[2px] bg-rose-300 shadow-sm animate-pulse" />
+                  <div className="w-2.5 h-2.5 rounded-[2px] bg-white group-hover:bg-rose-300 transition-colors shadow-sm" />
                 </button>
               ) : (
                 <button

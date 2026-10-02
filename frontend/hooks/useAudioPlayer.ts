@@ -9,9 +9,12 @@ import { useRef, useCallback, useState, useEffect } from "react";
  */
 export function useAudioPlayer() {
   const audioContextRef = useRef<AudioContext | null>(null);
+  const masterGainRef = useRef<GainNode | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const isPlayingRef = useRef(false);
+  const isMountedRef = useRef(true);
   const nextPlayTimeRef = useRef(0);
+  const generationRef = useRef(0);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const analyserDataRef = useRef<Float32Array | null>(null);
   const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
@@ -24,14 +27,47 @@ export function useAudioPlayer() {
   // Jitter buffer lead-time (150ms) ensures incoming network chunks arrive before current chunk finishes
   const JITTER_LEAD_TIME = 0.15;
 
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (stopTimeoutRef.current) {
+        clearTimeout(stopTimeoutRef.current);
+        stopTimeoutRef.current = null;
+      }
+      activeSourcesRef.current.forEach((src) => {
+        try {
+          src.stop();
+          src.disconnect();
+        } catch {}
+      });
+      activeSourcesRef.current.clear();
+      if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+        try {
+          audioContextRef.current.close();
+        } catch {}
+        audioContextRef.current = null;
+      }
+    };
+  }, []);
+
   // Internal: get or create AudioContext
   const getCtx = useCallback((): AudioContext => {
     if (!audioContextRef.current || audioContextRef.current.state === "closed") {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioCtx();
+      
+      const masterGain = ctx.createGain();
+      masterGain.gain.value = 1.0;
+      masterGainRef.current = masterGain;
+
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
       analyser.smoothingTimeConstant = 0.4;
+      
+      masterGain.connect(analyser);
       analyser.connect(ctx.destination);
+      
       analyserRef.current = analyser;
       analyserDataRef.current = new Float32Array(analyser.fftSize);
       audioContextRef.current = ctx;
@@ -42,9 +78,17 @@ export function useAudioPlayer() {
   // Internal: decode and schedule one PCM16 chunk
   const scheduleChunk = useCallback(
     async (pcm16Buffer: ArrayBuffer, sampleRate: number) => {
+      const currentGen = generationRef.current;
       try {
         const ctx = getCtx();
-        if (ctx.state === "suspended") await ctx.resume();
+        if (ctx.state === "suspended") {
+          try {
+            await ctx.resume();
+          } catch {}
+        }
+
+        // If stopped/interrupted while awaiting resume, abort chunk
+        if (!isMountedRef.current || generationRef.current !== currentGen) return;
 
         const sampleCount = Math.floor(pcm16Buffer.byteLength / 2);
         if (sampleCount === 0) return;
@@ -59,7 +103,9 @@ export function useAudioPlayer() {
 
         const source = ctx.createBufferSource();
         source.buffer = audioBuffer;
-        source.connect(analyserRef.current ?? ctx.destination);
+
+        const targetNode = masterGainRef.current ?? analyserRef.current ?? ctx.destination;
+        source.connect(targetNode);
 
         const now = ctx.currentTime;
         let startTime: number;
@@ -72,8 +118,10 @@ export function useAudioPlayer() {
           startTime = nextPlayTimeRef.current;
         }
 
-        source.start(startTime);
+        // Reserve next time synchronously
         nextPlayTimeRef.current = startTime + audioBuffer.duration;
+
+        source.start(startTime);
         activeSourcesRef.current.add(source);
 
         // Cancel any pending stop timeout since new audio is streaming in
@@ -82,7 +130,7 @@ export function useAudioPlayer() {
           stopTimeoutRef.current = null;
         }
 
-        if (!isPlayingRef.current) {
+        if (!isPlayingRef.current && isMountedRef.current) {
           isPlayingRef.current = true;
           setIsPlaying(true);
         }
@@ -98,7 +146,11 @@ export function useAudioPlayer() {
             if (stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current);
             // 120ms debounce prevents flickering between rapid consecutive chunks
             stopTimeoutRef.current = setTimeout(() => {
-              if (activeSourcesRef.current.size === 0 && ctx.currentTime >= nextPlayTimeRef.current - 0.01) {
+              if (
+                isMountedRef.current &&
+                activeSourcesRef.current.size === 0 &&
+                ctx.currentTime >= nextPlayTimeRef.current - 0.01
+              ) {
                 isPlayingRef.current = false;
                 setIsPlaying(false);
               }
@@ -190,23 +242,49 @@ export function useAudioPlayer() {
 
   /** Immediately stop and discard all queued/playing audio */
   const stopAudio = useCallback(() => {
+    // Invalidate current generation to drop all incoming/in-flight chunks
+    generationRef.current += 1;
+
     if (stopTimeoutRef.current) {
       clearTimeout(stopTimeoutRef.current);
       stopTimeoutRef.current = null;
     }
 
-    // Stop all actively playing / scheduled Web Audio sources
-    activeSourcesRef.current.forEach((src) => {
-      try {
-        src.stop();
-        src.disconnect();
-      } catch {
-        // already stopped
-      }
-    });
-    activeSourcesRef.current.clear();
-
     const ctx = audioContextRef.current;
+    const masterGain = masterGainRef.current;
+
+    // Smooth anti-pop gain ramp down before stopping nodes
+    if (ctx && ctx.state !== "closed" && masterGain) {
+      const now = ctx.currentTime;
+      try {
+        masterGain.gain.setValueAtTime(masterGain.gain.value, now);
+        masterGain.gain.linearRampToValueAtTime(0.0001, now + 0.015);
+      } catch {}
+
+      setTimeout(() => {
+        activeSourcesRef.current.forEach((src) => {
+          try {
+            src.stop();
+            src.disconnect();
+          } catch {}
+        });
+        activeSourcesRef.current.clear();
+        if (masterGainRef.current && audioContextRef.current && audioContextRef.current.state !== "closed") {
+          try {
+            masterGainRef.current.gain.setValueAtTime(1.0, audioContextRef.current.currentTime);
+          } catch {}
+        }
+      }, 16);
+    } else {
+      activeSourcesRef.current.forEach((src) => {
+        try {
+          src.stop();
+          src.disconnect();
+        } catch {}
+      });
+      activeSourcesRef.current.clear();
+    }
+
     if (ctx && ctx.state !== "closed") {
       nextPlayTimeRef.current = ctx.currentTime;
     } else {
@@ -215,7 +293,9 @@ export function useAudioPlayer() {
 
     pendingQueueRef.current = [];
     isPlayingRef.current = false;
-    setIsPlaying(false);
+    if (isMountedRef.current) {
+      setIsPlaying(false);
+    }
   }, []);
 
   /** Force-unlock AudioContext immediately (call from a real user gesture) */

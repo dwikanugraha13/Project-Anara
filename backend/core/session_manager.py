@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Generator
 
 from constants import get_anara_db_path
-from core.plan_detector import is_explicit_plan_approval
+from core.plan_detector import is_explicit_plan_approval, async_is_explicit_plan_approval
 
 logger = logging.getLogger(__name__)
 
@@ -532,7 +532,7 @@ class SessionStateManager:
                 act.state = final_state
                 act.status = str(final_state.value)
                 self._update_action_state_in_db(act.plan_id, final_state)
-            elif act.state == ActionState.PENDING:
+            elif act.state in (ActionState.PENDING, ActionState.EXECUTING, ActionState.APPROVED):
                 act.state = ActionState.CANCELLED
                 act.status = str(ActionState.CANCELLED.value)
                 self._update_action_state_in_db(act.plan_id, ActionState.CANCELLED)
@@ -548,7 +548,7 @@ class SessionStateManager:
                         act.state = final_state
                         act.status = str(final_state.value)
                         self._update_action_state_in_db(act.plan_id, final_state)
-                    elif act.state == ActionState.PENDING:
+                    elif act.state in (ActionState.PENDING, ActionState.EXECUTING, ActionState.APPROVED):
                         act.state = ActionState.CANCELLED
                         act.status = str(ActionState.CANCELLED.value)
                         self._update_action_state_in_db(act.plan_id, ActionState.CANCELLED)
@@ -779,6 +779,22 @@ class SessionStateManager:
             return {"has_pending": False, "is_approval": False, "pending": None}
 
         is_approval = is_explicit_plan_approval(text, pending.plan_text or "")
+
+        return {
+            "has_pending": True,
+            "is_approval": is_approval,
+            "pending": pending
+        }
+
+    async def async_evaluate_intent(self, text: str, channel: str, channel_id: str) -> Dict[str, Any]:
+        """
+        Asynchronously evaluates incoming user message against session state without threadpool blocking.
+        """
+        pending = self.get_pending(channel, channel_id)
+        if not pending or pending.state != ActionState.PENDING:
+            return {"has_pending": False, "is_approval": False, "pending": None}
+
+        is_approval = await async_is_explicit_plan_approval(text, pending.plan_text or "")
 
         return {
             "has_pending": True,

@@ -98,6 +98,14 @@ class VoicePipeline:
         task.add_done_callback(self._bg_tasks.discard)
         return task
 
+    async def safe_send_json(self, payload: Dict[str, Any]) -> bool:
+        """Safely sends JSON payload across WebSocket, ignoring disconnect exceptions (Anara Standard)."""
+        try:
+            await self.websocket.send_json(payload)
+            return True
+        except Exception:
+            return False
+
     async def notify_speaker_change(self, sp_name: Optional[str], reason: str = ""):
         """Propagates detected speaker change to frontend and Gemini context."""
         current_speaker = self.get_current_speaker()
@@ -324,7 +332,7 @@ class VoicePipeline:
 
         try:
             acoustic_tone = analyze_speech_emotion(audio_pcm)
-            await self.websocket.send_json({
+            await self.safe_send_json({
                 "type": "acoustic_emotion",
                 "data": acoustic_tone
             })
@@ -356,9 +364,9 @@ class VoicePipeline:
         self.last_user_voice_text = u_text
         self.current_turn_user_text = u_text
         logger.info(f"[Audio STT User] {u_text!r}")
-        await self.websocket.send_json({"type": "transcript", "data": u_text, "speaker": "input"})
+        await self.safe_send_json({"type": "transcript", "data": u_text, "speaker": "input"})
 
-        asyncio.create_task(memory_engine.distill_and_store_memories_async(
+        self.schedule_background_task(memory_engine.distill_and_store_memories_async(
             key_manager.get_client(), u_text, current_speaker_name
         ))
 
@@ -428,7 +436,7 @@ class VoicePipeline:
                 exec_dir = calib_cfg.get("execution_result_speech", "[SYSTEM INSTRUCTION]: Explain execution result: {spoken_summary}").format(spoken_summary=spoken_summary)
                 await live_svc.send_text(exec_dir)
 
-            await self.websocket.send_json({
+            await self.safe_send_json({
                 "type": "transcript",
                 "data": exec_res.text,
                 "speaker": "output",
@@ -449,7 +457,7 @@ class VoicePipeline:
                 canc_dir = calib_cfg.get("cancel_action_speech", "[SYSTEM INSTRUCTION]: Inform user: {cancel_msg}").format(cancel_msg=cancel_msg)
                 await live_svc.send_text(canc_dir)
 
-            await self.websocket.send_json({
+            await self.safe_send_json({
                 "type": "transcript",
                 "data": cancel_msg,
                 "speaker": "output",
@@ -474,7 +482,7 @@ class VoicePipeline:
             kind = media_resolved.get("kind", "music")
             await self.media_controller.send_media_play(track, kind=kind)
             reply = media_resolved.get("reply_text") or f"Playing {track.get('title', 'media')}"
-            await self.websocket.send_json({"type": "transcript", "data": reply, "speaker": "output", "is_final": True})
+            await self.safe_send_json({"type": "transcript", "data": reply, "speaker": "output", "is_final": True})
             if live_svc:
                 from core.prompt_loader import load_config_yaml
                 live_cfg = load_config_yaml("voice/live_directives.yaml", default={})
@@ -502,7 +510,7 @@ class VoicePipeline:
                 self.visual_projected_this_turn = True
                 self.last_visual_projection_ts = _time.monotonic()
                 self.last_visual_image_count = n_imgs
-                await self.websocket.send_json({
+                await self.safe_send_json({
                     "type": "transcript",
                     "data": r_text,
                     "speaker": "output",
@@ -520,7 +528,7 @@ class VoicePipeline:
                     "mediaType": "image" if v_type == "image" else "hud",
                     "timestamp": _time.time(),
                 })
-                await self.websocket.send_json({
+                await self.safe_send_json({
                     "type": "hud_visual",
                     "data": r_text,
                     "visualType": v_type,

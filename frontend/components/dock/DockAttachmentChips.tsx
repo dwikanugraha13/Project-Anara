@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import type { AttachedItem } from "./BottomDock";
 
 export interface DockAttachmentChipsProps {
@@ -9,18 +9,39 @@ export interface DockAttachmentChipsProps {
 }
 
 export function DockAttachmentChips({ attachedFiles, onRemove }: DockAttachmentChipsProps) {
-  // Cleanup orphaned blob URLs on unmount
+  const prevFilesRef = useRef<AttachedItem[]>(attachedFiles);
+
+  // Revoke discarded object URLs on diff (Hermes Desktop revokeDiscardedAttachmentPreviews standard)
+  useEffect(() => {
+    const currentUrls = new Set(
+      attachedFiles
+        .map((f) => f.previewUrl)
+        .filter((url): url is string => Boolean(url?.startsWith("blob:")))
+    );
+
+    prevFilesRef.current.forEach((item) => {
+      if (item.previewUrl?.startsWith("blob:") && !currentUrls.has(item.previewUrl)) {
+        try {
+          URL.revokeObjectURL(item.previewUrl);
+        } catch {}
+      }
+    });
+
+    prevFilesRef.current = attachedFiles;
+  }, [attachedFiles]);
+
+  // Cleanup all remaining preview URLs strictly on unmount
   useEffect(() => {
     return () => {
-      attachedFiles.forEach((item) => {
-        if (item.previewUrl) {
+      prevFilesRef.current.forEach((item) => {
+        if (item.previewUrl?.startsWith("blob:")) {
           try {
             URL.revokeObjectURL(item.previewUrl);
           } catch {}
         }
       });
     };
-  }, [attachedFiles]);
+  }, []);
 
   if (!attachedFiles || attachedFiles.length === 0) {
     return null;
@@ -28,7 +49,7 @@ export function DockAttachmentChips({ attachedFiles, onRemove }: DockAttachmentC
 
   const handleRemove = (idx: number) => {
     const target = attachedFiles[idx];
-    if (target?.previewUrl) {
+    if (target?.previewUrl?.startsWith("blob:")) {
       try {
         URL.revokeObjectURL(target.previewUrl);
       } catch {}
@@ -52,7 +73,7 @@ export function DockAttachmentChips({ attachedFiles, onRemove }: DockAttachmentC
                 className="w-4 h-4 rounded object-cover border border-white/20 shrink-0"
               />
             ) : (
-              <span className="px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[9px] uppercase font-bold shrink-0">
+              <span className="px-1 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[9px] uppercase font-bold shrink-0">
                 {file.ext || "FILE"}
               </span>
             )}

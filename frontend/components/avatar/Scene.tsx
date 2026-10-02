@@ -40,29 +40,32 @@ class CanvasErrorBoundary extends Component<
     if (this.state.hasError) {
       return (
         <div className="absolute inset-0 flex items-center justify-center p-6 select-none pointer-events-auto z-20">
-          <div className="max-w-md w-full p-6 rounded-3xl bg-slate-950/90 border border-amber-500/30 text-center shadow-2xl backdrop-blur-xl">
+          <div className="max-w-md w-full p-6 rounded-3xl bg-[#060913]/95 border border-amber-500/30 text-center shadow-2xl backdrop-blur-2xl relative overflow-hidden">
+            <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-amber-400/40 to-transparent pointer-events-none" />
             <div className="w-12 h-12 mx-auto mb-3 rounded-2xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-amber-400 text-xl font-bold">
-              ⚡
+              <svg className="w-6 h-6 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
             </div>
             <h3 className="text-sm font-bold text-white mb-1.5 font-mono">
               3D GPU Acceleration Disabled in Browser
             </h3>
             <p className="text-xs text-slate-300 mb-4 leading-relaxed font-sans">
-              Chrome has temporarily disabled WebGL (<code className="text-amber-300 font-mono text-[11px]">GL_VENDOR = Disabled</code>). You can still interact fully via voice or text, or restart Chrome to re-enable the 3D avatar.
+              Browser WebGL context is currently unavailable (<code className="text-amber-300 font-mono text-[11px]">GL_VENDOR = Disabled</code>). You can still interact fully via voice or text, or restart your browser to re-enable the 3D avatar.
             </p>
             <div className="flex items-center justify-center gap-2 font-mono">
               <a
                 href="/code"
                 className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-colors"
               >
-                Buka Code Studio (/code)
+                Open Code Studio (/code)
               </a>
               <button
                 type="button"
                 onClick={() => this.setState({ hasError: false, errorMessage: "" })}
                 className="px-3.5 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-semibold transition-colors cursor-pointer"
               >
-                Coba Lagi
+                Retry
               </button>
             </div>
           </div>
@@ -78,6 +81,8 @@ class AvatarErrorBoundary extends Component<
   { children: React.ReactNode; onError?: () => void },
   { hasError: boolean; error: string }
 > {
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor(props: { children: React.ReactNode; onError?: () => void }) {
     super(props);
     this.state = { hasError: false, error: "" };
@@ -88,7 +93,13 @@ class AvatarErrorBoundary extends Component<
   componentDidCatch(error: Error) {
     console.error("[AvatarErrorBoundary] Avatar mesh failed:", error.message);
     this.props.onError?.();
-    setTimeout(() => this.setState({ hasError: false, error: "" }), 5000);
+    this.retryTimer = setTimeout(() => this.setState({ hasError: false, error: "" }), 5000);
+  }
+  componentWillUnmount() {
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
   }
   render() {
     if (this.state.hasError) {

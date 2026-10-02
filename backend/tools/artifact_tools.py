@@ -1,7 +1,9 @@
+import asyncio
 import logging
 import os
 import re
 import tempfile
+import threading
 import urllib.parse
 import zipfile
 from typing import Any, Dict, List, Optional
@@ -11,30 +13,34 @@ from .events import _emit_agent_event
 logger = logging.getLogger(__name__)
 
 _TURN_ARTIFACTS: List[Dict[str, Any]] = []
+_ARTIFACTS_LOCK = threading.RLock()
 
 
 def register_turn_artifact(file_path: str, filename: str, mime_type: str = ""):
-    """Registers an artifact generated during the turn for multi-channel auto-dispatching."""
+    """Registers an artifact generated during the turn for multi-channel auto-dispatching (Thread-safe)."""
     if not file_path or not os.path.isfile(file_path):
         return
-    for art in _TURN_ARTIFACTS:
-        if art.get("path") == file_path:
-            return
-    _TURN_ARTIFACTS.append({
-        "path": file_path,
-        "filename": filename,
-        "mime_type": mime_type or ("application/zip" if filename.endswith(".zip") else "application/pdf" if filename.endswith(".pdf") else "application/octet-stream")
-    })
+    with _ARTIFACTS_LOCK:
+        for art in _TURN_ARTIFACTS:
+            if art.get("path") == file_path:
+                return
+        _TURN_ARTIFACTS.append({
+            "path": file_path,
+            "filename": filename,
+            "mime_type": mime_type or ("application/zip" if filename.endswith(".zip") else "application/pdf" if filename.endswith(".pdf") else "application/octet-stream")
+        })
 
 
 def get_turn_artifacts() -> List[Dict[str, Any]]:
-    """Returns artifacts created during the turn."""
-    return list(_TURN_ARTIFACTS)
+    """Returns artifacts created during the turn (Thread-safe snapshot)."""
+    with _ARTIFACTS_LOCK:
+        return list(_TURN_ARTIFACTS)
 
 
 def clear_turn_artifacts():
-    """Clears artifacts created during the turn."""
-    _TURN_ARTIFACTS.clear()
+    """Clears artifacts created during the turn (Thread-safe)."""
+    with _ARTIFACTS_LOCK:
+        _TURN_ARTIFACTS.clear()
 
 
 
@@ -174,13 +180,16 @@ async def _tool_generate_file_artifact(
     title: Optional[str] = None,
     destination_folder: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Universal Anara File Artifact Generator."""
+    """Universal Anara File Artifact Generator with atomic writes and path traversal protection."""
     raw_name = (filename or "document.txt").strip().strip('"\'')
-    raw_title = (title or os.path.splitext(raw_name)[0]).strip()
-    ext = os.path.splitext(raw_name)[1].lower() or ".txt"
-    base_name = os.path.splitext(raw_name)[0]
-    safe_filename = f"{base_name}{ext}"
+    safe_filename = os.path.basename(raw_name)
+    if not safe_filename or safe_filename in (".", ".."):
+        safe_filename = "document.txt"
+    raw_title = (title or os.path.splitext(safe_filename)[0]).strip()
+    ext = os.path.splitext(safe_filename)[1].lower() or ".txt"
 
+    from core import anara_agent
+    active_f = anara_agent.get_session_dir()
     artifacts_dir = os.path.join(tempfile.gettempdir(), "anara_agent_artifacts")
     os.makedirs(artifacts_dir, exist_ok=True)
 
@@ -195,13 +204,28 @@ async def _tool_generate_file_artifact(
 
     try:
         if destination_folder and destination_folder.strip():
-            dest_clean = os.path.expanduser(destination_folder.strip().strip('"\''))
+            dest_clean = os.path.abspath(os.path.expanduser(destination_folder.strip().strip('"\'')))
             if os.path.isdir(dest_clean):
-                file_target_path = os.path.join(dest_clean, safe_filename)
+                file_target_path = os.path.abspath(os.path.join(dest_clean, safe_filename))
             else:
                 file_target_path = dest_clean
+                safe_filename = os.path.basename(file_target_path)
         else:
-            file_target_path = os.path.join(artifacts_dir, safe_filename)
+            file_target_path = os.path.abspath(os.path.join(artifacts_dir, safe_filename))
+
+        # Path traversal guard: ensure target is within allowed boundaries
+        allowed_roots = [
+            os.path.abspath(active_f),
+            os.path.abspath(artifacts_dir),
+            os.path.abspath(tempfile.gettempdir()),
+            os.path.abspath(os.path.expanduser("~")),
+        ]
+        is_safe = any(
+            file_target_path == r or file_target_path.startswith(r + os.sep)
+            for r in allowed_roots
+        )
+        if not is_safe:
+            return {"status": "error", "message": f"Target path '{file_target_path}' is outside permitted workspace boundaries."}
 
         os.makedirs(os.path.dirname(file_target_path), exist_ok=True)
 
@@ -210,10 +234,21 @@ async def _tool_generate_file_artifact(
         elif ext in [".docx", ".doc"]:
             await asyncio.to_thread(_generate_binary_docx, raw_title, content, file_target_path)
         else:
-            def _write_plain():
-                with open(file_target_path, "w", encoding="utf-8") as f:
-                    f.write(content)
-            await asyncio.to_thread(_write_plain)
+            def _write_atomic():
+                parent_dir = os.path.dirname(file_target_path)
+                temp_fd, temp_path = tempfile.mkstemp(dir=parent_dir, prefix=".anara_art_")
+                try:
+                    with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
+                        f.write(content)
+                    os.replace(temp_path, file_target_path)
+                except Exception:
+                    if os.path.exists(temp_path):
+                        try:
+                            os.remove(temp_path)
+                        except OSError:
+                            pass
+                    raise
+            await asyncio.to_thread(_write_atomic)
 
         file_size_kb = round(os.path.getsize(file_target_path) / 1024, 1) or 0.1
         register_turn_artifact(file_target_path, safe_filename)
@@ -350,9 +385,13 @@ async def _tool_create_zip_archive(
                 if files and len(files) > 0:
                     for fn in files:
                         clean_fn = fn.strip().strip('"\'')
-                        full_p = os.path.join(active_f, clean_fn) if not os.path.isabs(clean_fn) else clean_fn
+                        full_p = os.path.abspath(clean_fn if os.path.isabs(clean_fn) else os.path.join(active_f, clean_fn))
+                        # Prevent path traversal outside allowed folders
+                        if not (full_p == active_f or full_p.startswith(active_f + os.sep) or full_p.startswith(artifacts_dir + os.sep)):
+                            logger.warning(f"[ZipArchive] Blocked path traversal attempt in file: {clean_fn}")
+                            continue
                         if os.path.exists(full_p) and os.path.isfile(full_p):
-                            arcname = os.path.relpath(full_p, active_f) if not os.path.isabs(clean_fn) else os.path.basename(clean_fn)
+                            arcname = os.path.relpath(full_p, active_f) if full_p.startswith(active_f + os.sep) else os.path.basename(clean_fn)
                             zipf.write(full_p, arcname=arcname)
                             packed.append(arcname)
                 else:
@@ -456,10 +495,20 @@ async def _tool_extract_zip_archive(
         "icon": "📦"
     })
 
+    MAX_UNCOMPRESSED_BYTES = 200 * 1024 * 1024  # 200MB limit
+    MAX_MEMBER_COUNT = 2000
+
     def _extract_worker():
         extracted = []
+        total_uncompressed = 0
         with zipfile.ZipFile(resolved_zip, "r") as zipf:
-            for member in zipf.infolist():
+            members = zipf.infolist()
+            if len(members) > MAX_MEMBER_COUNT:
+                raise ValueError(f"ZIP archive contains too many entries ({len(members)} > {MAX_MEMBER_COUNT}).")
+            for member in members:
+                total_uncompressed += member.file_size
+                if total_uncompressed > MAX_UNCOMPRESSED_BYTES:
+                    raise ValueError(f"ZIP uncompressed size exceeds limit ({total_uncompressed / (1024 * 1024):.1f}MB > 200MB).")
                 target_path = os.path.abspath(os.path.join(dest_dir, member.filename))
                 if not (target_path == dest_dir or target_path.startswith(dest_dir + os.sep)):
                     logger.warning(f"[Unzip] Blocked path traversal attempt in zip: {member.filename}")
@@ -567,6 +616,11 @@ async def _tool_send_document_file(
     target_channel = (channel or "telegram").lower().strip()
     filename = os.path.basename(resolved_path)
 
+    # Security check: disallow leaking credentials or sensitive database/keys
+    base_lower = filename.lower()
+    if base_lower in (".env", "anara_brain.db", "id_rsa", "id_ed25519", "known_hosts") or base_lower.startswith(".env."):
+        return {"status": "error", "message": f"Security restriction: dispatching '{filename}' is forbidden."}
+
     if target_channel == "whatsapp":
         from integrations.whatsapp import send_whatsapp_document
         res = await send_whatsapp_document(to=recipient or "", file_path=resolved_path, caption=caption or filename)
@@ -621,33 +675,40 @@ async def _tool_rezip_archive(
         temp_fd, temp_zip = tempfile.mkstemp(suffix=".zip", prefix="rezip_")
         os.close(temp_fd)
 
-        added_names = {os.path.basename(p).lower(): p for p in valid_adds}
-        final_entries = []
+        try:
+            added_names = {os.path.basename(p).lower(): p for p in valid_adds}
+            final_entries = []
 
-        with zipfile.ZipFile(resolved_zip, "r") as zip_in, zipfile.ZipFile(temp_zip, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zip_out:
-            for item in zip_in.infolist():
-                norm_name = item.filename.lower()
-                base_norm = os.path.basename(item.filename).lower()
+            with zipfile.ZipFile(resolved_zip, "r") as zip_in, zipfile.ZipFile(temp_zip, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zip_out:
+                for item in zip_in.infolist():
+                    norm_name = item.filename.lower()
+                    base_norm = os.path.basename(item.filename).lower()
 
-                if norm_name in remove_set or base_norm in remove_set:
-                    logger.info(f"[Rezip] Removed from zip: {item.filename}")
-                    continue
+                    if norm_name in remove_set or base_norm in remove_set:
+                        logger.info(f"[Rezip] Removed from zip: {item.filename}")
+                        continue
 
-                if base_norm in added_names or norm_name in added_names:
-                    continue
+                    if base_norm in added_names or norm_name in added_names:
+                        continue
 
-                zip_out.writestr(item, zip_in.read(item.filename))
-                final_entries.append(item.filename)
+                    zip_out.writestr(item, zip_in.read(item.filename))
+                    final_entries.append(item.filename)
 
-            for file_p in valid_adds:
-                arc_name = os.path.basename(file_p)
-                zip_out.write(file_p, arcname=arc_name)
-                final_entries.append(arc_name)
+                for file_p in valid_adds:
+                    arc_name = os.path.basename(file_p)
+                    zip_out.write(file_p, arcname=arc_name)
+                    final_entries.append(arc_name)
 
-        import shutil
-        os.makedirs(os.path.dirname(target_out), exist_ok=True)
-        shutil.move(temp_zip, target_out)
-        return final_entries
+            import shutil
+            os.makedirs(os.path.dirname(target_out), exist_ok=True)
+            shutil.move(temp_zip, target_out)
+            return final_entries
+        finally:
+            if os.path.exists(temp_zip):
+                try:
+                    os.remove(temp_zip)
+                except OSError:
+                    pass
 
     try:
         final_contents = await asyncio.to_thread(_rezip_worker)

@@ -133,35 +133,39 @@ async def _tool_cronjob_manage(
         }
 
     elif act in ("pause", "stop"):
-        if not task_id:
+        if task_id is None or str(task_id).strip() == "":
             return {"status": "error", "message": "Parameter 'task_id' is required to pause a task."}
-        ok = autonomous_engine.pause_task(task_id.strip())
+        tid = str(task_id).strip()
+        ok = autonomous_engine.pause_task(tid)
         return {
             "status": "success" if ok else "error",
-            "message": f"Task '{task_id}' {'paused successfully.' if ok else 'failed to pause or not found.'}"
+            "message": f"Task '{tid}' {'paused successfully.' if ok else 'failed to pause or not found.'}"
         }
 
     elif act in ("resume", "start"):
-        if not task_id:
+        if task_id is None or str(task_id).strip() == "":
             return {"status": "error", "message": "Parameter 'task_id' is required to resume a task."}
-        ok = autonomous_engine.resume_task(task_id.strip())
+        tid = str(task_id).strip()
+        ok = autonomous_engine.resume_task(tid)
         return {
             "status": "success" if ok else "error",
-            "message": f"Task '{task_id}' {'resumed successfully.' if ok else 'failed to resume or not found.'}"
+            "message": f"Task '{tid}' {'resumed successfully.' if ok else 'failed to resume or not found.'}"
         }
 
     elif act in ("run", "trigger"):
-        if not task_id:
+        if task_id is None or str(task_id).strip() == "":
             return {"status": "error", "message": "Parameter 'task_id' is required to run a task immediately."}
-        run_res = await autonomous_engine.trigger_task_now(task_id.strip())
+        tid = str(task_id).strip()
+        run_res = await autonomous_engine.trigger_task_now(tid)
         return {
             "status": "success",
-            "message": f"Task '{task_id}' execution triggered immediately.",
+            "message": f"Task '{tid}' execution triggered immediately.",
             "execution_result": run_res
         }
 
     elif act in ("runs", "history", "logs"):
-        runs = autonomous_engine.get_task_runs(task_id=task_id.strip() if task_id else None, limit=20)
+        tid = str(task_id).strip() if (task_id is not None and str(task_id).strip() != "") else None
+        runs = autonomous_engine.get_task_runs(task_id=tid, limit=20)
         return {
             "status": "success",
             "total_runs": len(runs),
@@ -169,12 +173,13 @@ async def _tool_cronjob_manage(
         }
 
     elif act in ("remove", "delete"):
-        if not task_id:
+        if task_id is None or str(task_id).strip() == "":
             return {"status": "error", "message": "Parameter 'task_id' is required to delete a task."}
-        ok = autonomous_engine.delete_task(task_id.strip())
+        tid = str(task_id).strip()
+        ok = autonomous_engine.delete_task(tid)
         return {
             "status": "success" if ok else "error",
-            "message": f"Task '{task_id}' {'deleted successfully.' if ok else 'failed to delete or not found.'}"
+            "message": f"Task '{tid}' {'deleted successfully.' if ok else 'failed to delete or not found.'}"
         }
 
     else:

@@ -1,24 +1,26 @@
 "use client";
 
-import { useRef, useState, useCallback, useEffect } from "react";
+import React, { useRef, useState, useCallback, useEffect, Suspense, lazy } from "react";
 import LoadingScreen from "@/components/ui/LoadingScreen";
 import AnaraWorkbench, { type AssistantStatus, type TranscriptItem } from "@/components/workbench/AnaraWorkbench";
-import Scene from "@/components/avatar/Scene";
-import { useWebSocket, type EmotionState, type TranscriptPayload, type TokenUsagePayload, type ToolProgressPayload, type HudVisualPayload, type MediaPlayPayload, type MediaControlAction, type SessionSwitchedPayload } from "@/hooks/useWebSocket";
+
+const Scene = lazy(() => import("@/components/avatar/Scene"));
+import { useWebSocket, type EmotionState, type TranscriptPayload, type TokenUsagePayload, type ToolProgressPayload, type MediaPlayPayload, type MediaControlAction, type SessionSwitchedPayload } from "@/hooks/useWebSocket";
 import { useMicrophone } from "@/hooks/useMicrophone";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { playDanceMusic, type ActiveDanceMusic } from "@/lib/danceMusic";
 import type { Avatar3DHandle } from "@/components/avatar/Avatar3D";
+import {
+  ReasoningEffortLevel,
+  saveReasoningEffortForModel,
+  getSavedReasoningEffortForModel,
+} from "@/lib/reasoningEffort";
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws";
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
+import { getBackendUrl, getWebSocketUrl } from "@/lib/apiClient";
+
 const AVATAR_URL = "/avatar.glb";
 
-import {
-  normalizeText,
-  isFrontendDanceCommand,
-  getDanceReplyPrompt,
-} from "@/lib/danceDetector";
+import { getDanceReplyPrompt } from "@/lib/danceDetector";
 
 function mergeTranscriptText(existing: string, incoming: string): string {
   const ex = existing.trim();
@@ -26,17 +28,29 @@ function mergeTranscriptText(existing: string, incoming: string): string {
   if (!ex) return incoming;
   if (!inc) return existing;
 
+  const exLower = ex.toLowerCase();
+  const incLower = inc.toLowerCase();
+
   // 1. If incoming progressive STT refinement starts with existing, use incoming
-  if (inc.startsWith(ex)) return incoming;
+  if (incLower.startsWith(exLower)) return incoming;
 
   // 2. If existing already contains incoming at the end, keep existing
-  if (ex.endsWith(inc)) return existing;
+  if (exLower.endsWith(incLower)) return existing;
 
-  // 3. If incoming is a progressive sentence expansion from the first word
+  // 3. If incoming shares a full word prefix with existing (progressive revision)
   const exWords = ex.split(/\s+/);
   const incWords = inc.split(/\s+/);
-  if (incWords.length >= exWords.length && incWords[0].toLowerCase() === exWords[0].toLowerCase()) {
-    return incoming;
+  if (incWords.length >= exWords.length) {
+    let allPrefixMatch = true;
+    for (let i = 0; i < exWords.length; i++) {
+      if (exWords[i].toLowerCase() !== incWords[i].toLowerCase()) {
+        allPrefixMatch = false;
+        break;
+      }
+    }
+    if (allPrefixMatch) {
+      return incoming;
+    }
   }
 
   // 4. Otherwise append delta cleanly with space formatting
@@ -52,19 +66,22 @@ export interface HomePageClientProps {
 
 export default function HomePageClient({
   initialSidebarTab = "history",
-  initialSidebarWidth = 500,
+  initialSidebarWidth = 260,
 }: HomePageClientProps) {
   const avatarRef = useRef<Avatar3DHandle | null>(null);
   const [isMounted, setIsMounted] = useState(false);
   const [isAvatarLoaded, setIsAvatarLoaded] = useState(false);
   const [assistantStatus, setAssistantStatus] = useState<AssistantStatus>("idle");
-  const [activeSpeaker, setActiveSpeaker] = useState<string | null>("Agnan");
+  const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null);
   const [speakerRoster, setSpeakerRoster] = useState<string[]>([]);
   const [mediaSession, setMediaSession] = useState<MediaPlayPayload | null>(null);
   const [mediaControl, setMediaControl] = useState<{ action: MediaControlAction; nonce: number } | null>(null);
-  const [interactionMode, setInteractionMode] = useState<"voice" | "chat">("voice");
-  const interactionModeRef = useRef<"voice" | "chat">("voice");
-  interactionModeRef.current = interactionMode;
+  const [interactionMode, setInteractionMode] = useState<"voice" | "chat">("chat");
+  const interactionModeRef = useRef<"voice" | "chat">("chat");
+
+  useEffect(() => {
+    interactionModeRef.current = interactionMode;
+  }, [interactionMode]);
 
   const handleSetInteractionMode = useCallback((mode: "voice" | "chat") => {
     setInteractionMode(mode);
@@ -128,23 +145,23 @@ export default function HomePageClient({
   const [activeThinkingText, setActiveThinkingText] = useState<string | null>(null);
   const pendingTokenUsageRef = useRef<TokenUsagePayload | null>(null);
   const [liveToolProgress, setLiveToolProgress] = useState<ToolProgressPayload | null>(null);
-  const [reasoningEffort, setReasoningEffort] = useState<"off" | "low" | "medium" | "high">("medium");
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffortLevel>("medium");
   const intensityIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
     try {
-      const saved = localStorage.getItem("anara_reasoning_effort");
-      if (saved && ["off", "low", "medium", "high"].includes(saved)) {
-        setReasoningEffort(saved as any);
-      }
+      const activeModel = localStorage.getItem("anara_chat_model") || "";
+      const saved = getSavedReasoningEffortForModel(activeModel);
+      setReasoningEffort(saved);
     } catch {}
   }, []);
 
-  const handleSelectReasoningEffort = useCallback((lvl: "off" | "low" | "medium" | "high") => {
+  const handleSelectReasoningEffort = useCallback((lvl: ReasoningEffortLevel) => {
     setReasoningEffort(lvl);
     try {
-      localStorage.setItem("anara_reasoning_effort", lvl);
+      const activeModel = localStorage.getItem("anara_chat_model") || "";
+      saveReasoningEffortForModel(activeModel, lvl);
     } catch {}
   }, []);
 
@@ -390,8 +407,8 @@ export default function HomePageClient({
         setAssistantStatus("idle");
         setLiveToolProgress(null);
 
-        // If a ZIP or file artifact was delivered, mark the approved plan as completed!
-        if (visualType === "document_viewer" || (payloadToolsUsed && payloadToolsUsed.includes("create_zip_archive"))) {
+        // If an artifact was delivered or plan completed, mark active approved plan as completed
+        if (visualType === "document_viewer" || visualType === "code" || planData?.planStatus === "completed") {
           setTranscript((prev) =>
             prev.map((item) => {
               if (item.planData && (item.planData.planStatus === "approved" || !item.planData.planStatus)) {
@@ -421,7 +438,7 @@ export default function HomePageClient({
         }
       }
     },
-    [activateDance]
+    []
   );
 
   const handleInterrupted = useCallback(() => {
@@ -524,9 +541,10 @@ export default function HomePageClient({
           mediaType: m.media_type as any,
           agentMode: (vis.agent_mode || vis.agentMode || "plan") as "plan" | "build",
           modelId: vis.model || vis.model_id || vis.modelId,
-          durationText: vis.duration_text || vis.durationText,
+          durationText: vis.duration_text || vis.durationText || (vis.duration ? `${Math.round(vis.duration)}s` : undefined),
           tokenUsage: vis.tokenUsage || vis.token_usage,
           toolsUsed: vis.tools_used || vis.toolsUsed || vis.token_usage?.tools_used || vis.tokenUsage?.toolsUsed,
+          toolRecordsCount: vis.tool_records_count || vis.toolRecordsCount,
         });
       }
     }
@@ -558,7 +576,7 @@ export default function HomePageClient({
       if (savedSession) {
         const parsedSess = Number(savedSession);
         if (!isNaN(parsedSess) && parsedSess > 0) {
-          fetch(`${BACKEND_URL}/api/chat/sessions/${parsedSess}`)
+          fetch(`${getBackendUrl()}/api/chat/sessions/${parsedSess}`)
             .then((res) => (res.ok ? res.json() : null))
             .then((data) => {
               if (data && data.messages && data.messages.length > 0) {
@@ -575,8 +593,8 @@ export default function HomePageClient({
     } catch {}
   }, [handleSessionSwitched]);
 
-  const { status: wsStatus, sendBinary, sendJSON, sendInterrupt, sendText } = useWebSocket({
-    url: WS_URL,
+  const { status: wsStatus, sendBinary, sendJSON, sendInterrupt, sendText, sendSteer } = useWebSocket({
+    url: getWebSocketUrl(),
     onAudioChunk: handleAudioChunk,
     onTranscript: handleTranscript,
     onTokenUsage: handleTokenUsage,
@@ -610,7 +628,10 @@ export default function HomePageClient({
     onAcousticEmotion: handleAcousticEmotion,
     onSpeakerIdentified: (name) => {
       console.log(`[App] Active speaker identified: "${name}"`);
-      setActiveSpeaker(name || "Agnan");
+      setActiveSpeaker(name || null);
+      if (name) {
+        setSpeakerRoster((prev) => (prev.includes(name) ? prev : [...prev, name]));
+      }
     },
     onSessionSwitched: handleSessionSwitched,
     onSessionIdSync: (sessionId) => {
@@ -679,7 +700,7 @@ export default function HomePageClient({
   // Auto-sync saved session on WebSocket connect
   useEffect(() => {
     if (wsStatus === "connected") {
-      const savedId = localStorage.getItem("anara_active_chat_session_id") || localStorage.getItem("anara_active_session_id");
+      const savedId = localStorage.getItem("anara_active_session_id");
       if (savedId) {
         const idNum = Number(savedId);
         if (!isNaN(idNum) && idNum > 0) {
@@ -693,7 +714,7 @@ export default function HomePageClient({
     (id: number) => {
       setActiveSessionId(id);
       if (typeof window !== "undefined") {
-        localStorage.setItem("anara_active_chat_session_id", String(id));
+        localStorage.setItem("anara_active_session_id", String(id));
       }
       sendJSON({ type: "switch_session", sessionId: id });
     },
@@ -704,7 +725,6 @@ export default function HomePageClient({
     isNewSessionPendingRef.current = true;
     setActiveSessionId(null);
     if (typeof window !== "undefined") {
-      localStorage.removeItem("anara_active_chat_session_id");
       localStorage.removeItem("anara_active_session_id");
     }
     setTranscript([]);
@@ -865,20 +885,26 @@ export default function HomePageClient({
       sendJSON({
         type: "text_input",
         text: trimmed,
+        channel: "web",
+        platform: "web",
         agent_mode: agentMode,
         reasoning_effort: reasoningEffort,
-        sessionId: activeSessionId
+        sessionId: activeSessionId,
+        session_id: activeSessionId,
       });
       setAssistantStatus("thinking");
     },
-    [sendJSON, forceUnlock, activateDance, activeSessionId, reasoningEffort]
+    [sendJSON, forceUnlock, activeSessionId, reasoningEffort]
   );
 
   const handleApprovePlan = useCallback(
-    (plan: any) => {
+    (plan?: any) => {
+      const targetPlan = plan || transcript.slice().reverse().find((t) => t.planData)?.planData || {};
+      const planTitle = targetPlan.title || "Proposed Plan";
+
       setTranscript((prev) =>
         prev.map((item) => {
-          if (item.planData && (item.planData.title === plan.title || !item.planData.title)) {
+          if (item.planData && (item.planData.title === planTitle || !item.planData.title)) {
             return {
               ...item,
               planData: {
@@ -891,27 +917,52 @@ export default function HomePageClient({
         })
       );
 
-      const stepsList = (plan.steps || [])
+      const stepsList = (targetPlan.steps || [])
         .map((st: any, i: number) => {
           const title = typeof st === "string" ? st : st?.title || st?.name || "";
           return `${i + 1}. ${title}`;
         })
         .join("\n");
 
-      const techStr = (plan.tech_stack || plan.techStack || []).join(", ");
+      const techStr = (targetPlan.tech_stack || targetPlan.techStack || []).join(", ");
 
       const richPrompt = [
-        `I approve the plan "${plan.title}". Execute now in Build Mode!`,
+        `I approve the plan "${planTitle}". Execute now in Build Mode!`,
         techStr ? `Tech Stack: ${techStr}` : "",
         stepsList ? `Tahapan:\n${stepsList}` : "",
-        "Execution Instructions: Create all required code files using the write_local_file tool, then create a ZIP archive using the create_zip_archive tool for download.",
+        "Execution Instructions: Implement all required files, components, and logic systematically according to the approved plan.",
       ]
         .filter(Boolean)
         .join("\n\n");
 
       handleSendText(richPrompt, "build");
     },
-    [handleSendText]
+    [transcript, handleSendText]
+  );
+
+  const handleRejectPlan = useCallback(
+    (plan?: any) => {
+      const targetPlan = plan || transcript.slice().reverse().find((t) => t.planData)?.planData || {};
+      const planTitle = targetPlan.title || "Proposed Plan";
+
+      setTranscript((prev) =>
+        prev.map((item) => {
+          if (item.planData && (item.planData.title === planTitle || !item.planData.title)) {
+            return {
+              ...item,
+              planData: {
+                ...item.planData,
+                planStatus: "rejected" as const,
+              },
+            };
+          }
+          return item;
+        })
+      );
+
+      handleSendText(`Plan "${planTitle}" dismissed. Please revise or proceed with another approach.`, "plan");
+    },
+    [transcript, handleSendText]
   );
 
   const handleAnswerQuestion = useCallback(
@@ -969,7 +1020,7 @@ export default function HomePageClient({
     if (interactionMode === "voice" && !isAvatarLoaded) {
       const timer = setTimeout(() => {
         setIsAvatarLoaded(true);
-      }, 7000);
+      }, 5000);
       return () => clearTimeout(timer);
     }
   }, [interactionMode, isAvatarLoaded]);
@@ -1021,33 +1072,35 @@ export default function HomePageClient({
           }}
           suppressHydrationWarning
         >
-          <Scene
-            avatarUrl={AVATAR_URL}
-            isSpeaking={assistantStatus === "speaking"}
-            audioIntensity={audioIntensity}
-            avatarRef={avatarRef}
-            onAvatarLoad={handleAvatarLoad}
-            isVoiceMode={interactionMode === "voice"}
-            onDanceStart={() => {
-              danceActiveRef.current = true;
-              try {
-                sendTextRef.current?.(JSON.stringify({ type: "dance_start" }));
-                const ctx = getDanceAudioCtx();
-                activeDanceMusicRef.current = playDanceMusic(ctx, 6.5);
-              } catch (e) {
-                console.warn("[Dance] Music start error:", e);
-              }
-            }}
-            onDanceEnd={() => {
-              danceActiveRef.current = false;
-              try {
-                sendTextRef.current?.(JSON.stringify({ type: "dance_end" }));
-              } catch {}
-              activeDanceMusicRef.current?.stop();
-              activeDanceMusicRef.current = null;
-              stopAudio();
-            }}
-          />
+          <Suspense fallback={null}>
+            <Scene
+              avatarUrl={AVATAR_URL}
+              isSpeaking={assistantStatus === "speaking"}
+              audioIntensity={audioIntensity}
+              avatarRef={avatarRef}
+              onAvatarLoad={handleAvatarLoad}
+              isVoiceMode={interactionMode === "voice"}
+              onDanceStart={() => {
+                danceActiveRef.current = true;
+                try {
+                  sendTextRef.current?.(JSON.stringify({ type: "dance_start" }));
+                  const ctx = getDanceAudioCtx();
+                  activeDanceMusicRef.current = playDanceMusic(ctx, 6.5);
+                } catch (e) {
+                  console.warn("[Dance] Music start error:", e);
+                }
+              }}
+              onDanceEnd={() => {
+                danceActiveRef.current = false;
+                try {
+                  sendTextRef.current?.(JSON.stringify({ type: "dance_end" }));
+                } catch {}
+                activeDanceMusicRef.current?.stop();
+                activeDanceMusicRef.current = null;
+                stopAudio();
+              }}
+            />
+          </Suspense>
         </div>
       )}
 
@@ -1071,6 +1124,7 @@ export default function HomePageClient({
           onSetInteractionMode={handleSetInteractionMode}
           onStartSession={handleStartSession}
           onSendText={handleSendText}
+          onSteer={sendSteer}
           onToggleMute={toggleMute}
           onInterrupt={handleInterrupt}
           onClearTranscript={handleClearTranscript}
@@ -1088,6 +1142,7 @@ export default function HomePageClient({
           sidebarWidth={sidebarWidth}
           onWidthChange={handleWidthChange}
           onApprovePlan={handleApprovePlan}
+          onRejectPlan={handleRejectPlan}
           onAnswerQuestion={handleAnswerQuestion}
           initialSidebarTab={initialSidebarTab}
           activeThinkingText={activeThinkingText}

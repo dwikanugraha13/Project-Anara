@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   BACKEND_URL,
   BrainTabId,
@@ -60,6 +60,8 @@ export default function AnaraBrain({
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<BrainStats | null>(null);
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
+  const [isConnected, setIsConnected] = useState(true);
+  const isMountedRef = useRef(true);
 
   const currentMeta = TAB_DESCRIPTIONS[activeTab] || TAB_DESCRIPTIONS.soul;
 
@@ -67,16 +69,27 @@ export default function AnaraBrain({
     setLoading(true);
     try {
       const res = await fetch(`${BACKEND_URL}/api/brain/overview`);
-      if (res.ok) {
+      if (res.ok && isMountedRef.current) {
         const data = await res.json();
         setStats(data.stats || null);
         setSpeakers(data.speakers || []);
+        setIsConnected(true);
+      } else if (isMountedRef.current) {
+        setIsConnected(false);
       }
     } catch (err) {
+      if (isMountedRef.current) setIsConnected(false);
       console.warn("[AnaraBrain] Overview fetch skipped or reconnecting:", err);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -243,10 +256,10 @@ export default function AnaraBrain({
           {/* Bottom Status Row */}
           <div className="mt-auto pt-3 border-t border-white/[0.06] flex items-center justify-between text-[10px] font-mono text-slate-500">
             <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span>SQLite Connected</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? "bg-emerald-400 shadow-[0_0_6px_#34d399]" : "bg-amber-400"}`} />
+              <span>{isConnected ? "Core Engine Connected" : "Connecting..."}</span>
             </span>
-            <span>v2.5</span>
+            <span>{stats?.memories_count !== undefined ? `${stats.memories_count} nodes` : "v2.5"}</span>
           </div>
         </div>
 
@@ -293,11 +306,21 @@ export default function AnaraBrain({
 
           {/* Main Content Scrollable Viewport with Hardware Layer Isolation */}
           <div className="flex-1 overflow-y-auto p-5 sm:p-7 select-text custom-scrollbar [contain:content] [overscroll-behavior:contain] [transform:translateZ(0)]">
-            {activeTab === "soul" && <BrainSoulTab />}
-            {activeTab === "tools" && <BrainToolsTab />}
-            {activeTab === "skills" && <BrainSkillsTab />}
-            {activeTab === "providers" && <BrainProvidersTab onRefreshAll={fetchBrainData} />}
-            {activeTab === "integrations" && <BrainIntegrationsTab onRefreshAll={fetchBrainData} />}
+            <div className={activeTab === "soul" ? "block h-full" : "hidden"}>
+              <BrainSoulTab />
+            </div>
+            <div className={activeTab === "tools" ? "block" : "hidden"}>
+              <BrainToolsTab />
+            </div>
+            <div className={activeTab === "skills" ? "block" : "hidden"}>
+              <BrainSkillsTab />
+            </div>
+            <div className={activeTab === "providers" ? "block" : "hidden"}>
+              <BrainProvidersTab onRefreshAll={fetchBrainData} />
+            </div>
+            <div className={activeTab === "integrations" ? "block" : "hidden"}>
+              <BrainIntegrationsTab onRefreshAll={fetchBrainData} />
+            </div>
           </div>
         </div>
       </div>

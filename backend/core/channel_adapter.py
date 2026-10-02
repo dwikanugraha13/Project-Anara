@@ -56,6 +56,14 @@ def _format_tool_progress_message(evt: Dict[str, Any]) -> str:
         return f"⚙️ Reasoning & planning steps...{step_str}"
 
     clean_name = t_name.replace("_", " ").title() if t_name else "Action"
+
+    if status == "done":
+        summary_val = str(summary or detail or "Complete")[:50]
+        return f"✓ {clean_name}: {summary_val}{step_str}"
+    elif status in ("error", "failed"):
+        summary_val = str(summary or detail or "Failed")[:50]
+        return f"✗ {clean_name}: {summary_val}{step_str}"
+
     prefix = f"⚡ {clean_name}" if "terminal" in t_name or "command" in t_name or "cli" in t_name else f"⚙️ {clean_name}"
 
     if detail:
@@ -483,6 +491,64 @@ async def _auto_dispatch_artifacts_to_channel(channel: str, channel_id: str, art
         except Exception as e:
             logger.error(f"[AutoDispatch] Failed to dispatch '{f_name}' to {channel}: {e}")
 
+_MEDIA_TAG_RE = re.compile(
+    r'[`"\'*_]{0,3}MEDIA:\s*([A-Za-z]:[/\\][^\s`"\'*]+|/(?:Users|home|tmp|var|etc|\.|\w)[^\s`"\'*]+|~/[^\s`"\'*]+)[`"\'*_]{0,3}'
+)
+_VOICE_DIRECTIVE_RE = re.compile(r'\[\[audio_as_voice\]\]', re.IGNORECASE)
+
+
+async def _extract_and_dispatch_media_tags(channel: str, channel_id: str, text: str) -> str:
+    """
+    Extracts native MEDIA:<path> and [[audio_as_voice]] directives (Hermes Omnichannel Standard).
+    Dispatches matched files as native photos/videos/audio/voice/documents, and strips tags from chat text.
+    """
+    if not text or ("MEDIA:" not in text and "[[audio_as_voice]]" not in text):
+        return text
+
+    is_voice_directive = bool(_VOICE_DIRECTIVE_RE.search(text))
+    cleaned_text = _VOICE_DIRECTIVE_RE.sub("", text)
+    if "MEDIA:" not in cleaned_text or not channel_id or channel_id.startswith("default"):
+        return re.sub(r'\n{3,}', '\n\n', cleaned_text).strip()
+
+    from integrations.manager import channel_manager
+
+    def _replace_tag(match: re.Match) -> str:
+        raw_path = match.group(1).strip()
+        expanded_path = os.path.expanduser(raw_path)
+        if os.path.isfile(expanded_path):
+            f_name = os.path.basename(expanded_path)
+            ext = os.path.splitext(f_name)[1].lower()
+            if ext in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"):
+                media_type = "photo"
+                caption = f"📸 {f_name}"
+            elif ext in (".mp4", ".mov", ".avi", ".mkv"):
+                media_type = "video"
+                caption = f"🎬 {f_name}"
+            elif ext in (".ogg", ".opus") or (is_voice_directive and ext in (".mp3", ".m4a", ".wav")):
+                media_type = "voice"
+                caption = ""
+            elif ext in (".mp3", ".m4a", ".wav"):
+                media_type = "audio"
+                caption = f"🎵 {f_name}"
+            else:
+                media_type = "document"
+                caption = f"📄 {f_name}"
+
+            asyncio.create_task(
+                channel_manager.send_media(
+                    channel=channel,
+                    target_id=channel_id,
+                    file_path=expanded_path,
+                    caption=caption,
+                    media_type=media_type,
+                )
+            )
+            return ""
+        return match.group(0)
+
+    cleaned_text = _MEDIA_TAG_RE.sub(_replace_tag, cleaned_text)
+    return re.sub(r'\n{3,}', '\n\n', cleaned_text).strip()
+
 async def process_channel_request(
     req: ChannelRequest,
     progress_callback: Optional[Callable[[str], Any]] = None,
@@ -652,7 +718,7 @@ async def _process_channel_request_core(
 
     # 5. Check for Plan Approval (Semantic Intent Classifier + Session State Machine - Subsystem 3)
     session_plan_key = f"{req.channel}_{req.channel_id}"
-    intent_state = session_state_manager.evaluate_intent(clean_text, req.channel, req.channel_id)
+    intent_state = await session_state_manager.async_evaluate_intent(clean_text, req.channel, req.channel_id)
     active_pending = intent_state["pending"]
 
     from core.session_manager import ActionState
@@ -1148,6 +1214,9 @@ async def _process_channel_request_core(
         if not final_reply or not final_reply.strip():
             final_reply = _format_empty_model_notice(clean_text)
 
+    # Extract native MEDIA: and [[audio_as_voice]] directives (Hermes Omnichannel Standard)
+    final_reply = await _extract_and_dispatch_media_tags(req.channel, req.channel_id, final_reply)
+
     memory_engine.log_conversation(
         user_text=clean_text,
         ai_text=final_reply,
@@ -1389,6 +1458,9 @@ async def _execute_build_mode_core(
             final_reply = cleaned
     else:
         final_reply = str(reply) if reply else f"Completed action '{resolved_task}'."
+
+    # Extract native MEDIA: and [[audio_as_voice]] directives (Hermes Omnichannel Standard)
+    final_reply = await _extract_and_dispatch_media_tags(req.channel, req.channel_id, final_reply)
 
     memory_engine.log_conversation(
         user_text=resolved_task or user_prompt or req.text.strip(),

@@ -17,7 +17,8 @@ import urllib.parse
 import logging
 import re
 import time
-import asyncio
+import ipaddress
+import socket
 import httpx
 from typing import Optional, Dict, Any, List
 
@@ -29,6 +30,27 @@ except ImportError:
     types = None  # type: ignore
 
 logger = logging.getLogger(__name__)
+
+def _is_safe_image_url(url: str) -> bool:
+    """SSRF & metadata exfiltration guard for visual images (Anara Standard)."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme.lower() not in ("http", "https"):
+            return False
+        hostname = (parsed.hostname or "").lower().strip()
+        if not hostname or hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+            return False
+        if hostname.endswith(".local") or hostname.endswith(".internal"):
+            return False
+        try:
+            ip = ipaddress.ip_address(hostname)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+                return False
+        except ValueError:
+            pass
+        return True
+    except Exception:
+        return False
 
 def could_be_visual_request(text: str) -> bool:
     """
@@ -113,7 +135,7 @@ async def fetch_real_web_images(query: str, count: int = 6) -> List[Dict[str, st
 
                 for murl, raw_title, purl in items:
                     clean_url = murl.replace("\\/", "/")
-                    if clean_url in seen_urls:
+                    if clean_url in seen_urls or not _is_safe_image_url(clean_url):
                         continue
 
                     domain = urllib.parse.urlparse(purl).netloc.lower() or "Web Search"
@@ -148,7 +170,7 @@ async def fetch_real_web_images(query: str, count: int = 6) -> List[Dict[str, st
                         for _, pdata in pages.items():
                             if "thumbnail" in pdata and pdata["thumbnail"].get("source"):
                                 t_url = pdata["thumbnail"]["source"]
-                                if t_url not in seen_urls:
+                                if t_url not in seen_urls and _is_safe_image_url(t_url):
                                     seen_urls.add(t_url)
                                     results.append({
                                         "image_url": t_url,
@@ -174,7 +196,7 @@ async def fetch_real_web_images(query: str, count: int = 6) -> List[Dict[str, st
                         infos = page.get("imageinfo", [])
                         if infos and infos[0].get("url"):
                             img = infos[0]["url"]
-                            if img not in seen_urls and img.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+                            if img not in seen_urls and _is_safe_image_url(img) and img.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
                                 seen_urls.add(img)
                                 results.append({
                                     "image_url": img,

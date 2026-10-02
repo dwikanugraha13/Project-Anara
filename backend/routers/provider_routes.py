@@ -233,8 +233,8 @@ async def disconnect_provider_endpoint(provider_name: str):
 
 @router.get("/api/providers/custom")
 async def list_custom_providers_endpoint():
-    """Lists all registered custom providers."""
-    return {"custom_providers": memory_engine.get_custom_providers()}
+    """Lists all registered custom providers (secrets masked for client security)."""
+    return {"custom_providers": memory_engine.get_custom_providers(include_secrets=False)}
 
 @router.post("/api/providers/custom")
 async def create_custom_provider_endpoint(req: CustomProviderCreateRequest):

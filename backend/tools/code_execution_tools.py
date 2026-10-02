@@ -31,6 +31,14 @@ async def _tool_execute_code(
     if not clean_code:
         return {"status": "error", "message": "Code to execute cannot be empty."}
 
+    from core.sandbox import check_command_safety
+    is_safe, denial_reason = check_command_safety(clean_code)
+    if not is_safe:
+        return {
+            "status": "error",
+            "message": denial_reason or "Code snippet rejected by sandbox safety guard."
+        }
+
     lang = language.strip().lower()
 
     _emit_agent_event("agent_action_start", {
@@ -71,7 +79,23 @@ async def _tool_execute_code(
             stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=float(timeout))
         except asyncio.TimeoutError:
             try:
-                proc.kill()
+                if sys.platform == "win32":
+                    import subprocess
+                    subprocess.run(
+                        ["taskkill", "/PID", str(proc.pid), "/F", "/T"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=5
+                    )
+                else:
+                    proc.kill()
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+            try:
+                await proc.wait()
             except Exception:
                 pass
             return {

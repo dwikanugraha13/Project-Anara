@@ -131,7 +131,7 @@ class SkillLibraryManager:
             return None
         try:
             with open(skill_md_path, "r", encoding="utf-8") as f:
-                content = f.read()
+                content = f.read(MAX_SKILL_FILE_BYTES)
 
             fm_match = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)$", content, re.DOTALL)
             if not fm_match:

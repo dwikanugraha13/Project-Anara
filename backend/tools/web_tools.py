@@ -3,12 +3,61 @@ import json
 import logging
 import re
 import urllib.parse
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 import httpx
 
 from .events import _emit_agent_event
 
 logger = logging.getLogger(__name__)
+
+_BACKGROUND_TASKS: Set[asyncio.Task] = set()
+
+
+def _safe_create_task(coro) -> asyncio.Task:
+    """Creates a background task and maintains a strong reference to prevent GC eviction."""
+    task = asyncio.create_task(coro)
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+    return task
+
+
+async def _is_safe_public_url(url: str) -> tuple[bool, Optional[str]]:
+    """SSRF & DNS rebinding safety barrier with non-blocking async DNS resolution."""
+    try:
+        from urllib.parse import urlparse
+        import ipaddress
+        import socket
+        parsed = urlparse(url)
+        scheme = parsed.scheme.lower()
+        if scheme not in ("http", "https"):
+            return False, f"Unsupported scheme '{parsed.scheme}'. Only HTTP and HTTPS are permitted."
+        host = (parsed.hostname or "").strip().lower()
+        if not host:
+            return False, "Target URL missing valid hostname."
+        if host in ("localhost", "metadata.google.internal", "instance-data"):
+            return False, f"Access to internal host '{host}' is forbidden."
+
+        loop = asyncio.get_running_loop()
+        try:
+            addr_info = await loop.getaddrinfo(host, None)
+            for family, _, _, _, sockaddr in addr_info:
+                ip_str = sockaddr[0]
+                ip = ipaddress.ip_address(ip_str)
+                if (
+                    ip.is_private
+                    or ip.is_loopback
+                    or ip.is_link_local
+                    or ip.is_reserved
+                    or ip.is_unspecified
+                    or ip.is_multicast
+                    or ip in ipaddress.ip_network("100.64.0.0/10")
+                ):
+                    return False, f"Access to private/internal network IP '{ip_str}' is forbidden."
+        except socket.gaierror:
+            return False, f"Could not resolve hostname '{host}'."
+        return True, None
+    except Exception as e:
+        return False, f"Invalid URL: {e}"
 
 
 async def _tool_web_search(query: str) -> Dict[str, Any]:
@@ -52,8 +101,12 @@ async def _tool_web_search(query: str) -> Dict[str, Any]:
     if not snippets:
         try:
             wiki_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={urllib.parse.quote(q)}&format=json&utf8="
+            wiki_headers = {
+                "User-Agent": "AnaraAgent/1.0 (https://project-anara.local; contact@anara.local)",
+                "Accept": "application/json"
+            }
             async with httpx.AsyncClient(timeout=5.0) as client:
-                w_res = await client.get(wiki_url)
+                w_res = await client.get(wiki_url, headers=wiki_headers)
                 if w_res.status_code == 200:
                     w_data = w_res.json()
                     for item in w_data.get("query", {}).get("search", [])[:3]:
@@ -81,10 +134,11 @@ async def _tool_web_search(query: str) -> Dict[str, Any]:
 
 
 async def _tool_fetch_webpage(url: str) -> Dict[str, Any]:
-    """Fetches and cleans main text content from a web URL."""
+    """Fetches and cleans main text content from a web URL with SSRF protection."""
     target_url = (url or "").strip()
-    if not target_url.startswith("http"):
-        return {"status": "error", "message": "URL must start with http:// or https://"}
+    is_safe, denial_reason = await _is_safe_public_url(target_url)
+    if not is_safe:
+        return {"status": "error", "message": f"SSRF Blocked: {denial_reason}"}
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "fetch_webpage",
@@ -95,11 +149,23 @@ async def _tool_fetch_webpage(url: str) -> Dict[str, Any]:
 
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept-Language": "*"}
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+
+        async def _check_redirect(response: httpx.Response):
+            if response.is_redirect and "location" in response.headers:
+                redirect_url = str(response.url.join(response.headers["location"]))
+                safe, reason = await _is_safe_public_url(redirect_url)
+                if not safe:
+                    raise httpx.RequestError(f"SSRF blocked on redirect to '{redirect_url}': {reason}")
+
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, event_hooks={"response": [_check_redirect]}) as client:
             res = await client.get(target_url, headers=headers)
             if res.status_code != 200:
                 return {"status": "error", "message": f"Failed to fetch URL: HTTP {res.status_code}"}
             
+            cl = res.headers.get("Content-Length")
+            if cl and cl.isdigit() and int(cl) > 10 * 1024 * 1024:
+                return {"status": "error", "message": "Content too large (exceeds 10MB limit)."}
+
             html = res.text
             clean = re.sub(r"<script.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
             clean = re.sub(r"<style.*?</style>", "", clean, flags=re.DOTALL | re.IGNORECASE)
@@ -127,19 +193,23 @@ async def _tool_fetch_webpage(url: str) -> Dict[str, Any]:
 
 
 async def _tool_custom_webhook(url: str, method: str = "POST", payload_json: Optional[str] = None) -> Dict[str, Any]:
-    """Triggers an external automation webhook."""
+    """Triggers an external automation webhook with SSRF protection."""
     target_url = (url or "").strip()
-    if not target_url.startswith("http"):
-        return {"status": "error", "message": "Webhook URL must start with http:// or https://"}
+    is_safe, denial_reason = await _is_safe_public_url(target_url)
+    if not is_safe:
+        return {"status": "error", "message": f"SSRF Blocked: {denial_reason}"}
+
+    method_clean = (method or "POST").upper()
+    if method_clean not in ("GET", "POST", "PUT", "PATCH", "DELETE"):
+        return {"status": "error", "message": f"Unsupported HTTP method: {method_clean}"}
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "custom_webhook",
         "action_title": "Automation Webhook Execution",
-        "detail": f"Target: {target_url}",
+        "detail": f"Target: {target_url} [{method_clean}]",
         "icon": "⚡"
     })
 
-    method_clean = (method or "POST").upper()
     parsed_payload = {}
     if payload_json:
         try:
@@ -148,9 +218,15 @@ async def _tool_custom_webhook(url: str, method: str = "POST", payload_json: Opt
             parsed_payload = {"raw_data": payload_json}
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
             if method_clean == "GET":
                 res = await client.get(target_url, params=parsed_payload)
+            elif method_clean == "DELETE":
+                res = await client.delete(target_url, params=parsed_payload)
+            elif method_clean == "PUT":
+                res = await client.put(target_url, json=parsed_payload)
+            elif method_clean == "PATCH":
+                res = await client.patch(target_url, json=parsed_payload)
             else:
                 res = await client.post(target_url, json=parsed_payload)
 
@@ -194,7 +270,7 @@ async def _tool_web_search_images(query: str, limit: int = 4) -> Dict[str, Any]:
     images = []
     try:
         bing_url = f"https://www.bing.com/images/search?q={urllib.parse.quote(q)}&first=1"
-        async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
             r = await client.get(bing_url, headers=headers)
             if r.status_code == 200:
                 m_tags = re.findall(r'm="([^"]+)"', r.text)
@@ -222,7 +298,7 @@ async def _tool_web_search_images(query: str, limit: int = 4) -> Dict[str, Any]:
     if not images:
         try:
             wiki_url = f"https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch={urllib.parse.quote(q)}&gsrnamespace=6&prop=imageinfo&iiprop=url|extmetadata&format=json"
-            async with httpx.AsyncClient(timeout=8.0, verify=False, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
                 res = await client.get(wiki_url, headers=headers)
                 if res.status_code == 200:
                     pages = res.json().get("query", {}).get("pages", {})
@@ -267,7 +343,7 @@ async def _tool_web_search_images(query: str, limit: int = 4) -> Dict[str, Any]:
         ctx = get_active_channel_context()
         if ctx and ctx.get("channel") == "telegram" and ctx.get("channel_id"):
             from integrations.telegram import send_telegram_photo
-            asyncio.create_task(send_telegram_photo(
+            _safe_create_task(send_telegram_photo(
                 photo=first_img["image_url"],
                 chat_id=ctx["channel_id"],
                 caption=f"📷 {first_img['title']}"

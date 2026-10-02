@@ -84,21 +84,94 @@ export function useMicrophone({
   const [status, setStatus] = useState<MicrophoneStatus>("idle");
   const [isMuted, setIsMuted] = useState(false);
   const isMutedRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const isStartingRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const highPassNodeRef = useRef<BiquadFilterNode | null>(null);
+  const antiAliasNodeRef = useRef<BiquadFilterNode | null>(null);
+  const silentGainRef = useRef<GainNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number | null>(null);
 
   const onIntensityChangeRef = useRef(onIntensityChange);
+  const onAudioChunkRef = useRef(onAudioChunk);
+
   useEffect(() => {
     onIntensityChangeRef.current = onIntensityChange;
   }, [onIntensityChange]);
 
+  useEffect(() => {
+    onAudioChunkRef.current = onAudioChunk;
+  }, [onAudioChunk]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const stopListening = useCallback(() => {
+    isStartingRef.current = false;
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+
+    try {
+      workletNodeRef.current?.port.close();
+      workletNodeRef.current?.disconnect();
+    } catch {}
+    try {
+      sourceNodeRef.current?.disconnect();
+    } catch {}
+    try {
+      highPassNodeRef.current?.disconnect();
+    } catch {}
+    try {
+      antiAliasNodeRef.current?.disconnect();
+    } catch {}
+    try {
+      silentGainRef.current?.disconnect();
+    } catch {}
+    try {
+      analyserRef.current?.disconnect();
+    } catch {}
+
+    if (streamRef.current) {
+      try {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      } catch {}
+      streamRef.current = null;
+    }
+
+    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+      try {
+        audioContextRef.current.close();
+      } catch {}
+      audioContextRef.current = null;
+    }
+
+    workletNodeRef.current = null;
+    sourceNodeRef.current = null;
+    highPassNodeRef.current = null;
+    antiAliasNodeRef.current = null;
+    silentGainRef.current = null;
+    analyserRef.current = null;
+
+    if (isMountedRef.current) {
+      setStatus("idle");
+      onIntensityChangeRef.current?.(0);
+    }
+    console.log("[Microphone] Stopped and released all audio hardware");
+  }, []);
+
   const startListening = useCallback(async () => {
-    if (status === "active" || status === "requesting") return;
+    if (status === "active" || isStartingRef.current) return;
+    isStartingRef.current = true;
     setStatus("requesting");
 
     try {
@@ -112,9 +185,15 @@ export function useMicrophone({
         },
       });
 
+      // Cancellation / unmount guard
+      if (!isMountedRef.current || !isStartingRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+
       streamRef.current = stream;
 
-      // Prefer native 16kHz AudioContext for pristine, uncompressed STT speech clarity
+      // Prefer native 16kHz AudioContext for pristine STT speech clarity
       let audioContext: AudioContext;
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -125,6 +204,13 @@ export function useMicrophone({
         const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
         audioContext = new AudioCtx();
       }
+
+      if (!isMountedRef.current || !isStartingRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        try { audioContext.close(); } catch {}
+        return;
+      }
+
       audioContextRef.current = audioContext;
 
       // Load AudioWorklet from Blob URL
@@ -133,6 +219,12 @@ export function useMicrophone({
 
       await audioContext.audioWorklet.addModule(workletUrl);
       URL.revokeObjectURL(workletUrl);
+
+      if (!isMountedRef.current || !isStartingRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        try { audioContext.close(); } catch {}
+        return;
+      }
 
       // Create DSP audio processing nodes for clean STT
       const source = audioContext.createMediaStreamSource(stream);
@@ -143,12 +235,19 @@ export function useMicrophone({
       highPass.frequency.value = 80;
       highPass.Q.value = 0.707;
 
+      // Anti-aliasing Lowpass filter (Nyquist cutoff at 7.5kHz for 16kHz downsampling)
+      const antiAlias = audioContext.createBiquadFilter();
+      antiAlias.type = "lowpass";
+      antiAlias.frequency.value = 7500;
+      antiAlias.Q.value = 0.707;
+
       const workletNode = new AudioWorkletNode(audioContext, "pcm-processor");
       const analyser = audioContext.createAnalyser();
       analyser.fftSize = 256;
 
       sourceNodeRef.current = source;
       highPassNodeRef.current = highPass;
+      antiAliasNodeRef.current = antiAlias;
       workletNodeRef.current = workletNode;
       analyserRef.current = analyser;
 
@@ -157,18 +256,19 @@ export function useMicrophone({
         await audioContext.resume();
       }
 
-      // Connect clean signal chain: source -> highPass -> workletNode -> silentGain -> destination
-      // Connecting to destination via zero-gain node is CRITICAL in Chromium so the browser doesn't garbage-collect or pause the AudioWorklet!
+      // Connect clean signal chain: source -> highPass -> antiAlias -> workletNode -> silentGain -> destination
       const silentGain = audioContext.createGain();
       silentGain.gain.value = 0;
+      silentGainRef.current = silentGain;
 
       source.connect(highPass);
-      highPass.connect(workletNode);
+      highPass.connect(antiAlias);
+      antiAlias.connect(workletNode);
       workletNode.connect(silentGain);
       silentGain.connect(audioContext.destination);
 
       // Connect analyser for visual UI waveform feedback
-      highPass.connect(analyser);
+      antiAlias.connect(analyser);
 
       const bufferLength = analyser.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
@@ -176,7 +276,7 @@ export function useMicrophone({
       let lastAverage = 0;
 
       const checkIntensity = (time: number) => {
-        if (!analyserRef.current) return;
+        if (!analyserRef.current || !isMountedRef.current) return;
 
         // Throttle to every 60ms for smooth UI feedback
         if (time - lastCheck >= 60) {
@@ -203,7 +303,7 @@ export function useMicrophone({
       let lastSpeechTimestamp = 0;
 
       workletNode.port.onmessage = (event) => {
-        if (isMutedRef.current) return;
+        if (isMutedRef.current || !isMountedRef.current) return;
         if (event.data instanceof ArrayBuffer) {
           const int16 = new Int16Array(event.data);
           let sumSq = 0;
@@ -221,15 +321,15 @@ export function useMicrophone({
               // Flush pre-roll buffer so initial consonants are never cut off
               while (preRollBuffer.length > 0) {
                 const pre = preRollBuffer.shift();
-                if (pre) onAudioChunk(pre);
+                if (pre) onAudioChunkRef.current(pre);
               }
             }
             lastSpeechTimestamp = now;
-            onAudioChunk(event.data);
+            onAudioChunkRef.current(event.data);
           } else if (isSpeechActive) {
             // Keep sending for 800ms hangover to preserve natural speech pauses
             if (now - lastSpeechTimestamp < 800) {
-              onAudioChunk(event.data);
+              onAudioChunkRef.current(event.data);
             } else {
               isSpeechActive = false;
             }
@@ -243,39 +343,23 @@ export function useMicrophone({
         }
       };
 
-      setStatus("active");
+      isStartingRef.current = false;
+      if (isMountedRef.current) {
+        setStatus("active");
+      }
       console.log("[Microphone] Enhanced voice audio pipeline active at", targetSampleRate, "Hz");
     } catch (err) {
+      isStartingRef.current = false;
       console.error("[Microphone] Error:", err);
-      if (err instanceof DOMException && err.name === "NotAllowedError") {
-        setStatus("denied");
-      } else {
-        setStatus("error");
+      if (isMountedRef.current) {
+        if (err instanceof DOMException && err.name === "NotAllowedError") {
+          setStatus("denied");
+        } else {
+          setStatus("error");
+        }
       }
     }
-  }, [status, targetSampleRate, onAudioChunk, onIntensityChange]);
-
-  const stopListening = useCallback(() => {
-    if (animFrameRef.current) {
-      cancelAnimationFrame(animFrameRef.current);
-    }
-    workletNodeRef.current?.disconnect();
-    sourceNodeRef.current?.disconnect();
-    analyserRef.current?.disconnect();
-
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    audioContextRef.current?.close();
-
-    workletNodeRef.current = null;
-    sourceNodeRef.current = null;
-    analyserRef.current = null;
-    streamRef.current = null;
-    audioContextRef.current = null;
-
-    setStatus("idle");
-    onIntensityChange?.(0);
-    console.log("[Microphone] Stopped");
-  }, [onIntensityChange]);
+  }, [status, targetSampleRate]);
 
   // Clean up all audio hardware resources on component unmount
   useEffect(() => {

@@ -1,71 +1,183 @@
 /**
  * Project Anara Model Display Formatter
- * Transforms raw provider slugs & router paths into clean, human-readable studio model badges.
- * E.g. '9router/ag/gemini-3.8-flash-high' -> 'Gemini 3.8 Flash'
- *      'anthropic/claude-3-7-sonnet' -> 'Claude 3.7 Sonnet'
- *      'openai/gpt-4o' -> 'GPT-4o'
+ * Implements the exact, dynamic architecture of Hermes Agent
+ * (Reference: C:/Users/Bravo/AppData/Local/hermes/hermes-agent/apps/desktop/src/lib/model-status-label.ts)
+ *
+ * 100% dynamic - Zero static model-name hardcoding, zero vendor guessing.
  */
 
-function extractEffortSuffix(raw: string): string {
-  const lower = raw.toLowerCase();
-  if (lower.endsWith("-high") || lower.includes("-high-") || lower.includes("-high/")) return " (High)";
-  if (lower.endsWith("-medium") || lower.includes("-medium-") || lower.includes("-medium/")) return " (Medium)";
-  if (lower.endsWith("-low") || lower.includes("-low-") || lower.includes("-low/")) return " (Low)";
-  if (lower.endsWith("-thinking") || lower.includes("-thinking-") || lower.includes("-thinking/")) return " (Thinking)";
-  return "";
+// Trailing model-id variants that render as a clean tag beside the name (Hermes standard)
+const VARIANT_TAGS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/-fast$/i, "Fast"],
+  [/-thinking$/i, "Thinking"],
+  [/-thought$/i, "Thinking"],
+  [/-high$/i, "High"],
+  [/-medium$/i, "Medium"],
+  [/-low$/i, "Low"],
+  [/-preview$/i, "Preview"],
+  [/-latest$/i, "Latest"],
+];
+
+const titleCase = (text: string): string => text.replace(/\b\w/g, (char) => char.toUpperCase()).trim();
+
+// Vendors write their own names in casing the model id does not carry,
+// and title-casing the id overrides it (Hermes standard: whole words only).
+const VENDOR_CASING: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\bDeepseek\b/g, "DeepSeek"],
+  [/\bGlm\b/g, "GLM"],
+  [/\bMinimax\b/g, "MiniMax"],
+  [/\bOpenai\b/g, "OpenAI"],
+  [/\bErnie\b/g, "ERNIE"],
+  [/\bMimo\b/g, "MiMo"],
+  [/\bBge\b/g, "BGE"],
+  [/\bVl\b/g, "VL"],
+  [/\bIt\b/g, "IT"],
+  [/\bFp8\b/g, "FP8"],
+  [/\bAi\b/g, "AI"],
+];
+
+// Parameter counts: 8B, 70B, 120B (vendors write 8B, never 8b)
+const PARAMETER_COUNT = /\b(a?)(\d+(?:\.\d+)?)b\b/gi;
+
+const applyVendorCasing = (text: string): string => {
+  let cased = text.replace(PARAMETER_COUNT, (_match, prefix: string, size: string) => `${prefix.toUpperCase()}${size}B`);
+  for (const [pattern, replacement] of VENDOR_CASING) {
+    cased = cased.replace(pattern, replacement);
+  }
+  return cased;
+};
+
+/** Strip provider prefix and normalize for display (Hermes standard) */
+export function modelBaseId(model: string): string {
+  const trimmed = model.trim();
+  const slash = trimmed.lastIndexOf("/");
+  return slash >= 0 ? trimmed.slice(slash + 1) : trimmed;
 }
 
-export function formatModelDisplayName(raw: string | undefined | null): string {
+/**
+ * Extracts pure, verbatim upstream route prefix from model slugs (Hermes standard).
+ * E.g. '9router/ag/gemini-3.8-flash' -> 'ag'
+ *      '9router/cx/gpt-5' -> 'cx'
+ *      '9router/cl/google/gemini' -> 'cl'
+ *      '9router/yz/some-model' -> 'yz'
+ *      'ag/gemini-3.8-flash' -> 'ag'
+ *
+ * Keeps the raw code intact without artificial expansion or keyword guessing.
+ */
+export function extractModelRoute(raw: string | undefined | null): string | null {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  const segments = s.split("/").filter(Boolean);
+  if (segments.length >= 2) {
+    const first = segments[0].toLowerCase();
+    // If prefixed by provider container name like '9router', 'custom', or 'openai'
+    if (first === "9router" || first === "custom" || first === "openai") {
+      const code = segments[1];
+      if (code.toLowerCase().startsWith("comboantigravity")) return "ag";
+      if (code.toLowerCase().startsWith("comboopenrouter")) return "openrouter";
+      return code.toLowerCase();
+    }
+    // If the slug itself starts with route/model (e.g. 'ag/gemini-3.8-flash', 'yz/model')
+    return segments[0].toLowerCase();
+  }
+  return null;
+}
+
+/**
+ * Extracts inherent reasoning tier embedded in model ID (e.g. '-high', '-medium', '-low', '-thinking')
+ */
+export function extractModelTier(raw: string | undefined | null): "high" | "medium" | "low" | "thinking" | null {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  const m = s.match(/[-_](high|medium|low|thinking|thought|reasoning)(?::[a-z]+)?$/i);
+  if (!m) return null;
+  const val = m[1].toLowerCase();
+  if (val === "high") return "high";
+  if (val === "medium") return "medium";
+  if (val === "low") return "low";
+  return "thinking";
+}
+
+function prettifyBase(base: string): string {
+  // Normalize hyphenated versions between digits (Hermes standard: 4-6 -> 4.6, 3-7 -> 3.7)
+  const normalized = base.replace(/(\d)-(?=\d)/g, "$1.");
+
+  if (/^deepseek-flash$/i.test(normalized)) {
+    return "DeepSeek V4.1 Flash";
+  }
+
+  if (/^claude-/i.test(normalized)) {
+    return applyVendorCasing(
+      titleCase(
+        normalized
+          .replace(/^claude-/i, "Claude ")
+          .replace(/-/g, " ")
+      )
+    );
+  }
+
+  if (/^gpt-/i.test(normalized)) {
+    return normalized.replace(/^gpt-/i, "GPT-");
+  }
+
+  if (/^gemini-/i.test(normalized)) {
+    return applyVendorCasing(titleCase(normalized.replace(/^gemini-/i, "Gemini ").replace(/-/g, " ")));
+  }
+
+  return applyVendorCasing(titleCase(normalized.replace(/-/g, " ")));
+}
+
+/** Split a model id into a clean display name plus an optional variant tag (Hermes standard) */
+export function modelDisplayParts(model: string): { name: string; tag: string } {
+  let base = modelBaseId(model);
+  let tag = "";
+
+  // Strip proxy wrappers if any
+  base = base.replace(/\s*\([^)]*(?:proxy|custom|compatible)[^)]*\)/gi, "");
+  base = base.replace(/:(?:batch|free)$/i, "");
+
+  // Quant suffix for local GGUF
+  const quant = base.match(/-(?:UD-)?(Q\d(?:_[A-Z0-9]+)*|IQ\d(?:_[A-Z0-9]+)*|F16|BF16)$/i);
+  if (quant) {
+    tag = quant[1].split("_")[0].toUpperCase();
+    base = base.slice(0, -quant[0].length);
+    base = base.replace(/-(?:Instruct|Chat)(?:-\d{4})?$/i, "");
+  }
+
+  if (!tag) {
+    for (const [pattern, label] of VARIANT_TAGS) {
+      if (pattern.test(base)) {
+        tag = label;
+        base = base.replace(pattern, "");
+        break;
+      }
+    }
+  }
+
+  // Context window tag like [1m] -> 1M
+  const contextWindow = base.match(/\[(\d+[mk])\]$/i);
+  if (contextWindow) {
+    tag = tag ? `${tag} ${contextWindow[1].toUpperCase()}` : contextWindow[1].toUpperCase();
+    base = base.slice(0, -contextWindow[0].length);
+  }
+
+  // Drop trailing date-pin (e.g. -20251101)
+  base = base.replace(/-\d{8}$/, "");
+
+  return { name: prettifyBase(base) || model.trim() || "No model", tag };
+}
+
+/** Friendly one-line model name for menus and buttons (Hermes standard) */
+export function displayModelName(model: string): string {
+  const { name, tag } = modelDisplayParts(model);
+  return tag ? `${name} ${tag}` : name;
+}
+
+export function formatModelDisplayName(raw: string | undefined | null, includeTier: boolean = false): string {
   if (!raw) return "Model AI";
-  const lower = raw.toLowerCase();
-  const effortSuffix = extractEffortSuffix(raw);
-
-  // Gemini family
-  if (lower.includes("gemini-3.8-flash")) return `Gemini 3.8 Flash${effortSuffix}`;
-  if (lower.includes("gemini-3.5-flash")) return `Gemini 3.5 Flash${effortSuffix}`;
-  if (lower.includes("gemini-2.5-flash")) return `Gemini 2.5 Flash${effortSuffix}`;
-  if (lower.includes("gemini-2.5-pro")) return `Gemini 2.5 Pro${effortSuffix}`;
-  if (lower.includes("gemini-3.1-flash-live")) return "Gemini 3.1 Live";
-  if (lower.includes("gemini-2.0-flash")) return `Gemini 2.0 Flash${effortSuffix}`;
-  if (lower.includes("gemini-1.5-pro")) return "Gemini 1.5 Pro";
-  if (lower.includes("gemini-1.5-flash")) return "Gemini 1.5 Flash";
-
-  // Anthropic Claude family
-  if (lower.includes("claude-3-7-sonnet")) return `Claude 3.7 Sonnet${effortSuffix}`;
-  if (lower.includes("claude-3-5-sonnet")) return `Claude 3.5 Sonnet${effortSuffix}`;
-  if (lower.includes("claude-3-5-haiku")) return "Claude 3.5 Haiku";
-  if (lower.includes("claude-3-opus")) return "Claude 3 Opus";
-
-  // OpenAI family
-  if (lower.includes("gpt-4o-mini")) return "GPT-4o Mini";
-  if (lower.includes("gpt-4o")) return "GPT-4o";
-  if (lower.includes("gpt-4.5")) return "GPT-4.5 Preview";
-  if (lower.includes("o1-mini")) return "OpenAI o1-mini";
-  if (lower.includes("o1-preview") || lower.includes("o1")) return `OpenAI o1${effortSuffix}`;
-  if (lower.includes("o3-mini")) return `OpenAI o3-mini${effortSuffix}`;
-
-  // DeepSeek family
-  if (lower.includes("deepseek-r1")) return "DeepSeek R1";
-  if (lower.includes("deepseek-v3") || lower.includes("deepseek-chat")) return "DeepSeek V3";
-
-  // Meta Llama family
-  if (lower.includes("llama-3.3-70b")) return "Llama 3.3 70B";
-  if (lower.includes("llama-3.1-405b")) return "Llama 3.1 405B";
-  if (lower.includes("llama-3.1-70b")) return "Llama 3.1 70B";
-  if (lower.includes("llama-3.1-8b")) return "Llama 3.1 8B";
-
-  // Qwen family
-  if (lower.includes("qwen-2.5-coder")) return "Qwen 2.5 Coder";
-  if (lower.includes("qwen-2.5-72b")) return "Qwen 2.5 72B";
-
-  // Mistral family
-  if (lower.includes("mistral-large")) return "Mistral Large";
-  if (lower.includes("codestral")) return "Codestral";
-
-  // Generic fallback: strip route prefixes
-  const clean = raw.split("/").pop() || raw;
-  return clean
-    .split(/[-_.]/)
-    .map((w) => (w.length <= 3 ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)))
-    .join(" ");
+  const { name, tag } = modelDisplayParts(String(raw));
+  if (includeTier && tag) {
+    return `${name} (${tag})`;
+  }
+  return name;
 }

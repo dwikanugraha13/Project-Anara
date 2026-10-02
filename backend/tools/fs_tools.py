@@ -252,7 +252,15 @@ def _perform_fuzzy_replace(
             new_lines = new_string.splitlines(keepends=True)
             res_lines = list(c_lines)
             for m_idx in reversed(matches if replace_all else [matches[0]]):
-                res_lines[m_idx:m_idx + window_size] = new_lines
+                sub_new_lines = list(new_lines)
+                if sub_new_lines and (m_idx + window_size - 1) < len(c_lines):
+                    target_last_line = c_lines[m_idx + window_size - 1]
+                    ends_with_nl = target_last_line.endswith(chr(10)) or target_last_line.endswith(chr(13))
+                    last_has_nl = sub_new_lines[-1].endswith(chr(10)) or sub_new_lines[-1].endswith(chr(13))
+                    if ends_with_nl and not last_has_nl:
+                        nl = (chr(13) + chr(10)) if target_last_line.endswith(chr(13) + chr(10)) else chr(10)
+                        sub_new_lines[-1] += nl
+                res_lines[m_idx:m_idx + window_size] = sub_new_lines
             return "".join(res_lines), old_string, None
 
     return None, None, "old_string not found in file. Ensure the text to replace matches the file content."
@@ -562,30 +570,31 @@ async def _tool_delete_local_file(file_path: str) -> Dict[str, Any]:
             "message": f"Rejected: Wildcard characters or directory traversal ('{raw_path}') are forbidden for deletion."
         }
 
-    # 2. Critical file immunity via WorkspaceSentinel
-    from core.workspace_sentinel import workspace_sentinel
-    is_safe, denial_msg = workspace_sentinel.validate_file_access(raw_path, action="delete")
-    if not is_safe:
-        return {"status": "error", "message": denial_msg or f"Access denied: Deletion of '{raw_path}' blocked by Workspace Sentinel."}
-
-    norm_path = raw_path.replace("\\", "/").lower()
-    target_base = os.path.basename(norm_path)
-
-    _emit_agent_event("agent_action_start", {
-        "tool_name": "delete_local_file",
-        "action_title": "Delete File",
-        "detail": f"File: {target_base}",
-        "icon": "trash"
-    })
-
     try:
         from core import anara_agent
+        from core.workspace_sentinel import workspace_sentinel
+
         resolved = _resolve_local_file_path(raw_path)
         if not resolved or not os.path.exists(resolved):
             return {"status": "error", "message": f"File '{raw_path}' not found."}
 
+        # 2. Critical file immunity via WorkspaceSentinel on fully-resolved canonical target
+        is_safe, denial_msg = workspace_sentinel.validate_file_access(resolved, action="delete")
+        if not is_safe:
+            return {"status": "error", "message": denial_msg or f"Access denied: Deletion of '{raw_path}' blocked by Workspace Sentinel."}
+
         if os.path.isdir(resolved):
             return {"status": "error", "message": f"'{raw_path}' is a directory, not a file. This tool only deletes individual files."}
+
+        norm_path = resolved.replace("\\", "/").lower()
+        target_base = os.path.basename(norm_path)
+
+        _emit_agent_event("agent_action_start", {
+            "tool_name": "delete_local_file",
+            "action_title": "Delete File",
+            "detail": f"File: {target_base}",
+            "icon": "trash"
+        })
 
         # Create checkpoint before deletion
         checkpoint_id = anara_agent.create_checkpoint(None)
@@ -710,6 +719,9 @@ async def _tool_scan_workspace_folder(folder_path: str) -> Dict[str, Any]:
                     "size_kb": round(os.path.getsize(full_file) / 1024, 1),
                 })
                 total_files += 1
+
+            if total_files >= 60:
+                break
 
         _emit_agent_event("agent_action_complete", {
             "tool_name": "scan_workspace_folder",

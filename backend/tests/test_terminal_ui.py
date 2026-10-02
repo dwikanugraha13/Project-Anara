@@ -15,6 +15,7 @@ from integrations.platforms.terminal_ui import (
     AnaraTerminalUI,
     ToolActivitySpinner,
     StreamTokenRenderer,
+    ThinkingPreviewRenderer,
     AnaraCliCompleter,
 )
 
@@ -27,6 +28,63 @@ def test_terminal_ui_spinner_lifecycle(capsys):
     out = capsys.readouterr().out
     assert "✓" in out
     assert "test_action" in out
+
+
+def test_activity_feed_canonical_parity(capsys):
+    spinner = ToolActivitySpinner()
+    # Read tool
+    spinner.start_tool("read_local_file", "backend/integrations/platforms/terminal_ui.py")
+    spinner.finish_tool(success=True)
+    # Edit tool with diff stats
+    spinner.start_tool("edit_file", "cli.py")
+    spinner.finish_tool(success=True, summary="+12 -3 lines modified")
+    # Bash tool
+    spinner.start_tool("execute_cli_command", "git status --short")
+    spinner.finish_tool(success=True)
+
+    out = capsys.readouterr().out
+    assert "● Read(backend/integrations/platforms/terminal_ui.py)" in out
+    assert "● Edit(cli.py)" in out
+    assert "+12" in out
+    assert "-3" in out
+    assert "● Bash(git status --short)" in out
+
+
+def test_stream_token_renderer_unboxed(capsys):
+    streamer = StreamTokenRenderer()
+    streamer.start(speaker_name="Anara")
+    streamer.feed("Direct streaming token test.")
+    streamer.finish()
+    out = capsys.readouterr().out
+    assert "Direct streaming token test." in out
+    # Verify eradication of box-itis
+    assert "╭─" not in out
+    assert "╰─" not in out
+
+
+def test_eradicate_box_itis_unboxed_markdown(capsys):
+    ui = AnaraTerminalUI()
+    ui.print_response("# Header\nUnboxed markdown response content.")
+    out = capsys.readouterr().out
+    assert "Unboxed markdown response content." in out
+    # Verify no cyan Panel box borders around response
+    assert "╭─" not in out
+    assert "╰─" not in out
+    assert "│" not in out
+
+
+def test_thinking_preview_renderer(capsys):
+    thinking = ThinkingPreviewRenderer(max_lines=5)
+    thinking.start("Analyzing request")
+    for i in range(10):
+        thinking.feed(f"Reasoning step {i}: inspecting requirements")
+    # Test preview truncation helper
+    preview = thinking._get_preview_lines()
+    assert len(preview) <= 5
+    assert any("earlier lines" in line for line in preview)
+    thinking.finish(summary="Reasoning complete")
+    out = capsys.readouterr().out
+    assert "Thought for" in out
 
 
 def test_stream_token_renderer():

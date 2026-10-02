@@ -120,6 +120,7 @@ class ConvergenceDetector:
         self.test_verified_count: int = 0
         self.last_test_passed: bool = False
         self.redundant_inspections: int = 0
+        self._stop_gate_nudges: int = 0
 
     def extract_canonical_target(self, tool_name: str, args: Dict[str, Any]) -> str:
         """Extracts normalized entity target from tool arguments."""
@@ -128,7 +129,13 @@ class ConvergenceDetector:
 
         if tool_name in ("read_local_file", "edit_file", "write_local_file", "delete_local_file"):
             fp = args.get("file_path") or args.get("path") or ""
-            return os.path.normpath(str(fp).strip().replace("\\", "/")).lower()
+            norm_fp = os.path.normpath(str(fp).strip().replace("\\", "/")).lower()
+            if tool_name == "read_local_file":
+                offset = args.get("offset")
+                limit = args.get("limit")
+                if offset is not None or limit is not None:
+                    return f"{norm_fp}#{offset or 1}:{limit or 'all'}"
+            return norm_fp
 
         if tool_name in ("glob_find_files", "grep_search_code"):
             patt = args.get("pattern") or ""
@@ -278,8 +285,8 @@ class ConvergenceDetector:
         # 2. Multi-Tool Cycle Detection (N-cycles)
         cycle_len = self.detect_multi_tool_cycles()
         if cycle_len:
-            # Check repetition count
-            sigs = [(a.tool_name, a.target) for a in self.history]
+            # Check repetition count with args_hash to prevent false positives on iterative edits
+            sigs = [(a.tool_name, a.target, getattr(a, "args_hash", "")) for a in self.history]
             if len(sigs) >= cycle_len * 3 and sigs[-cycle_len:] == sigs[-cycle_len * 2 : -cycle_len] == sigs[-cycle_len * 3 : -cycle_len * 2]:
                 logger.warning(f"[Convergence] Hard cyclic stall detected ({cycle_len}-tool loop repeated 3x). Triggering convergence.")
                 default_stag = (

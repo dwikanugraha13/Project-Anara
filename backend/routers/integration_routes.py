@@ -1,9 +1,14 @@
 """
 External Messaging & Service Integrations Routes (WhatsApp, Telegram, Google, Contacts) for Project Anara.
 """
+from __future__ import annotations
+
+import asyncio
 import logging
-from typing import Optional
-from fastapi import APIRouter
+import os
+import re
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from memory import memory_engine
@@ -93,15 +98,15 @@ async def wa_send_endpoint(req: WhatsAppSendRequest):
 
 @router.get("/api/integrations/whatsapp/config")
 async def wa_get_config_endpoint():
-    """Returns WhatsApp configuration including allowed numbers whitelist."""
-    allowed = memory_engine.get_app_setting("whatsapp_allowed_numbers") or ""
+    """Returns WhatsApp configuration including allowed numbers whitelist (non-blocking)."""
+    allowed = await asyncio.to_thread(memory_engine.get_app_setting, "whatsapp_allowed_numbers") or ""
     return {"allowed_numbers": allowed}
 
 @router.post("/api/integrations/whatsapp/config")
 async def wa_save_config_endpoint(req: WhatsAppConfigRequest):
-    """Saves allowed numbers whitelist for WhatsApp."""
+    """Saves allowed numbers whitelist for WhatsApp (non-blocking)."""
     if req.allowed_numbers is not None:
-        memory_engine.set_app_setting("whatsapp_allowed_numbers", req.allowed_numbers.strip())
+        await asyncio.to_thread(memory_engine.set_app_setting, "whatsapp_allowed_numbers", req.allowed_numbers.strip())
     return {"status": "success", "allowed_numbers": req.allowed_numbers}
 
 class WhatsAppWebhookPayload(BaseModel):
@@ -123,6 +128,23 @@ class WhatsAppWebhookPayload(BaseModel):
     quotedMediaType: Optional[str] = None
     timestamp: Optional[float] = None
 
+def _sanitize_webhook_path(raw_path: Optional[str]) -> Optional[str]:
+    """Guards against path traversal and SSRF attacks via untrusted webhook payload paths."""
+    if not raw_path or not isinstance(raw_path, str):
+        return None
+    clean = raw_path.strip()
+    if not clean:
+        return None
+    # Block path traversal, UNC shares, and URI schemes
+    if ".." in clean or clean.startswith(("\\\\", "//", "http://", "https://", "file://")):
+        logger.warning(f"[WAWebhook] Blocked suspicious file path in webhook payload: {clean}")
+        return None
+    norm = os.path.normpath(clean)
+    if os.path.isfile(norm):
+        return norm
+    return None
+
+
 @router.post("/api/integrations/whatsapp/webhook")
 async def wa_webhook_endpoint(payload: WhatsAppWebhookPayload):
     """
@@ -132,11 +154,14 @@ async def wa_webhook_endpoint(payload: WhatsAppWebhookPayload):
     from core.channel_adapter import ChannelRequest, process_channel_request
 
     p_dict = payload.dict()
+    safe_local_path = _sanitize_webhook_path(payload.localPath)
+    safe_quoted_path = _sanitize_webhook_path(payload.quotedLocalPath)
+
     # If audio/voice note, attempt voice transcription
-    if payload.mediaType == "audio" and payload.localPath:
+    if payload.mediaType == "audio" and safe_local_path:
         try:
             from cognition.audio import transcribe_audio_file
-            transcript = await transcribe_audio_file(payload.localPath)
+            transcript = await transcribe_audio_file(safe_local_path)
             if transcript:
                 p_dict["text"] = f"{transcript}\n\n[Voice Note Transcription]"
         except Exception as stt_err:
@@ -146,17 +171,18 @@ async def wa_webhook_endpoint(payload: WhatsAppWebhookPayload):
     if not clean_text:
         return {"status": "ignored", "reason": "empty_text"}
 
-    # Check allowed numbers filter (optional security whitelist from app_settings)
-    allowed_raw = memory_engine.get_app_setting("whatsapp_allowed_numbers")
+    # Check allowed numbers filter (optional security whitelist from app_settings, non-blocking)
+    allowed_raw = await asyncio.to_thread(memory_engine.get_app_setting, "whatsapp_allowed_numbers")
     if allowed_raw:
-        allowed_list = [n.strip().replace("+", "").replace("-", "") for n in allowed_raw.split(",") if n.strip()]
-        clean_phone = payload.phone.replace("+", "").replace("-", "")
-        if allowed_list and not any(clean_phone.endswith(allowed) or allowed.endswith(clean_phone) for allowed in allowed_list):
+        allowed_list = [re.sub(r"[^0-9]", "", n) for n in allowed_raw.split(",") if re.sub(r"[^0-9]", "", n)]
+        clean_phone = re.sub(r"[^0-9]", "", payload.phone)
+        if allowed_list and not any(clean_phone == a or (len(a) >= 8 and clean_phone.endswith(a)) for a in allowed_list):
             logger.info(f"[WAWebhook] Message from {clean_phone} skipped (not in whatsapp_allowed_numbers whitelist).")
             return {"status": "skipped", "reason": "not_in_whitelist"}
 
-    # Check for /stop command immediately before starting turn
-    if clean_text.strip().lower().startswith(("/stop", "/cancel", "/abort")):
+    # Dynamic command check for immediate hard interrupt (cancel fence)
+    words = clean_text.strip().lower().split()
+    if words and words[0] in ("/stop", "/cancel", "/abort"):
         from core.session_manager import session_state_manager
         interrupt_info = await session_state_manager.request_hard_interrupt(
             channel="whatsapp",
@@ -181,19 +207,19 @@ async def wa_webhook_endpoint(payload: WhatsAppWebhookPayload):
     human_sender_id = payload.participant or payload.phone
 
     wa_attachments = []
-    if payload.localPath:
+    if safe_local_path:
         wa_attachments.append({
             "type": payload.mediaType or "document",
             "file_name": payload.fileName or "file",
-            "local_path": payload.localPath,
+            "local_path": safe_local_path,
             "mime_type": payload.mimeType or "application/octet-stream",
             "size": payload.fileSize or 0,
         })
-    elif payload.quotedLocalPath:
+    elif safe_quoted_path:
         wa_attachments.append({
             "type": payload.quotedMediaType or "photo",
             "file_name": "quoted_media",
-            "local_path": payload.quotedLocalPath,
+            "local_path": safe_quoted_path,
             "mime_type": "image/jpeg" if payload.quotedMediaType == "photo" else "application/octet-stream",
             "size": 0,
         })
@@ -254,19 +280,19 @@ async def wa_webhook_endpoint(payload: WhatsAppWebhookPayload):
 
 @router.get("/api/integrations/contacts")
 async def list_contacts_endpoint(platform: Optional[str] = None):
-    """Lists saved contact mappings."""
-    return memory_engine.get_all_contacts(platform=platform)
+    """Lists saved contact mappings (non-blocking)."""
+    return await asyncio.to_thread(memory_engine.get_all_contacts, platform=platform)
 
 @router.post("/api/integrations/contacts")
 async def save_contact_endpoint(req: ContactSaveRequest):
-    """Saves or updates a contact mapping."""
-    cid = memory_engine.save_contact(req.name, req.phone_number, req.platform, req.notes or "")
+    """Saves or updates a contact mapping (non-blocking)."""
+    cid = await asyncio.to_thread(memory_engine.save_contact, req.name, req.phone_number, req.platform, req.notes or "")
     return {"status": "success", "contact_id": cid}
 
 @router.delete("/api/integrations/contacts/{contact_id}")
 async def delete_contact_endpoint(contact_id: int):
-    """Deletes a contact mapping."""
-    ok = memory_engine.delete_contact(contact_id)
+    """Deletes a contact mapping (non-blocking)."""
+    ok = await asyncio.to_thread(memory_engine.delete_contact, contact_id)
     return {"status": "success" if ok else "error"}
 
 # ── Telegram ──
@@ -280,13 +306,16 @@ async def telegram_status_endpoint():
 async def telegram_config_endpoint(req: TelegramConfigRequest):
     """
     Saves Telegram bot token, default chat ID & admin user IDs.
-    Validates live connection via getMe API and auto-starts the background polling daemon.
+    Validates token format against SSRF/path-traversal and starts polling daemon non-blockingly.
     """
     token = (req.token or req.bot_token or "").strip()
     chat_id = (req.default_chat_id or req.chat_id or "").strip() or None
     admin_ids = (req.admin_ids or req.telegram_admin_ids or "").strip() or None
 
-    save_telegram_config(token=token, default_chat_id=chat_id, admin_ids=admin_ids)
+    if token and not re.match(r"^[0-9]{8,15}:[A-Za-z0-9_\-]{30,60}$", token):
+        raise HTTPException(status_code=400, detail="Invalid Telegram bot token format.")
+
+    await asyncio.to_thread(save_telegram_config, token=token, default_chat_id=chat_id, admin_ids=admin_ids)
     if token:
         from integrations.telegram import start_telegram_polling_daemon
         start_telegram_polling_daemon()
@@ -313,13 +342,18 @@ async def google_status_endpoint():
 
 @router.post("/api/integrations/google/config")
 async def google_config_endpoint(req: GoogleConfigRequest):
-    """Saves Google account email & credentials."""
-    return await save_google_config(req.email)
+    """Saves Google account email & credentials with input validation (non-blocking)."""
+    clean_email = req.email.strip()
+    if not re.match(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", clean_email):
+        raise HTTPException(status_code=400, detail="Invalid email address format.")
+    ok = await asyncio.to_thread(save_google_config, clean_email)
+    return {"status": "success" if ok else "error", "email": clean_email}
 
 @router.post("/api/integrations/google/disconnect")
 async def google_disconnect_endpoint():
-    """Disconnects Google Workspace account."""
-    return await disconnect_google()
+    """Disconnects Google Workspace account (non-blocking)."""
+    ok = await asyncio.to_thread(disconnect_google)
+    return {"status": "success" if ok else "error"}
 
 @router.get("/api/integrations/google/emails")
 async def google_emails_endpoint(limit: int = 10):
@@ -333,5 +367,10 @@ async def google_calendar_endpoint(days: int = 7):
 
 @router.post("/api/integrations/google/send-email")
 async def google_send_email_endpoint(req: EmailSendRequest):
-    """Sends an email."""
-    return await send_email(req.to, req.subject, req.body)
+    """Sends an email with CRLF injection validation."""
+    clean_to = req.to.strip()
+    if not re.match(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", clean_to):
+        raise HTTPException(status_code=400, detail="Invalid recipient email address.")
+    if chr(13) in req.subject or chr(10) in req.subject:
+        raise HTTPException(status_code=400, detail="CRLF injection in email subject is forbidden.")
+    return await send_email(clean_to, req.subject, req.body)

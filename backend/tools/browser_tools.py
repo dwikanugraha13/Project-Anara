@@ -135,7 +135,22 @@ async def _ensure_browser_session(headed: bool = False, use_brave: bool = False)
                 viewport={"width": 1280, "height": 800},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
             )
-            _ACTIVE_PAGE = await _ACTIVE_CONTEXT.new_page()
+            new_page = await _ACTIVE_CONTEXT.new_page()
+
+            async def _route_ssrf_filter(route, request):
+                req_url = request.url
+                if req_url.startswith(("data:", "blob:", "about:")):
+                    await route.continue_()
+                    return
+                safe, _ = _is_safe_public_url(req_url)
+                if not safe:
+                    logger.warning(f"[BrowserTools] Blocked unsafe subresource/redirect to {req_url}")
+                    await route.abort("blockedbyclient")
+                else:
+                    await route.continue_()
+
+            await new_page.route("**/*", _route_ssrf_filter)
+            _ACTIVE_PAGE = new_page
             _CURRENT_HEADED_STATE = headed
 
         return _ACTIVE_PAGE
@@ -328,11 +343,12 @@ async def _tool_browser_snapshot() -> Dict[str, Any]:
 
 async def _tool_browser_screenshot(filename: Optional[str] = None) -> Dict[str, Any]:
     """Captures a screenshot of the current page and saves it to staging directory."""
-    if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
-        return {"status": "error", "message": "No active browser session open."}
+    async with _LOCK:
+        if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
+            return {"status": "error", "message": "No active browser session open."}
+        page = _ACTIVE_PAGE
 
     try:
-        page = _ACTIVE_PAGE
         staging_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "staging", "screenshots"))
         os.makedirs(staging_dir, exist_ok=True)
 
@@ -382,15 +398,16 @@ async def _tool_browser_close() -> Dict[str, Any]:
 
 async def _tool_browser_scroll(direction: str = "down", amount: int = 500) -> Dict[str, Any]:
     """Scrolls the current browser page up or down."""
-    if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
-        return {"status": "error", "message": "No active browser session open."}
+    async with _LOCK:
+        if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
+            return {"status": "error", "message": "No active browser session open."}
+        page = _ACTIVE_PAGE
 
     dir_clean = (direction or "down").strip().lower()
     scroll_amt = max(100, int(amount or 500))
     delta_y = scroll_amt if dir_clean in ("down", "bawah") else -scroll_amt
 
     try:
-        page = _ACTIVE_PAGE
         if dir_clean == "top":
             await page.evaluate("window.scrollTo(0, 0)")
         elif dir_clean in ("bottom", "end"):
@@ -406,15 +423,16 @@ async def _tool_browser_scroll(direction: str = "down", amount: int = 500) -> Di
 
 async def _tool_browser_press(key: str) -> Dict[str, Any]:
     """Presses a keyboard key on the active browser page (e.g. Enter, Escape, Tab, ArrowDown, Backspace)."""
-    if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
-        return {"status": "error", "message": "No active browser session open."}
+    async with _LOCK:
+        if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
+            return {"status": "error", "message": "No active browser session open."}
+        page = _ACTIVE_PAGE
 
     clean_key = (key or "").strip()
     if not clean_key:
         return {"status": "error", "message": "Parameter 'key' is required (e.g. 'Enter', 'Escape', 'Tab')."}
 
     try:
-        page = _ACTIVE_PAGE
         await page.keyboard.press(clean_key)
         await page.wait_for_timeout(300)
         return {"status": "success", "message": f"Key '{clean_key}' pressed successfully."}
@@ -424,11 +442,12 @@ async def _tool_browser_press(key: str) -> Dict[str, Any]:
 
 async def _tool_browser_back() -> Dict[str, Any]:
     """Navigates back to the previous page in history."""
-    if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
-        return {"status": "error", "message": "No active browser session open."}
+    async with _LOCK:
+        if not _ACTIVE_PAGE or _ACTIVE_PAGE.is_closed():
+            return {"status": "error", "message": "No active browser session open."}
+        page = _ACTIVE_PAGE
 
     try:
-        page = _ACTIVE_PAGE
         await page.go_back()
         await page.wait_for_load_state("domcontentloaded", timeout=10000)
         return {

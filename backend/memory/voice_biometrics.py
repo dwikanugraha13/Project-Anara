@@ -268,6 +268,16 @@ class VoiceBiometricsMixin:
         """Alias for get_last_active_speaker_name in multi-user mode."""
         return self.get_last_active_speaker_name()
 
+    def identify_speaker_from_voice(self, audio_pcm: bytes, threshold: float = 0.74) -> Dict[str, Any]:
+        """Dictionary adapter for speaker identification (Anara Standard)."""
+        name, conf, s_id = self.identify_speaker(audio_pcm, threshold=threshold)
+        return {
+            "identified": bool(name),
+            "name": name,
+            "confidence": conf,
+            "speaker_id": s_id,
+        }
+
     def identify_speaker(self, audio_pcm: bytes, threshold: float = 0.74) -> Tuple[Optional[str], float, Optional[int]]:
         """
         Matches voice against registered embeddings using Cosine Similarity.

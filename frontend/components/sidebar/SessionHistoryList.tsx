@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useRef } from "react";
-import { ChatSession, formatFullDateTime, formatSmartDateTime, resolveSessionDisplay, groupSessions } from "./types";
+import { ChatSession, formatSmartDateTime, resolveSessionDisplay, groupSessions } from "./types";
 
 interface SessionHistoryListProps {
   sessions: ChatSession[];
@@ -15,7 +15,7 @@ interface SessionHistoryListProps {
   onOpenCode?: () => void;
   sessionType?: "chat" | "code";
   onPatchSession: (id: number, body: Record<string, unknown>) => Promise<void>;
-  onDeleteSession: (s: ChatSession) => Promise<void>;
+  onDeleteSession: (s: ChatSession) => Promise<void> | void;
   onForkSession?: (s: ChatSession) => Promise<void>;
   onDropPin: (id: number) => void;
   onDropUnpin: (id: number) => void;
@@ -54,6 +54,8 @@ export default function SessionHistoryList({
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
+  const isSubmittingRenameRef = useRef(false);
+  const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
     if (menuOpenId === null) return;
@@ -65,9 +67,15 @@ export default function SessionHistoryList({
   }, [menuOpenId]);
 
   const submitRename = async (id: number) => {
+    if (isSubmittingRenameRef.current) return;
+    isSubmittingRenameRef.current = true;
     const val = renameValue.trim();
     setRenamingId(null);
-    if (val) await onPatchSession(id, { title: val });
+    try {
+      if (val) await onPatchSession(id, { title: val });
+    } finally {
+      isSubmittingRenameRef.current = false;
+    }
   };
 
   const filtered = useMemo(() => {
@@ -158,7 +166,7 @@ export default function SessionHistoryList({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search conversations..."
-          className="w-full py-1.5 pl-7 pr-2.5 rounded-lg bg-black/30 border border-white/8 text-[11px] text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-cyan-400/40 focus:bg-black/45 transition-all font-sans"
+          className="w-full py-1.5 pl-7 pr-2.5 rounded-lg bg-black/30 border border-white/[0.08] text-[11px] text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-cyan-400/40 focus:bg-black/45 transition-all font-sans"
         />
       </div>
 
@@ -193,6 +201,7 @@ export default function SessionHistoryList({
             onDragLeave={() => setDragOverTarget(null)}
             onDrop={(e) => {
               e.preventDefault();
+              e.stopPropagation();
               if (draggedSession) onDropPin(draggedSession.id);
             }}
             className={`mb-2 p-2.5 rounded-xl border border-dashed text-center transition-all cursor-pointer ${
@@ -249,6 +258,7 @@ export default function SessionHistoryList({
                   }}
                   onDrop={(e) => {
                     if (draggedSession) {
+                      e.stopPropagation();
                       if (isPinnedGroup && draggedSession.is_pinned === 0) {
                         e.preventDefault();
                         onDropPin(draggedSession.id);
@@ -351,11 +361,17 @@ export default function SessionHistoryList({
                                 e.stopPropagation();
                                 e.dataTransfer.setData("text/plain", String(s.id));
                                 e.dataTransfer.effectAllowed = "move";
-                                setTimeout(() => {
+                                if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
+                                dragTimeoutRef.current = setTimeout(() => {
                                   setDraggedSession(s);
+                                  dragTimeoutRef.current = null;
                                 }, 0);
                               }}
                               onDragEnd={() => {
+                                if (dragTimeoutRef.current) {
+                                  clearTimeout(dragTimeoutRef.current);
+                                  dragTimeoutRef.current = null;
+                                }
                                 setDraggedSession(null);
                                 setDragOverTarget(null);
                                 setHoveredDropSessionId(null);

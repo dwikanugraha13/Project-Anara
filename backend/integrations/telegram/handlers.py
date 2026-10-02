@@ -4,6 +4,7 @@ Anara Standard plugins/platforms/telegram/handlers.
 """
 
 import asyncio
+import html
 import logging
 import os
 import time
@@ -35,7 +36,7 @@ _ACTIVE_CHAT_TASKS: Dict[str, asyncio.Task] = {}
 
 
 class TelegramStatusTracker:
-    """Atomic in-place progress updater, continuous typing heartbeat, and auto-cleaner for Telegram turns."""
+    """Continuous typing heartbeat and status manager for Telegram turns (Hermes Standard)."""
     def __init__(self, chat_id: str):
         self.chat_id = chat_id
         self.status_msg_id: Optional[int] = None
@@ -58,23 +59,15 @@ class TelegramStatusTracker:
         self._heartbeat_task = asyncio.create_task(_keep_typing())
 
     async def update(self, text: str):
+        """Maintains native chat typing indicator without polluting the user's transcript."""
         clean = (text or "").strip()
         if not clean or clean == self.last_text:
             return
         self.last_text = clean
-        async with self._lock:
-            try:
-                now = time.time()
-                if self.status_msg_id is None:
-                    res = await send_telegram_message(text=f"<i>{clean}</i>", chat_id=self.chat_id)
-                    if isinstance(res, dict) and res.get("status") == "ok":
-                        self.status_msg_id = res.get("message_id") or (res.get("result") or {}).get("message_id")
-                        self._last_edit_time = now
-                elif (now - self._last_edit_time) >= 0.8:
-                    await edit_telegram_message(chat_id=self.chat_id, message_id=self.status_msg_id, text=f"<i>{clean}</i>")
-                    self._last_edit_time = now
-            except Exception:
-                pass
+        try:
+            await send_telegram_chat_action(chat_id=self.chat_id, action="typing")
+        except Exception:
+            pass
 
     async def cleanup(self):
         self._running = False
@@ -126,6 +119,12 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
 
         # Case C: Selected a Model
         if cb_data.startswith("setm:") or cb_data.startswith("setmodel:") or cb_data.startswith("setms:"):
+            from core.security import get_authorized_admins
+            admins = get_authorized_admins(channel="telegram")
+            if admins and str(user_id) not in admins:
+                await answer_telegram_callback_query(cb_id, text="⚠️ Unauthorized: Only admins can switch active models.")
+                return
+
             if cb_data.startswith("setms:"):
                 h_key = cb_data.split(":", 1)[1]
                 target_model = _MODEL_ID_SHORTMAP.get(h_key, "")
@@ -149,6 +148,12 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
 
         # Case D: Selected Voice Mode (/voice)
         if cb_data.startswith("vmode:"):
+            from core.security import get_authorized_admins
+            admins = get_authorized_admins(channel="telegram")
+            if admins and str(user_id) not in admins:
+                await answer_telegram_callback_query(cb_id, text="⚠️ Unauthorized: Only admins can change voice mode.")
+                return
+
             target_mode = cb_data.split(":", 1)[1]
             from core.command_hub import set_chat_voice_mode, VOICE_MODE_LABELS
             new_m = set_chat_voice_mode("telegram", chat_id, target_mode)
@@ -172,6 +177,11 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                 opt_idx = int(opt_idx_str)
                 q_state = _PENDING_TELEGRAM_QUESTIONS.get(q_id)
                 if q_state:
+                    # Guard against double-tap race conditions
+                    if q_idx != q_state.get("current_index", 0):
+                        await answer_telegram_callback_query(cb_id, text="Question already answered.")
+                        return
+
                     await answer_telegram_callback_query(cb_id, text="Choice accepted! ✍️")
                     questions = q_state["questions"]
                     if q_idx < len(questions):
@@ -591,7 +601,8 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
             logger.error(f"[TelegramDaemon] Error processing request: {e}")
             from core.channel_adapter import synthesize_channel_notice
             err_msg = await synthesize_channel_notice("error", channel="telegram", error_detail=str(e))
-            await send_telegram_message(text=f"⚠️ {err_msg}", chat_id=chat_id)
+            safe_err = html.escape(err_msg) if err_msg else "An error occurred."
+            await send_telegram_message(text=f"⚠️ {safe_err}", chat_id=chat_id)
         finally:
             await status_tracker.cleanup()
             if _ACTIVE_CHAT_TASKS.get(chat_id) is current_task:

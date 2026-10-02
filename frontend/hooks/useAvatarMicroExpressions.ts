@@ -34,7 +34,7 @@ const ALL_MICRO_KEYS = [
 
 export function useAvatarMicroExpressions() {
   const timerRef = useRef(0);
-  const nextChangeRef = useRef(3.0 + Math.random() * 4.0);
+  const nextChangeRef = useRef(5.0);
   const targetRef = useRef<Record<string, number>>({});
   const currentRef = useRef<Record<string, number>>({
     browInnerUp: 0,

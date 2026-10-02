@@ -50,13 +50,16 @@ export interface TokenUsagePayload {
 
 export interface ToolProgressPayload {
   toolName: string;
-  status: "running" | "done" | string;
+  status: "running" | "done" | "error" | string;
   summary?: string;
   icon?: string;
+  detail?: string;
+  rawResult?: string;
+  raw_result?: string;
 }
 
 export interface WebSocketMessage {
-  type: "audio_chunk" | "transcript" | "transcript_partial" | "token_usage" | "tool_progress" | "interrupted" | "turn_complete" | "error" | "emotion_update" | "acoustic_emotion" | "brain_sync" | "speaker_identified" | "hud_timer" | "hud_visual" | "media_play" | "media_control" | "proactive_message" | "session_switched" | "session_id_sync" | "agent_action" | "agent_action_start" | "agent_action_complete" | "agent_thinking" | "interactive_question" | "workspace_file_uploaded" | "workspace_folder_imported" | "workspace_file_created";
+  type: "audio_chunk" | "transcript" | "transcript_partial" | "token_usage" | "tool_progress" | "plan_pending" | "need_approval" | "interrupted" | "turn_complete" | "error" | "emotion_update" | "acoustic_emotion" | "brain_sync" | "speaker_identified" | "hud_timer" | "hud_visual" | "media_play" | "media_control" | "proactive_message" | "session_switched" | "session_id_sync" | "agent_action" | "agent_action_start" | "agent_action_complete" | "agent_thinking" | "interactive_question" | "workspace_file_uploaded" | "workspace_folder_imported" | "workspace_file_created";
   data?: any;
   event?: string;
   name?: string | null;
@@ -87,7 +90,12 @@ export interface WebSocketMessage {
   todos?: string[] | null;
   roster?: string[] | null;
   previous?: string | null;
-  sessionId?: number;
+  sessionId?: number | string;
+  session_id?: number | string;
+  sessionKey?: string;
+  session_key?: string;
+  session_type?: "chat" | "code";
+  sessionType?: "chat" | "code";
   messages?: SessionMessage[];
   eventType?: string;
   toolName?: string;
@@ -127,6 +135,7 @@ export interface WebSocketMessage {
   images?: any[];
   mediaType?: "image" | "hud";
   text?: string;
+  delta?: string;
   isPartial?: boolean;
   is_final?: boolean;
   agent_mode?: "plan" | "build";
@@ -156,6 +165,7 @@ export interface WebSocketMessage {
 
 export interface TranscriptPayload {
   text: string;
+  delta?: string;
   speaker: "input" | "output";
   visualType?: "image" | "weather" | "code" | "system_hud" | "knowledge_card" | "todo_list" | "briefing" | "agent_action" | "document_viewer" | "folder_workspace" | "plan_card" | "none";
   imageUrl?: string;
@@ -239,6 +249,10 @@ export interface SessionMessage {
 
 export interface SessionSwitchedPayload {
   sessionId: number;
+  sessionKey?: string | null;
+  session_key?: string | null;
+  sessionType?: "chat" | "code";
+  session_type?: "chat" | "code";
   title?: string | null;
   messages: SessionMessage[];
 }
@@ -277,6 +291,32 @@ export interface InteractiveQuestionPayload {
   questions: InteractiveQuestionItem[];
 }
 
+// ── Reconnect Backoff & Liveness Constants (Hermes Desktop / Claude Code standards) ──
+export interface ReconnectBackoffOptions {
+  baseDelayMs?: number;
+  capMs?: number;
+  jitter?: boolean;
+}
+
+const DEFAULT_BASE_DELAY_MS = 500;
+const DEFAULT_CAP_MS = 15000;
+const RECONNECT_STABLE_OPEN_MS = 5000;
+const PING_INTERVAL_MS = 30000;
+const HEARTBEAT_TIMEOUT_MS = 65000;
+const MAX_MESSAGE_QUEUE_SIZE = 100;
+
+/**
+ * Exponential reconnect backoff with full jitter (AWS / Hermes Desktop standard).
+ * Spreads retries evenly across [0, ceiling) to prevent fleet reconnect stampedes.
+ */
+export function reconnectBackoffDelayMs(attempt: number, options: ReconnectBackoffOptions = {}): number {
+  const baseDelayMs = options.baseDelayMs ?? DEFAULT_BASE_DELAY_MS;
+  const capMs = options.capMs ?? DEFAULT_CAP_MS;
+  const exponent = Math.min(Math.max(0, Math.trunc(attempt)), 32);
+  const ceiling = Math.min(capMs, baseDelayMs * 2 ** exponent);
+  return options.jitter === false ? ceiling : Math.random() * ceiling;
+}
+
 interface UseWebSocketOptions {
   url: string;
   onAudioChunk?: (audioData: ArrayBuffer, intensity: number, sampleRate: number) => void;
@@ -294,10 +334,11 @@ interface UseWebSocketOptions {
   onMediaControl?: (action: MediaControlAction) => void;
   onProactive?: (payload: ProactivePayload) => void;
   onSessionSwitched?: (payload: SessionSwitchedPayload) => void;
-  onSessionIdSync?: (sessionId: number) => void;
+  onSessionIdSync?: (sessionId: number, sessionKey?: string) => void;
   onAgentAction?: (payload: AgentActionPayload) => void;
   onAgentThinking?: (text: string) => void;
   onInteractiveQuestion?: (payload: InteractiveQuestionPayload) => void;
+  onPlanPending?: (payload: any) => void;
 }
 
 export function useWebSocket({
@@ -321,17 +362,82 @@ export function useWebSocket({
   onAgentAction,
   onAgentThinking,
   onInteractiveQuestion,
+  onPlanPending,
 }: UseWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const connectTimeRef = useRef<number>(0);
+  const lastActivityRef = useRef<number>(Date.now());
+  const unansweredPingsRef = useRef<number>(0);
+  const messageQueueRef = useRef<(string | ArrayBuffer)[]>([]);
   const isIntentionalClose = useRef(false);
   const retryCountRef = useRef(0);
-  const MAX_RETRY_DELAY_MS = 10000;
+
+  const callbacksRef = useRef({
+    onAudioChunk,
+    onTranscript,
+    onTokenUsage,
+    onToolProgress,
+    onInterrupted,
+    onTurnComplete,
+    onError,
+    onEmotionUpdate,
+    onAcousticEmotion,
+    onSpeakerIdentified,
+    onHudVisual,
+    onMediaPlay,
+    onMediaControl,
+    onProactive,
+    onSessionSwitched,
+    onSessionIdSync,
+    onAgentAction,
+    onAgentThinking,
+    onInteractiveQuestion,
+    onPlanPending,
+  });
+
+  useEffect(() => {
+    callbacksRef.current = {
+      onAudioChunk,
+      onTranscript,
+      onTokenUsage,
+      onToolProgress,
+      onInterrupted,
+      onTurnComplete,
+      onError,
+      onEmotionUpdate,
+      onAcousticEmotion,
+      onSpeakerIdentified,
+      onHudVisual,
+      onMediaPlay,
+      onMediaControl,
+      onProactive,
+      onSessionSwitched,
+      onSessionIdSync,
+      onAgentAction,
+      onAgentThinking,
+      onInteractiveQuestion,
+      onPlanPending,
+    };
+  });
+
+  const connectRef = useRef<() => void>(() => {});
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
+
+    // Clear any pending reconnect attempts to avoid racing duplicate sockets
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
+    }
 
     setStatus("connecting");
     isIntentionalClose.current = false;
@@ -342,19 +448,82 @@ export function useWebSocket({
       ws.binaryType = "arraybuffer";
 
       ws.onopen = () => {
-        retryCountRef.current = 0;
+        if (wsRef.current !== ws) return;
+        connectTimeRef.current = Date.now();
+        lastActivityRef.current = Date.now();
+        unansweredPingsRef.current = 0;
         setStatus("connected");
         console.log("[WebSocket] Connected to", url);
+
+        // Safe message delivery queue drain
+        while (messageQueueRef.current.length > 0 && ws.readyState === WebSocket.OPEN) {
+          const queued = messageQueueRef.current.shift();
+          if (!queued) break;
+          try {
+            ws.send(queued);
+          } catch (err) {
+            console.warn("[WebSocket] Error draining queued message, requeueing:", err);
+            messageQueueRef.current.unshift(queued);
+            break;
+          }
+        }
+
+        // Heartbeat ping (every 30s) + liveness watchdog (Cloudflare / reverse-proxy keepalive)
+        if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+        pingIntervalRef.current = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            const now = Date.now();
+            // Liveness check: force-close dead/zombie sockets if silent past timeout
+            if (unansweredPingsRef.current >= 2 || now - lastActivityRef.current > HEARTBEAT_TIMEOUT_MS) {
+              console.warn(
+                `[WebSocket] Heartbeat timeout: server silent for ${((now - lastActivityRef.current) / 1000).toFixed(1)}s (unanswered pings: ${unansweredPingsRef.current}). Force-closing zombie socket.`
+              );
+              try {
+                ws.close(4000, "Heartbeat timeout");
+              } catch {}
+              return;
+            }
+
+            unansweredPingsRef.current += 1;
+            try {
+              ws.send(JSON.stringify({ type: "ping", timestamp: now }));
+            } catch (err) {
+              console.warn("[WebSocket] Ping heartbeat failed to send:", err);
+            }
+          }
+        }, PING_INTERVAL_MS);
       };
 
       ws.onmessage = (event) => {
+        if (wsRef.current !== ws) return;
+        lastActivityRef.current = Date.now();
+        unansweredPingsRef.current = 0;
+        const cb = callbacksRef.current;
+
+        // Direct raw binary ArrayBuffer audio chunk
+        if (event.data instanceof ArrayBuffer) {
+          cb.onAudioChunk?.(event.data, 0, 24000);
+          return;
+        }
+
         if (typeof event.data === "string") {
           try {
             const msg: WebSocketMessage = JSON.parse(event.data);
 
+            // Handle transport keepalive
+            if ((msg as any).type === "ping") {
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
+              }
+              return;
+            }
+            if ((msg as any).type === "pong") {
+              return;
+            }
+
             switch (msg.type) {
               case "audio_chunk":
-                if (msg.data && onAudioChunk) {
+                if (msg.data && cb.onAudioChunk) {
                   try {
                     const binary = atob(msg.data);
                     const buffer = new ArrayBuffer(binary.length);
@@ -362,17 +531,28 @@ export function useWebSocket({
                     for (let i = 0; i < binary.length; i++) {
                       view[i] = binary.charCodeAt(i);
                     }
-                    onAudioChunk(buffer, msg.intensity ?? 0, msg.sampleRate ?? 24000);
+                    cb.onAudioChunk(buffer, msg.intensity ?? 0, msg.sampleRate ?? 24000);
                   } catch (decodeErr) {
                     console.error("[WS] Audio decode error:", decodeErr);
                   }
                 }
                 break;
 
-              case "transcript_partial":
-                if (msg.text && onTranscript) {
-                  onTranscript({
-                    text: msg.text,
+              case "transcript_partial": {
+                // Zero-dropped chunks: support delta, text, or data without falsy-dropping empty strings
+                const chunkText =
+                  msg.text !== undefined
+                    ? msg.text
+                    : msg.delta !== undefined
+                    ? msg.delta
+                    : typeof msg.data === "string"
+                    ? msg.data
+                    : "";
+                const delta = msg.delta !== undefined ? msg.delta : typeof msg.data === "string" ? msg.data : undefined;
+                if (cb.onTranscript && (chunkText !== undefined || delta !== undefined)) {
+                  cb.onTranscript({
+                    text: chunkText,
+                    delta,
                     speaker: msg.speaker ?? "output",
                     visualType: msg.visualType,
                     isPartial: true,
@@ -380,11 +560,13 @@ export function useWebSocket({
                   });
                 }
                 break;
+              }
 
-              case "transcript":
-                if (msg.data && onTranscript) {
-                  onTranscript({
-                    text: msg.data,
+              case "transcript": {
+                const finalData = msg.data !== undefined ? msg.data : msg.text !== undefined ? msg.text : "";
+                if (cb.onTranscript) {
+                  cb.onTranscript({
+                    text: typeof finalData === "string" ? finalData : JSON.stringify(finalData),
                     speaker: msg.speaker ?? "output",
                     visualType: msg.visualType,
                     imageUrl: msg.imageUrl,
@@ -420,12 +602,12 @@ export function useWebSocket({
                   });
                 }
                 break;
-
+              }
 
               case "agent_action_start":
               case "agent_action_complete":
-                if (onTranscript && msg.action_title) {
-                  onTranscript({
+                if (cb.onTranscript && msg.action_title) {
+                  cb.onTranscript({
                     text: "",
                     speaker: "output",
                     visualType: "agent_action",
@@ -455,15 +637,15 @@ export function useWebSocket({
                 break;
 
               case "agent_thinking":
-                if (onAgentThinking) {
+                if (cb.onAgentThinking) {
                   const thinkingContent = msg.text !== undefined ? msg.text : (msg.data !== undefined ? msg.data : "");
-                  onAgentThinking(thinkingContent);
+                  cb.onAgentThinking(thinkingContent);
                 }
                 break;
 
               case "interactive_question":
-                if (onInteractiveQuestion && (msg.questions || (msg as any).data?.questions)) {
-                  onInteractiveQuestion({
+                if (cb.onInteractiveQuestion && (msg.questions || (msg as any).data?.questions)) {
+                  cb.onInteractiveQuestion({
                     question_id: msg.question_id || (msg as any).questionId || (msg as any).data?.question_id,
                     questions: msg.questions || (msg as any).data?.questions,
                   });
@@ -479,16 +661,16 @@ export function useWebSocket({
                 break;
 
               case "interrupted":
-                onInterrupted?.();
+                cb.onInterrupted?.();
                 break;
 
               case "turn_complete":
-                onTurnComplete?.();
+                cb.onTurnComplete?.();
                 break;
 
               case "emotion_update":
-                if (onEmotionUpdate && msg.emotion && msg.gesture) {
-                  onEmotionUpdate({
+                if (cb.onEmotionUpdate && msg.emotion && msg.gesture) {
+                  cb.onEmotionUpdate({
                     emotion: msg.emotion,
                     gesture: msg.gesture,
                     intensity: msg.intensity ?? 0.7,
@@ -497,13 +679,13 @@ export function useWebSocket({
                 break;
 
               case "acoustic_emotion":
-                if (onAcousticEmotion && msg.data) {
-                  onAcousticEmotion(msg.data);
+                if (cb.onAcousticEmotion && msg.data) {
+                  cb.onAcousticEmotion(msg.data);
                 }
                 break;
 
               case "speaker_identified":
-                onSpeakerIdentified?.(msg.name ?? null, msg.roster ?? []);
+                cb.onSpeakerIdentified?.(msg.name ?? null, msg.roster ?? []);
                 if (typeof window !== "undefined") {
                   window.dispatchEvent(new CustomEvent("anara-brain-sync", { detail: { event: "speaker_identified", name: msg.name } }));
                 }
@@ -523,14 +705,14 @@ export function useWebSocket({
                     })
                   );
                 }
-                if (onTranscript && msg.data) {
-                  onTranscript(msg.data, msg.speaker ?? "output");
+                if (cb.onTranscript && msg.data) {
+                  cb.onTranscript(msg.data, msg.speaker ?? "output");
                 }
                 break;
 
               case "hud_visual":
-                if (onHudVisual) {
-                  onHudVisual({
+                if (cb.onHudVisual) {
+                  cb.onHudVisual({
                     text: msg.data ?? "",
                     visualType: msg.visualType ?? "none",
                     imageUrl: msg.imageUrl,
@@ -549,7 +731,7 @@ export function useWebSocket({
               case "media_play":
                 if (msg.videoId) {
                   console.log(`[Media] play ${msg.kind}: "${msg.title}" (${msg.videoId})`);
-                  onMediaPlay?.({
+                  cb.onMediaPlay?.({
                     kind: msg.kind ?? "music",
                     videoId: msg.videoId,
                     title: msg.title ?? "Media",
@@ -567,30 +749,62 @@ export function useWebSocket({
 
               case "media_control":
                 if (msg.action) {
-                  onMediaControl?.(msg.action);
+                  cb.onMediaControl?.(msg.action);
                 }
                 break;
 
-              case "session_id_sync":
-                if (msg.sessionId) {
-                  onSessionIdSync?.(msg.sessionId);
+              case "session_id_sync": {
+                // Dual-identity session synchronization: supports SQLite id and canonical session_key
+                const rawSid = msg.sessionId ?? (msg as any).session_id ?? (msg as any).id;
+                const numSid = typeof rawSid === "number" ? rawSid : rawSid && !isNaN(Number(rawSid)) ? Number(rawSid) : 0;
+                const rawSkey =
+                  msg.sessionKey ??
+                  msg.session_key ??
+                  (msg as any).sessionKey ??
+                  (msg as any).session_key ??
+                  (typeof rawSid === "string" && isNaN(Number(rawSid)) ? rawSid : undefined);
+
+                if (numSid > 0) {
+                  cb.onSessionIdSync?.(numSid, rawSkey);
+                  if (typeof window !== "undefined") {
+                    window.dispatchEvent(
+                      new CustomEvent("anara-brain-sync", {
+                        detail: { event: "session_id_sync", sessionId: numSid, sessionKey: rawSkey },
+                      })
+                    );
+                  }
                 }
                 break;
+              }
 
-              case "tool_progress":
-                if (onToolProgress && (msg.tool_name || msg.toolName)) {
-                  onToolProgress({
-                    toolName: msg.tool_name || msg.toolName || "tool",
-                    status: msg.status || "running",
-                    summary: msg.summary,
-                    icon: msg.icon,
+              case "tool_progress": {
+                const toolName =
+                  msg.tool_name ||
+                  msg.toolName ||
+                  (msg.data && (msg.data.tool_name || msg.data.toolName)) ||
+                  (typeof msg.data === "string" ? msg.data : "tool");
+                const status = msg.status || (msg.data && msg.data.status) || "running";
+                const summary = msg.summary || (msg.data && msg.data.summary) || msg.detail || (msg.data && msg.data.detail);
+                const icon = msg.icon || (msg.data && msg.data.icon);
+                const detail = msg.detail || (msg.data && msg.data.detail);
+                const rawResult = msg.raw_result || msg.rawResult || (msg.data && (msg.data.raw_result || msg.data.rawResult));
+
+                if (cb.onToolProgress) {
+                  cb.onToolProgress({
+                    toolName,
+                    status,
+                    summary,
+                    icon,
+                    detail,
+                    rawResult,
                   });
                 }
                 break;
+              }
 
               case "token_usage":
-                if (onTokenUsage) {
-                  onTokenUsage({
+                if (cb.onTokenUsage) {
+                  cb.onTokenUsage({
                     modelId: msg.model_id || msg.modelId,
                     provider: msg.provider,
                     promptTokens: Number(msg.prompt_tokens ?? msg.promptTokens ?? 0),
@@ -604,28 +818,54 @@ export function useWebSocket({
                 }
                 break;
 
-              case "session_switched":
-                onSessionSwitched?.({
-                  sessionId: msg.sessionId ?? 0,
+              case "session_switched": {
+                // Dual-identity session synchronization: supports SQLite id, canonical session_key, and session_type
+                const rawSid = msg.sessionId ?? (msg as any).session_id ?? (msg as any).id ?? 0;
+                const numSid = typeof rawSid === "number" ? rawSid : rawSid && !isNaN(Number(rawSid)) ? Number(rawSid) : 0;
+                const rawSkey =
+                  msg.sessionKey ??
+                  msg.session_key ??
+                  (msg as any).sessionKey ??
+                  (msg as any).session_key ??
+                  (typeof rawSid === "string" && isNaN(Number(rawSid)) ? rawSid : null);
+                const stype = (msg as any).sessionType ?? (msg as any).session_type ?? "chat";
+
+                const switchedPayload: SessionSwitchedPayload = {
+                  sessionId: numSid,
+                  sessionKey: rawSkey,
+                  session_key: rawSkey,
+                  sessionType: stype,
+                  session_type: stype,
                   title: msg.title ?? null,
                   messages: msg.messages ?? [],
-                });
+                };
+
+                cb.onSessionSwitched?.(switchedPayload);
+
+                if (typeof window !== "undefined" && numSid > 0) {
+                  window.dispatchEvent(
+                    new CustomEvent("anara-brain-sync", {
+                      detail: { event: "session_switched", sessionId: numSid, sessionKey: rawSkey, sessionType: stype },
+                    })
+                  );
+                }
                 break;
+              }
 
               case "agent_action":
-                onAgentAction?.({
+                cb.onAgentAction?.({
                   eventType: msg.eventType ?? "agent_action",
                   toolName: msg.toolName,
                   actionTitle: msg.actionTitle,
                   detail: msg.detail,
                   summary: msg.summary,
                   rawResult: msg.rawResult,
-                  icon: msg.icon ?? "⚙️",
+                  icon: msg.icon ?? "tool",
                 });
                 break;
 
               case "proactive_message":
-                onProactive?.({
+                cb.onProactive?.({
                   kind: (msg.kind as ProactivePayload["kind"]) ?? "info",
                   text: msg.data ?? "",
                   todo: msg.todo ?? null,
@@ -640,35 +880,102 @@ export function useWebSocket({
                 }
                 break;
 
+              case "plan_pending":
+              case "need_approval":
+                cb.onPlanPending?.(msg);
+                break;
+
               case "error":
-                onError?.(msg.data ?? "Unknown server error");
+                cb.onError?.(msg.data ?? "Unknown server error");
                 break;
             }
           } catch (e) {
+            // Robust JSON parsing: handle newline-delimited chunks if server flushed multiple frames
+            if (typeof event.data === "string" && event.data.includes("\n")) {
+              const lines = event.data.split("\n");
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (trimmed) {
+                  try {
+                    const parsedLine = JSON.parse(trimmed);
+                    // Process line with keepalive and event dispatch
+                    if ((parsedLine as any).type === "ping") {
+                      if (ws.readyState === WebSocket.OPEN) {
+                        try {
+                          ws.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
+                        } catch {}
+                      }
+                      continue;
+                    }
+                    if ((parsedLine as any).type === "pong") continue;
+                    // For brevity, dispatch through cb or internal handler
+                    if (parsedLine.type === "transcript_partial" && (parsedLine.text !== undefined || parsedLine.delta !== undefined)) {
+                      callbacksRef.current.onTranscript?.({
+                        text: parsedLine.text || parsedLine.delta || "",
+                        delta: parsedLine.delta,
+                        speaker: parsedLine.speaker ?? "output",
+                        visualType: parsedLine.visualType,
+                        isPartial: true,
+                        isStreaming: true,
+                      });
+                    } else if (parsedLine.type === "tool_progress" && callbacksRef.current.onToolProgress) {
+                      callbacksRef.current.onToolProgress({
+                        toolName: parsedLine.tool_name || parsedLine.toolName || "tool",
+                        status: parsedLine.status || "running",
+                        summary: parsedLine.summary,
+                        icon: parsedLine.icon,
+                      });
+                    }
+                  } catch {}
+                }
+              }
+              return;
+            }
             console.error("[WebSocket] JSON parse error:", e);
           }
         }
       };
 
       ws.onerror = () => {
-        const msg = `Cannot connect to backend at ${url}. Make sure the FastAPI server is running (python main.py).`;
+        if (wsRef.current !== ws) return;
+        const msg = `Cannot connect to backend at ${url}. Make sure the FastAPI server is running.`;
         console.warn("[WebSocket] Connection error —", msg);
         setStatus("error");
       };
 
       ws.onclose = (event) => {
+        if (wsRef.current !== ws) return;
+        if (pingIntervalRef.current) {
+          clearInterval(pingIntervalRef.current);
+          pingIntervalRef.current = null;
+        }
         setStatus("disconnected");
         wsRef.current = null;
 
         if (!isIntentionalClose.current) {
-          const delay = Math.min(2000 * Math.pow(1.5, retryCountRef.current), MAX_RETRY_DELAY_MS);
+          // Reset ladder if connection was open and stable for >= 5s (Hermes Desktop standard)
+          const isStable = connectTimeRef.current > 0 && Date.now() - connectTimeRef.current >= RECONNECT_STABLE_OPEN_MS;
+          if (isStable) {
+            retryCountRef.current = 0;
+          }
+          connectTimeRef.current = 0;
+
+          // Exponential backoff with full jitter (AWS / Hermes standard)
+          const delay = reconnectBackoffDelayMs(retryCountRef.current, {
+            baseDelayMs: DEFAULT_BASE_DELAY_MS,
+            capMs: DEFAULT_CAP_MS,
+            jitter: true,
+          });
           retryCountRef.current += 1;
-          console.log(`[WebSocket] Disconnected (code ${event.code}). Retrying in ${(delay / 1000).toFixed(1)}s... (attempt ${retryCountRef.current})`);
+          console.log(
+            `[WebSocket] Disconnected (code ${event.code}). Retrying in ${(delay / 1000).toFixed(1)}s... (attempt ${retryCountRef.current})`
+          );
           reconnectTimeoutRef.current = setTimeout(() => {
-            connect();
+            connectRef.current();
           }, delay);
         } else {
           retryCountRef.current = 0;
+          connectTimeRef.current = 0;
         }
       };
 
@@ -677,27 +984,67 @@ export function useWebSocket({
       console.error("[WebSocket] Failed to connect:", e);
       setStatus("error");
     }
-  }, [url, onAudioChunk, onTranscript, onTokenUsage, onToolProgress, onInterrupted, onTurnComplete, onError, onEmotionUpdate, onHudVisual, onMediaPlay, onMediaControl, onProactive, onSessionSwitched, onSessionIdSync, onAgentAction]);
+  }, [url]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   const disconnect = useCallback(() => {
     isIntentionalClose.current = true;
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
     }
-    wsRef.current?.close();
-    wsRef.current = null;
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
+    }
+    if (wsRef.current) {
+      // Null out event listeners to prevent zombie callbacks or reconnects
+      wsRef.current.onopen = null;
+      wsRef.current.onmessage = null;
+      wsRef.current.onerror = null;
+      wsRef.current.onclose = null;
+      try {
+        wsRef.current.close(1000, "Normal closure");
+      } catch {}
+      wsRef.current = null;
+    }
     setStatus("disconnected");
   }, []);
 
+  const enqueueMessage = (item: string | ArrayBuffer) => {
+    if (messageQueueRef.current.length >= MAX_MESSAGE_QUEUE_SIZE) {
+      messageQueueRef.current.shift(); // Evict oldest frame (FIFO)
+    }
+    messageQueueRef.current.push(item);
+  };
+
   const sendBinary = useCallback((data: ArrayBuffer) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(data);
+      try {
+        wsRef.current.send(data);
+      } catch (err) {
+        console.warn("[WebSocket] sendBinary failed, buffering chunk:", err);
+        enqueueMessage(data);
+      }
+    } else {
+      enqueueMessage(data);
     }
   }, []);
 
   const sendJSON = useCallback((data: object) => {
+    const str = JSON.stringify(data);
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(data));
+      try {
+        wsRef.current.send(str);
+      } catch (err) {
+        console.warn("[WebSocket] sendJSON failed, buffering message:", err);
+        enqueueMessage(str);
+      }
+    } else {
+      enqueueMessage(str);
     }
   }, []);
 
@@ -709,12 +1056,18 @@ export function useWebSocket({
     sendJSON({ type: "text_input", text });
   }, [sendJSON]);
 
+  // Mid-Turn Steering Protocol (Claude Code & Hermes Parity)
+  const sendSteer = useCallback((message: string) => {
+    sendJSON({ type: "steer", message });
+  }, [sendJSON]);
+
   useEffect(() => {
     connect();
     return () => {
       disconnect();
+      messageQueueRef.current = [];
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [connect, disconnect]);
 
-  return { status, connect, disconnect, sendBinary, sendJSON, sendInterrupt, sendText };
+  return { status, connect, disconnect, sendBinary, sendJSON, sendInterrupt, sendText, sendSteer };
 }

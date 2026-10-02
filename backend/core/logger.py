@@ -103,7 +103,7 @@ def setup_anara_logging(log_level: int = logging.INFO):
     log_file = log_dir / "anara.log"
 
     root_logger = logging.getLogger()
-    if root_logger.handlers:
+    if any(isinstance(h, WindowsSafeRotatingFileHandler) for h in root_logger.handlers):
         return
 
     root_logger.setLevel(log_level)
@@ -119,11 +119,12 @@ def setup_anara_logging(log_level: int = logging.INFO):
         is_file=True,
     )
 
-    # Console handler
-    ch = logging.StreamHandler()
-    ch.setLevel(log_level)
-    ch.setFormatter(console_formatter)
-    root_logger.addHandler(ch)
+    # Console handler (only add if no stream handler present)
+    if not any(isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler) for h in root_logger.handlers):
+        ch = logging.StreamHandler()
+        ch.setLevel(log_level)
+        ch.setFormatter(console_formatter)
+        root_logger.addHandler(ch)
 
     # Rotating file handler (max 10MB, keep 5 backups)
     try:

@@ -61,8 +61,9 @@ def get_text_embedding(text: str, allow_local_fallback: bool = True) -> Optional
     if not clean:
         return None
 
-    if clean in _EMBEDDING_CACHE:
-        return _EMBEDDING_CACHE[clean]
+    with _CACHE_LOCK:
+        if clean in _EMBEDDING_CACHE:
+            return _EMBEDDING_CACHE[clean]
 
     # 1. Primary: Gemini gemini-embedding-001
     try:
@@ -78,9 +79,10 @@ def get_text_embedding(text: str, allow_local_fallback: bool = True) -> Optional
             )
             if res.embeddings and len(res.embeddings) > 0:
                 vec = list(res.embeddings[0].values)
-                _EMBEDDING_CACHE[clean] = vec
-                if len(_EMBEDDING_CACHE) > 500:
-                    _EMBEDDING_CACHE.pop(next(iter(_EMBEDDING_CACHE)))
+                with _CACHE_LOCK:
+                    _EMBEDDING_CACHE[clean] = vec
+                    if len(_EMBEDDING_CACHE) > 500:
+                        _EMBEDDING_CACHE.pop(next(iter(_EMBEDDING_CACHE)))
                 return vec
     except Exception as e:
         logger.debug(f"[SemanticRAG] Gemini embedding calculation skipped/failed: {e}")
@@ -88,7 +90,10 @@ def get_text_embedding(text: str, allow_local_fallback: bool = True) -> Optional
     # 2. Local Offline Fallback
     if allow_local_fallback:
         vec = compute_local_hash_embedding(clean)
-        _EMBEDDING_CACHE[clean] = vec
+        with _CACHE_LOCK:
+            _EMBEDDING_CACHE[clean] = vec
+            if len(_EMBEDDING_CACHE) > 500:
+                _EMBEDDING_CACHE.pop(next(iter(_EMBEDDING_CACHE)))
         return vec
 
     return None
@@ -205,8 +210,9 @@ def classify_preference_entity_ai(entity: str, speaker_name: str = "User") -> Di
     to dynamically recognize ANY entity and generates natural companion commentary without hardcoded dictionaries.
     """
     cache_key = entity.lower().strip()
-    if cache_key in _DYNAMIC_ENTITY_CACHE:
-        return _DYNAMIC_ENTITY_CACHE[cache_key]
+    with _CACHE_LOCK:
+        if cache_key in _DYNAMIC_ENTITY_CACHE:
+            return _DYNAMIC_ENTITY_CACHE[cache_key]
 
     eff_speaker = speaker_name.strip().title() if speaker_name else "User"
     from core.prompt_loader import load_prompt
@@ -224,7 +230,8 @@ def classify_preference_entity_ai(entity: str, speaker_name: str = "User") -> Di
             try:
                 json_str = raw[raw.find("{"):raw.rfind("}")+1]
                 parsed = json.loads(json_str)
-                _DYNAMIC_ENTITY_CACHE[cache_key] = parsed
+                with _CACHE_LOCK:
+                    _DYNAMIC_ENTITY_CACHE[cache_key] = parsed
                 return parsed
             except Exception as j_err:
                 logger.debug(f"[SemanticRAG] JSON parse note: {j_err}")
@@ -291,7 +298,7 @@ class SemanticRAGMixin:
                         content TEXT NOT NULL,
                         embedding_json TEXT NOT NULL,
                         updated_at REAL NOT NULL,
-                        UNIQUE(source_type, source_id, speaker_name) ON CONFLICT REPLACE
+                        UNIQUE(source_type, source_id) ON CONFLICT REPLACE
                     );
                 """)
                 conn.execute("""
@@ -471,6 +478,24 @@ class SemanticRAGMixin:
                         "category": "history",
                         "score": score
                     })
+
+            # 5. Search in knowledge_base (voice notes and learned domain facts)
+            k_query = "SELECT topic, content, tags FROM knowledge_base ORDER BY id DESC LIMIT 50"
+            try:
+                cur.execute(k_query)
+                for r in cur.fetchall():
+                    text = f"{r['topic']} {r['content']} {r['tags'] or ''}".lower()
+                    score = sum(3.0 if t in r['topic'].lower() else 1.5 for t in q_clean_tokens if t in text)
+                    if score > 0:
+                        scored_items.append({
+                            "type": "knowledge",
+                            "title": f"Knowledge Note: {r['topic']}",
+                            "content": r['content'],
+                            "category": "knowledge",
+                            "score": score
+                        })
+            except Exception:
+                pass
 
         scored_items.sort(key=lambda x: x["score"], reverse=True)
         return scored_items[:top_k]
@@ -760,10 +785,15 @@ class SemanticRAGMixin:
         target_speaker = canonicalize_speaker_name(speaker_name) if speaker_name else (self.get_last_active_speaker_name() or "User")
         cache_key = (target_speaker, is_chat_mode)
         now = time.time()
-        if cache_key in self._prompt_context_cache:
-            ts, cached_body = self._prompt_context_cache[cache_key]
-            if (now - ts) < 30.0:
-                return time_header + cached_body
+        lock = getattr(self, "_lock", None)
+        ctx_cache = getattr(self, "_prompt_context_cache", None)
+        if lock and isinstance(ctx_cache, dict):
+            with lock:
+                cached_entry = ctx_cache.get(cache_key)
+                if cached_entry:
+                    ts, cached_body = cached_entry
+                    if (now - ts) < 30.0:
+                        return time_header + cached_body
 
         try:
             with self._get_connection() as conn:

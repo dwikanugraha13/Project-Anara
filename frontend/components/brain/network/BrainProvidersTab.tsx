@@ -10,83 +10,46 @@ interface BrainProvidersTabProps {
 }
 
 export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabProps) {
-  const [providersList, setProvidersList] = useState<Array<{
-    id: string;
-    name: string;
-    badge: string;
-    icon: string;
-    description: string;
-    auth_type: string;
-    signup_url: string;
-    signup_label: string;
-    key_placeholder: string;
-    help_text: string;
-    is_connected: boolean;
-    models_count: number;
-    accounts_count?: number;
-    accounts?: Array<{
-      id: number;
-      provider: string;
-      account_label: string;
-      masked_key: string;
-      status: string;
-      requests_count: number;
-      is_enabled?: number;
-    }>;
-    models: Array<{
-      id: string;
-      name: string;
-      category: string;
-      badge: string;
-      description: string;
-      icon: string;
-      is_active: boolean;
-    }>;
-    credit_info?: {
-      total_credits?: number;
-      total_usage?: number;
-      remaining?: number;
-    } | null;
-    is_custom?: boolean;
-    custom_data?: any;
-  }>>([]);
+  const [providersList, setProvidersList] = useState<ProviderItem[]>([]);
   const [activeAiModelId, setActiveAiModelId] = useState<string>("gemini-3.1-flash-live-preview");
   const [providerKeyInputs, setProviderKeyInputs] = useState<Record<string, string>>({});
   const [providerLabelInputs, setProviderLabelInputs] = useState<Record<string, string>>({});
-  const [providerSearchQueries, setProviderSearchQueries] = useState<Record<string, string>>({});
   const [isConnectingProvider, setIsConnectingProvider] = useState<string | null>(null);
   const [isRefreshingProviders, setIsRefreshingProviders] = useState(false);
   const [providersError, setProvidersError] = useState<string | null>(null);
   const [providerActionMsg, setProviderActionMsg] = useState<{ id: string; text: string } | null>(null);
+  const actionTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
-  // ── Load cached providers from sessionStorage on client mount for instant 0ms render ──
-  useEffect(() => {
-    try {
-      const cached = sessionStorage.getItem("anara_cached_providers");
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setProvidersList(parsed);
-        }
-      }
-    } catch {}
+  const showActionMessage = useCallback((id: string, text: string, durationMs: number = 3500) => {
+    if (actionTimeoutRef.current) clearTimeout(actionTimeoutRef.current);
+    setProviderActionMsg({ id, text });
+    actionTimeoutRef.current = setTimeout(() => setProviderActionMsg(null), durationMs);
   }, []);
 
-  // ── Custom Provider Modal State (9Router Style) ──
+  useEffect(() => {
+    return () => {
+      if (actionTimeoutRef.current) clearTimeout(actionTimeoutRef.current);
+    };
+  }, []);
+
+  // ── Custom Provider Modal State ──
   const [isCustomProviderModalOpen, setIsCustomProviderModalOpen] = useState(false);
   const [customProviderType, setCustomProviderType] = useState<"openai" | "anthropic">("openai");
 
-  // ── Sub-Tab State per Provider Card ('models' | 'accounts') ──
-  const [providerCardTabs, setProviderCardTabs] = useState<Record<string, "models" | "accounts">>({});
+  // ── Sub-Tab State & Models ──
   const [hiddenModelsByProvider, setHiddenModelsByProvider] = useState<Record<string, string[]>>({});
-  const [showHiddenSection, setShowHiddenSection] = useState(false);
-  const [showHiddenForProvider, setShowHiddenForProvider] = useState<Record<string, boolean>>({});
 
-  // ── 9Router-Style Provider Detail & Filter State ──
+  // ── Provider Detail & Filter State ──
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
-  const [providerDetailTab, setProviderDetailTab] = useState<"accounts" | "models" | "endpoint">("accounts");
   const [providerGlobalSearch, setProviderGlobalSearch] = useState("");
-  const [detailModelSearch, setDetailModelSearch] = useState("");
+
+  // ── Confirmation Modal State ──
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    type: "account" | "provider" | "disconnect";
+    id: string | number;
+    extraId?: number;
+    label: string;
+  } | null>(null);
 
   // ── Codex OAuth PKCE Monitor State ──
   const [activeOAuthSession, setActiveOAuthSession] = useState<{
@@ -95,6 +58,21 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
     authUrl: string;
     codeVerifier?: string;
   } | null>(null);
+
+  const handleCloseOAuth = useCallback(() => {
+    setActiveOAuthSession(null);
+  }, []);
+
+  const handleSuccessOAuth = useCallback((updatedProviders?: ProviderItem[]) => {
+    if (activeOAuthSession) {
+      showActionMessage(activeOAuthSession.providerId, "OAuth Login Connected!");
+    }
+    if (updatedProviders && Array.isArray(updatedProviders)) {
+      setProvidersList(updatedProviders);
+    }
+    fetchProviders(false);
+    if (onRefreshAll) onRefreshAll();
+  }, [activeOAuthSession, onRefreshAll, showActionMessage]);
 
   const fetchProviders = async (forceRefresh: boolean = false) => {
     if (forceRefresh) setIsRefreshingProviders(true);
@@ -116,10 +94,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
         const list = data.providers || [];
         setProvidersList(list);
         if (data.active_model_id) setActiveAiModelId(data.active_model_id);
-        try {
-          sessionStorage.setItem("anara_cached_providers", JSON.stringify(list));
-        } catch {}
-      } else if (!res && providersList.length === 0) {
+      } else if ((!res || !res.ok) && providersList.length === 0) {
         setProvidersError("Failed to connect to providers server.");
       }
 
@@ -155,7 +130,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
       const authRes = await fetch(`${BACKEND_URL}/api/auth/${providerId}/authorize-url`);
       if (!authRes.ok) {
         const errData = await authRes.json().catch(() => ({}));
-        alert(errData.detail || "Failed to get authorization URL.");
+        showActionMessage(providerId, errData.detail || "Failed to get authorization URL.");
         return;
       }
       const authData = await authRes.json();
@@ -171,7 +146,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
         });
       }
     } catch (err: any) {
-      alert(`OAuth Login error: ${err.message}`);
+      showActionMessage(providerId, `OAuth error: ${err.message || String(err)}`);
     } finally {
       setIsConnectingProvider(null);
     }
@@ -193,15 +168,11 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
       });
       if (res.ok) {
         const data = await res.json();
-        setProviderActionMsg({ id: providerId, text: "✓ Account Successfully Added to Pool!" });
+        showActionMessage(providerId, "Account added to pool");
         setProviderKeyInputs((prev) => ({ ...prev, [providerId]: "" }));
         setProviderLabelInputs((prev) => ({ ...prev, [providerId]: "" }));
-        setTimeout(() => setProviderActionMsg(null), 4000);
         if (data.providers && Array.isArray(data.providers)) {
           setProvidersList(data.providers);
-          try {
-            sessionStorage.setItem("anara_cached_providers", JSON.stringify(data.providers));
-          } catch {}
         }
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("anara-models-sync"));
@@ -221,8 +192,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
         method: "PATCH",
       });
       if (res.ok) {
-        setProviderActionMsg({ id: providerId, text: "✓ Status Akun Diperbarui" });
-        setTimeout(() => setProviderActionMsg(null), 3000);
+        showActionMessage(providerId, "Account status updated");
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("anara-models-sync"));
         }
@@ -233,23 +203,13 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
     }
   };
 
-  const handleDeleteAccount = async (providerId: string, accountId: number, label: string) => {
-    if (!confirm(`Delete account "${label}" from pool provider ${providerId.toUpperCase()}?`)) return;
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/providers/${providerId}/accounts/${accountId}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        setProviderActionMsg({ id: providerId, text: "✓ Account Deleted" });
-        setTimeout(() => setProviderActionMsg(null), 3000);
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("anara-models-sync"));
-        }
-        fetchProviders(true);
-      }
-    } catch (err) {
-      console.error("Delete account error:", err);
-    }
+  const handleDeleteAccount = (providerId: string, accountId: number, label: string) => {
+    setDeleteConfirm({
+      type: "account",
+      id: providerId,
+      extraId: accountId,
+      label: label || `${providerId.toUpperCase()} Account`,
+    });
   };
 
   const handleHideModel = async (modelId: string, provider: string) => {
@@ -351,31 +311,12 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
     }
   };
 
-  const handleDeleteCustomProvider = async (providerId: number, name: string) => {
-    if (!confirm(`Delete custom provider "${name}" along with all its models?`)) return;
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/providers/custom/${providerId}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.providers && Array.isArray(data.providers)) {
-          setProvidersList(data.providers);
-          try {
-            sessionStorage.setItem("anara_cached_providers", JSON.stringify(data.providers));
-          } catch {}
-        }
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("anara-models-sync"));
-        }
-        if (selectedProviderId === String(providerId)) {
-          setSelectedProviderId(null);
-        }
-        fetchProviders(false);
-      }
-    } catch (e) {
-      console.error("Delete custom provider error:", e);
-    }
+  const handleDeleteCustomProvider = (providerId: number, name: string) => {
+    setDeleteConfirm({
+      type: "provider",
+      id: providerId,
+      label: name,
+    });
   };
 
   const handleToggleCustomProvider = async (providerId: number, e?: React.MouseEvent) => {
@@ -388,9 +329,6 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
         const data = await res.json();
         if (data.providers && Array.isArray(data.providers)) {
           setProvidersList(data.providers);
-          try {
-            sessionStorage.setItem("anara_cached_providers", JSON.stringify(data.providers));
-          } catch {}
         }
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("anara-models-sync"));
@@ -417,10 +355,9 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
         }),
       });
       if (res.ok) {
-        setProviderActionMsg({ id: providerId, text: "✓ Connected & Models Successfully Fetched!" });
+        showActionMessage(providerId, "Connected & models fetched");
         setProviderKeyInputs((prev) => ({ ...prev, [providerId]: "" }));
         setProviderLabelInputs((prev) => ({ ...prev, [providerId]: "" }));
-        setTimeout(() => setProviderActionMsg(null), 4000);
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("anara-models-sync"));
         }
@@ -433,25 +370,74 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
     }
   };
 
-  const handleDisconnectProvider = async (providerId: string) => {
-    if (!confirm(`Disconnect provider ${providerId.toUpperCase()}? All accounts in the pool and their models will be deactivated.`)) return;
-    setIsConnectingProvider(providerId);
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/providers/${providerId}/disconnect`, {
-        method: "POST",
-      });
-      if (res.ok) {
-        setProviderActionMsg({ id: providerId, text: "✓ Diputuskan Sepenuhnya" });
-        setTimeout(() => setProviderActionMsg(null), 3000);
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("anara-models-sync"));
+  const handleDisconnectProvider = (providerId: string) => {
+    setDeleteConfirm({
+      type: "disconnect",
+      id: providerId,
+      label: providerId.toUpperCase(),
+    });
+  };
+
+  const handleConfirmDeleteAction = async () => {
+    if (!deleteConfirm) return;
+    const { type, id, extraId, label } = deleteConfirm;
+    setDeleteConfirm(null);
+
+    if (type === "account") {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/providers/${id}/accounts/${extraId}`, {
+          method: "DELETE",
+        });
+        if (res.ok) {
+          showActionMessage(String(id), "Account deleted from pool");
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("anara-models-sync"));
+          }
+          fetchProviders(true);
         }
-        fetchProviders(true);
+      } catch (err) {
+        console.error("Delete account error:", err);
       }
-    } catch (err) {
-      console.error("Disconnect provider error:", err);
-    } finally {
-      setIsConnectingProvider(null);
+    } else if (type === "provider") {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/providers/custom/${id}`, {
+          method: "DELETE",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.providers && Array.isArray(data.providers)) {
+            setProvidersList(data.providers);
+          }
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("anara-models-sync"));
+          }
+          if (selectedProviderId === String(id)) {
+            setSelectedProviderId(null);
+          }
+          showActionMessage("custom", `Custom provider '${label}' deleted`);
+          fetchProviders(false);
+        }
+      } catch (e) {
+        console.error("Delete custom provider error:", e);
+      }
+    } else if (type === "disconnect") {
+      setIsConnectingProvider(String(id));
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/providers/${id}/disconnect`, {
+          method: "POST",
+        });
+        if (res.ok) {
+          showActionMessage(String(id), "Provider disconnected");
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("anara-models-sync"));
+          }
+          fetchProviders(true);
+        }
+      } catch (err) {
+        console.error("Disconnect provider error:", err);
+      } finally {
+        setIsConnectingProvider(null);
+      }
     }
   };
 
@@ -547,14 +533,11 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
             return (
               <ProviderDetailView
                 selectedProvider={selectedProvider}
-                onBack={() => { setSelectedProviderId(null); setDetailModelSearch(""); }}
-                activeAiModelId={activeAiModelId}
-                onSelectModel={handleSelectModelFromBrain}
+                onBack={() => setSelectedProviderId(null)}
                 handleHideModel={handleHideModel}
                 handleUnhideModel={handleUnhideModel}
                 handleRestoreAllHidden={handleRestoreAllHidden}
                 handleDeleteCustomProvider={handleDeleteCustomProvider}
-                handleToggleCustomProvider={handleToggleCustomProvider}
                 handleDisconnectProvider={handleDisconnectProvider}
                 handleOAuthLogin={handleOAuthLogin}
                 handleAddAccount={handleAddAccount}
@@ -598,7 +581,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
                       return (
                         <div
                           key={p.id}
-                          onClick={() => { setSelectedProviderId(p.id); setProviderDetailTab("accounts"); }}
+                          onClick={() => setSelectedProviderId(p.id)}
                           className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 group select-none shadow-sm ${
                             isActive
                               ? "bg-white/[0.035] border-white/[0.12] hover:border-cyan-400/40 hover:shadow-[0_0_20px_rgba(34,211,238,0.08)]"
@@ -621,7 +604,10 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
                                   </span>
                                 ) : (
                                   <span className="text-[10px] font-mono text-slate-500 font-medium flex items-center gap-1">
-                                    ⏸ Disabled
+                                    <svg className="w-2.5 h-2.5 text-slate-500" fill="currentColor" viewBox="0 0 24 24">
+                                      <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                                    </svg>
+                                    <span>Disabled</span>
                                   </span>
                                 )}
                                 <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-white/[0.04] text-slate-400 border border-white/[0.06]">
@@ -706,7 +692,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
                     return (
                       <div
                         key={p.id}
-                        onClick={() => { setSelectedProviderId(p.id); setProviderDetailTab("accounts"); }}
+                        onClick={() => setSelectedProviderId(p.id)}
                         className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 group select-none shadow-sm ${
                           isConnected
                             ? "bg-white/[0.035] border-emerald-500/25 hover:border-emerald-400/40 shadow-[0_0_20px_rgba(16,185,129,0.06)]"
@@ -739,8 +725,10 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
                           </div>
                         </div>
     
-                        <div className="text-slate-500 group-hover:text-white transition-colors text-sm font-mono shrink-0 pr-1">
-                          ›
+                        <div className="text-slate-500 group-hover:text-cyan-300 transition-colors shrink-0 pr-1">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
                         </div>
                       </div>
                     );
@@ -751,8 +739,7 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
           );
         })()}
     
-    
-    {/* ── Custom Provider Modal ── */}
+      {/* ── Custom Provider Modal ── */}
       <CustomProviderModal
         isOpen={isCustomProviderModalOpen}
         onClose={() => setIsCustomProviderModalOpen(false)}
@@ -760,36 +747,66 @@ export default function BrainProvidersTab({ onRefreshAll }: BrainProvidersTabPro
         onSuccess={(updatedProviders) => {
           if (updatedProviders && Array.isArray(updatedProviders)) {
             setProvidersList(updatedProviders);
-            try {
-              sessionStorage.setItem("anara_cached_providers", JSON.stringify(updatedProviders));
-            } catch {}
           }
           if (typeof window !== "undefined") {
             window.dispatchEvent(new CustomEvent("anara-models-sync"));
           }
           fetchProviders(false);
+          if (onRefreshAll) onRefreshAll();
         }}
       />
 
       {/* ── Codex OAuth PKCE Modal ── */}
       <CodexOAuthModal
         session={activeOAuthSession}
-        onClose={() => setActiveOAuthSession(null)}
-        onSuccess={(updatedProviders) => {
-          setProviderActionMsg({ id: activeOAuthSession?.providerId || "codex", text: "✓ OAuth Login Successfully Connected!" });
-          setTimeout(() => setProviderActionMsg(null), 4000);
-          if (updatedProviders && Array.isArray(updatedProviders)) {
-            setProvidersList(updatedProviders);
-            try {
-              sessionStorage.setItem("anara_cached_providers", JSON.stringify(updatedProviders));
-            } catch {}
-          }
-          if (typeof window !== "undefined") {
-            window.dispatchEvent(new CustomEvent("anara-models-sync"));
-          }
-          fetchProviders(false);
-        }}
+        onClose={handleCloseOAuth}
+        onSuccess={handleSuccessOAuth}
       />
+
+      {/* In-app Confirmation Modal */}
+      {deleteConfirm && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in select-none"
+        >
+          <div className="w-full max-w-sm p-5 rounded-2xl bg-slate-950/95 border border-white/20 shadow-[0_0_40px_rgba(0,0,0,0.8)] text-white space-y-4 font-sans">
+            <div className="flex items-center gap-2.5 text-rose-400 font-mono text-xs font-semibold">
+              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span>Confirm Action</span>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed font-sans">
+              {deleteConfirm.type === "account" && (
+                <>Delete account <b className="text-white font-mono">&apos;{deleteConfirm.label}&apos;</b> from provider pool?</>
+              )}
+              {deleteConfirm.type === "provider" && (
+                <>Delete custom provider <b className="text-white font-mono">&apos;{deleteConfirm.label}&apos;</b> along with all its registered models?</>
+              )}
+              {deleteConfirm.type === "disconnect" && (
+                <>Disconnect provider <b className="text-white font-mono">&apos;{deleteConfirm.label}&apos;</b>? All pool accounts and active models will be deactivated.</>
+              )}
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10 font-mono text-xs">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirm(null)}
+                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteAction}
+                className="px-3.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 font-semibold transition-all cursor-pointer shadow-sm active:scale-95"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

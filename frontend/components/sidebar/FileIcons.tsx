@@ -49,7 +49,7 @@ export function renderFileSvgIcon(
   // PHP
   if (e === "php") {
     return (
-      <span className="w-3.5 h-3.5 rounded-[3px] bg-indigo-500/20 text-indigo-300 font-mono text-[8px] font-bold flex items-center justify-center shrink-0 border border-indigo-500/35 leading-none">
+      <span className="w-3.5 h-3.5 rounded-[3px] bg-indigo-500/20 text-indigo-300 font-mono text-[7px] font-bold flex items-center justify-center shrink-0 border border-indigo-500/35 leading-none tracking-tighter">
         PHP
       </span>
     );

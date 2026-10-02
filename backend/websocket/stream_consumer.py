@@ -112,23 +112,39 @@ class AgentRunner:
                     pass
 
             sid = self.ensure_session()
+            session_obj = memory_engine.get_session(sid) if sid else None
             await self.websocket.send_json({
                 "type": "session_id_sync",
-                "sessionId": sid
+                "sessionId": sid,
+                "session_key": session_obj.get("session_key") if session_obj else None,
+                "sessionKey": session_obj.get("session_key") if session_obj else None,
             })
 
             # 2. Resolve session context & mode (Hermes Model-Driven Parity: Zero Pre-Turn Keyword Guessing)
-            session_obj = memory_engine.get_session(sid) if sid else None
             session_type = (session_obj.get("session_type") or "chat") if session_obj else "chat"
             session_mode = (session_obj.get("session_mode") or ("explicit_plan_build" if session_type == "code" else "conversational")) if session_obj else "conversational"
+            req_channel = str(data.get("channel") or data.get("platform") or ("code" if session_type == "code" else "web")).strip().lower()
 
             # Check if there is an active pending action awaiting approval
-            from core.session_manager import session_state_manager
-            active_pending = session_state_manager.get_pending("web_studio", str(sid))
+            from core.session_manager import session_state_manager, ActionState
+            from core.plan_detector import classify_approval_intent
+            active_pending = session_state_manager.get_pending(req_channel, str(sid)) or session_state_manager.get_pending("web_studio", str(sid))
             is_approved = False
             if active_pending:
                 norm_text = text.lower().strip()
-                is_approved = is_explicit_plan_approval(norm_text)
+                plan_ctx = getattr(active_pending, "plan_text", "") or ""
+                intent = await classify_approval_intent(norm_text, plan_ctx)
+                if intent == "approve":
+                    is_approved = True
+                    session_state_manager.resolve_action(
+                        active_pending.channel, active_pending.channel_id, active_pending.action_id, ActionState.EXECUTING
+                    )
+                    logger.info(f"[Agent Mode] Action #{active_pending.action_id} approved -> Transitioned to EXECUTING")
+                elif intent == "reject":
+                    session_state_manager.resolve_action(
+                        active_pending.channel, active_pending.channel_id, active_pending.action_id, ActionState.REJECTED
+                    )
+                    logger.info(f"[Agent Mode] Action #{active_pending.action_id} rejected by user.")
 
             if session_mode == "explicit_plan_build":
                 if is_approved:
@@ -151,16 +167,25 @@ class AgentRunner:
             runner = AnaraExecutionRunner(
                 session_id=sid,
                 speaker_name=self.get_current_speaker(),
-                platform="web_studio",
+                platform=req_channel,
             )
 
             tools_used: List[str] = []
             selected_model = data.get("model_id") or get_active_model_id()
-            req_reasoning_effort = data.get("reasoning_effort") or data.get("reasoningEffort") or "medium"
+            incoming_effort = data.get("reasoning_effort")
+            if incoming_effort is None:
+                incoming_effort = data.get("reasoningEffort")
+            if incoming_effort is not None and str(incoming_effort).strip():
+                req_reasoning_effort = str(incoming_effort).strip().lower()
+            else:
+                from providers.constants import extract_model_tier
+                m_tier = extract_model_tier(selected_model)
+                req_reasoning_effort = m_tier if m_tier else "off"
             chat_diagnostics["active_requests"] += 1
             chat_diagnostics["last_stage"] = f"generating with {selected_model}"
             chat_diagnostics["last_updated"] = _time.time()
             chat_diagnostics["last_error"] = None
+            accumulated_text = ""
             accumulated_chunks: List[str] = []
 
             try:
@@ -172,12 +197,13 @@ class AgentRunner:
                     reasoning_effort=req_reasoning_effort,
                 ):
                     if event.type == "chunk" and event.content:
+                        accumulated_text += event.content
                         accumulated_chunks.append(event.content)
                         await self.websocket.send_json({
                             "type": "transcript_partial",
                             "speaker": "output",
                             "delta": event.content,
-                            "text": "".join(accumulated_chunks),
+                            "text": accumulated_text,
                             "is_final": False,
                         })
                     elif event.type == "thought" and (event.thought or event.content):
@@ -232,6 +258,11 @@ class AgentRunner:
 
                 chat_diagnostics["active_requests"] = max(0, chat_diagnostics["active_requests"] - 1)
                 chat_diagnostics["last_stage"] = "completed"
+
+                if is_approved and active_pending:
+                    session_state_manager.resolve_action(
+                        active_pending.channel, active_pending.channel_id, active_pending.action_id, ActionState.EXECUTED
+                    )
 
                 if not reply_text and accumulated_chunks:
                     reply_text = "".join(accumulated_chunks).strip()

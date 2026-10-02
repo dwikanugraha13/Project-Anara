@@ -372,7 +372,7 @@ def validate_skill_content_safety(content: str) -> Tuple[bool, Optional[str]]:
         (r"powershell[^\n]*-enc(?:odedcommand)?\s+[a-za-z0-9+/=]{20,}", "Encoded PowerShell payload detected."),
 
         # 3. Prompt Injections & System Overrides
-        (r"ignore\s+(?:all\s+|previous\s+|prior\s+)?instructions", "Prompt injection: override previous instructions."),
+        (r"(?:ignore|disregard|forget)\s+(?:all\s+)?(?:previous|prior|above)?\s*(?:instructions|directives|rules|prompts)", "Prompt injection: override previous instructions."),
         (r"you\s+are\s+now\s+(?:an?\s+unfiltered|in\s+developer\s+mode|dan\b)", "Prompt injection: role hijack."),
         (r"system\s+prompt\s+override", "Prompt injection: system prompt override."),
         (r"disregard\s+(?:your\s+)?(?:rules|safety|guidelines)", "Prompt injection: disregard safety guidelines."),

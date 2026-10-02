@@ -26,12 +26,14 @@ class SkillExtractor:
         and reusable technical workflow (Anara Lifelong Learning loop).
         """
         # Only trigger if constructive mutating tools were used (Anara Enterprise Architecture)
-        constructive_tools = {
-            "write_local_file", "edit_file", "execute_cli_command",
-            "execute_code", "generate_file_artifact", "create_zip_archive", "rezip_archive",
-            "write_file", "patch", "terminal"
-        }
-        if not any(t in constructive_tools for t in tools_used):
+        from tools import get_tool_risk
+        def _is_constructive(t: str) -> bool:
+            risk = get_tool_risk(t)
+            if risk in ("mutating", "action"):
+                return True
+            return t.startswith("mcp__") or any(k in t for k in ("write", "edit", "patch", "terminal", "exec", "build", "create", "generate"))
+
+        if not any(_is_constructive(t) for t in tools_used):
             return None
 
         # Check existing skills across filesystem library AND SQLite database (Anara Standard)

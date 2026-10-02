@@ -195,11 +195,23 @@ class GeminiLiveService:
             self._session_ready.set()
             logger.info("Gemini Live session established")
 
-            # Run receive and send loops concurrently
-            await asyncio.gather(
-                self._receive_loop(session),
-                self._send_loop(session),
+            # Run receive and send loops concurrently with clean cancellation on disconnect
+            recv_task = asyncio.create_task(self._receive_loop(session))
+            send_task = asyncio.create_task(self._send_loop(session))
+            done, pending = await asyncio.wait(
+                [recv_task, send_task],
+                return_when=asyncio.FIRST_COMPLETED
             )
+            for t in pending:
+                t.cancel()
+                try:
+                    await t
+                except (asyncio.CancelledError, Exception):
+                    pass
+            for t in done:
+                exc = t.exception()
+                if exc:
+                    raise exc
 
     async def _receive_loop(self, session):
         """
@@ -381,8 +393,7 @@ class GeminiLiveService:
                 except Exception as e:
                     err = str(e)
                     if any(x in err for x in ["1011", "1012", "keepalive", "ConnectionClosed", "ping timeout"]):
-                        logger.warning(f"Gemini connection closed in send: {e}")
-                        self._is_running = False
+                        logger.warning(f"Gemini connection closed in send: {e} (reconnecting)")
                         break
                     logger.error(f"Send error: {e}")
 

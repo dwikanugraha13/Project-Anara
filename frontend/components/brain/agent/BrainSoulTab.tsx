@@ -10,6 +10,11 @@ export default function BrainSoulTab() {
     user: "",
     memory: "",
   });
+  const fileMemoryRef = useRef(fileMemory);
+  fileMemoryRef.current = fileMemory;
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+
   const savedMemoryRef = useRef<FileMemorySnapshot>({
     soul: "",
     user: "",
@@ -17,12 +22,14 @@ export default function BrainSoulTab() {
   });
   const [isSaving, setIsSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
     fetch(`${BACKEND_URL}/api/brain/file-memory`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (d) {
+        if (d && isMounted) {
           const loaded = {
             soul: d.soul || "",
             user: d.user || "",
@@ -32,48 +39,60 @@ export default function BrainSoulTab() {
           savedMemoryRef.current = { ...loaded };
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.warn("[BrainSoulTab] Memory fetch error:", err);
+      });
+
+    return () => {
+      isMounted = false;
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
   }, []);
 
   const handleSaveCurrentFile = useCallback(async () => {
+    const currentTab = activeTabRef.current;
+    const currentMem = fileMemoryRef.current;
     setIsSaving(true);
     setSaveMsg(null);
     try {
-      if (activeTab === "soul") {
+      if (currentTab === "soul") {
         const res = await fetch(`${BACKEND_URL}/api/agent/soul`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: fileMemory.soul }),
+          body: JSON.stringify({ content: currentMem.soul }),
         });
         if (res.ok) {
-          savedMemoryRef.current.soul = fileMemory.soul;
-          setSaveMsg("✓ SOUL.md file saved & hot-reloaded successfully.");
+          savedMemoryRef.current.soul = currentMem.soul;
+          setSaveMsg("SOUL.md saved & hot-reloaded.");
         } else {
-          setSaveMsg("Failed to save SOUL.md");
+          const errData = await res.json().catch(() => null);
+          setSaveMsg(`Failed to save SOUL.md: ${errData?.detail || res.statusText}`);
         }
       } else {
         const res = await fetch(`${BACKEND_URL}/api/brain/file-memory`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            file_type: activeTab,
-            content: fileMemory[activeTab],
+            file_type: currentTab,
+            content: currentMem[currentTab],
           }),
         });
         if (res.ok) {
-          savedMemoryRef.current[activeTab] = fileMemory[activeTab];
-          setSaveMsg(`✓ ${activeTab.toUpperCase()}.md saved successfully (sanitized).`);
+          savedMemoryRef.current[currentTab] = currentMem[currentTab];
+          setSaveMsg(`${currentTab.toUpperCase()}.md saved successfully.`);
         } else {
-          setSaveMsg(`Failed to save ${activeTab.toUpperCase()}.md`);
+          const errData = await res.json().catch(() => null);
+          setSaveMsg(`Failed to save ${currentTab.toUpperCase()}.md: ${errData?.detail || res.statusText}`);
         }
       }
-      setTimeout(() => setSaveMsg(null), 4000);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => setSaveMsg(null), 4000);
     } catch (err: any) {
       setSaveMsg(`Error: ${err.message || String(err)}`);
     } finally {
       setIsSaving(false);
     }
-  }, [activeTab, fileMemory]);
+  }, []);
 
   // Global Ctrl+S / Cmd+S handler
   useEffect(() => {
@@ -95,9 +114,31 @@ export default function BrainSoulTab() {
   };
 
   const getFileBadge = () => {
-    if (activeTab === "soul") return { label: "SOUL.md", desc: "Agent Identity, Personality & Core Directives (Global)", cap: "No limit", max: 0 };
-    if (activeTab === "user") return { label: "USER.md", desc: "User Profile & Learned Preferences (Global)", cap: "~1,500 chars", max: 1500 };
-    return { label: "MEMORY.md", desc: "Persistent Facts & Context Notes (Global)", cap: "~2,200 chars", max: 2200 };
+    if (activeTab === "soul") {
+      return {
+        label: "SOUL.md",
+        desc: "Agent Identity, Personality & Core Directives",
+        tier: "Tier 1: Stable Prefix",
+        cap: "No limit",
+        max: 0,
+      };
+    }
+    if (activeTab === "user") {
+      return {
+        label: "USER.md",
+        desc: "User Profile & Learned Preferences",
+        tier: "Tier 2: Semi-Static Context",
+        cap: "~1,500 chars",
+        max: 1500,
+      };
+    }
+    return {
+      label: "MEMORY.md",
+      desc: "Durable Facts & Architecture Lessons",
+      tier: "Tier 3: Dynamic Tail",
+      cap: "~2,200 chars",
+      max: 2200,
+    };
   };
 
   const badge = getFileBadge();
@@ -175,11 +216,17 @@ export default function BrainSoulTab() {
           <div className="flex items-center gap-2">
             <span className="text-white font-semibold">{badge.label}</span>
             <span className="text-slate-600">•</span>
-            <span className="text-slate-400 font-sans text-xs">{badge.desc}</span>
+            <span className="px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-400/20 text-[10px]">
+              {badge.tier}
+            </span>
+            <span className="text-slate-400 font-sans text-xs hidden sm:inline">{badge.desc}</span>
           </div>
 
-          {/* Discrete Capacity Meter */}
+          {/* Discrete Capacity Meter & Token Estimator */}
           <div className="flex items-center gap-2.5">
+            <span className="text-[10px] text-slate-500 font-mono hidden md:inline">
+              ~{Math.ceil(currentContent.length / 4).toLocaleString()} tokens
+            </span>
             {badge.max > 0 && (
               <div className="w-16 h-1.5 rounded-full bg-white/[0.08] overflow-hidden">
                 <div

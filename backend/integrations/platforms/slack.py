@@ -114,11 +114,21 @@ class SlackPlatformAdapter(BasePlatformAdapter):
                 last_data = {}
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     for idx, chunk in enumerate(chunks):
-                        resp = await client.post(
-                            "https://slack.com/api/chat.postMessage",
-                            headers=headers,
-                            json={"channel": effective_channel, "text": chunk},
-                        )
+                        resp = None
+                        for attempt in range(3):
+                            resp = await client.post(
+                                "https://slack.com/api/chat.postMessage",
+                                headers=headers,
+                                json={"channel": effective_channel, "text": chunk},
+                            )
+                            if resp.status_code == 429:
+                                retry_after = float(resp.headers.get("Retry-After", 1.0))
+                                await asyncio.sleep(min(retry_after, 5.0))
+                                continue
+                            break
+
+                        if not resp:
+                            return {"status": "error", "message": "Failed to send chunk to Slack."}
                         data = resp.json()
                         if not data.get("ok"):
                             return {"status": "error", "error": data.get("error")}
@@ -165,16 +175,24 @@ class SlackPlatformAdapter(BasePlatformAdapter):
             return {"status": "error", "reason": "not_configured"}
 
         f_name = os.path.basename(file_path)
+        MAX_SLACK_UPLOAD = 50 * 1024 * 1024
+        try:
+            f_size = os.path.getsize(file_path)
+            if f_size > MAX_SLACK_UPLOAD:
+                return {"status": "error", "message": f"File '{f_name}' exceeds Slack 50MB upload ceiling ({round(f_size/(1024*1024), 2)}MB)."}
+        except OSError:
+            pass
+
         try:
             headers = {"Authorization": f"Bearer {token}", "User-Agent": "AnaraAgent/1.0"}
+            file_bytes = await asyncio.to_thread(lambda: open(file_path, "rb").read())
             async with httpx.AsyncClient(timeout=30.0) as client:
-                with open(file_path, "rb") as f:
-                    files = {"file": (f_name, f)}
-                    data = {
-                        "channels": effective_channel,
-                        "initial_comment": caption or "",
-                    }
-                    resp = await client.post("https://slack.com/api/files.upload", headers=headers, data=data, files=files)
+                files = {"file": (f_name, file_bytes)}
+                data = {
+                    "channels": effective_channel,
+                    "initial_comment": caption or "",
+                }
+                resp = await client.post("https://slack.com/api/files.upload", headers=headers, data=data, files=files)
                 res_data = resp.json()
                 if res_data.get("ok"):
                     return {"status": "success", "platform": "slack", "file": f_name}

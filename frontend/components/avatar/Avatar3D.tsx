@@ -235,6 +235,15 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
     const [animation, setAnimation] = useState('Idle');
     const prevAnimRef = useRef<string | null>(null);
 
+    const onDanceStartRef = useRef(onDanceStart);
+    const onDanceEndRef = useRef(onDanceEnd);
+    useEffect(() => {
+      onDanceStartRef.current = onDanceStart;
+      onDanceEndRef.current = onDanceEnd;
+    }, [onDanceStart, onDanceEnd]);
+
+    const backendGestureTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     /** True once idle is playing */
     const idleAnimPlayingRef = useRef(true); // default true so procedural arm lerp is not stiff
     const [isLoaded, setIsLoaded] = useState(false);
@@ -445,8 +454,8 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
           if (actions["Rumba"]) {
             if (emotionAnimResetTimerRef.current) clearTimeout(emotionAnimResetTimerRef.current);
             setAnimation("Rumba");
-            console.log("[Avatar3D] 💃 Gemini finished speaking intro — start Rumba dance & music!");
-            onDanceStart?.();
+            console.log("[Avatar3D] 💃 Finished speaking intro — start Rumba dance & music!");
+            onDanceStartRef.current?.();
             emotionAnimResetTimerRef.current = setTimeout(() => {
               dancePhaseRef.current = "idle";
               isDancingRef.current = false;
@@ -454,13 +463,13 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
               resetLipSync();
               applyEmotionTargets("neutral");
               emotionAnimResetTimerRef.current = null;
-              onDanceEnd?.();  // notify page.tsx dance finished
+              onDanceEndRef.current?.();  // notify page.tsx dance finished
             }, 6500);
             return;
           }
         }
 
-        // If still waiting for Gemini audio ("awaiting_intro"), DON'T start dance yet!
+        // If still waiting for audio ("awaiting_intro"), DON'T start dance yet!
         if (dancePhaseRef.current === "awaiting_intro") {
           return;
         }
@@ -479,7 +488,7 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
         applyEmotionTargets("neutral");
         setAnimation("Idle");
       }
-    }, [isSpeaking, actions, resetLipSync, applyEmotionTargets, onDanceStart, onDanceEnd]);
+    }, [isSpeaking, actions, resetLipSync, applyEmotionTargets]);
 
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -620,8 +629,11 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
       const gestureMap: Record<string, AvatarGestureType> = {
         idle: "none",
         talking: "none",
+        explain: "explain",
         explaining: "explain",
+        shy: "shy",
         shy_movement: "shy",
+        angry: "angry_pointing",
         angry_pointing: "angry_pointing",
         think: "think",
         joy: "joy",
@@ -640,8 +652,12 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
         gestureDurationRef.current = 3500;
         backendGestureActiveRef.current = true;
 
-        setTimeout(() => {
+        if (backendGestureTimeoutRef.current) {
+          clearTimeout(backendGestureTimeoutRef.current);
+        }
+        backendGestureTimeoutRef.current = setTimeout(() => {
           backendGestureActiveRef.current = false;
+          backendGestureTimeoutRef.current = null;
         }, 3600);
       }
     }, [applyEmotionTargets, triggerEmotionAnimation, isLoaded]);
@@ -790,9 +806,18 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
 
       return () => {
         mixer.stopAllAction();
+        if (group.current) {
+          mixer.uncacheRoot(group.current);
+        }
         if (danceSafetyTimerRef.current) clearTimeout(danceSafetyTimerRef.current);
         if (emotionDecayTimerRef.current) clearTimeout(emotionDecayTimerRef.current);
         if (emotionAnimResetTimerRef.current) clearTimeout(emotionAnimResetTimerRef.current);
+        if (backendGestureTimeoutRef.current) clearTimeout(backendGestureTimeoutRef.current);
+        baseRotationsRef.current.clear();
+        bonesRef.current = { leftFingers: [], rightFingers: [] };
+        morphMeshesRef.current = [];
+        cachedMorphMeshesRef.current = [];
+        prevAnimRef.current = null;
       };
     }, [scene, actions, mixer, applyEmotionTargets, gl]);
 
@@ -927,20 +952,22 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
 
       const exprSpeed = Math.min(safeDelta * 5.0, 1.0);
 
-      for (const [morphName, target] of Object.entries(targetEmotionMorphsRef.current)) {
-        let eff = target;
+      const targetMorphs = targetEmotionMorphsRef.current;
+      const curEmotions = currentEmotionMorphsRef.current;
+      for (const morphName in targetMorphs) {
+        let eff = targetMorphs[morphName];
         if (morphName.includes("brow")) eff += browSpeechProsody;
         if (morphName.includes("cheek")) eff += cheekSpeechBounce;
         if (morphName.includes("mouthSmile")) eff += idleSmileWarmth;
 
-        const cur = currentEmotionMorphsRef.current[morphName] ?? 0;
-        currentEmotionMorphsRef.current[morphName] = THREE.MathUtils.lerp(cur, eff, exprSpeed);
+        const cur = curEmotions[morphName] ?? 0;
+        curEmotions[morphName] = THREE.MathUtils.lerp(cur, eff, exprSpeed);
       }
 
-      for (const morphName of Object.keys(currentEmotionMorphsRef.current)) {
-        if (!(morphName in targetEmotionMorphsRef.current)) {
-          const cur = currentEmotionMorphsRef.current[morphName] ?? 0;
-          currentEmotionMorphsRef.current[morphName] = THREE.MathUtils.lerp(cur, 0, exprSpeed);
+      for (const morphName in curEmotions) {
+        if (!(morphName in targetMorphs)) {
+          const cur = curEmotions[morphName] ?? 0;
+          curEmotions[morphName] = THREE.MathUtils.lerp(cur, 0, exprSpeed);
         }
       }
 
@@ -956,7 +983,6 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
 
       const microExprCurrent = updateMicroExpressions(safeDelta);
       const cachedMorphs = cachedMorphMeshesRef.current;
-      const curEmotions = currentEmotionMorphsRef.current;
 
       for (let i = 0; i < cachedMorphs.length; i++) {
         const item = cachedMorphs[i];
@@ -1000,7 +1026,7 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
 
       // ── [8] PHONETIC SPEECH LIP-SYNC ───────────────────────────────────────
       updateMorphTargets(safeDelta);
-    });
+    }, 1);
 
     return (
       <group ref={group} position={[0, -1.46, 0]} scale={[0.91, 1.0, 0.93]}>

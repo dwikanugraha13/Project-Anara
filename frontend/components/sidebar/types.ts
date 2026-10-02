@@ -1,4 +1,9 @@
-export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+import { getBackendUrl } from "@/lib/apiClient";
+
+export const BACKEND_URL = (
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  (typeof window !== "undefined" ? getBackendUrl() : "http://localhost:8000")
+).replace(/\/+$/, "");
 
 export const DEFAULT_SIDEBAR_WIDTH = 260;
 export const MIN_SIDEBAR_WIDTH = 200;
@@ -6,6 +11,8 @@ export const MAX_SIDEBAR_WIDTH = 600;
 
 export interface ChatSession {
   id: number;
+  session_key?: string | null;
+  session_mode?: string | null;
   title: string | null;
   speaker_name: string | null;
   session_type?: "chat" | "code";
@@ -108,24 +115,27 @@ export interface ChatSessionSidebarProps {
 
 export function toDate(iso: string): Date | null {
   if (!iso) return null;
-  const d = new Date(iso.includes("Z") || iso.includes("+") ? iso : iso + "Z");
+  // Normalize SQLite space separator "YYYY-MM-DD HH:MM:SS" -> "YYYY-MM-DDTHH:MM:SS"
+  const normalized = iso.trim().replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/, "$1T$2");
+  const hasTz = /[Z+-]\d{2}(?::?\d{2})?$/i.test(normalized);
+  const d = new Date(hasTz ? normalized : normalized + "Z");
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
 export function formatFullDateTime(iso: string): string {
   const d = toDate(iso);
   if (!d) return "";
-  const dateStr = d.toLocaleDateString("id-ID", {
+  const dateStr = d.toLocaleDateString(undefined, {
     day: "numeric",
     month: "short",
     year: "numeric",
   });
-  const timeStr = d.toLocaleTimeString("id-ID", {
+  const timeStr = d.toLocaleTimeString(undefined, {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
   });
-  return `${dateStr} • ${timeStr} WIB`;
+  return `${dateStr} • ${timeStr}`;
 }
 
 export function formatSmartDateTime(iso: string): string {
@@ -136,7 +146,7 @@ export function formatSmartDateTime(iso: string): string {
   const startOfYesterday = startOfToday - 86400_000;
   const time = d.getTime();
 
-  const timeStr = d.toLocaleTimeString("id-ID", {
+  const timeStr = d.toLocaleTimeString(undefined, {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -146,9 +156,9 @@ export function formatSmartDateTime(iso: string): string {
     return timeStr;
   }
   if (time >= startOfYesterday) {
-    return `Kemarin ${timeStr}`;
+    return `Yesterday, ${timeStr}`;
   }
-  const dateStr = d.toLocaleDateString("id-ID", {
+  const dateStr = d.toLocaleDateString(undefined, {
     day: "numeric",
     month: "short",
   });
@@ -193,17 +203,19 @@ export function resolveSessionDisplay(s: ChatSession): SessionDisplayInfo {
 
   let title = rawTitle.replace(/\s*\[.*?:.*?\]/g, "").replace(/\s*\[.*?\]/g, "").trim();
   let subtitle = "";
+  let usedLastUserTextForTitle = false;
 
   if (isGenericTitle && s.last_user_text) {
     title = s.last_user_text.trim().replace(/\n+/g, " ");
     if (title.length > 46) {
       title = title.substring(0, 44).trim() + "…";
     }
+    usedLastUserTextForTitle = true;
   } else if (!title || isGenericTitle) {
-    title = s.session_type === "code" ? "Coding Workspace" : "Percakapan Baru";
+    title = s.session_type === "code" ? "Coding Workspace" : "New Chat";
   }
 
-  if (s.last_user_text && title !== s.last_user_text.trim()) {
+  if (!usedLastUserTextForTitle && s.last_user_text && title !== s.last_user_text.trim()) {
     subtitle = s.last_user_text.trim().replace(/\n+/g, " ");
     if (subtitle.length > 55) {
       subtitle = subtitle.substring(0, 52).trim() + "…";

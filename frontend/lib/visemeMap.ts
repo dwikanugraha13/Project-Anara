@@ -97,15 +97,15 @@ export const VISEME_MAP: Record<VisemeName, VisemeBlendshapeEntry> = {
   viseme_E: {
     morphTargets: [
       { name: "jawOpen", weight: 0.14 },
-      { name: "mouthSmileLeft", weight: 0.08 },
-      { name: "mouthSmileRight", weight: 0.08 },
+      { name: "mouthStretchLeft", weight: 0.12 },
+      { name: "mouthStretchRight", weight: 0.12 },
     ],
   },
   viseme_I: {
     morphTargets: [
       { name: "jawOpen", weight: 0.10 },
-      { name: "mouthSmileLeft", weight: 0.10 },
-      { name: "mouthSmileRight", weight: 0.10 },
+      { name: "mouthStretchLeft", weight: 0.15 },
+      { name: "mouthStretchRight", weight: 0.15 },
     ],
   },
   viseme_O: {

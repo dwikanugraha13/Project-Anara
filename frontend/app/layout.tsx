@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { cookies } from "next/headers";
+import { GatewayAuthModal } from "@/components/gateway/GatewayAuthModal";
 import "./globals.css";
 
 const inter = Inter({
@@ -48,50 +50,44 @@ export default async function RootLayout({
   const parsedStudioRight = rawStudioRight ? parseInt(rawStudioRight, 10) : 450;
   const studioRightWidth = !isNaN(parsedStudioRight) && parsedStudioRight >= 340 && parsedStudioRight <= 700 ? parsedStudioRight : 450;
 
+  const rootStyle: React.CSSProperties & Record<string, string | number> = {
+    backgroundColor: "#030712",
+    "--sidebar-width": `${sidebarWidth}px`,
+    "--tree-width": `${treeWidth}px`,
+    "--studio-left-width": `${studioLeftWidth}px`,
+    "--studio-right-width": `${studioRightWidth}px`,
+  };
+
   return (
     <html
       lang="id"
       className={`preload ${inter.variable} ${jetbrainsMono.variable}`}
       suppressHydrationWarning
-      style={{
-        backgroundColor: "#030712",
-        ["--sidebar-width" as any]: `${sidebarWidth}px`,
-        ["--tree-width" as any]: `${treeWidth}px`,
-        ["--studio-left-width" as any]: `${studioLeftWidth}px`,
-        ["--studio-right-width" as any]: `${studioRightWidth}px`,
-      }}
+      style={rootStyle}
     >
       <head>
         <meta name="google" content="notranslate" />
-        <script
+        <Script
+          id="anara-layout-init"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: `
-              try {
-                var w = localStorage.getItem('anara_sidebar_width');
-                var p = w ? parseInt(w, 10) : ${sidebarWidth};
-                if (!isNaN(p) && p >= 200 && p <= 600) {
-                  document.documentElement.style.setProperty('--sidebar-width', p + 'px');
-                  document.cookie = 'anara_sidebar_width=' + p + '; path=/; max-age=31536000; SameSite=Lax';
-                }
-                var tw = localStorage.getItem('anara_tree_width');
-                var tp = tw ? parseInt(tw, 10) : ${treeWidth};
-                if (!isNaN(tp) && tp >= 140 && tp <= 380) {
-                  document.documentElement.style.setProperty('--tree-width', tp + 'px');
-                  document.cookie = 'anara_tree_width=' + tp + '; path=/; max-age=31536000; SameSite=Lax';
-                }
-                var slw = localStorage.getItem('anara_studio_left_width');
-                var slp = slw ? parseInt(slw, 10) : ${studioLeftWidth};
-                if (!isNaN(slp) && slp >= 180 && slp <= 500) {
-                  document.documentElement.style.setProperty('--studio-left-width', slp + 'px');
-                  document.cookie = 'anara_studio_left_width=' + slp + '; path=/; max-age=31536000; SameSite=Lax';
-                }
-                var srw = localStorage.getItem('anara_studio_right_width');
-                var srp = srw ? parseInt(srw, 10) : ${studioRightWidth};
-                if (!isNaN(srp) && srp >= 340 && srp <= 700) {
-                  document.documentElement.style.setProperty('--studio-right-width', srp + 'px');
-                  document.cookie = 'anara_studio_right_width=' + srp + '; path=/; max-age=31536000; SameSite=Lax';
-                }
-              } catch(e) {}
+              (function() {
+                try {
+                  const setProp = (key, cookieName, fallback, min, max, cssVar) => {
+                    const val = localStorage.getItem(key);
+                    const parsed = val ? parseInt(val, 10) : fallback;
+                    if (!isNaN(parsed) && parsed >= min && parsed <= max) {
+                      document.documentElement.style.setProperty(cssVar, parsed + 'px');
+                      document.cookie = cookieName + '=' + parsed + '; path=/; max-age=31536000; SameSite=Lax';
+                    }
+                  };
+                  setProp('anara_sidebar_width', 'anara_sidebar_width', ${sidebarWidth}, 200, 600, '--sidebar-width');
+                  setProp('anara_tree_width', 'anara_tree_width', ${treeWidth}, 140, 380, '--tree-width');
+                  setProp('anara_studio_left_width', 'anara_studio_left_width', ${studioLeftWidth}, 180, 500, '--studio-left-width');
+                  setProp('anara_studio_right_width', 'anara_studio_right_width', ${studioRightWidth}, 340, 700, '--studio-right-width');
+                } catch(e) {}
+              })();
             `,
           }}
         />
@@ -102,6 +98,7 @@ export default async function RootLayout({
         suppressHydrationWarning
         style={{ backgroundColor: "#030712", margin: 0, padding: 0 }}
       >
+        <GatewayAuthModal />
         {children}
       </body>
     </html>

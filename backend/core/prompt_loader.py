@@ -100,8 +100,9 @@ def load_prompt(relative_name: str, default: str = "", **format_kwargs: Any) -> 
         if not file_path.resolve().is_relative_to(prompts_dir.resolve()):
             logger.warning(f"[PromptLoader] Path escaped prompts root: {file_path}")
             return _safe_format(default, **format_kwargs) if format_kwargs else default
-    except Exception:
-        pass
+    except Exception as e_conf:
+        logger.warning(f"[PromptLoader] Path confinement check failed for {file_path}: {e_conf}")
+        return _safe_format(default, **format_kwargs) if format_kwargs else default
 
     try:
         current_mtime = os.path.getmtime(file_path)
@@ -152,8 +153,9 @@ def load_config_yaml(relative_name: str, default: Any = None) -> Any:
         if not file_path.resolve().is_relative_to(prompts_dir.resolve()):
             logger.warning(f"[PromptLoader] Path escaped prompts root: {file_path}")
             return default
-    except Exception:
-        pass
+    except Exception as e_conf:
+        logger.warning(f"[PromptLoader] Path confinement check failed for YAML {file_path}: {e_conf}")
+        return default
 
     try:
         current_mtime = os.path.getmtime(file_path)

@@ -149,20 +149,35 @@ export default function BrainSkillsTab() {
     } catch {}
   };
 
-  const handleDeleteSkill = async (slug: string, name: string) => {
-    if (!confirm(`Permanently delete skill '${name}' from Anara runtime disk?`)) return;
+  const [deleteConfirm, setDeleteConfirm] = useState<{ slug: string; name: string } | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const handleDeleteSkill = (slug: string, name: string) => {
+    setDeleteConfirm({ slug, name });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirm) return;
+    const { slug } = deleteConfirm;
+    setDeleteConfirm(null);
     try {
       const res = await fetch(`${BACKEND_URL}/api/brain/skills/v2/${slug}`, {
         method: "DELETE",
       });
       if (res.ok) {
         setSkills((prev) => prev.filter((s) => s.slug !== slug));
+      } else {
+        const err = await res.json().catch(() => ({ detail: "Failed to delete" }));
+        setErrorMessage(err.detail || "Failed to delete skill");
       }
-    } catch {}
+    } catch (e: any) {
+      setErrorMessage(`Failed to delete: ${e.message}`);
+    }
   };
 
   const handleInstallHubSkill = async (item: HubSkillItem) => {
     setInstallingIdentifier(item.identifier);
+    setErrorMessage(null);
     try {
       const res = await fetch(`${BACKEND_URL}/api/brain/skills/hub/install`, {
         method: "POST",
@@ -179,15 +194,15 @@ export default function BrainSkillsTab() {
             r.identifier === item.identifier ? { ...r, is_installed: true } : r
           )
         );
-        setInstalledNotice(`Skill '${item.name}' successfully downloaded and active!`);
+        setInstalledNotice(`Skill '${item.name}' successfully installed.`);
         setTimeout(() => setInstalledNotice(null), 4000);
         fetchSkills();
       } else {
         const err = await res.json().catch(() => ({ detail: "Failed to download" }));
-        alert(`Failed to install skill: ${err.detail || "Error"}`);
+        setErrorMessage(`Failed to install skill: ${err.detail || "Error"}`);
       }
     } catch (e: any) {
-      alert(`Failed to install: ${e.message}`);
+      setErrorMessage(`Failed to install: ${e.message}`);
     } finally {
       setInstallingIdentifier(null);
     }
@@ -250,7 +265,7 @@ export default function BrainSkillsTab() {
               Anara Skill Ecosystem
             </h3>
             <span className="px-2 py-0.5 rounded-md text-[9px] font-mono uppercase bg-cyan-500/10 border border-cyan-400/20 text-cyan-300">
-              100k+ Skills Catalog
+              Universal Skills Catalog
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1 leading-relaxed">
@@ -271,7 +286,7 @@ export default function BrainSkillsTab() {
               }`}
             >
               <span>Installed</span>
-              <span className="px-1.5 py-0.2 rounded text-[10px] bg-white/10 text-slate-200">
+              <span className="px-1.5 py-0.5 rounded text-[10px] bg-white/10 text-slate-200">
                 {skills.length}
               </span>
             </button>
@@ -285,8 +300,8 @@ export default function BrainSkillsTab() {
               }`}
             >
               <span>Skills Hub</span>
-              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-400/30">
-                100k+
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-400/30">
+                Hub
               </span>
             </button>
           </div>
@@ -324,7 +339,9 @@ export default function BrainSkillsTab() {
           {pendingCount > 0 && (
             <div className="p-3.5 px-4 rounded-xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-between gap-3 text-amber-200 text-xs font-mono">
               <div className="flex items-center gap-2">
-                <span className="text-amber-400 text-base">⚠️</span>
+                <svg className="w-4 h-4 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
                 <span>There are <b>{pendingCount} new skills</b> from autonomous learning awaiting your review.</span>
               </div>
               <button
@@ -590,8 +607,11 @@ export default function BrainSkillsTab() {
                     )}
 
                     <div className="flex items-center justify-between pt-1 border-t border-white/[0.06] text-[10px] font-mono text-slate-500">
-                      <span className="truncate max-w-[240px]" title={s.file_path}>
-                        📁 skills/{s.slug}/SKILL.md
+                      <span className="truncate max-w-[240px] flex items-center gap-1.5" title={s.file_path}>
+                        <svg className="w-3 h-3 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                        </svg>
+                        <span>skills/{s.slug}/SKILL.md</span>
                       </span>
                       {!isPending && (
                         <button
@@ -630,7 +650,7 @@ export default function BrainSkillsTab() {
                 </svg>
                 <input
                   type="text"
-                  placeholder="Search from 100,621+ skills (e.g. crypto, excel, blender, docker, seo, react)..."
+                  placeholder="Search community skills catalog (e.g. crypto, excel, blender, docker, seo, react)..."
                   value={hubQuery}
                   onChange={(e) => setHubQuery(e.target.value)}
                   onKeyDown={(e) => {
@@ -649,7 +669,7 @@ export default function BrainSkillsTab() {
                 }}
                 className="px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-xs text-cyan-300 focus:outline-none focus:border-cyan-400 font-mono shrink-0"
               >
-                <option value="all">Semua Registry (100k+)</option>
+                <option value="all">All Registries</option>
                 {hubSources.filter((s) => s.id !== "all").map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name} ({s.count.toLocaleString()})
@@ -697,7 +717,7 @@ export default function BrainSkillsTab() {
           {/* Search Result Summary */}
           <div className="flex items-center justify-between text-xs font-mono text-slate-400 px-1">
             <span>
-              Menemukan <b className="text-white">{hubTotal.toLocaleString()}</b> keahlian di Skills Hub.
+              Found <b className="text-white">{hubTotal.toLocaleString()}</b> skills in hub catalog.
             </span>
             <span className="text-[11px] text-slate-500">
               Catalog updated on-demand &amp; verified
@@ -708,7 +728,7 @@ export default function BrainSkillsTab() {
           {isSearchingHub ? (
             <div className="p-12 text-center rounded-2xl liquid-glass border border-white/10 text-slate-400 text-xs font-mono flex flex-col items-center justify-center gap-3">
               <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
-              <span>Menelusuri database 100.621 keahlian komunitas...</span>
+              <span>Searching community skills catalog...</span>
             </div>
           ) : hubResults.length === 0 ? (
             <div className="p-12 text-center rounded-2xl liquid-glass border border-white/10 text-slate-400 text-xs font-mono">
@@ -769,7 +789,7 @@ export default function BrainSkillsTab() {
                               {isInstalling ? (
                                 <>
                                   <span className="w-3 h-3 border-2 border-cyan-300 border-t-transparent rounded-full animate-spin" />
-                                  <span>Mengunduh...</span>
+                                  <span>Installing...</span>
                                 </>
                               ) : (
                                 <>
@@ -812,6 +832,57 @@ export default function BrainSkillsTab() {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* In-app Error Banner */}
+      {errorMessage && (
+        <div className="fixed bottom-6 right-6 z-50 p-4 rounded-2xl bg-rose-950/90 border border-rose-500/40 text-rose-200 text-xs font-mono shadow-[0_0_30px_rgba(244,63,94,0.3)] backdrop-blur-xl flex items-center justify-between gap-4 max-w-md animate-fade-in">
+          <span>{errorMessage}</span>
+          <button
+            type="button"
+            onClick={() => setErrorMessage(null)}
+            className="text-rose-400 hover:text-white font-bold cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* In-app Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in select-none"
+        >
+          <div className="w-full max-w-sm p-5 rounded-2xl bg-slate-950/95 border border-white/20 shadow-[0_0_40px_rgba(0,0,0,0.8)] text-white space-y-4 font-sans">
+            <div className="flex items-center gap-2.5 text-rose-400 font-mono text-xs font-semibold">
+              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span>Confirm Skill Deletion</span>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed font-sans">
+              Permanently delete skill <b className="text-white font-mono">&apos;{deleteConfirm.name}&apos;</b> from Anara runtime disk?
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10 font-mono text-xs">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirm(null)}
+                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="px-3.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 font-semibold transition-all cursor-pointer shadow-sm active:scale-95"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

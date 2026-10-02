@@ -41,7 +41,14 @@ CLOUDFLARE_WINDOWS_URL = CLOUDFLARE_BINARIES[("windows", "amd64")]
 TUNNEL_LIFECYCLE_FILE = get_anara_run_dir() / "tunnel.lifecycle.json"
 TUNNEL_PID_FILE = get_anara_run_dir() / "tunnel.pid"
 
-_START_LOCK = asyncio.Lock()
+_START_LOCK: Optional[asyncio.Lock] = None
+
+
+def _get_start_lock() -> asyncio.Lock:
+    global _START_LOCK
+    if _START_LOCK is None:
+        _START_LOCK = asyncio.Lock()
+    return _START_LOCK
 
 
 def get_platform_download_url() -> str:
@@ -239,7 +246,7 @@ async def start_quick_tunnel(port: int = 3000, timeout_seconds: int = 25) -> Dic
     Spawns Cloudflare Quick Tunnel forwarding to local port, waits for public URL,
     and records process metadata. Protected by re-entrant async lock.
     """
-    async with _START_LOCK:
+    async with _get_start_lock():
         # Check if already running
         curr = get_tunnel_status()
         if curr.get("is_running") and curr.get("public_url"):
@@ -249,7 +256,7 @@ async def start_quick_tunnel(port: int = 3000, timeout_seconds: int = 25) -> Dic
         if not is_local_port_open(port):
             logger.warning(f"[GatewayManager] Target local port {port} is not yet listening. Spawning tunnel anyway...")
 
-        bin_path = ensure_cloudflared_installed()
+        bin_path = await asyncio.to_thread(ensure_cloudflared_installed)
         log_file = get_anara_logs_dir() / "tunnel.log"
         named_cfg = Path.home() / ".cloudflared" / "config.yml"
 
@@ -310,7 +317,20 @@ async def start_quick_tunnel(port: int = 3000, timeout_seconds: int = 25) -> Dic
                         content = f.read()
                     if is_named:
                         if conn_pattern.search(content):
-                            public_url = "https://anara.my.id"
+                            resolved_url = "https://anara.my.id"
+                            try:
+                                import yaml
+                                if named_cfg.is_file():
+                                    with open(named_cfg, "r", encoding="utf-8") as yf:
+                                        ydata = yaml.safe_load(yf) or {}
+                                        ing = ydata.get("ingress") or []
+                                        for rule in ing:
+                                            if isinstance(rule, dict) and rule.get("hostname"):
+                                                resolved_url = f"https://{rule['hostname']}"
+                                                break
+                            except Exception:
+                                pass
+                            public_url = resolved_url
                             break
                     else:
                         match = url_pattern.search(content)

@@ -4,6 +4,7 @@ Parity with Anara Agent plugins/spotify: supports playback control,
 track/artist/album search, queue management, and Windows URI protocol fallback.
 """
 
+import asyncio
 import logging
 import os
 import urllib.parse
@@ -11,6 +12,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from .events import _emit_agent_event
+from shared_state import get_shared_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,17 @@ SPOTIFY_API_BASE = "https://api.spotify.com/v1"
 
 def _get_spotify_token() -> Optional[str]:
     """Retrieves Spotify OAuth access token from environment or database if configured."""
-    return os.getenv("SPOTIFY_ACCESS_TOKEN") or None
+    tok = os.getenv("SPOTIFY_ACCESS_TOKEN")
+    if tok and tok.strip():
+        return tok.strip()
+    try:
+        from memory import memory_engine
+        db_tok = memory_engine.get_app_setting("spotify_access_token")
+        if db_tok and str(db_tok).strip():
+            return str(db_tok).strip()
+    except Exception:
+        pass
+    return None
 
 
 async def _tool_spotify_search(query: str, search_type: str = "track", limit: int = 10) -> Dict[str, Any]:
@@ -91,11 +103,14 @@ async def _tool_spotify_playback(
             }
             sub_ep = endpoint_map.get(act, "me/player/play")
             url = f"{SPOTIFY_API_BASE}/{sub_ep}"
+            params = {}
+            if device_id:
+                params["device_id"] = device_id.strip()
             headers = {"Authorization": f"Bearer {token}"}
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                res = await client.put(url, headers=headers) if act in ["play", "resume", "pause"] else await client.post(url, headers=headers)
-                if res.status_code in [200, 204]:
-                    return {"status": "success", "action": act, "message": f"Spotify playback command '{act}' sent via Web API."}
+            client = get_shared_http_client()
+            res = await client.put(url, headers=headers, params=params) if act in ["play", "resume", "pause"] else await client.post(url, headers=headers, params=params)
+            if res.status_code in [200, 204]:
+                return {"status": "success", "action": act, "message": f"Spotify playback command '{act}' sent via Web API."}
         except Exception as e:
             logger.warning(f"[SpotifyTools] Web API playback error: {e}")
 
@@ -108,11 +123,11 @@ async def _tool_spotify_playback(
             uri = "spotify:"
 
         if hasattr(os, "startfile"):
-            os.startfile(uri)
+            await asyncio.to_thread(os.startfile, uri)
         else:
             import subprocess, sys
             launcher = "open" if sys.platform == "darwin" else "xdg-open"
-            subprocess.Popen([launcher, uri])
+            await asyncio.to_thread(subprocess.Popen, [launcher, uri])
 
         return {
             "status": "success",

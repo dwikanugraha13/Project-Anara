@@ -73,7 +73,8 @@ SENSITIVE_PATTERNS = [
     (r"\bgh[pousr]_[a-zA-Z0-9]{36,}\b", "[REDACTED_GITHUB_TOKEN]"),
     (r"\bgithub_pat_[a-zA-Z0-9_]{82}\b", "[REDACTED_GITHUB_TOKEN]"),
     (r"\bAKIA[0-9A-Z]{16}\b", "[REDACTED_AWS_KEY]"),
-    (r"\bxox[baprs]-[0-9a-zA-Z]{10,48}\b", "[REDACTED_SLACK_TOKEN]"),
+    (r"\bxox[baprs](-[0-9a-zA-Z]{9,48})+\b", "[REDACTED_SLACK_TOKEN]"),
+    (r"\bxapp-\d+-[0-9a-zA-Z]+(?:-[0-9a-zA-Z]+)*\b", "[REDACTED_SLACK_TOKEN]"),
     # Generic Key/Secret assignments (key=xyz, secret=xyz, token=xyz, password=xyz) with Base64 charset support
     (r"(?i)(api[_-]?key|secret[_-]?key|auth[_-]?token|access[_-]?token|password|passwd)\s*[:=]\s*['\"]?([a-zA-Z0-9_\-\.\$\!\@\#\%\^\&\*\+\/\=]{6,})['\"]?", r"\1: [REDACTED_SECRET]"),
     # Bearer tokens

@@ -5,7 +5,7 @@ import os
 import re
 import subprocess
 import tempfile
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 from .events import _emit_agent_event
 
@@ -88,7 +88,13 @@ async def _tool_execute_cli_command(command: str, workdir: Optional[str] = None)
         return {"status": "error", "message": str(e)}
 
 
-async def _tool_manage_memory_and_todos(action: str, title: str, content: Optional[str] = None, category: str = "todo") -> Dict[str, Any]:
+async def _tool_manage_memory_and_todos(
+    action: str,
+    title: Optional[str] = None,
+    content: Optional[str] = None,
+    category: str = "todo",
+    item_id: Optional[int] = None
+) -> Dict[str, Any]:
     """Autonomously creates notes or to-do items into Anara's SQLite Brain (Anara Standard)."""
     from memory import memory_engine
     act = (action or "add").strip().lower()
@@ -113,13 +119,23 @@ async def _tool_manage_memory_and_todos(action: str, title: str, content: Option
                 "category": category,
                 "message": f"Recorded '{t_clean}' to {category} list."
             }
+        elif act in ["list", "get", "show"]:
+            all_notes = memory_engine.get_notes_and_todos(category=category if category != "todo" else None)
+            res_payload = {
+                "status": "success",
+                "action": "list",
+                "total": len(all_notes),
+                "items": all_notes,
+                "message": f"Retrieved {len(all_notes)} items."
+            }
         elif act in ["complete", "toggle", "done"]:
-            all_notes = memory_engine.get_notes_and_todos()
-            target_id = None
-            for n in all_notes:
-                if t_clean.lower() in n.get("title", "").lower():
-                    target_id = n["id"]
-                    break
+            target_id = item_id
+            if target_id is None:
+                all_notes = memory_engine.get_notes_and_todos()
+                for n in all_notes:
+                    if t_clean.lower() in n.get("title", "").lower():
+                        target_id = n["id"]
+                        break
             if target_id:
                 memory_engine.toggle_todo(target_id)
                 res_payload = {
@@ -127,12 +143,35 @@ async def _tool_manage_memory_and_todos(action: str, title: str, content: Option
                     "action": "complete",
                     "id": target_id,
                     "title": t_clean,
-                    "message": f"Marked task '{t_clean}' as completed."
+                    "message": f"Toggled task ID {target_id}."
                 }
             else:
                 res_payload = {
                     "status": "not_found",
                     "action": "complete",
+                    "title": t_clean,
+                    "message": f"Task '{t_clean}' not found in active list."
+                }
+        elif act in ["delete", "remove"]:
+            target_id = item_id
+            if target_id is None:
+                all_notes = memory_engine.get_notes_and_todos()
+                for n in all_notes:
+                    if t_clean.lower() in n.get("title", "").lower():
+                        target_id = n["id"]
+                        break
+            if target_id:
+                ok = memory_engine.delete_note_or_todo(target_id)
+                res_payload = {
+                    "status": "success" if ok else "not_found",
+                    "action": "delete",
+                    "id": target_id,
+                    "message": f"Deleted task ID {target_id}." if ok else f"Failed to delete task ID {target_id}."
+                }
+            else:
+                res_payload = {
+                    "status": "not_found",
+                    "action": "delete",
                     "title": t_clean,
                     "message": f"Task '{t_clean}' not found in active list."
                 }
@@ -386,8 +425,16 @@ async def _tool_system_control(
                 except Exception:
                     pass
 
-            # Case D: Generic cmd.exe start
-            subprocess.Popen(f'cmd.exe /c start "" "{tgt}"', shell=True)
+            # Case D: Generic cmd.exe start (safe argument vector, shell=False)
+            unsafe_chars = {'&', '|', ';', '`', '$', '>', '<', chr(10), chr(13)}
+            if any(c in unsafe_chars for c in tgt):
+                return {
+                    "status": "error",
+                    "action": "open_rejected",
+                    "target": tgt,
+                    "message": "Target contains invalid shell metacharacters."
+                }
+            subprocess.Popen(["cmd.exe", "/c", "start", "", tgt], shell=False)
             return {
                 "status": "success",
                 "action": "open_cmd",
@@ -560,8 +607,8 @@ async def _tool_trigger_avatar_animation(animation_name: str, emotion: Optional[
 
 async def _tool_learn_and_save_skill(
     name: str,
-    category: str,
-    description: str,
+    category: str = "general",
+    description: str = "",
     trigger_keywords: Optional[List[str]] = None,
     procedure_steps: Optional[List[str]] = None
 ) -> Dict[str, Any]:

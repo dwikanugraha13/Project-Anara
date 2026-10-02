@@ -10,6 +10,7 @@ Anara Standard Unified Command Hub:
 """
 
 import html
+import re
 from dataclasses import dataclass, field
 import logging
 import os
@@ -305,7 +306,7 @@ async def _handle_cmd_model(ctx: UniversalCommandContext) -> UniversalCommandRes
             set_active_model_id(target_m)
             return UniversalCommandResponse(text=f"✅ <b>Active model updated!</b>\n\nNow using: <code>{target_m}</code>")
         elif len(matched) > 1:
-            lines = [f"🔍 <b>FOUND {len(matched)} MODELS MATCHING '<code>{clean_arg}</code>':</b>\n"]
+            lines = [f"🔍 <b>FOUND {len(matched)} MODELS MATCHING '<code>{html.escape(clean_arg)}</code>':</b>\n"]
             for idx, m in enumerate(matched[:15], 1):
                 ind = "● (Active)" if m["id"] == cur_m else "○"
                 lines.append(f"{idx}. {ind} <b>{m.get('name', m['id'])}</b> [{m.get('provider', '').upper()}]\n   ID: <code>{m['id']}</code>")
@@ -315,7 +316,7 @@ async def _handle_cmd_model(ctx: UniversalCommandContext) -> UniversalCommandRes
             return UniversalCommandResponse(text="\n".join(lines))
         else:
             set_active_model_id(clean_arg)
-            return UniversalCommandResponse(text=f"✅ <b>Active model updated!</b>\n\nNow using: <code>{clean_arg}</code>")
+            return UniversalCommandResponse(text=f"✅ <b>Active model updated!</b>\n\nNow using: <code>{html.escape(clean_arg)}</code>")
 
     if ctx.channel == "telegram":
         from integrations.telegram.keyboards import send_telegram_provider_selector
@@ -366,12 +367,14 @@ async def _handle_cmd_memory(ctx: UniversalCommandContext) -> UniversalCommandRe
     user_p = file_memory.get_user_profile()
     mem_f = file_memory.get_memory_facts()
     header = "🧠 <b>ANARA PERSISTENT MEMORY</b>"
+    esc_user = html.escape(user_p[:600]) if user_p else "<i>No user profile stored yet.</i>"
+    esc_mem = html.escape(mem_f[:900]) if mem_f else "<i>No facts stored yet.</i>"
     text = (
         f"{header}\n\n"
         f"<b>1. User Profile (USER.md):</b>\n"
-        f"<blockquote>{user_p[:600]}</blockquote>\n\n"
+        f"<blockquote>{esc_user}</blockquote>\n\n"
         f"<b>2. Long-Term Facts (MEMORY.md):</b>\n"
-        f"<blockquote>{mem_f[:900]}</blockquote>"
+        f"<blockquote>{esc_mem}</blockquote>"
     )
     return UniversalCommandResponse(text=text)
 
@@ -582,6 +585,23 @@ def set_chat_voice_mode(channel: str, channel_id: str, mode: str) -> str:
     return target
 
 
+def format_command_text_for_channel(text: str, channel: str) -> str:
+    """Formats or normalizes command output HTML tags for target platform."""
+    if not text:
+        return ""
+    ch = (channel or "").lower().strip()
+    if ch in ("telegram", "web", "web_studio"):
+        return text
+    # For CLI, Discord, Slack, WhatsApp: convert HTML tags to clean Markdown/plain text
+    out = text
+    out = re.sub(r"<b>(.*?)</b>", r"**\1**", out, flags=re.DOTALL)
+    out = re.sub(r"<i>(.*?)</i>", r"_\1_", out, flags=re.DOTALL)
+    out = re.sub(r"<code>(.*?)</code>", r"`\1`", out, flags=re.DOTALL)
+    out = re.sub(r"<blockquote>(.*?)</blockquote>", r"> \1", out, flags=re.DOTALL)
+    out = re.sub(r"<[^>]+>", "", out)
+    return html.unescape(out)
+
+
 async def handle_channel_command(req: Any) -> Optional[Any]:
     """
     Evaluates whether the incoming channel request is a system slash command.
@@ -603,9 +623,10 @@ async def handle_channel_command(req: Any) -> Optional[Any]:
 
     from core.channel_adapter import ChannelResponse
     sess_id = getattr(req, "session_id", 0) or 0
+    req_ch = getattr(req, "channel", "cli")
 
     return ChannelResponse(
-        text=resp.text,
+        text=format_command_text_for_channel(resp.text, req_ch),
         session_id=sess_id,
         mode="plan" if resp.plan_pending else "conversational",
         plan_pending=resp.plan_pending,

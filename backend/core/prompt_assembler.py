@@ -121,6 +121,7 @@ class PromptAssembler:
         channel: Optional[str] = None,
         session_id: Optional[Any] = None,
         model_id: str = "",
+        reasoning_effort: Optional[str] = None,
     ) -> str:
         # Slot 1: Identity & Core Personality
         from cognition import get_soul_prompt
@@ -168,7 +169,7 @@ class PromptAssembler:
                 skill_lines = "\n".join([f"- **{sk['name']}** ({sk.get('category', 'general')}): {sk.get('description', '')}" for sk in skills_list[:8]])
                 slot6_skills = load_prompt("skills_manifest", skill_lines=skill_lines).strip()
 
-        # Slot 7: Project Context & Live Worktree Snapshot (Hermes Ground-Truth Parity)
+        # Slot 7: Project Context & Repository Snapshot (Anara Ground-Truth)
         from core.agent import anara_agent
         root_path = (workspace_tree or {}).get("root_path") or anara_agent.get_session_dir(session_id)
         if not root_path or not os.path.isdir(root_path):
@@ -184,23 +185,29 @@ class PromptAssembler:
             files_preview = ', '.join([f['path'] for f in (workspace_tree or {}).get('files', [])[:25]]) or '(Empty / clean folder)'
             files_info = f"- Indexed Files ({total_files} total): {files_preview}\n"
 
-        git_block = f"{git_snapshot}\n" if git_snapshot else ""
         slot7_project = load_prompt(
             "workspace_snapshot",
             project_name=project_name,
             root_path=root_path,
-            git_snapshot=git_block,
+            git_snapshot="",
             files_info=files_info,
             default=(
                 f"[LIVE WORKSPACE & REPOSITORY SNAPSHOT (ANARA GROUND-TRUTH)]:\n"
                 f"- Project Name: {project_name}\n"
                 f"- Physical Root Path: {root_path}\n"
-                f"{git_block}"
                 f"{files_info}"
-                "- WORKSPACE GUIDELINES: All file operations are confined within this project root. "
-                "Use the Git worktree status above as ground truth when verifying or resuming tasks."
+                "- WORKSPACE GUIDELINES: All file operations are confined within this project root."
             )
         ).strip()
+
+        # Live Git worktree status is positioned in Tier 3 (Volatile Tail) to preserve KV cache
+        slot_git_status = ""
+        if git_snapshot:
+            slot_git_status = (
+                f"[LIVE GIT WORKTREE STATUS (GROUND-TRUTH)]:\n"
+                f"{git_snapshot}\n"
+                "Use the live Git worktree status above as ground truth when verifying or resuming tasks."
+            )
 
         # Scan for local AGENTS.md / CLAUDE.md / RULES.md in project root
         if root_path and os.path.isdir(root_path):
@@ -220,7 +227,7 @@ class PromptAssembler:
                                 tail_start = len(raw_content) - tail_budget
                                 tail_nl = raw_content.find("\n", tail_start)
                                 tail_text = raw_content[tail_nl:].strip() if (tail_nl != -1 and tail_nl < len(raw_content) - 50) else raw_content[-tail_budget:].strip()
-                                doc_content = f"{head_text}\n\n[... truncated {len(raw_content) - len(head_text) - len(tail_text)} chars of repo rules ...]\n\n{tail_text}"
+                                doc_content = f"{head_text}\n\n[... truncated oversized repository rules ...]\n\n{tail_text}"
                             else:
                                 doc_content = raw_content.strip()
                             slot7_project += f"\n\n[PROJECT REPOSITORY RULES ({custom_doc})]:\n{doc_content}"
@@ -270,8 +277,26 @@ class PromptAssembler:
             ch_clean = "web"
 
         from providers.accounts import get_active_model_id
+        from providers.constants import get_model_grounding_metadata
         current_active_model = model_id or get_active_model_id()
-        model_display_line = f"- Active AI Model: {current_active_model}\n" if current_active_model else ""
+        grounding = get_model_grounding_metadata(current_active_model, reasoning_effort=reasoning_effort)
+
+        model_display_line = (
+            f"- Active AI Model ID: {current_active_model}\n"
+            f"- Model Display Name: {grounding['clean_name']}\n"
+            f"- Serving Infrastructure: {grounding['gateway']}\n"
+            f"- Upstream Route / Provider: {grounding['route_name']}\n"
+            f"- Reasoning / Thinking Level: {grounding['tier_display']}\n"
+        ) if current_active_model else ""
+
+        model_grounding_instruction = (
+            f"[ACTIVE MODEL & RUNTIME GROUNDING]:\n"
+            f"You are currently powered by {grounding['clean_name']} served via {grounding['serving_origin']}.\n"
+            f"Current Thinking / Reasoning Effort is: {grounding['tier_display']}.\n"
+            f"When asked about your AI model, active reasoning tier, or whether thinking is ON or OFF in conversation, always answer with 100% precision: state that your model is {grounding['clean_name']} and your reasoning effort is {grounding['tier_display']}.\n"
+            f"If Reasoning Level is 'Off', you must accurately state that thinking is disabled / turned off. Never claim to be running on Standard or Medium when thinking is Off.\n"
+            f"Never claim to be running directly on Google AI Studio, OpenAI direct, or another vendor default unless specifically configured with direct API keys for that provider.\n\n"
+        ) if current_active_model else ""
 
         slot_channel = (
             f"[ACTIVE RUNTIME & SESSION METADATA]:\n"
@@ -280,50 +305,74 @@ class PromptAssembler:
             f"- Current User / Speaker: {speaker_name or 'Agnan'}\n"
             f"{model_display_line}"
             f"- Active Workspace Root: {root_path}\n\n"
+            f"{model_grounding_instruction}"
         )
         if ch_clean == "cli":
             slot_channel += (
                 "[ACTIVE PLATFORM INTERFACE: TERMINAL / CLI SESSION]\n"
-                "You are currently interacting with the user inside an interactive Terminal (CLI) session, NOT in Web Studio, Telegram, or Discord.\n"
-                "Provide direct, concise terminal-friendly responses without HTML tags."
+                "You are currently interacting with the user inside an interactive Terminal (CLI) session.\n"
+                "Provide direct, concise terminal-friendly responses without raw HTML tags. Persona: gaul santai, kasual, lu-gue."
             )
         elif ch_clean in ("web", "web_studio", "studio", "code", "desktop"):
             slot_channel += (
                 "[ACTIVE PLATFORM INTERFACE: WEB & DESKTOP STUDIO]\n"
-                "You are currently interacting with the user inside the Web Studio / Desktop GUI interface (Code Studio & 3D Companion), NOT in a CLI terminal.\n"
-                "You have access to interactive code editor tabs, diff viewer, and visual timeline cards."
+                "You are currently interacting with the user inside the Web Studio / Desktop GUI interface (Code Studio & 3D Companion).\n"
+                "You have access to interactive code editor tabs, diff viewer, and visual timeline cards.\n"
+                "Persona: gaul santai, kasual, lu-gue. Be direct and avoid conversational fluff."
             )
         elif ch_clean == "telegram":
             slot_channel += (
                 "[ACTIVE PLATFORM INTERFACE: TELEGRAM MESSENGER]\n"
-                "You are currently interacting via Telegram chat."
+                "You are on Telegram. Standard Markdown auto-converts: **bold**, *italic*, ~~strikethrough~~, ||spoiler||, `code`, ```blocks```, [links](url), ## headers. "
+                "Prefer bullets or labeled lines for structured data (avoid wide tables; small tables become Unicode ASCII boxes).\n"
+                "You can send files natively: write MEDIA:/absolute/path/to/file in your response. Images (.png, .jpg, .webp) send as photos, videos (.mp4) play inline; image URLs via ![alt](url) send as photos. "
+                "Audio: add [[audio_as_voice]] on its own line to send ANY audio file as a native voice bubble note (PTT); without it, .mp3/.m4a arrive as audio files, other formats as documents.\n"
+                "CONVERSATION RULES: Be direct — match the length of your reply to the weight of the ask: a one-line question gets a one-line answer, and finished work gets a short report of what changed, what's verified, and what's left, never a replay of the process. "
+                "No filler ('Great question', 'I'd be happy to'), no restating the request back, no narrating tool calls the user can see. Plain claims over adjectives. "
+                "Persona preference: gaul santai, kasual, lu-gue."
             )
         elif ch_clean == "whatsapp":
             slot_channel += (
                 "[ACTIVE PLATFORM INTERFACE: WHATSAPP MESSENGER]\n"
-                "You are currently interacting via WhatsApp chat."
+                "You are on WhatsApp. Text format: *bold*, _italic_, ~strikethrough~, monospace ```blocks``` and `code`. "
+                "No markdown tables or Markdown headers (# is converted to *bold*). Use bullets (- or •) and *bold labels* for structured information.\n"
+                "You can send files natively: write MEDIA:/absolute/path/to/file in your response. "
+                "Audio: add [[audio_as_voice]] on its own line to send as a native voice bubble note.\n"
+                "CONVERSATION RULES: Be direct and concise — mobile chat screens require compact, high-signal replies. "
+                "No filler, no robotic preambles, no restating the user prompt. Persona: gaul santai, kasual, lu-gue."
             )
         elif ch_clean == "discord":
             slot_channel += (
                 "[ACTIVE PLATFORM INTERFACE: DISCORD]\n"
-                "You are currently interacting via Discord server/DM."
+                "You are on Discord. Standard Markdown supported: **bold**, *italic*, __underline__, ~~strikethrough~~, ||spoiler||, > quotes, ```code blocks```.\n"
+                "You can send files natively: write MEDIA:/absolute/path/to/file in your response.\n"
+                "CONVERSATION RULES: Be direct and concise. Avoid robotic filler. Persona: gaul santai, kasual, lu-gue."
+            )
+        elif ch_clean == "slack":
+            slot_channel += (
+                "[ACTIVE PLATFORM INTERFACE: SLACK]\n"
+                "You are on Slack. Format: *bold*, _italic_, ~strike~, `code`, ```blocks```. Standard mrkdwn rules apply.\n"
+                "You can send files natively: write MEDIA:/absolute/path/to/file in your response.\n"
+                "CONVERSATION RULES: Be direct, concise, and professional. Persona: gaul santai, kasual, lu-gue."
             )
         elif ch_clean:
             slot_channel += f"[ACTIVE PLATFORM INTERFACE: {ch_clean.upper()}]"
 
         # Anara 3-Tier Prefix Caching Architecture:
         # Tier 1 — Stable Prefix (Tokens 0..N remain byte-identical across turns): Identity, Mode, Tools
-        # Tier 2 — Semi-Static Project Context: Skills Manifest, Workspace Snapshot & AGENTS.md, Active Platform Interface
-        # Tier 3 — Volatile Tail: Long-Term Memory, Episodic ADR, Working Memory / Scratchpad State
+        # Tier 2 — Semi-Static Context: Active Platform Interface, Workspace Snapshot & Rules, Skills Manifest
+        # Tier 3 — Volatile Tail: Long-Term Memory, Live Git Worktree Status, Episodic ADR, Working Memory / Scratchpad State
         slots = [slot1_identity, slot2_mode, slot3_tools]
-        if slot6_skills:
-            slots.append(slot6_skills)
-        if slot7_project:
-            slots.append(slot7_project)
         if slot_channel:
             slots.append(slot_channel)
+        if slot7_project:
+            slots.append(slot7_project)
+        if slot6_skills:
+            slots.append(slot6_skills)
         if slot4_memory:
             slots.append(slot4_memory)
+        if slot_git_status:
+            slots.append(slot_git_status)
         if slot_adr:
             slots.append(slot_adr)
         if slot5_scratchpad:
@@ -334,6 +383,6 @@ class PromptAssembler:
         from core.token_budget import budget_aware_slot_assembly
         return budget_aware_slot_assembly(
             slots=slots,
-            model_id=model_id,
+            model_id=current_active_model,
             reserved_for_conversation=6000,
         )

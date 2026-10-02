@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-SESSION_KEY_PATTERN = re.compile(r"^\d{8}_\d{6}_[a-f0-9]{6}\Z")
+SESSION_KEY_PATTERN = re.compile(r"^\d{8}_\d{6}_[a-f0-9]{6,16}\Z")
 
 
 def new_session_key(now: Optional[datetime] = None, hex_len: int = 6) -> str:

@@ -64,6 +64,9 @@ class GitWorktreeManager:
         # Clean existing directory if stale
         if worktree_dir.exists():
             cls.remove_worktree(repo_dir, str(worktree_dir), branch_name, force=True)
+        else:
+            # Also clean stale branch in git refs if worktree folder was previously removed
+            subprocess.run(["git", "branch", "-D", branch_name], cwd=repo_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
         try:
             # git worktree add -b <branch> <path> <base_ref>
@@ -132,6 +135,10 @@ class GitWorktreeManager:
                     timeout=15,
                 )
 
+            # Check if there are still uncommitted modifications that failed to commit
+            post_status = subprocess.run(["git", "status", "--porcelain"], cwd=worktree_dir, capture_output=True, text=True, check=False)
+            has_uncommitted_remaining = bool(post_status.stdout.strip())
+
             # 2. Check if worktree branch is ahead of base
             diff_res = subprocess.run(
                 ["git", "diff", f"HEAD...{branch_name}"],
@@ -143,6 +150,9 @@ class GitWorktreeManager:
                 timeout=15,
             )
             if not diff_res.stdout.strip():
+                if has_uncommitted_remaining:
+                    logger.warning(f"[Worktree] Worktree '{worktree_dir}' has uncommitted changes that failed to commit; preserving worktree.")
+                    return False
                 logger.debug(f"[Worktree] No code diff to apply from '{branch_name}'.")
                 cls.remove_worktree(repo_dir, worktree_dir, branch_name)
                 return True

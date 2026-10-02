@@ -64,8 +64,11 @@ def _sanitize_mcp_output(text: str) -> str:
         return ""
     s = str(text)
     # Redact common key patterns
-    s = re.sub(r"(?:sk-[a-zA-Z0-9_-]{20,})", "sk-[REDACTED]", s)
-    s = re.sub(r"(?:ghp_[a-zA-Z0-9]{30,})", "ghp_[REDACTED]", s)
+    s = re.sub(r"\bAIza[0-9A-Za-z-_]{35}\b", "AIza[REDACTED]", s)
+    s = re.sub(r"\bsk-ant-[a-zA-Z0-9_-]{20,}\b", "sk-ant-[REDACTED]", s)
+    s = re.sub(r"\bsk-[a-zA-Z0-9_-]{20,}\b", "sk-[REDACTED]", s)
+    s = re.sub(r"\bgh[pousr]_[a-zA-Z0-9]{30,}\b", "ghp_[REDACTED]", s)
+    s = re.sub(r"\bgithub_pat_[a-zA-Z0-9_]{50,}\b", "github_pat_[REDACTED]", s)
     s = re.sub(r"(?:Bearer\s+)[a-zA-Z0-9_\-\.]{20,}", "Bearer [REDACTED]", s, flags=re.IGNORECASE)
     s = re.sub(r"((?:key|token|api_key|secret|password)=)[^\s&]+", r"\1[REDACTED]", s, flags=re.IGNORECASE)
     return s
@@ -251,11 +254,10 @@ class McpSession:
         if self._process and self._process.stdin:
             fut: asyncio.Future = asyncio.get_running_loop().create_future()
             self._pending_requests[req_id] = fut
-            line_bytes = (json.dumps(payload) + "\n").encode("utf-8")
-            self._process.stdin.write(line_bytes)
-            await self._process.stdin.drain()
-
             try:
+                line_bytes = (json.dumps(payload) + "\n").encode("utf-8")
+                self._process.stdin.write(line_bytes)
+                await self._process.stdin.drain()
                 resp = await asyncio.wait_for(fut, timeout=self.timeout)
                 return resp
             finally:
@@ -356,6 +358,9 @@ class McpSession:
         if self._read_task and not self._read_task.done():
             self._read_task.cancel()
 
+        if hasattr(self, "_stderr_task") and self._stderr_task and not self._stderr_task.done():
+            self._stderr_task.cancel()
+
         if self._process:
             try:
                 if self._process.stdin:
@@ -364,9 +369,21 @@ class McpSession:
                 await asyncio.wait_for(self._process.wait(), timeout=3.0)
             except Exception:
                 try:
-                    self._process.kill()
+                    if sys.platform == "win32":
+                        import subprocess
+                        subprocess.run(
+                            ["taskkill", "/PID", str(self._process.pid), "/F", "/T"],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            timeout=3
+                        )
+                    else:
+                        self._process.kill()
                 except Exception:
-                    pass
+                    try:
+                        self._process.kill()
+                    except Exception:
+                        pass
             self._process = None
 
         if self._http_client:

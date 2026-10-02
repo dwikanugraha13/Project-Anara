@@ -9,6 +9,7 @@ Anara Standard Smart Output Limiter & Compactor:
 from __future__ import annotations
 
 import os
+import re
 import uuid
 from pathlib import Path
 from typing import Optional, Any
@@ -16,6 +17,21 @@ from constants import get_anara_logs_dir
 
 TOOL_LOGS_DIR = get_anara_logs_dir("tool_logs")
 TOOL_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _atomic_write_dump(dump_file: Path, data: str) -> None:
+    """Writes log dump atomically via temporary file and atomic swap."""
+    temp_file = dump_file.with_suffix(f".tmp_{uuid.uuid4().hex[:6]}")
+    try:
+        temp_file.write_text(data, encoding="utf-8", errors="replace")
+        temp_file.replace(dump_file)
+    except Exception:
+        try:
+            if temp_file.exists():
+                temp_file.unlink()
+        except OSError:
+            pass
+        raise
 
 
 def compact_tool_output(
@@ -40,11 +56,12 @@ def compact_tool_output(
     if len(text) <= max_chars and line_count <= max_lines:
         return text
 
-    # 1. Save full untruncated dump to disk
+    # 1. Save full untruncated dump to disk with sanitized filename
+    safe_label = re.sub(r"[^\w\-]", "_", str(source_label or "output"))[:40]
     dump_id = uuid.uuid4().hex[:8]
-    dump_file = TOOL_LOGS_DIR / f"{source_label}_{dump_id}.log"
+    dump_file = TOOL_LOGS_DIR / f"{safe_label}_{dump_id}.log"
     try:
-        dump_file.write_text(text, encoding="utf-8", errors="replace")
+        _atomic_write_dump(dump_file, text)
         log_notice = f"Full log ({len(text):,} chars) saved to: {dump_file}"
     except Exception:
         log_notice = f"Total chars: {len(text):,}"
@@ -58,11 +75,13 @@ def compact_tool_output(
         tail = "\n".join(lines[-tail_lines_count:])
         omitted = len(lines) - (head_lines_count + tail_lines_count)
 
-        return (
+        candidate = (
             f"{head}\n\n"
             f"--- [OUTPUT TRUNCATED: {omitted} lines omitted. {log_notice}] ---\n\n"
             f"{tail}"
         )
+        if len(candidate) <= max_chars:
+            return candidate
 
     # 3. Char-based truncation (single or few very long lines, e.g. minified code/JSON)
     head_len = max(1, int(max_chars * head_ratio))
@@ -88,7 +107,7 @@ def compact_tool_payload(
     _depth: int = 0,
 ) -> Any:
     """
-    Normalizes and compacts any tool execution payload (dict, str, or list)
+    Normalizes and compacts any tool execution payload (dict, str, list, set, tuple)
     recursively preserving structured metadata while preventing token bloat.
     Handles giant lists (e.g. 500+ files from glob/find) and nested collections (Anara Engineering Standards).
     """
@@ -104,18 +123,21 @@ def compact_tool_payload(
             source_label=tool_name,
         )
 
-    if isinstance(payload, list):
-        items = payload
+    if isinstance(payload, (list, tuple, set)):
+        items = list(payload)
         # 1. Truncate giant collections (e.g. hundreds of search results)
         if len(items) > max_list_items:
             head_count = max(1, int(max_list_items * head_ratio))
             tail_count = max(1, max_list_items - head_count)
             omitted = len(items) - (head_count + tail_count)
-            stub = f"[... {omitted:,} additional items omitted to conserve context ...]"
+            if items and isinstance(items[0], dict):
+                stub = {"_omitted_count": omitted, "message": f"[... {omitted:,} additional items omitted to conserve context ...]"}
+            else:
+                stub = f"[... {omitted:,} additional items omitted to conserve context ...]"
             items = items[:head_count] + [stub] + items[-tail_count:]
 
         # 2. Recursively compact each item
-        return [
+        res = [
             compact_tool_payload(
                 it,
                 tool_name=tool_name,
@@ -127,6 +149,14 @@ def compact_tool_payload(
             )
             for it in items
         ]
+        if isinstance(payload, tuple):
+            return tuple(res)
+        elif isinstance(payload, set):
+            try:
+                return set(res)
+            except TypeError:
+                return res
+        return res
 
     if isinstance(payload, dict):
         compacted = dict(payload)

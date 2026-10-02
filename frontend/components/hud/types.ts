@@ -87,6 +87,10 @@ export interface DocumentViewerData {
   content: string;
   isPdf?: boolean;
   downloadUrl?: string;
+  isZip?: boolean;
+  archiveFiles?: string[];
+  archiveTotal?: number;
+  filePath?: string;
 }
 
 export interface WorkspaceFolderData {
@@ -119,7 +123,7 @@ export interface PlanData {
   estimatedEffort?: string;
   filesToModify?: string[];
   estimatedScope?: string;
-  planStatus?: "pending" | "approved" | "executing" | "completed";
+  planStatus?: "pending" | "approved" | "executing" | "completed" | "rejected";
 }
 
 export interface ImageItem {
@@ -134,7 +138,7 @@ export interface ImageItem {
 }
 
 export interface AnaraHUDProps {
-  visualType?: "image" | "weather" | "code" | "system_hud" | "knowledge_card" | "todo_list" | "briefing" | "agent_action" | "whatsapp_qr" | "whatsapp_chat" | "document_viewer" | "folder_workspace" | "plan_card" | "none";
+  visualType?: "image" | "weather" | "code" | "system_hud" | "knowledge_card" | "todo_list" | "briefing" | "agent_action" | "document_viewer" | "folder_workspace" | "plan_card" | "none";
   imageUrl?: string;
   imageTitle?: string;
   sourceDomain?: string;

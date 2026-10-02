@@ -25,6 +25,8 @@ import { css } from "@codemirror/lang-css";
 import { markdown } from "@codemirror/lang-markdown";
 import { yaml } from "@codemirror/lang-yaml";
 import { sql } from "@codemirror/lang-sql";
+import AgentMarkdown from "../chat/AgentMarkdown";
+import { getBackendUrl } from "@/lib/apiClient";
 
 export interface IdeTabFile {
   filePath: string;
@@ -98,37 +100,42 @@ const anaraObsidianTheme = EditorView.theme(
   {
     "&": {
       color: "#f1f5f9",
-      backgroundColor: "#070c18",
+      backgroundColor: "#070b16",
       height: "100%",
       fontSize: "12.5px",
       fontFamily: "var(--font-mono), 'JetBrains Mono', Consolas, monospace",
     },
-    // Standard professional neutral cursor
+    // Standard professional neutral cursor with smooth caret transition
     ".cm-content": {
-      caretColor: "#f8fafc",
+      caretColor: "#22d3ee",
       fontFamily: "var(--font-mono), 'JetBrains Mono', Consolas, monospace",
       lineHeight: "20px",
       padding: "8px 0",
     },
-    "&.cm-focused .cm-cursor": {
-      borderLeftColor: "#f8fafc !important",
-      borderLeftWidth: "1.5px !important",
+    "&.cm-focused .cm-cursor, .cm-cursor": {
+      borderLeftColor: "#22d3ee !important",
+      borderLeftWidth: "2px !important",
+      transition: "left 60ms ease-out, top 60ms ease-out",
+    },
+    ".cm-dropCursor": {
+      borderLeftColor: "#22d3ee !important",
+      borderLeftWidth: "2px !important",
     },
     "&.cm-focused .cm-selectionBackground, ::selection": {
-      backgroundColor: "rgba(255, 255, 255, 0.16) !important",
+      backgroundColor: "rgba(34, 211, 238, 0.18) !important",
     },
-    // Gutter & Line Numbers seamless Anara Obsidian #070c18
+    // Gutter & Line Numbers seamless Anara Obsidian #070b16
     ".cm-gutters": {
-      backgroundColor: "#070c18 !important",
+      backgroundColor: "#070b16 !important",
       color: "#475569 !important",
       borderRight: "1px solid rgba(255, 255, 255, 0.08) !important",
       fontSize: "12px",
     },
     ".cm-gutter": {
-      backgroundColor: "#070c18 !important",
+      backgroundColor: "#070b16 !important",
     },
     ".cm-lineNumbers": {
-      backgroundColor: "#070c18 !important",
+      backgroundColor: "#070b16 !important",
     },
     ".cm-gutterElement": {
       color: "#475569 !important",
@@ -153,7 +160,7 @@ const anaraObsidianTheme = EditorView.theme(
       height: "6px",
     },
     ".cm-scroller::-webkit-scrollbar-track": {
-      background: "#070c18 !important",
+      background: "#070b16 !important",
     },
     ".cm-scroller::-webkit-scrollbar-thumb": {
       background: "rgba(255, 255, 255, 0.16) !important",
@@ -221,9 +228,19 @@ export default function AnaraCodeIDE({
   onSaveFile,
 }: AnaraCodeIDEProps) {
   const [copied, setCopied] = useState(false);
-  const [viewMode, setViewMode] = useState<"code" | "diff">("code");
+  const [viewMode, setViewMode] = useState<"code" | "diff" | "preview">("code");
   const [editedContents, setEditedContents] = useState<Record<string, string>>({});
   const isCodeHydratedRef = useRef(false);
+  const [hasDiskConflict, setHasDiskConflict] = useState(false);
+  const baselineSnapshotRef = useRef<string>(content || "");
+
+  // Synchronize view mode on file switch (auto-preview for Markdown)
+  useEffect(() => {
+    const ext = (fileExt || "").toLowerCase();
+    setViewMode(ext === ".md" || ext === "md" ? "preview" : "code");
+    baselineSnapshotRef.current = content || "";
+    setHasDiskConflict(false);
+  }, [filePath, fileExt, content]);
 
   useEffect(() => {
     try {
@@ -275,7 +292,7 @@ export default function AnaraCodeIDE({
   // File path segmentation for breadcrumb
   const normPath = (filePath || fileName || "").replace(/\\/g, "/");
   const cleanName = normPath.split("/").pop() || fileName || "file";
-  const dirPath = normPath.includes("/") ? normPath.substring(0, normPath.lastIndexOf("/") + 1) : "";
+  const dirPath = normPath.includes("/") ? normPath.substring(0, normPath.lastIndexOf("/")) : "";
 
   const handleCopy = () => {
     navigator.clipboard.writeText(activeCode);
@@ -393,8 +410,25 @@ export default function AnaraCodeIDE({
     syncSearchQuery();
   }, [syncSearchQuery]);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(async (forceOverwrite?: boolean | unknown) => {
     if (!onSaveFile || !filePath) return;
+    const isForce = forceOverwrite === true;
+
+    // Stale-on-disk conflict guard (Hermes Desktop Parity)
+    if (!isForce) {
+      try {
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || (typeof window !== "undefined" ? getBackendUrl() : "http://localhost:8000");
+        const checkRes = await fetch(`${backendUrl}/api/agent/workspace/file-content?path=${encodeURIComponent(filePath)}`);
+        if (checkRes.ok) {
+          const diskData = await checkRes.json();
+          if (diskData.content !== undefined && baselineSnapshotRef.current && diskData.content !== baselineSnapshotRef.current) {
+            setHasDiskConflict(true);
+            return;
+          }
+        }
+      } catch {}
+    }
+
     setIsSaving(true);
     try {
       const ok = await onSaveFile(filePath, activeCode);
@@ -404,6 +438,8 @@ export default function AnaraCodeIDE({
           delete copy[filePath];
           return copy;
         });
+        baselineSnapshotRef.current = activeCode;
+        setHasDiskConflict(false);
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 2500);
       }
@@ -411,6 +447,27 @@ export default function AnaraCodeIDE({
       setIsSaving(false);
     }
   }, [activeCode, filePath, onSaveFile]);
+
+  // Handle tab closing (with unsaved check)
+  const handleTabClose = useCallback(
+    (tab: IdeTabFile) => {
+      const tabCode = editedContents[tab.filePath] !== undefined ? editedContents[tab.filePath] : (tab.content || "");
+      const isDirtyTab = Boolean(tab.isDirty) || tabCode !== (tab.content || "");
+
+      if (isDirtyTab) {
+        setUnsavedCloseTab(tab);
+      } else {
+        setEditedContents((prev) => {
+          if (prev[tab.filePath] === undefined) return prev;
+          const copy = { ...prev };
+          delete copy[tab.filePath];
+          return copy;
+        });
+        onCloseTab?.(tab.filePath);
+      }
+    },
+    [editedContents, onCloseTab]
+  );
 
   // Global Keyboard shortcuts: Ctrl+F, Ctrl+H, Escape, Ctrl+S
   useEffect(() => {
@@ -457,22 +514,29 @@ export default function AnaraCodeIDE({
           return;
         }
       }
+
+      // Ctrl + W / Cmd + W to close current tab
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "w") {
+        if (isInsideIde && filePath) {
+          e.preventDefault();
+          const activeTab = tabs?.find((t) => t.filePath === filePath);
+          if (activeTab) {
+            handleTabClose(activeTab);
+          } else {
+            onCloseTab?.(filePath);
+          }
+          return;
+        }
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isFindOpen, handleOpenSearch, handleCloseSearch, handleSave]);
+  }, [isFindOpen, handleOpenSearch, handleCloseSearch, handleSave, filePath, tabs, handleTabClose]);
 
   // Handle click on tab close (✕) button
   const handleTabCloseClick = (e: React.MouseEvent, tab: IdeTabFile) => {
     e.stopPropagation();
-    const tabCode = editedContents[tab.filePath] !== undefined ? editedContents[tab.filePath] : (tab.content || "");
-    const isDirtyTab = tabCode !== (tab.content || "");
-
-    if (isDirtyTab) {
-      setUnsavedCloseTab(tab);
-    } else {
-      onCloseTab?.(tab.filePath);
-    }
+    handleTabClose(tab);
   };
 
   // Confirm Save and Close
@@ -480,17 +544,22 @@ export default function AnaraCodeIDE({
     if (!unsavedCloseTab) return;
     const targetPath = unsavedCloseTab.filePath;
     const targetCode = editedContents[targetPath] !== undefined ? editedContents[targetPath] : (unsavedCloseTab.content || "");
-    if (onSaveFile) {
-      await onSaveFile(targetPath, targetCode);
+    try {
+      if (onSaveFile) {
+        const ok = await onSaveFile(targetPath, targetCode);
+        if (ok === false) return; // Save rejected or failed, abort closing
+      }
+      setEditedContents((prev) => {
+        const copy = { ...prev };
+        delete copy[targetPath];
+        return copy;
+      });
+      const target = unsavedCloseTab;
+      setUnsavedCloseTab(null);
+      onCloseTab?.(target.filePath);
+    } catch (err) {
+      console.error("[IDE] Failed to save file before closing:", err);
     }
-    setEditedContents((prev) => {
-      const copy = { ...prev };
-      delete copy[targetPath];
-      return copy;
-    });
-    const target = unsavedCloseTab;
-    setUnsavedCloseTab(null);
-    onCloseTab?.(target.filePath);
   };
 
   // Confirm Discard Changes and Close
@@ -519,37 +588,39 @@ export default function AnaraCodeIDE({
     }
     if (ext === "php") {
       return (
-        <span className="px-1 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-mono text-[9px] font-bold shrink-0">
+        <span className="px-1 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono text-[9px] font-bold shrink-0">
           PHP
         </span>
       );
     }
     if (ext === "ts" || ext === "tsx") {
       return (
-        <span className="px-1 py-0.2 rounded bg-blue-500/20 text-blue-300 font-mono text-[9px] font-bold shrink-0">
+        <span className="px-1 py-0.5 rounded bg-blue-500/20 text-blue-300 font-mono text-[9px] font-bold shrink-0">
           TS
         </span>
       );
     }
     if (ext === "js" || ext === "jsx") {
       return (
-        <span className="px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono text-[9px] font-bold shrink-0">
+        <span className="px-1 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[9px] font-bold shrink-0">
           JS
         </span>
       );
     }
     return (
-      <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+      <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
       </svg>
     );
   };
 
-  // Diff stats count (multiset frequency comparison for accurate duplicated lines)
+  // Diff stats count (multiset frequency comparison for accurate duplicated lines, normalized for CRLF)
   const diffCounts = useMemo(() => {
     if (!originalContent || originalContent === activeCode) return { added: 0, deleted: 0 };
-    const origLines = originalContent.split("\n");
-    const currLines = activeCode.split("\n");
+    const cr = String.fromCharCode(13);
+    const origLines = originalContent.split("\n").map((l) => (l.endsWith(cr) ? l.slice(0, -1) : l));
+    const currLines = activeCode.split("\n").map((l) => (l.endsWith(cr) ? l.slice(0, -1) : l));
+    if (origLines.join("\n") === currLines.join("\n")) return { added: 0, deleted: 0 };
 
     const origFreq = new Map<string, number>();
     for (const l of origLines) origFreq.set(l, (origFreq.get(l) || 0) + 1);
@@ -609,7 +680,21 @@ export default function AnaraCodeIDE({
     >
       {/* ── Confirmation Modal: Unsaved Changes on Tab Close ── */}
       {unsavedCloseTab && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in select-none">
+        <div
+          role="dialog"
+          aria-modal="true"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.stopPropagation();
+              setUnsavedCloseTab(null);
+            } else if (e.key === "Enter") {
+              e.stopPropagation();
+              handleConfirmSaveAndClose();
+            }
+          }}
+          tabIndex={-1}
+          className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in select-none"
+        >
           <div className="w-full max-w-sm p-4.5 rounded-2xl liquid-glass border border-white/15 shadow-2xl space-y-3 font-sans">
             <div className="flex items-start gap-3">
               <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40 flex items-center justify-center shrink-0 font-bold text-xs mt-0.5 font-mono">
@@ -620,7 +705,7 @@ export default function AnaraCodeIDE({
                   Save changes to <span className="font-mono text-white font-bold">{unsavedCloseTab.fileName}</span>?
                 </h4>
                 <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
-                  Your changes will be lost if you don't save them.
+                  Your changes will be lost if you don&apos;t save them.
                 </p>
               </div>
             </div>
@@ -638,7 +723,7 @@ export default function AnaraCodeIDE({
                 onClick={handleConfirmDiscardAndClose}
                 className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 cursor-pointer transition-all active:scale-95"
               >
-                Don't Save
+                Don&apos;t Save
               </button>
               <button
                 type="button"
@@ -654,12 +739,12 @@ export default function AnaraCodeIDE({
 
       {/* ── Multi-File Tab Strip (Antigravity Obsidian Glass) ── */}
       {tabs && tabs.length > 0 && (
-        <div className="flex items-center gap-0.5 px-2 pt-1 bg-[#050811] border-b border-white/[0.08] overflow-x-auto no-scrollbar font-mono text-xs select-none shrink-0">
+        <div className="flex items-center gap-0.5 px-2 pt-1 bg-[#060913]/90 backdrop-blur-2xl border-b border-white/[0.08] overflow-x-auto no-scrollbar font-mono text-xs select-none shrink-0">
           {tabs.map((tab) => {
             const isTabActive = tab.filePath === filePath;
             const tabExt = (tab.fileExt || "").toLowerCase().replace(/^\./, "");
             const tabCode = editedContents[tab.filePath] !== undefined ? editedContents[tab.filePath] : (tab.content || "");
-            const tabIsDirty = tabCode !== (tab.content || "");
+            const tabIsDirty = Boolean(tab.isDirty) || tabCode !== (tab.content || "");
 
             return (
               <div
@@ -667,7 +752,7 @@ export default function AnaraCodeIDE({
                 onClick={() => onSelectTab?.(tab.filePath, tab.fileName)}
                 className={`group/tab relative flex items-center gap-2 px-3 py-1.5 rounded-t-md border-t border-x cursor-pointer transition-all duration-150 ${
                   isTabActive
-                    ? "bg-[#070c18] border-white/[0.12] text-white font-medium shadow-sm"
+                    ? "bg-[#070b16] border-white/[0.12] text-white font-medium shadow-sm"
                     : "bg-white/[0.02] border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]"
                 }`}
                 title={tab.filePath}
@@ -690,10 +775,14 @@ export default function AnaraCodeIDE({
                     {tabIsDirty ? (
                       <>
                         <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 group-hover/tabbtn:hidden shadow-sm" />
-                        <span className="hidden group-hover/tabbtn:inline text-slate-300 hover:text-white">✕</span>
+                        <svg className="w-2.5 h-2.5 hidden group-hover/tabbtn:inline text-slate-300 hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
                       </>
                     ) : (
-                      <span className="text-slate-500 hover:text-white">✕</span>
+                      <svg className="w-2.5 h-2.5 text-slate-500 hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
                     )}
                   </button>
                 )}
@@ -704,7 +793,7 @@ export default function AnaraCodeIDE({
       )}
 
       {/* ── Antigravity Studio Clean Breadcrumbs: Breadcrumb, Diff Stats, Status ── */}
-      <div className="flex items-center justify-between px-3 py-1 bg-[#060913]/95 border-b border-white/[0.08] font-mono text-xs select-none shrink-0">
+      <div className="flex items-center justify-between px-3 py-1 bg-[#060913]/90 backdrop-blur-2xl border-b border-white/[0.08] font-mono text-xs select-none shrink-0">
         {/* Left: Status Badge M/A + Language Icon + File Name & Path */}
         <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
           <span
@@ -721,16 +810,41 @@ export default function AnaraCodeIDE({
 
           {renderLanguageSvgIcon()}
 
-          <div className="flex items-baseline gap-1.5 truncate">
+          <div className="flex items-center gap-1 truncate font-mono text-xs">
+            {dirPath ? (
+              dirPath.split(/[\/\\]/).filter(Boolean).map((segment, idx, arr) => (
+                <React.Fragment key={idx}>
+                  <span className="text-[11px] text-slate-400 hover:text-slate-200 transition-colors cursor-default">
+                    {segment}
+                  </span>
+                  <svg className="w-2.5 h-2.5 text-slate-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </React.Fragment>
+              ))
+            ) : null}
             <span className="font-semibold text-slate-100 text-xs truncate" title={cleanName}>
               {cleanName}
             </span>
-            {dirPath && (
-              <span className="text-[11px] text-slate-500 truncate" title={dirPath}>
-                {dirPath.replace(/\\/g, " > ").replace(/\//g, " > ")}
-              </span>
-            )}
           </div>
+
+          {/* Rendered Preview Switch for Markdown (Hermes Desktop Parity) */}
+          {(fileExt === ".md" || fileExt === "md") && (
+            <div className="flex items-center bg-white/[0.04] rounded-lg p-0.5 border border-white/[0.08] ml-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setViewMode(viewMode === "preview" ? "code" : "preview")}
+                className={`px-2 py-0.5 rounded-md text-[10.5px] font-mono font-medium transition-all ${
+                  viewMode === "preview"
+                    ? "bg-cyan-500/25 text-cyan-300 shadow-sm"
+                    : "text-slate-400 hover:text-white"
+                }`}
+                title="Toggle rendered markdown preview"
+              >
+                {viewMode === "preview" ? "Source" : "Preview"}
+              </button>
+            </div>
+          )}
 
           {/* Code vs Diff Mode Toggle Switch */}
           {originalContent && originalContent !== activeCode && (
@@ -770,16 +884,66 @@ export default function AnaraCodeIDE({
 
           {/* Save Status Notification */}
           {saveSuccess ? (
-            <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-400/30 shrink-0 ml-1">
-              ✓ Saved
+            <span className="flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-mono font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-400/30 shrink-0 ml-1">
+              <svg className="w-2.5 h-2.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+              </svg>
+              <span>Saved</span>
             </span>
           ) : isDirty ? (
             <span className="w-1.5 h-1.5 rounded-full bg-slate-300 shadow-sm shrink-0 ml-1" title="Unsaved changes (Ctrl+S to save)" />
           ) : null}
         </div>
 
-        {/* Right: Search, Copy, Close */}
+        {/* Right: Activity Bar Actions (Ask Anara, Terminal, Save, Find, Copy, Close) */}
         <div className="flex items-center gap-1.5 shrink-0">
+          {onAskAnara && (
+            <button
+              type="button"
+              onClick={() => onAskAnara(filePath, cleanName)}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/30 text-cyan-200 hover:text-cyan-100 text-xs font-medium font-mono cursor-pointer transition-all"
+              title="Ask Anara to analyze or explain this file"
+            >
+              <svg className="w-3 h-3 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              <span className="text-[10px]">Ask Anara</span>
+            </button>
+          )}
+
+          {onToggleTerminal && (
+            <button
+              type="button"
+              onClick={onToggleTerminal}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-lg border text-xs font-medium font-mono cursor-pointer transition-all ${
+                isTerminalOpen
+                  ? "bg-white/15 border-white/30 text-white shadow-sm"
+                  : "bg-white/[0.04] hover:bg-white/10 border-white/10 text-slate-400 hover:text-white"
+              }`}
+              title={isTerminalOpen ? "Hide Terminal Shell" : "Show Terminal Shell"}
+            >
+              <svg className="w-3 h-3 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span className="text-[10px]">Terminal</span>
+            </button>
+          )}
+
+          {isDirty && onSaveFile && (
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 text-xs font-medium font-mono cursor-pointer transition-all active:scale-95"
+              title="Save changes (Ctrl + S)"
+            >
+              <svg className="w-3 h-3 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+              </svg>
+              <span className="text-[10px]">{isSaving ? "Saving..." : "Save"}</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => handleOpenSearch(false)}
@@ -799,10 +963,19 @@ export default function AnaraCodeIDE({
           <button
             type="button"
             onClick={handleCopy}
-            className="px-2 py-0.5 rounded-lg bg-white/[0.04] hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-xs font-medium font-mono cursor-pointer transition-all"
+            className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white/[0.04] hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-xs font-medium font-mono cursor-pointer transition-all"
             title="Copy file content"
           >
-            {copied ? "✓ Copied" : "Copy"}
+            {copied ? (
+              <>
+                <svg className="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+                <span>Copied</span>
+              </>
+            ) : (
+              <span>Copy</span>
+            )}
           </button>
 
           {!embedded && (
@@ -812,17 +985,46 @@ export default function AnaraCodeIDE({
               className="p-1 rounded-xl bg-white/10 hover:bg-rose-500/30 hover:text-rose-200 text-slate-400 border border-white/10 transition-all cursor-pointer ml-1"
               title="Close IDE Inspector"
             >
-              ✕
+              <svg className="w-3.5 h-3.5 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
           )}
         </div>
       </div>
 
       {/* ── Modern CodeMirror 6 Engine with Floating Professional Search Bar ── */}
-      <div className="flex-1 w-full h-full overflow-hidden bg-[#070c18] relative">
+      <div className="flex-1 w-full h-full overflow-hidden bg-[#070b16] relative">
+        {/* Stale on Disk Conflict Warning (Hermes Desktop Parity) */}
+        {hasDiskConflict && (
+          <div className="absolute top-0 inset-x-0 z-50 px-3 py-2 bg-amber-950/95 border-b border-amber-400/50 flex items-center justify-between text-xs text-amber-200 backdrop-blur-xl animate-fade-in font-mono">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span>File changed on disk by agent or external edit!</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleSave(true)}
+                className="px-2.5 py-1 rounded-md bg-amber-500 hover:bg-amber-400 text-black font-semibold text-[11px] transition-colors cursor-pointer"
+              >
+                Overwrite
+              </button>
+              <button
+                type="button"
+                onClick={() => setHasDiskConflict(false)}
+                className="px-2.5 py-1 rounded-md bg-white/10 hover:bg-white/20 text-white text-[11px] transition-colors cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
         {/* ── Professional Floating Find & Replace Widget ── */}
         {isFindOpen && (
-          <div className="absolute top-2 right-4 z-40 flex flex-col gap-1.5 p-2 rounded-xl bg-[#070c18]/95 backdrop-blur-2xl border border-white/15 shadow-[0_16px_40px_rgba(0,0,0,0.85)] font-mono text-xs animate-fade-in select-none max-w-md">
+          <div className="absolute top-2 right-4 z-40 flex flex-col gap-1.5 p-2 rounded-xl bg-[#070b16]/95 backdrop-blur-2xl border border-white/15 shadow-[0_16px_40px_rgba(0,0,0,0.85)] font-mono text-xs animate-fade-in select-none max-w-md">
             {/* Row 1: Chevron toggle, Find input with inline option toggles, Count, Arrows, Close */}
             <div className="flex items-center gap-1.5">
               {/* Toggle Expand Replace */}
@@ -832,7 +1034,9 @@ export default function AnaraCodeIDE({
                 className="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer text-xs shrink-0"
                 title={isReplaceOpen ? "Hide Replace row" : "Show Replace row"}
               >
-                <span className={`transform transition-transform text-[10px] ${isReplaceOpen ? "rotate-90" : ""}`}>▶</span>
+                <svg className={`w-2.5 h-2.5 transform transition-transform ${isReplaceOpen ? "rotate-90" : ""}`} fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
               </button>
 
               {/* Find Input with embedded option pills */}
@@ -903,7 +1107,9 @@ export default function AnaraCodeIDE({
                 className="w-6 h-6 flex items-center justify-center rounded-lg bg-white/[0.05] hover:bg-white/15 text-slate-300 hover:text-white border border-white/10 transition-colors cursor-pointer text-xs shrink-0"
                 title="Previous (Shift + Enter)"
               >
-                ↑
+                <svg className="w-3 h-3 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                </svg>
               </button>
 
               {/* Next match (↓) */}
@@ -913,7 +1119,9 @@ export default function AnaraCodeIDE({
                 className="w-6 h-6 flex items-center justify-center rounded-lg bg-white/[0.05] hover:bg-white/15 text-slate-300 hover:text-white border border-white/10 transition-colors cursor-pointer text-xs shrink-0"
                 title="Next (Enter)"
               >
-                ↓
+                <svg className="w-3 h-3 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
               </button>
 
               {/* Close button (✕) */}
@@ -923,7 +1131,9 @@ export default function AnaraCodeIDE({
                 className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-rose-500/25 hover:text-rose-200 text-slate-400 transition-colors cursor-pointer text-xs shrink-0 ml-0.5"
                 title="Close (Escape)"
               >
-                ✕
+                <svg className="w-3 h-3 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
 
@@ -969,36 +1179,44 @@ export default function AnaraCodeIDE({
           </div>
         )}
 
-        <CodeMirror
-          ref={cmRef}
-          value={activeCode}
-          height="100%"
-          className="h-full w-full"
-          theme={[anaraObsidianTheme, syntaxHighlighting(vsCodeDarkPlusHighlightStyle)]}
-          extensions={extensions}
-          basicSetup={{
-            lineNumbers: true,
-            foldGutter: true,
-            dropCursor: true,
-            allowMultipleSelections: true,
-            indentOnInput: true,
-            bracketMatching: true,
-            closeBrackets: true,
-            autocompletion: true,
-            rectangularSelection: true,
-            crosshairCursor: true,
-            highlightActiveLine: true,
-            highlightSelectionMatches: true,
-            closeBracketsKeymap: true,
-            searchKeymap: false, // Use our floating professional UI instead of default panel
-            foldKeymap: true,
-            completionKeymap: true,
-            lintKeymap: true,
-          }}
-          onChange={(val) => {
-            setEditedContents((prev) => ({ ...prev, [filePath]: val ?? "" }));
-          }}
-        />
+        {/* Markdown Rendered Mode Viewport (Hermes Desktop Parity) */}
+        {viewMode === "preview" && (fileExt === ".md" || fileExt === "md") ? (
+          <div className="h-full overflow-y-auto p-4 custom-scrollbar bg-[#060913] text-slate-200">
+            <AgentMarkdown content={activeCode} />
+          </div>
+        ) : (
+          <CodeMirror
+            key={filePath}
+            ref={cmRef}
+            value={activeCode}
+            height="100%"
+            className="h-full w-full"
+            theme={[anaraObsidianTheme, syntaxHighlighting(vsCodeDarkPlusHighlightStyle)]}
+            extensions={extensions}
+            basicSetup={{
+              lineNumbers: true,
+              foldGutter: true,
+              dropCursor: true,
+              allowMultipleSelections: true,
+              indentOnInput: true,
+              bracketMatching: true,
+              closeBrackets: true,
+              autocompletion: true,
+              rectangularSelection: true,
+              crosshairCursor: true,
+              highlightActiveLine: true,
+              highlightSelectionMatches: true,
+              closeBracketsKeymap: true,
+              searchKeymap: false, // Use our floating professional UI instead of default panel
+              foldKeymap: true,
+              completionKeymap: true,
+              lintKeymap: true,
+            }}
+            onChange={(val) => {
+              setEditedContents((prev) => ({ ...prev, [filePath]: val ?? "" }));
+            }}
+          />
+        )}
       </div>
     </div>
   );

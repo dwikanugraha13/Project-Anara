@@ -106,7 +106,7 @@ class AnaraExecutionRunner:
     async def execute_turn_stream(
         self,
         user_message: str,
-        requested_mode: str = "plan",
+        requested_mode: Optional[str] = None,
         model_id: Optional[str] = None,
         interaction_mode: str = "chat",
         reasoning_effort: Optional[str] = None,
@@ -163,7 +163,7 @@ class AnaraExecutionRunner:
             logger.info(f"[ExecutionRunner] Pending action #{pending.plan_id} APPROVED -> switching to BUILD MODE")
             if pending.original_prompt:
                 clean_text = f"Approved plan execution for original request: '{pending.original_prompt}'."
-        elif requested_mode in ("plan", "build", "conversational"):
+        elif requested_mode and requested_mode in ("plan", "build", "conversational"):
             agent_mode = requested_mode
         elif session_mode == "explicit_plan_build":
             agent_mode = "build" if is_approved else "plan"
@@ -205,6 +205,7 @@ class AnaraExecutionRunner:
             channel=self.platform,
             session_id=effective_sid,
             model_id=selected_model,
+            reasoning_effort=reasoning_effort,
         )
 
         from memory.memory_nudge import memory_nudge_manager
@@ -215,13 +216,6 @@ class AnaraExecutionRunner:
         full_user_input = f"{compacted_history}User: {clean_text}" if compacted_history else clean_text
         tools_used: List[str] = []
         turn_tool_records: List[Dict[str, Any]] = []
-
-        # Yield initial execution context (dynamic without canned deception)
-        yield TurnEvent(
-            type="thought",
-            content=f"Processing request in {agent_mode.upper()} mode with model {selected_model}...",
-            metadata={"mode": agent_mode, "model": selected_model},
-        )
 
         # 6. ReAct Execution with Asynchronous Event Streaming
         event_queue: asyncio.Queue[TurnEvent] = asyncio.Queue()
@@ -238,9 +232,16 @@ class AnaraExecutionRunner:
             # Active Anti-Stall Guard (Anara Enterprise Architecture)
             if t_status == "running" and t_name:
                 try:
-                    self.stall_guard.check(t_name, t_args)
+                    is_stalled, stall_msg = self.stall_guard.record_and_check(t_name, t_args)
+                    if is_stalled and stall_msg:
+                        logger.warning(f"[ExecutionRunner] Stall guard tripped for tool '{t_name}': {stall_msg[:80]}")
                 except Exception as e_sg:
                     logger.warning(f"[ExecutionRunner] Stall guard warning: {e_sg}")
+            elif t_status in ("done", "error"):
+                try:
+                    self.stall_guard.record_result(is_error=(t_status == "error"))
+                except Exception:
+                    pass
 
             if t_status == "running":
                 call_id = evt.get("call_id") or f"call_{uuid.uuid4().hex[:12]}"
@@ -277,6 +278,7 @@ class AnaraExecutionRunner:
                     for rec in reversed(turn_tool_records):
                         if rec.get("tool_name") == t_name and rec.get("status") == "running":
                             call_id = rec.get("call_id")
+                            rec["status"] = "matched"
                             break
                 if call_id:
                     try:
@@ -336,31 +338,43 @@ class AnaraExecutionRunner:
         )
         self._current_task = model_task
 
-        # Stream events as they arrive while task runs
-        while not model_task.done() or not event_queue.empty():
-            if self.is_interrupted or session_state_manager.is_interrupted(self.platform, str(effective_sid)):
-                model_task.cancel()
+        model_res = None
+        try:
+            # Stream events as they arrive while task runs
+            while not model_task.done() or not event_queue.empty():
+                if self.is_interrupted or session_state_manager.is_interrupted(self.platform, str(effective_sid)):
+                    model_task.cancel()
+                    yield TurnEvent(type="error", content="Task stopped by user.", is_error=True)
+                    return
+                try:
+                    event = await asyncio.wait_for(event_queue.get(), timeout=0.05)
+                    yield event
+                except asyncio.TimeoutError:
+                    continue
+                except Exception:
+                    break
+
+            # Check model task result
+            try:
+                model_res = await model_task
+            except asyncio.CancelledError:
                 yield TurnEvent(type="error", content="Task stopped by user.", is_error=True)
                 return
-            try:
-                event = await asyncio.wait_for(event_queue.get(), timeout=0.05)
-                yield event
-            except asyncio.TimeoutError:
-                continue
-            except Exception:
-                break
-
-        # Check model task result
-        try:
-            model_res = await model_task
-        except Exception as e:
-            logger.error(f"[ExecutionRunner] Model error: {e}", exc_info=True)
-            yield TurnEvent(
-                type="error",
-                content=f"Error processing request: {e}",
-                is_error=True,
-            )
-            return
+            except Exception as e:
+                logger.error(f"[ExecutionRunner] Model error: {e}", exc_info=True)
+                yield TurnEvent(
+                    type="error",
+                    content=f"Error processing request: {e}",
+                    is_error=True,
+                )
+                return
+        finally:
+            if not model_task.done():
+                model_task.cancel()
+                try:
+                    await asyncio.wait_for(asyncio.shield(model_task), timeout=0.5)
+                except Exception:
+                    pass
 
         # 7. Check if Turn Was Intercepted for Plan Mode Approval
         if isinstance(model_res, dict) and model_res.get("intercepted"):
@@ -445,8 +459,14 @@ class AnaraExecutionRunner:
                         }])
                 stop_gate_nudge = conv_detector.evaluate_final_stop_gate(agent_mode="build")
                 if stop_gate_nudge:
-                    logger.info(f"[ExecutionRunner] Verification stop-gate activated: {stop_gate_nudge[:80]}...")
-                    final_reply = f"{final_reply}\n\n{stop_gate_nudge}"
+                    logger.info(f"[ExecutionRunner] Verification stop-gate note: code files modified without explicit test verification.")
+                    await telemetry_bus.emit(
+                        event_type=EventType.GROUND_TRUTH_CHECK,
+                        provenance=ActivityProvenance.AGENT_ORCHESTRATOR,
+                        session_id=str(effective_sid),
+                        trace_id=trace_id,
+                        payload={"advisory": "Verification tests recommended for modified code files."},
+                    )
             except Exception as e_conv:
                 logger.debug(f"[ExecutionRunner] Stop-gate notice: {e_conv}")
 
@@ -503,7 +523,7 @@ class AnaraExecutionRunner:
     async def execute_turn(
         self,
         user_message: str,
-        requested_mode: str = "plan",
+        requested_mode: Optional[str] = None,
         model_id: Optional[str] = None,
         stream_callback: Optional[Callable[[str], Any]] = None,
         tool_progress_callback: Optional[Callable[[Dict[str, Any]], Any]] = None,
@@ -571,7 +591,7 @@ class AnaraExecutionRunner:
         return AgentTurnResult(
             text=final_text,
             session_id=self.session_id or 0,
-            agent_mode=requested_mode,
+            agent_mode=requested_mode or "auto",
             plan_pending=plan_pending,
             plan_id=plan_id,
             tools_used=tools_used,

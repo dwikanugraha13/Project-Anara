@@ -61,8 +61,18 @@ def get_process_start_time(pid: Optional[int]) -> Optional[int]:
         try:
             import ctypes
             k32 = ctypes.windll.kernel32
+            k32.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
             k32.OpenProcess.restype = ctypes.c_void_p
+            k32.CloseHandle.argtypes = [ctypes.c_void_p]
             k32.CloseHandle.restype = ctypes.c_int
+            k32.GetProcessTimes.argtypes = [
+                ctypes.c_void_p,
+                ctypes.POINTER(ctypes.c_uint64),
+                ctypes.POINTER(ctypes.c_uint64),
+                ctypes.POINTER(ctypes.c_uint64),
+                ctypes.POINTER(ctypes.c_uint64),
+            ]
+            k32.GetProcessTimes.restype = ctypes.c_int
             PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
             h_proc = k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
             if not h_proc:
@@ -104,10 +114,13 @@ def is_pid_alive(pid: Optional[int]) -> bool:
         try:
             import ctypes
             k32 = ctypes.windll.kernel32
+            k32.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
             k32.OpenProcess.restype = ctypes.c_void_p
+            k32.CloseHandle.argtypes = [ctypes.c_void_p]
             k32.CloseHandle.restype = ctypes.c_int
-            k32.WaitForSingleObject.restype = ctypes.c_uint
-            k32.GetLastError.restype = ctypes.c_uint
+            k32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+            k32.WaitForSingleObject.restype = ctypes.c_uint32
+            k32.GetLastError.restype = ctypes.c_uint32
 
             PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
             SYNCHRONIZE = 0x00100000

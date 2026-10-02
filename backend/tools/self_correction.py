@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 import uuid
 from collections import deque
@@ -34,6 +35,21 @@ logger = logging.getLogger("anara.tools.self_correction")
 
 TOOL_LOGS_DIR = get_anara_logs_dir("tool_logs")
 TOOL_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _atomic_write_dump(dump_file: Path, data: str) -> None:
+    """Writes log dump atomically via temporary file and atomic swap."""
+    temp_file = dump_file.with_suffix(f".tmp_{uuid.uuid4().hex[:6]}")
+    try:
+        temp_file.write_text(data, encoding="utf-8", errors="replace")
+        temp_file.replace(dump_file)
+    except Exception:
+        try:
+            if temp_file.exists():
+                temp_file.unlink()
+        except OSError:
+            pass
+        raise
 
 
 # ==============================================================================
@@ -57,6 +73,7 @@ class AnaraLoopBreaker:
         self.call_history: deque[str] = deque(maxlen=window_size)
         self.tool_names: deque[str] = deque(maxlen=window_size)
         self.consecutive_errors: int = 0
+        self._lock = threading.RLock()
 
     def _hash_call(self, tool_name: str, args: Dict[str, Any]) -> str:
         """Dynamically computes SHA-256 fingerprint of any tool name and arguments."""
@@ -73,63 +90,66 @@ class AnaraLoopBreaker:
         Records a tool invocation and checks for repetitive loops.
         Returns: (is_stalled, self_healing_message)
         """
-        clean_name = (tool_name or "").strip()
-        call_hash = self._hash_call(clean_name, args or {})
-        self.call_history.append(call_hash)
-        self.tool_names.append(clean_name)
+        with self._lock:
+            clean_name = (tool_name or "").strip()
+            call_hash = self._hash_call(clean_name, args or {})
+            self.call_history.append(call_hash)
+            self.tool_names.append(clean_name)
 
-        # 1. Check for trailing identical calls (A -> A -> A -> A)
-        if len(self.call_history) >= self.max_identical:
-            recent = list(self.call_history)[-self.max_identical:]
-            if len(set(recent)) == 1:
-                from core.prompt_loader import load_prompt
-                msg = load_prompt(
-                    "self_correction/loop_breaker_identical",
-                    tool_name=clean_name,
-                    max_identical=self.max_identical
-                ).strip()
-                logger.warning(f"[LoopBreaker] Identical call stall detected for tool '{clean_name}' ({self.max_identical}x).")
-                return True, msg
+            # 1. Check for trailing identical calls (A -> A -> A -> A)
+            if len(self.call_history) >= self.max_identical:
+                recent = list(self.call_history)[-self.max_identical:]
+                if len(set(recent)) == 1:
+                    from core.prompt_loader import load_prompt
+                    msg = load_prompt(
+                        "self_correction/loop_breaker_identical",
+                        tool_name=clean_name,
+                        max_identical=self.max_identical
+                    ).strip()
+                    logger.warning(f"[LoopBreaker] Identical call stall detected for tool '{clean_name}' ({self.max_identical}x).")
+                    return True, msg
 
-        # 2. Check for alternating ping-pong cycles (A -> B -> A -> B -> A -> B)
-        if len(self.call_history) >= 6:
-            recent_6 = list(self.call_history)[-6:]
-            if recent_6[0] == recent_6[2] == recent_6[4] and recent_6[1] == recent_6[3] == recent_6[5] and recent_6[0] != recent_6[1]:
-                t1, t2 = list(self.tool_names)[-2], list(self.tool_names)[-1]
-                from core.prompt_loader import load_prompt
-                msg = load_prompt(
-                    "self_correction/loop_breaker_cycle",
-                    t1=t1,
-                    t2=t2
-                ).strip()
-                logger.warning(f"[LoopBreaker] Ping-pong cycle detected between '{t1}' and '{t2}'.")
-                return True, msg
+            # 2. Check for alternating ping-pong cycles (A -> B -> A -> B -> A -> B)
+            if len(self.call_history) >= 6:
+                recent_6 = list(self.call_history)[-6:]
+                if recent_6[0] == recent_6[2] == recent_6[4] and recent_6[1] == recent_6[3] == recent_6[5] and recent_6[0] != recent_6[1]:
+                    t1, t2 = list(self.tool_names)[-2], list(self.tool_names)[-1]
+                    from core.prompt_loader import load_prompt
+                    msg = load_prompt(
+                        "self_correction/loop_breaker_cycle",
+                        t1=t1,
+                        t2=t2
+                    ).strip()
+                    logger.warning(f"[LoopBreaker] Ping-pong cycle detected between '{t1}' and '{t2}'.")
+                    return True, msg
 
-        return False, None
+            return False, None
 
     def record_result(self, is_error: bool) -> Tuple[bool, Optional[str]]:
         """
         Tracks consecutive error cascades to guide the model when stuck.
         """
-        if is_error:
-            self.consecutive_errors += 1
-            if self.consecutive_errors >= self.max_consecutive_errors:
-                from core.prompt_loader import load_prompt
-                msg = load_prompt(
-                    "self_correction/loop_breaker_cascade",
-                    consecutive_errors=self.consecutive_errors
-                ).strip()
-                logger.warning(f"[LoopBreaker] Consecutive error threshold hit ({self.consecutive_errors}).")
-                return True, msg
-        else:
-            self.consecutive_errors = 0
-        return False, None
+        with self._lock:
+            if is_error:
+                self.consecutive_errors += 1
+                if self.consecutive_errors >= self.max_consecutive_errors:
+                    from core.prompt_loader import load_prompt
+                    msg = load_prompt(
+                        "self_correction/loop_breaker_cascade",
+                        consecutive_errors=self.consecutive_errors
+                    ).strip()
+                    logger.warning(f"[LoopBreaker] Consecutive error threshold hit ({self.consecutive_errors}).")
+                    return True, msg
+            else:
+                self.consecutive_errors = 0
+            return False, None
 
     def reset(self) -> None:
         """Resets the loop breaker history."""
-        self.call_history.clear()
-        self.tool_names.clear()
-        self.consecutive_errors = 0
+        with self._lock:
+            self.call_history.clear()
+            self.tool_names.clear()
+            self.consecutive_errors = 0
 
 
 # ==============================================================================
@@ -151,11 +171,13 @@ class ContextMicroCompactor:
         if not text:
             return ""
 
+        # Normalize CRLF first to avoid wiping valid lines on Windows
+        s = text.replace(chr(13) + chr(10), "\n")
         # Remove ANSI color/formatting escape codes
-        s = re.sub(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])", "", text)
-        # Handle carriage returns from CLI progress updates (keep latest line state)
-        if "\r" in s:
-            s = re.sub(r"[^\n]*\r", "", s)
+        s = re.sub(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])", "", s)
+        # Handle standalone carriage returns from CLI progress updates (keep latest line state)
+        if chr(13) in s:
+            s = re.sub(r"[^\n]*" + chr(13), "", s)
         # Strip common progress bar patterns
         s = re.sub(r"(?m)^\s*(?:\[[=> -]+\]|\d+%\s*\|[█▎▌▋▊▉ ]+\|\s*\d+/\d+)[^\n]*\n?", "", s)
         return s
@@ -180,11 +202,12 @@ class ContextMicroCompactor:
         if len(lines) <= max_lines and len(cleaned) <= cls.MAX_OUTPUT_CHARS:
             return cleaned
 
-        # 1. Save full untruncated raw dump to disk for offline forensics
+        # 1. Save full untruncated raw dump to disk for offline forensics with sanitized label
+        safe_label = re.sub(r"[^\w\-]", "_", str(source_label or "cli_error"))[:40]
         dump_id = uuid.uuid4().hex[:8]
-        dump_file = TOOL_LOGS_DIR / f"{source_label}_{dump_id}.log"
+        dump_file = TOOL_LOGS_DIR / f"{safe_label}_{dump_id}.log"
         try:
-            dump_file.write_text(cleaned, encoding="utf-8", errors="replace")
+            _atomic_write_dump(dump_file, cleaned)
             log_notice = f"Full log ({len(cleaned):,} chars) saved at: {dump_file}"
         except Exception:
             log_notice = f"Total log characters: {len(cleaned):,}"
@@ -358,6 +381,7 @@ class SelfCorrectionTracker:
         self.warn_after_exact = warn_after_exact
         self.interactive = interactive
         self.history: List[Dict[str, Any]] = []
+        self._lock = threading.RLock()
 
     def is_failure_tolerant(self, tool_name: str) -> bool:
         """
@@ -391,68 +415,77 @@ class SelfCorrectionTracker:
         detail: str = "",
     ) -> Dict[str, Any]:
         """
-        Registers an error attempt, checks circuit breaker and recovery budget.
+        Registers an error attempt, checks circuit breaker and recovery budget (Thread-safe).
         Returns evaluation dict with 'allowed', 'should_warn', 'is_stalled', 'budget_exhausted', 'attempt'.
         """
-        sig = self.get_signature(tool_name, command_or_arg, err_type)
-        prior_same_signatures = [h for h in self.history if h.get("signature") == sig]
+        with self._lock:
+            sig = self.get_signature(tool_name, command_or_arg, err_type)
+            prior_same_signatures = [h for h in self.history if h.get("signature") == sig]
 
-        total_same_count = len(prior_same_signatures) + 1
-        should_warn = total_same_count >= self.warn_after_exact
-        is_stalled = total_same_count >= self.max_identical_failures
+            total_same_count = len(prior_same_signatures) + 1
+            should_warn = total_same_count >= self.warn_after_exact
+            is_stalled = total_same_count >= self.max_identical_failures
 
-        attempt_record = {
-            "signature": sig,
-            "tool_name": tool_name,
-            "target": command_or_arg,
-            "error_type": err_type,
-            "detail": detail,
-            "timestamp": time.time(),
-        }
-        self.history.append(attempt_record)
+            attempt_record = {
+                "signature": sig,
+                "tool_name": tool_name,
+                "target": command_or_arg,
+                "error_type": err_type,
+                "detail": detail,
+                "timestamp": time.time(),
+            }
+            self.history.append(attempt_record)
 
-        attempt_count = len(self.history)
-        budget_exhausted = is_stalled or (attempt_count >= self.max_retries if not self.interactive else False)
-        allowed = (not is_stalled) and (not budget_exhausted)
+            attempt_count = len(self.history)
+            max_budget = self.max_retries if not self.interactive else (self.max_retries * 2)
+            budget_exhausted = is_stalled or (attempt_count >= max_budget)
+            allowed = (not is_stalled) and (not budget_exhausted)
 
-        return {
-            "allowed": allowed,
-            "should_warn": should_warn,
-            "is_stalled": is_stalled,
-            "budget_exhausted": budget_exhausted,
-            "attempt": total_same_count,
-            "total_failures": attempt_count,
-            "max_retries": self.max_retries,
-            "signature": sig,
-            "error_type": err_type,
-            "detail": detail,
-        }
+            return {
+                "allowed": allowed,
+                "should_warn": should_warn,
+                "is_stalled": is_stalled,
+                "budget_exhausted": budget_exhausted,
+                "attempt": total_same_count,
+                "total_failures": attempt_count,
+                "max_retries": self.max_retries,
+                "signature": sig,
+                "error_type": err_type,
+                "detail": detail,
+            }
 
     def is_exhausted(self) -> bool:
-        return len(self.history) >= self.max_retries
+        with self._lock:
+            return len(self.history) >= self.max_retries
 
     def record_tool_call(self, tool_name: str, args: Any = None, result: Any = None) -> None:
-        """Records a tool call and automatically registers failed attempts for circuit breaker tracking."""
-        is_err = False
-        err_type = "unknown"
-        detail_msg = ""
-        if isinstance(result, dict):
-            if result.get("status") == "error" or result.get("is_error"):
-                is_err = True
-                err_type = str(result.get("error_type") or "tool_error")
-                detail_msg = str(result.get("message") or result.get("error") or "")
-        elif isinstance(result, str):
-            r_low = result.lower()
-            if "error:" in r_low or "exception:" in r_low or "failed:" in r_low:
-                is_err = True
-                err_type = "execution_error"
-                detail_msg = result[:150]
-        if is_err:
-            arg_str = str(args or "")[:120]
-            self.register_attempt(tool_name, arg_str, err_type, detail=detail_msg)
+        """Records a tool call and automatically registers failed attempts for circuit breaker tracking (Thread-safe, Zero Keyword Trap)."""
+        with self._lock:
+            if self.is_failure_tolerant(tool_name):
+                return
+
+            is_err = False
+            err_type = "unknown"
+            detail_msg = ""
+            if isinstance(result, dict):
+                if result.get("status") == "error" or result.get("is_error"):
+                    is_err = True
+                    err_type = str(result.get("error_type") or "tool_error")
+                    detail_msg = str(result.get("message") or result.get("error") or "")
+            elif isinstance(result, str):
+                classified_type, classified_detail = ErrorClassifier.classify(result)
+                if classified_type:
+                    is_err = True
+                    err_type = classified_type
+                    detail_msg = classified_detail or result[:150]
+
+            if is_err:
+                arg_str = str(args or "")[:120]
+                self.register_attempt(tool_name, arg_str, err_type, detail=detail_msg)
 
     def reset(self) -> None:
-        self.history.clear()
+        with self._lock:
+            self.history.clear()
 
 
 # ==============================================================================

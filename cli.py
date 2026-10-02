@@ -12,7 +12,7 @@ import asyncio
 import os
 import sys
 import argparse
-from typing import Optional
+from typing import Any, Optional
 
 # Ensure UTF-8 output in Windows consoles
 if hasattr(sys.stdout, "reconfigure"):
@@ -60,10 +60,11 @@ except ImportError:
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.formatted_text import HTML
 
 
 def print_banner(session_mode: str, model_id: str):
-    terminal_ui.print_banner(session_mode=session_mode)
+    terminal_ui.print_banner(session_mode=session_mode, model_id=model_id)
 
 
 def resolve_workspace_root() -> str:
@@ -125,6 +126,32 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
     os.makedirs(history_dir, exist_ok=True)
     history_file = os.path.join(history_dir, "cli_history")
 
+    import subprocess
+    git_branch = "main"
+    try:
+        git_branch = subprocess.check_output(
+            "git branch --show-current",
+            shell=True,
+            text=True,
+            cwd=active_workspace,
+            stderr=subprocess.DEVNULL
+        ).strip() or "main"
+    except Exception:
+        git_branch = "main"
+
+    def _get_bottom_toolbar():
+        try:
+            b_label = git_branch or "main"
+            return HTML(
+                f" <b><style fg='#00d7d7'>anara</style></b> <style fg='#555555'>│</style> "
+                f"mode: <b><style fg='#50fa7b'>{session_mode}</style></b> <style fg='#555555'>│</style> "
+                f"model: <style fg='#8be9fd'>{model_id}</style> <style fg='#555555'>│</style> "
+                f"git: <style fg='#f1fa8c'>{b_label}</style> <style fg='#555555'>│</style> "
+                f"<style fg='#6272a4'>/help for commands</style> "
+            )
+        except Exception:
+            return ""
+
     session = None
     if not single_prompt and sys.stdin.isatty():
         output = None
@@ -143,6 +170,7 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
                 "history": FileHistory(history_file),
                 "auto_suggest": AutoSuggestFromHistory(),
                 "completer": AnaraCliCompleter(active_workspace),
+                "bottom_toolbar": _get_bottom_toolbar,
             }
             if output is not None:
                 session_kwargs["output"] = output
@@ -150,7 +178,7 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
         except Exception:
             session = None
 
-    async def _read_cli_line(prompt_text: str) -> str:
+    async def _read_cli_line(prompt_text: Any) -> str:
         if session is not None:
             try:
                 try:
@@ -161,7 +189,7 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
                     return await session.prompt_async(prompt_text)
             except Exception:
                 pass
-        return await asyncio.to_thread(input, prompt_text)
+        return await asyncio.to_thread(input, str(prompt_text))
 
     async def _handle_input(user_text: str):
         nonlocal session_mode, session_id, session_key
@@ -210,6 +238,7 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
                     matched = [m["id"] for m in configured if arg.lower() in m["id"].lower() or arg.lower() in m.get("name", "").lower()]
                     target_m = matched[0] if matched else arg
                 set_active_model_id(target_m)
+                model_id = target_m
                 terminal_ui.console.print(f"\n[bold green]✓ Active AI model switched to:[/bold green] [bold cyan]{target_m}[/bold cyan]\n")
             else:
                 cur_m = get_active_model_id()
@@ -325,8 +354,27 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
 
         def _prog_cb(msg: str):
             clean = msg.strip()
-            if any(clean.startswith(prefix) for prefix in ("⚡", "⚙️", "Running", "Executing")):
-                clean_no_ico = clean.replace("⚡", "").replace("⚙️", "").strip()
+            if not clean:
+                return
+
+            # Route thinking / reasoning progress
+            if any(kw in clean.lower() for kw in ("reasoning & planning", "thinking", "analyzing & reasoning")):
+                terminal_ui.thinking.feed(clean)
+                return
+
+            # Route tool completion
+            if clean.startswith("✓") or "[done]" in clean.lower():
+                summary = clean.lstrip("✓").replace("[done]", "").replace("[DONE]", "").strip()
+                terminal_ui.spinner.finish_tool(success=True, summary=summary)
+                return
+            elif clean.startswith("✗") or "[error]" in clean.lower():
+                summary = clean.lstrip("✗").replace("[error]", "").replace("[ERROR]", "").strip()
+                terminal_ui.spinner.finish_tool(success=False, summary=summary)
+                return
+
+            # Route tool execution start
+            if any(clean.startswith(prefix) for prefix in ("⚡", "⚙️", "●", "Running", "Executing", "🔨")):
+                clean_no_ico = clean.replace("⚡", "").replace("⚙️", "").replace("●", "").replace("🔨", "").strip()
                 if ":" in clean_no_ico:
                     parts = clean_no_ico.split(":", 1)
                     t_name = parts[0].strip()
@@ -342,6 +390,7 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
             nonlocal streamed_any
             if not streamed_any:
                 streamed_any = True
+                terminal_ui.thinking.finish()
                 terminal_ui.spinner.finish_tool(True)
                 terminal_ui.streamer.start(speaker_name="Anara")
             terminal_ui.streamer.feed(token)
@@ -353,6 +402,7 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
                 token_callback=_stream_cb
             )
         finally:
+            terminal_ui.thinking.finish()
             terminal_ui.spinner.finish_tool(True)
             if streamed_any:
                 terminal_ui.streamer.finish()
@@ -378,6 +428,7 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
                     nonlocal b_streamed
                     if not b_streamed:
                         b_streamed = True
+                        terminal_ui.thinking.finish()
                         terminal_ui.spinner.finish_tool(True)
                         terminal_ui.streamer.start(speaker_name="Anara")
                     terminal_ui.streamer.feed(token)
@@ -391,6 +442,7 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
                         token_callback=_b_stream_cb
                     )
                 finally:
+                    terminal_ui.thinking.finish()
                     terminal_ui.spinner.finish_tool(True)
                     if b_streamed:
                         terminal_ui.streamer.finish()
@@ -413,13 +465,17 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
     # REPL interactive loop with prompt_toolkit and safe terminal fallback
     while True:
         try:
-            prompt_text = f"{user_name} ({session_mode}) > "
-            user_input = await _read_cli_line(prompt_text)
+            if session is not None:
+                prompt_disp = HTML("<b><style fg='#00d7d7'>anara</style></b> <style fg='#bd93f9'>❯</style> ")
+            else:
+                prompt_disp = f"anara ({session_mode}) ❯ "
+            user_input = await _read_cli_line(prompt_disp)
 
             # Support multiline trailing backslash continuation (explicit ' \\')
             while user_input.endswith(" \\"):
                 user_input = user_input[:-2] + "\n"
-                continuation = await _read_cli_line("... ")
+                continuation_disp = HTML("<style fg='#6272a4'>... </style>") if session is not None else "... "
+                continuation = await _read_cli_line(continuation_disp)
                 user_input += continuation
 
             should_continue = await _handle_input(user_input)
@@ -796,6 +852,45 @@ def main():
         "skills": {"list", "sync", "search", "install", "enable", "disable", "uninstall", "remove", "sources"},
     }
     argv = sys.argv[1:]
+
+    # Fast-path standalone utility subcommands
+    if argv and argv[0] in ("--version", "-v", "version"):
+        print("Project Anara Agent CLI v1.0.0 (Windows x64)")
+        return
+
+    if argv and argv[0] in ("models", "model"):
+        from providers.discovery import get_all_dynamic_models
+        from providers import get_active_model_id
+        active = get_active_model_id()
+        models = asyncio.run(get_all_dynamic_models())
+        print(f"\nActive Model: {active}\n")
+        print(f"Available Models ({len(models)}):")
+        for m in models[:30]:
+            mid = m.get("id") or m.get("model_id")
+            marker = " [ACTIVE]" if mid == active else ""
+            print(f"  • {mid}{marker}")
+        print()
+        return
+
+    if argv and argv[0] == "status":
+        from providers import get_active_model_id
+        from core import skill_library
+        from constants import get_anara_home, get_anara_skills_dir
+        print("\n═══ Project Anara Status ═══")
+        print(f"  Home Directory     : {get_anara_home()}")
+        print(f"  Active Model       : {get_active_model_id()}")
+        print(f"  Skills Installed   : {len(skill_library.list_skills())} ({get_anara_skills_dir()})")
+        print(f"  Active Workspace   : {resolve_workspace_root()}")
+        print("════════════════════════════\n")
+        return
+
+    if argv and argv[0] in ("install-cli", "setup-cli"):
+        from core.global_cli import global_cli_installer
+        res = global_cli_installer.install()
+        print(f"\n[Global CLI] {res.get('message', 'Installed successfully.')}")
+        print(f"  Command: {res.get('command')}")
+        print(f"  Directory: {res.get('installed_dir')}\n")
+        return
 
     is_subcommand = False
     if argv:

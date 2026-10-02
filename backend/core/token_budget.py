@@ -148,9 +148,16 @@ def save_context_length(model: str, length: int, max_output: Optional[int] = Non
             import yaml, tempfile
             os.makedirs(cfg_path.parent, exist_ok=True)
             tmp_fd, tmp_path = tempfile.mkstemp(dir=cfg_path.parent, prefix="ctx_cache_", suffix=".tmp")
-            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
-                yaml.safe_dump(current_cfg, f, default_flow_style=False)
-            os.replace(tmp_path, cfg_path)
+            try:
+                with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                    yaml.safe_dump(current_cfg, f, default_flow_style=False)
+                os.replace(tmp_path, cfg_path)
+            finally:
+                if os.path.exists(tmp_path):
+                    try:
+                        os.remove(tmp_path)
+                    except OSError:
+                        pass
             logger.info(f"[TokenBudget] Persisted learned context window: {key} -> {length:,} tokens (out={out_cap:,})")
     except Exception as e:
         logger.debug(f"[TokenBudget] Cache persist notice: {e}")
@@ -466,7 +473,7 @@ class TokenBudgetTracker:
         usage = self.current_usage(messages)
         self._step_token_history.append(usage)
 
-    def compact_messages_if_needed(self, messages: List[Dict[str, str]]) -> bool:
+    def compact_messages_if_needed(self, messages: List[Dict[str, Any]]) -> bool:
         """
         Token-aware in-loop context compaction. Replaces the old 24-message / 4000-char heuristic.
 
@@ -544,7 +551,26 @@ class TokenBudgetTracker:
             new_tokens = count_tokens(new_content)
             if new_tokens < old_tokens:
                 if isinstance(msg, dict):
-                    messages[idx] = {**msg, "content": new_content}
+                    orig_c = msg.get("content", "")
+                    if isinstance(orig_c, list):
+                        # Structured content blocks (e.g. Anthropic tool_result blocks)
+                        updated_blocks = []
+                        for block in orig_c:
+                            if isinstance(block, dict) and block.get("type") == "tool_result":
+                                b_text = str(block.get("content", ""))
+                                if len(b_text) > 500:
+                                    b_old = count_tokens(b_text)
+                                    b_first = b_text.split("\n")[0][:200]
+                                    b_tail = b_text[-200:] if len(b_text) > 200 else ""
+                                    b_new = f"{b_first}\n[... compacted tool output — {b_old} tokens ...]\n{b_tail}"
+                                    updated_blocks.append({**block, "content": b_new})
+                                else:
+                                    updated_blocks.append(block)
+                            else:
+                                updated_blocks.append(block)
+                        messages[idx] = {**msg, "content": updated_blocks}
+                    else:
+                        messages[idx] = {**msg, "content": new_content}
                     current -= (old_tokens - new_tokens)
                     compacted = True
                 elif hasattr(msg, "parts") and msg.parts:
@@ -644,10 +670,36 @@ def budget_aware_slot_assembly(
     pruned_slots = list(slots)
     pruned_tokens = list(slot_tokens)
 
+    def _slot_priority(slot_str: str) -> int:
+        """
+        Calculates preservation priority: lower score = prune first, higher score = preserve longer.
+        """
+        s = slot_str.upper()
+        if "SKILLS INVENTORY" in s or "AVAILABLE SKILLS" in s:
+            return 10  # Prune first (on-demand retrieval via tools)
+        if "EPISODIC ADR" in s or "ARCHITECTURE DECISIONS" in s:
+            return 20  # Prune second
+        if "LIVE GIT WORKTREE" in s or "GIT STATUS" in s:
+            return 30  # Prune third
+        if "WORKSPACE REPOSITORY CONTEXT" in s or "WORKSPACE & REPOSITORY SNAPSHOT" in s:
+            return 40  # Prune fourth
+        if "USER MEMORY" in s or "PROJECT MEMORY" in s:
+            return 50  # Prune fifth
+        if "ACTIVE PLATFORM INTERFACE" in s or "ACTIVE RUNTIME" in s:
+            return 80  # Preserve platform constraints
+        if "ACTIVE TASK SCRATCHPAD" in s or "TASK SCRATCHPAD" in s:
+            return 90  # Preserve current goal
+        return 60  # Default mid-priority
+
     while sum(pruned_tokens) > available and len(pruned_slots) > min_protected:
-        removed_slot = pruned_slots.pop()
-        removed_tokens = pruned_tokens.pop()
-        logger.debug(f"[TokenBudget] Pruned slot ({removed_tokens:,} tokens): {removed_slot[:60]}...")
+        degradable_indices = list(range(min_protected, len(pruned_slots)))
+        best_candidate_idx = min(
+            reversed(degradable_indices),
+            key=lambda idx: _slot_priority(pruned_slots[idx])
+        )
+        removed_slot = pruned_slots.pop(best_candidate_idx)
+        removed_tokens = pruned_tokens.pop(best_candidate_idx)
+        logger.debug(f"[TokenBudget] Pruned slot priority {_slot_priority(removed_slot)} ({removed_tokens:,} tokens): {removed_slot[:60]}...")
 
     # If still over budget, truncate the largest degradable slot (never touch slots < min_protected)
     current_total = sum(pruned_tokens)

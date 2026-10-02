@@ -260,6 +260,51 @@ async def save_agent_workspace_file(req: SaveWorkspaceFileRequest):
         "message": f"File '{filename}' saved successfully."
     }
 
+@router.delete("/api/agent/workspace/file")
+async def delete_agent_workspace_file(path: str, session_id: Optional[Union[int, str]] = None):
+    """Deletes a file or directory safely from the active workspace."""
+    target_dir = anara_agent.get_session_dir(session_id)
+    clean_p = path.lstrip("/\\")
+    full_p = os.path.join(target_dir, clean_p)
+    if not os.path.exists(full_p):
+        candidates = [clean_p, os.path.expanduser(clean_p)]
+        for c in candidates:
+            if c and os.path.exists(c):
+                full_p = c
+                break
+
+    if not os.path.exists(full_p):
+        raise HTTPException(status_code=404, detail=f"File not found: {path}")
+
+    from core.workspace_sentinel import workspace_sentinel
+    is_safe, denial_reason = workspace_sentinel.validate_file_access(full_p, action="delete", workspace_root=target_dir)
+    if not is_safe:
+        raise HTTPException(status_code=403, detail=f"Access denied: {denial_reason}")
+
+    try:
+        if os.path.isdir(full_p):
+            import shutil
+            shutil.rmtree(full_p)
+        else:
+            os.remove(full_p)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting file: {e}")
+
+    filename = os.path.basename(full_p)
+    broadcast_agent_event({
+        "type": "workspace_file_deleted",
+        "file_path": full_p,
+        "filename": filename,
+        "session_id": session_id
+    })
+
+    return {
+        "status": "success",
+        "filename": filename,
+        "path": clean_p,
+        "message": f"'{filename}' deleted successfully."
+    }
+
 @router.delete("/api/agent/workspace")
 async def clear_agent_workspace(session_id: Optional[Union[int, str]] = None):
     """Resets and clears the active workspace for a specific session."""
@@ -516,6 +561,102 @@ async def rollback_agent_git_commit(req: GitRollbackRequest):
     status = await get_agent_git_status(req.session_id)
     return {"status": "success", "message": f"Rollback commit {req.commit_sha} completed successfully.", "git": status}
 
+class GitFileActionRequest(BaseModel):
+    path: Optional[str] = None  # None indicates all files
+    session_id: Optional[Union[int, str]] = None
+
+class GitCommitRequest(BaseModel):
+    message: str
+    push: bool = False
+    session_id: Optional[Union[int, str]] = None
+
+@router.post("/api/agent/git/stage")
+async def stage_agent_git_file(req: GitFileActionRequest):
+    """Stages specific or all files into git staging index (Hermes Desktop Parity)."""
+    sid = req.session_id if req.session_id is not None else anara_agent.get_active_session_id()
+    repo_dir = anara_agent.get_session_dir(sid) if sid is not None else anara_agent.default_workspace_dir
+    cmd = f'git add "{req.path}"' if req.path else 'git add -A'
+    p = await asyncio.create_subprocess_shell(cmd, cwd=repo_dir, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    _, stderr = await p.communicate()
+    if p.returncode != 0:
+        raise HTTPException(status_code=400, detail=stderr.decode().strip() or "Failed to stage file.")
+    status = await get_agent_git_status(sid)
+    return {"status": "success", "git": status}
+
+@router.post("/api/agent/git/unstage")
+async def unstage_agent_git_file(req: GitFileActionRequest):
+    """Unstages specific or all files from git staging index (Hermes Desktop Parity)."""
+    sid = req.session_id if req.session_id is not None else anara_agent.get_active_session_id()
+    repo_dir = anara_agent.get_session_dir(sid) if sid is not None else anara_agent.default_workspace_dir
+    cmd = f'git restore --staged "{req.path}"' if req.path else 'git restore --staged .'
+    p = await asyncio.create_subprocess_shell(cmd, cwd=repo_dir, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    await p.communicate()
+    status = await get_agent_git_status(sid)
+    return {"status": "success", "git": status}
+
+@router.post("/api/agent/git/revert")
+async def revert_agent_git_file(req: GitFileActionRequest):
+    """Reverts working tree modifications for specific or all files with safety guard."""
+    sid = req.session_id if req.session_id is not None else anara_agent.get_active_session_id()
+    repo_dir = anara_agent.get_session_dir(sid) if sid is not None else anara_agent.default_workspace_dir
+    if req.path:
+        cmd = f'git restore "{req.path}"'
+        p = await asyncio.create_subprocess_shell(cmd, cwd=repo_dir, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        _, stderr = await p.communicate()
+        if p.returncode != 0:
+            cmd_fallback = f'git checkout -- "{req.path}"'
+            p2 = await asyncio.create_subprocess_shell(cmd_fallback, cwd=repo_dir, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            await p2.communicate()
+    else:
+        cmd = 'git restore .'
+        p = await asyncio.create_subprocess_shell(cmd, cwd=repo_dir, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        await p.communicate()
+    status = await get_agent_git_status(sid)
+    return {"status": "success", "git": status}
+
+@router.post("/api/agent/git/commit")
+async def commit_agent_git_changes(req: GitCommitRequest):
+    """Commits staged changes with optional push and returns commit SHA (Hermes Desktop Parity)."""
+    sid = req.session_id if req.session_id is not None else anara_agent.get_active_session_id()
+    repo_dir = anara_agent.get_session_dir(sid) if sid is not None else anara_agent.default_workspace_dir
+    if not req.message.strip():
+        raise HTTPException(status_code=400, detail="Commit message cannot be empty.")
+    safe_msg = req.message.replace('"', '\\"')
+    cmd = f'git commit -m "{safe_msg}"'
+    p = await asyncio.create_subprocess_shell(cmd, cwd=repo_dir, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    _, stderr = await p.communicate()
+    if p.returncode != 0:
+        raise HTTPException(status_code=400, detail=stderr.decode().strip() or "Failed to commit changes.")
+    p_sha = await asyncio.create_subprocess_shell("git rev-parse --short HEAD", cwd=repo_dir, stdout=asyncio.subprocess.PIPE)
+    sha_out, _ = await p_sha.communicate()
+    commit_sha = sha_out.decode().strip()
+
+    pushed = False
+    if req.push:
+        p_push = await asyncio.create_subprocess_shell("git push", cwd=repo_dir, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        await p_push.communicate()
+        pushed = p_push.returncode == 0
+
+    status = await get_agent_git_status(sid)
+    return {"status": "success", "commit_sha": commit_sha, "pushed": pushed, "git": status}
+
+@router.get("/api/agent/git/file-diff")
+async def get_agent_git_file_diff(path: str, session_id: Optional[Union[int, str]] = None):
+    """Retrieves unified git diff for a specific file (Hermes Desktop Parity)."""
+    sid = session_id if session_id is not None else anara_agent.get_active_session_id()
+    repo_dir = anara_agent.get_session_dir(sid) if sid is not None else anara_agent.default_workspace_dir
+    cmd = f'git diff HEAD -- "{path}"'
+    p = await asyncio.create_subprocess_shell(cmd, cwd=repo_dir, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    out, _ = await p.communicate()
+    diff_text = out.decode("utf-8", errors="replace")
+    if not diff_text:
+        # Check staged diff
+        cmd_staged = f'git diff --staged -- "{path}"'
+        p_s = await asyncio.create_subprocess_shell(cmd_staged, cwd=repo_dir, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        out_s, _ = await p_s.communicate()
+        diff_text = out_s.decode("utf-8", errors="replace")
+    return {"path": path, "diff": diff_text}
+
 @router.get("/api/agent/artifacts/download/{filename}")
 async def download_artifact_endpoint(filename: str):
     """Allows instant 1-click download of generated artifacts."""
@@ -551,6 +692,21 @@ async def add_skill_endpoint(req: SkillAddRequest):
         procedure_steps=req.procedure_steps,
         learned_from_experience=False
     )
+    # Mirror into folder-based skill_library (SKILL.md)
+    try:
+        from core.skill_library import skill_library
+        skill_library.save_skill(
+            name=req.name,
+            category=req.category,
+            description=req.description,
+            procedure_steps=req.procedure_steps,
+            trigger_keywords=req.trigger_keywords,
+            status="active",
+            learned=False,
+        )
+    except Exception as e:
+        logger.warning(f"[SkillSync] Failed to mirror skill to disk: {e}")
+
     return {"status": "success", "skill_id": sid}
 
 @router.patch("/api/agent/skills/{skill_id}/toggle")
@@ -564,9 +720,19 @@ async def toggle_skill_endpoint(skill_id: int):
 @router.delete("/api/agent/skills/{skill_id}")
 async def delete_skill_endpoint(skill_id: int):
     """Deletes a skill from Anara Agent's brain."""
+    # Find skill name to remove folder as well
+    skills = memory_engine.get_all_agent_skills()
+    target_skill = next((s for s in skills if s.get("id") == skill_id), None)
     ok = memory_engine.delete_agent_skill(skill_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Skill not found")
+    if target_skill and target_skill.get("name"):
+        try:
+            from core.skill_library import skill_library, slugify
+            slug = slugify(target_skill["name"])
+            skill_library.reject_skill(slug, delete_folder=True)
+        except Exception as e:
+            logger.warning(f"[SkillSync] Failed to remove skill folder: {e}")
     return {"status": "success", "skill_id": skill_id}
 
 # ── Agent Persona & Soul System (soul.md) ──

@@ -125,6 +125,16 @@ class ToolRegistry:
         with self._lock:
             return self._tools.get(canonical)
 
+    def unregister_tool(self, name: str) -> bool:
+        """Dynamically unregisters a tool and associated aliases from the registry (Anara Standard)."""
+        canonical = self.resolve_name(name)
+        with self._lock:
+            removed = self._tools.pop(canonical, None) is not None
+            aliases_to_remove = [a for a, t in self._aliases.items() if t == canonical or a == canonical]
+            for a in aliases_to_remove:
+                self._aliases.pop(a, None)
+            return removed
+
     def get_handler(self, name: str) -> Optional[Callable[..., Any]]:
         tool = self.get_tool(name)
         return tool.handler if tool else None
@@ -206,7 +216,9 @@ class ToolRegistry:
                     prop_spec = props.get(k)
                     if not prop_spec or not isinstance(prop_spec, dict) or val is None:
                         continue
-                    expected_type = prop_spec.get("type")
+                    expected_type = str(prop_spec.get("type") or "").strip().lower()
+                    if expected_type.startswith("type."):
+                        expected_type = expected_type[5:]
                     if expected_type == "boolean":
                         if isinstance(val, str):
                             coerced_args[k] = val.strip().lower() in ("true", "1", "yes", "y")
@@ -226,6 +238,16 @@ class ToolRegistry:
                                 coerced_args[k] = float(val.strip())
                             except (ValueError, TypeError):
                                 pass
+                    elif expected_type == "string":
+                        if not isinstance(val, str):
+                            if isinstance(val, (int, float, bool)):
+                                coerced_args[k] = str(val)
+                            elif isinstance(val, (dict, list)):
+                                try:
+                                    import json
+                                    coerced_args[k] = json.dumps(val, ensure_ascii=False)
+                                except Exception:
+                                    coerced_args[k] = str(val)
                     elif expected_type in ("array", "object") and isinstance(val, str):
                         try:
                             import json

@@ -19,27 +19,27 @@ export default function BrainToolsTab() {
   const [taskTrust, setTaskTrust] = useState<"supervised" | "semi_autonomous" | "full_autonomous">("supervised");
   const [taskChannel, setTaskChannel] = useState("telegram");
   const [isTriggering, setIsTriggering] = useState<string | null>(null);
+  const [deleteTaskConfirm, setDeleteTaskConfirm] = useState<{ id: string; name: string } | null>(null);
 
   const fetchToolsAndTasks = useCallback(async () => {
     try {
-      const [toolsRes, tasksRes, autoRes] = await Promise.all([
-        fetch(`${BACKEND_URL}/api/agent/tools`),
-        fetch(`${BACKEND_URL}/api/agent/subagent/tasks`),
-        fetch(`${BACKEND_URL}/api/agent/autonomous/tasks`),
+      const [toolsRes, tasksRes, autoRes] = await Promise.allSettled([
+        fetch(`${BACKEND_URL}/api/agent/tools`).then((r) => (r.ok ? r.json() : null)),
+        fetch(`${BACKEND_URL}/api/agent/subagent/tasks`).then((r) => (r.ok ? r.json() : null)),
+        fetch(`${BACKEND_URL}/api/agent/autonomous/tasks`).then((r) => (r.ok ? r.json() : null)),
       ]);
-      if (toolsRes.ok) {
-        const d = await toolsRes.json();
-        setToolsCatalog(d.tools || []);
+      if (toolsRes.status === "fulfilled" && toolsRes.value) {
+        setToolsCatalog(toolsRes.value.tools || []);
       }
-      if (tasksRes.ok) {
-        const d = await tasksRes.json();
-        setSubagentTasks(d.tasks || []);
+      if (tasksRes.status === "fulfilled" && tasksRes.value) {
+        setSubagentTasks(tasksRes.value.tasks || []);
       }
-      if (autoRes.ok) {
-        const d = await autoRes.json();
-        setAutoTasks(d.tasks || []);
+      if (autoRes.status === "fulfilled" && autoRes.value) {
+        setAutoTasks(autoRes.value.tasks || []);
       }
-    } catch {}
+    } catch (err) {
+      console.warn("[BrainToolsTab] Fetch error:", err);
+    }
   }, []);
 
   useEffect(() => {
@@ -83,14 +83,20 @@ export default function BrainToolsTab() {
     }
   };
 
-  const handleDeleteAutoTask = async (taskId: string, name: string) => {
-    if (!confirm(`Delete task schedule '${name}'?`)) return;
+  const handleDeleteAutoTask = (taskId: string, name: string) => {
+    setDeleteTaskConfirm({ id: taskId, name });
+  };
+
+  const handleConfirmDeleteTask = async () => {
+    if (!deleteTaskConfirm) return;
+    const { id } = deleteTaskConfirm;
+    setDeleteTaskConfirm(null);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/agent/autonomous/tasks/${taskId}`, {
+      const res = await fetch(`${BACKEND_URL}/api/agent/autonomous/tasks/${id}`, {
         method: "DELETE",
       });
       if (res.ok) {
-        setAutoTasks((prev) => prev.filter((t) => t.id !== taskId));
+        setAutoTasks((prev) => prev.filter((t) => t.id !== id));
       }
     } catch {}
   };
@@ -110,7 +116,7 @@ export default function BrainToolsTab() {
               Agent Execution Instruments
             </h3>
             <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-400/20 font-medium">
-              {toolsCatalog.length || 24} Tools
+              {toolsCatalog.length} Tools
             </span>
           </div>
           <p className="text-xs text-slate-400">
@@ -132,7 +138,7 @@ export default function BrainToolsTab() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
-            <span>Tools Catalog ({toolsCatalog.length || 24})</span>
+            <span>Tools Catalog ({toolsCatalog.length})</span>
           </button>
           <button
             type="button"
@@ -285,7 +291,7 @@ export default function BrainToolsTab() {
                   <label className="text-[11px] text-slate-400">Task Name</label>
                   <input
                     type="text"
-                    placeholder="Contoh: Audit Keamanan Dependensi Harian"
+                    placeholder="Example: Daily Dependency Security Audit"
                     value={taskName}
                     onChange={(e) => setTaskName(e.target.value)}
                     className="w-full px-3 py-1.5 rounded-xl bg-black/60 border border-white/15 text-white"
@@ -293,15 +299,15 @@ export default function BrainToolsTab() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[11px] text-slate-400">Kebijakan Trust Level</label>
+                  <label className="text-[11px] text-slate-400">Trust Level Policy</label>
                   <select
                     value={taskTrust}
                     onChange={(e) => setTaskTrust(e.target.value as any)}
                     className="w-full px-3 py-1.5 rounded-xl bg-black/60 border border-white/15 text-white"
                   >
-                    <option value="supervised">Supervised (Pause &amp; Tanya User)</option>
-                    <option value="semi_autonomous">Semi-Autonomous (Auto Aksi Ringan)</option>
-                    <option value="full_autonomous">Full-Autonomous (Auto Mutating)</option>
+                    <option value="supervised">Supervised (Pause &amp; Ask User)</option>
+                    <option value="semi_autonomous">Semi-Autonomous (Auto Safe Actions)</option>
+                    <option value="full_autonomous">Full-Autonomous (Full Auto Mutating)</option>
                   </select>
                 </div>
               </div>
@@ -310,7 +316,7 @@ export default function BrainToolsTab() {
                   <label className="text-[11px] text-slate-400">Autonomous Prompt Instructions</label>
                 <textarea
                   rows={2}
-                  placeholder="Example: Check project dependencies via terminal and report to Telegram..."
+                  placeholder="Example: Check project dependencies via terminal and report findings..."
                   value={taskPrompt}
                   onChange={(e) => setTaskPrompt(e.target.value)}
                   className="w-full px-3 py-1.5 rounded-xl bg-black/60 border border-white/15 text-white"
@@ -326,14 +332,14 @@ export default function BrainToolsTab() {
                     onChange={(e) => setTaskInterval(Number(e.target.value))}
                     className="w-full px-3 py-1.5 rounded-xl bg-black/60 border border-white/15 text-white"
                   >
-                    <option value={1800}>Setiap 30 Menit</option>
-                    <option value={3600}>Setiap 1 Jam</option>
-                    <option value={21600}>Setiap 6 Jam</option>
-                    <option value={86400}>Harian (24 Jam)</option>
+                    <option value={1800}>Every 30 Minutes</option>
+                    <option value={3600}>Every 1 Hour</option>
+                    <option value={21600}>Every 6 Hours</option>
+                    <option value={86400}>Daily (24 Hours)</option>
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[11px] text-slate-400">Channel Notifikasi</label>
+                  <label className="text-[11px] text-slate-400">Notification Channel</label>
                   <select
                     value={taskChannel}
                     onChange={(e) => setTaskChannel(e.target.value)}
@@ -346,9 +352,9 @@ export default function BrainToolsTab() {
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-1">
-                <button type="button" onClick={() => setIsAddTaskOpen(false)} className="px-3 py-1 text-slate-400 hover:text-white">Batal</button>
-                <button type="submit" className="px-4 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/40 text-amber-200 font-bold cursor-pointer">Save Schedule</button>
+              <div className="flex justify-end gap-2 pt-1 font-mono text-xs">
+                <button type="button" onClick={() => setIsAddTaskOpen(false)} className="px-3 py-1 text-slate-400 hover:text-white cursor-pointer">Cancel</button>
+                <button type="submit" className="px-4 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/40 text-amber-200 font-bold cursor-pointer transition-all active:scale-95">Save Schedule</button>
               </div>
             </form>
           )}
@@ -396,11 +402,21 @@ export default function BrainToolsTab() {
                       </p>
 
                       <div className="mt-2.5 flex items-center gap-2 text-[10px] text-slate-400 flex-wrap">
-                        <span>⏱️ Setiap {Math.round(t.interval_seconds / 60)} m</span>
+                        <span className="flex items-center gap-1 font-mono">
+                          <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span>Every {Math.round(t.interval_seconds / 60)}m</span>
+                        </span>
                         <span>•</span>
-                        <span>📢 {t.target_channel.toUpperCase()}</span>
+                        <span className="flex items-center gap-1 font-mono">
+                          <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
+                          </svg>
+                          <span>{t.target_channel.toUpperCase()}</span>
+                        </span>
                         <span>•</span>
-                        <span className={`font-semibold ${isWaiting ? "text-amber-400 animate-pulse" : "text-slate-400"}`}>
+                        <span className={`font-semibold font-mono ${isWaiting ? "text-amber-400 animate-pulse" : "text-slate-400"}`}>
                           Status: {t.status}
                         </span>
                       </div>
@@ -411,9 +427,9 @@ export default function BrainToolsTab() {
                         type="button"
                         onClick={() => handleTriggerTaskNow(t.id)}
                         disabled={isRunning}
-                        className="px-3 py-1 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-400/30 text-cyan-200 text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50"
+                        className="px-3 py-1 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-400/30 text-cyan-200 text-[11px] font-bold font-mono transition-all cursor-pointer disabled:opacity-50"
                       >
-                        {isRunning ? "⚡ Executing..." : "⚡ Run Now"}
+                        {isRunning ? "Executing..." : "Run Now"}
                       </button>
                       <button
                         type="button"
@@ -485,6 +501,43 @@ export default function BrainToolsTab() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* In-app Delete Confirmation Modal */}
+      {deleteTaskConfirm && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in select-none"
+        >
+          <div className="w-full max-w-sm p-5 rounded-2xl bg-slate-950/95 border border-white/20 shadow-[0_0_40px_rgba(0,0,0,0.8)] text-white space-y-4 font-sans">
+            <div className="flex items-center gap-2.5 text-rose-400 font-mono text-xs font-semibold">
+              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span>Confirm Task Deletion</span>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed font-sans">
+              Permanently delete autonomous task schedule <b className="text-white font-mono">&apos;{deleteTaskConfirm.name}&apos;</b>?
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10 font-mono text-xs">
+              <button
+                type="button"
+                onClick={() => setDeleteTaskConfirm(null)}
+                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteTask}
+                className="px-3.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 font-semibold transition-all cursor-pointer shadow-sm active:scale-95"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

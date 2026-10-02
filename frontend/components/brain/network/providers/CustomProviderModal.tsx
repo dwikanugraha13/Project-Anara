@@ -1,13 +1,13 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { BACKEND_URL } from "../../types";
+import { BACKEND_URL, ProviderItem } from "../../types";
 
 interface CustomProviderModalProps {
   isOpen: boolean;
   onClose: () => void;
   providerType: "openai" | "anthropic";
-  onSuccess: (providers?: any[]) => void;
+  onSuccess: (providers?: ProviderItem[]) => void;
 }
 
 export default function CustomProviderModal({
@@ -18,19 +18,22 @@ export default function CustomProviderModal({
 }: CustomProviderModalProps) {
   const [nameInput, setNameInput] = useState("");
   const [prefixInput, setPrefixInput] = useState("");
-  const [apiType, setApiType] = useState<"chat_completions" | "responses">("chat_completions");
+  const [apiType, setApiType] = useState<"chat_completions" | "responses" | "anthropic_messages">("chat_completions");
   const [baseUrlInput, setBaseUrlInput] = useState("https://api.openai.com/v1");
   const [keyInput, setKeyInput] = useState("");
   const [modelIdInput, setModelIdInput] = useState("");
   const [checkLoading, setCheckLoading] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const [checkMsg, setCheckMsg] = useState<{ status: "ok" | "error" | "warning"; text: string } | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       if (providerType === "anthropic") {
         setBaseUrlInput("https://api.anthropic.com/v1");
+        setApiType("anthropic_messages");
       } else {
         setBaseUrlInput("https://api.openai.com/v1");
+        setApiType("chat_completions");
       }
       setCheckMsg(null);
     }
@@ -40,7 +43,7 @@ export default function CustomProviderModal({
 
   const handleCheck = async () => {
     if (!baseUrlInput.trim()) {
-      setCheckMsg({ status: "error", text: "Base URL wajib diisi" });
+      setCheckMsg({ status: "error", text: "Base URL is required" });
       return;
     }
     setCheckLoading(true);
@@ -70,9 +73,10 @@ export default function CustomProviderModal({
 
   const handleCreate = async () => {
     if (!nameInput.trim() || !prefixInput.trim() || !baseUrlInput.trim()) {
-      alert("Nama, Prefix, dan Base URL wajib diisi!");
+      setCheckMsg({ status: "error", text: "Name, Prefix, and Base URL are required!" });
       return;
     }
+    setIsCreating(true);
     try {
       const res = await fetch(`${BACKEND_URL}/api/providers/custom`, {
         method: "POST",
@@ -96,11 +100,13 @@ export default function CustomProviderModal({
         setCheckMsg(null);
         onSuccess(data.providers);
       } else {
-        const err = await res.json();
-        alert(err.detail || "Failed to save custom provider");
+        const err = await res.json().catch(() => ({}));
+        setCheckMsg({ status: "error", text: err.detail || "Failed to save custom provider" });
       }
     } catch (e: any) {
-      alert(`Error: ${e.message}`);
+      setCheckMsg({ status: "error", text: `Error: ${e.message}` });
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -117,9 +123,11 @@ export default function CustomProviderModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-white text-sm cursor-pointer p-1"
+            className="text-slate-400 hover:text-white transition-colors cursor-pointer p-1"
           >
-            ✕
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
         </div>
 
@@ -161,8 +169,9 @@ export default function CustomProviderModal({
               onChange={(e) => setApiType(e.target.value as any)}
               className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/20 text-xs text-white focus:outline-none focus:border-purple-400 font-mono cursor-pointer"
             >
-              <option value="chat_completions" className="bg-slate-900">Chat Completions</option>
+              <option value="chat_completions" className="bg-slate-900">Chat Completions (OpenAI compatible)</option>
               <option value="responses" className="bg-slate-900">Responses API</option>
+              <option value="anthropic_messages" className="bg-slate-900">Anthropic Messages</option>
             </select>
           </div>
 
@@ -224,23 +233,24 @@ export default function CustomProviderModal({
               disabled={checkLoading}
               className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 border border-white/15 text-xs font-semibold font-mono cursor-pointer transition-all disabled:opacity-50"
             >
-              {checkLoading ? "Memeriksa..." : "Check"}
+              {checkLoading ? "Checking..." : "Check"}
             </button>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 font-mono text-xs">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-3 py-2 text-xs text-slate-400 hover:text-white cursor-pointer"
+                className="px-3 py-2 text-slate-400 hover:text-white cursor-pointer transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleCreate}
-                className="px-5 py-2 rounded-xl bg-gradient-to-r from-purple-600/40 to-indigo-600/40 hover:from-purple-600/60 hover:to-indigo-600/60 border border-purple-400/50 text-xs font-bold text-white shadow-lg cursor-pointer transition-all"
+                disabled={isCreating || !nameInput.trim() || !prefixInput.trim() || !baseUrlInput.trim()}
+                className="px-5 py-2 rounded-xl bg-gradient-to-r from-purple-600/40 to-indigo-600/40 hover:from-purple-600/60 hover:to-indigo-600/60 border border-purple-400/50 text-xs font-bold text-white shadow-lg cursor-pointer transition-all disabled:opacity-50"
               >
-                Create
+                {isCreating ? "Creating..." : "Create"}
               </button>
             </div>
           </div>

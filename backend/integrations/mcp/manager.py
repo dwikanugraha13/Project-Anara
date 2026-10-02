@@ -112,8 +112,10 @@ class McpServerManager:
         async def _mcp_handler(**kwargs) -> Dict[str, Any]:
             return await session.call_tool(raw_tool_name, kwargs)
 
-        # Risk classification: inspect description/name for read-only clues
-        is_read_only = any(kw in spec.raw_name.lower() for kw in ("get", "list", "read", "fetch", "describe", "show", "search"))
+        # Risk classification: inspect schema annotations first, fallback to read-only clues, default mutating
+        is_read_only = bool(spec.input_schema.get("readOnly")) if isinstance(spec.input_schema, dict) else False
+        if not is_read_only:
+            is_read_only = any(kw in spec.raw_name.lower() for kw in ("get", "list", "read", "fetch", "describe", "show", "search"))
         risk = "read_only" if is_read_only else "mutating"
 
         registry.register_tool(
@@ -152,12 +154,18 @@ class McpServerManager:
             return status
 
     async def shutdown(self) -> None:
-        """Gracefully disconnects and reaps all MCP server sessions."""
+        """Gracefully disconnects, unregisters tools from ToolRegistry, and reaps all MCP server sessions."""
+        from tools.registry import registry
         with self._lock:
             sessions = list(self._servers.values())
             self._servers.clear()
 
         for s in sessions:
+            for tool_spec in s.tools.values():
+                try:
+                    registry.unregister_tool(tool_spec.canonical_name)
+                except Exception:
+                    pass
             try:
                 await s.close()
             except Exception as e:

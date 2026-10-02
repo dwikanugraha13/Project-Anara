@@ -137,12 +137,15 @@ async def execute_capture(
                 w = res.get("screen_width") or w
                 h = res.get("screen_height") or h
 
-    # Fallback capture via PIL ImageGrab
+    # Fallback capture via PIL ImageGrab (offloaded to thread to prevent event-loop stutter)
     if not captured_via_cua or not os.path.isfile(filepath):
         try:
-            im = ImageGrab.grab(all_screens=True)
-            w, h = im.width, im.height
-            im.save(filepath, "PNG")
+            def _grab_and_save() -> Tuple[int, int]:
+                im = ImageGrab.grab(all_screens=True)
+                im.save(filepath, "PNG")
+                return im.width, im.height
+
+            w, h = await asyncio.to_thread(_grab_and_save)
         except Exception as e:
             return {"status": "error", "message": f"Failed to capture screenshot: {e}"}
 
@@ -276,8 +279,9 @@ async def _discover_and_launch_app(app_name: str) -> Optional[Dict[str, Any]]:
     except Exception as e_exe:
         logger.debug(f"[ComputerUse] _resolve_windows_app_executable error: {e_exe}")
 
-    # Tier 3: os.startfile fallback
-    if hasattr(os, "startfile"):
+    # Tier 3: os.startfile fallback (safe target validation)
+    unsafe_chars = {'&', '|', ';', '`', '$', '>', '<', chr(10), chr(13)}
+    if hasattr(os, "startfile") and not any(c in app_name for c in unsafe_chars):
         try:
             os.startfile(app_name)
             logger.info(f"[ComputerUse] Launched '{app_name}' via os.startfile")

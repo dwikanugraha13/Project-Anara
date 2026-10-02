@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import dynamic from "next/dynamic";
+import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from "react";
 
 import {
   BACKEND_URL,
@@ -26,12 +25,8 @@ import WorkspaceTreeView, { nodeHasMatch, RecursiveTreeNode } from "./WorkspaceT
 import SessionHistoryList from "./SessionHistoryList";
 import type { AnaraCodeIDEProps, WorkbenchTerminalProps } from "../ide";
 
-const AnaraCodeIDE = dynamic<AnaraCodeIDEProps>(() => import("../ide/AnaraCodeIDE"), {
-  ssr: false,
-});
-const WorkbenchTerminal = dynamic<WorkbenchTerminalProps>(() => import("../ide/WorkbenchTerminal"), {
-  ssr: false,
-});
+const AnaraCodeIDE = lazy(() => import("../ide/AnaraCodeIDE"));
+const WorkbenchTerminal = lazy(() => import("../ide/WorkbenchTerminal"));
 
 // Re-export all types and helper functions for 100% backward compatibility
 export {
@@ -96,7 +91,6 @@ export default function ChatSessionSidebar({
   const [hoveredDropSessionId, setHoveredDropSessionId] = useState<number | null>(null);
   const [workspaceTree, setWorkspaceTree] = useState<WorkspaceTreeData | null>(null);
   const [activeSidebarTab, setActiveSidebarTab] = useState<"history" | "editor">(initialSidebarTab);
-  const [hasMounted, setHasMounted] = useState(false);
   const isSidebarHydratedRef = useRef(false);
 
   // Hydration-safe initial local storage loader
@@ -112,10 +106,6 @@ export default function ChatSessionSidebar({
       }
     } catch {}
     isSidebarHydratedRef.current = true;
-    const timer = setTimeout(() => {
-      setHasMounted(true);
-    }, 200);
-    return () => clearTimeout(timer);
   }, [sessionType]);
 
   useEffect(() => {
@@ -220,15 +210,16 @@ export default function ChatSessionSidebar({
       const maxAllowed = Math.min(600, Math.max(140, (sidebarWidth || 950) - 260));
       const newW = Math.max(140, Math.min(maxAllowed, startTreeWidthRef.current + dx));
       setTreeWidth(newW);
-      try {
-        localStorage.setItem("anara_tree_width", newW.toString());
-        document.documentElement.style.setProperty("--tree-width", `${newW}px`);
-        document.cookie = `anara_tree_width=${newW}; path=/; max-age=31536000; SameSite=Lax`;
-      } catch {}
+      document.documentElement.style.setProperty("--tree-width", `${newW}px`);
     };
 
     const handleMouseUp = () => {
       setIsResizingTree(false);
+      try {
+        const finalW = parseInt(document.documentElement.style.getPropertyValue("--tree-width")) || treeWidth;
+        localStorage.setItem("anara_tree_width", finalW.toString());
+        document.cookie = `anara_tree_width=${finalW}; path=/; max-age=31536000; SameSite=Lax`;
+      } catch {}
     };
 
     window.addEventListener("mousemove", handleMouseMove);
@@ -294,8 +285,15 @@ export default function ChatSessionSidebar({
     }
   }, [onResetIDE]);
 
-  const handleClearWorkspace = async () => {
-    if (!confirm(`Close & remove folder "${workspaceTree?.workspace_name}" from this chat history?`)) return;
+  const [showClearWorkspaceConfirm, setShowClearWorkspaceConfirm] = useState(false);
+  const [sessionToDelete, setSessionToDelete] = useState<ChatSession | null>(null);
+
+  const handleClearWorkspace = () => {
+    setShowClearWorkspaceConfirm(true);
+  };
+
+  const confirmClearWorkspace = async () => {
+    setShowClearWorkspaceConfirm(false);
     try {
       const q = activeSessionId ? `?session_id=${activeSessionId}` : "";
       await fetch(`${BACKEND_URL}/api/agent/workspace${q}`, { method: "DELETE" });
@@ -355,7 +353,7 @@ export default function ChatSessionSidebar({
         brainSyncTimerRef.current = setTimeout(() => {
           loadSessions();
           brainSyncTimerRef.current = null;
-        }, 3000);
+        }, event === "conversation_logged" ? 1000 : 300);
       }
       if (
         event === "workspace_updated" ||
@@ -428,7 +426,7 @@ export default function ChatSessionSidebar({
     setDragOverTarget(null);
     setHoveredDropSessionId(null);
     setDraggedSession(null);
-    patchSession(sessionId, { is_pinned: true });
+    patchSession(sessionId, { is_pinned: 1 });
   }, []);
 
   const handleDropUnpin = useCallback((sessionId: number) => {
@@ -438,12 +436,15 @@ export default function ChatSessionSidebar({
     setDragOverTarget(null);
     setHoveredDropSessionId(null);
     setDraggedSession(null);
-    patchSession(sessionId, { is_pinned: false });
+    patchSession(sessionId, { is_pinned: 0 });
   }, []);
 
   const deleteSession = async (s: ChatSession) => {
-    const label = s.title || `Conversation #${s.id}`;
-    if (!confirm(`Delete "${label}" along with ${s.message_count} messages inside?`)) return;
+    setSessionToDelete(s);
+  };
+
+  const confirmDeleteSession = async (s: ChatSession) => {
+    setSessionToDelete(null);
     try {
       const res = await fetch(`${BACKEND_URL}/api/chat/sessions/${s.id}`, { method: "DELETE" });
       if (res.ok) {
@@ -477,10 +478,15 @@ export default function ChatSessionSidebar({
 
   return (
     <aside
-      className={`${embedded ? "relative w-full" : "fixed top-0 left-0 z-40"} h-full flex flex-col pointer-events-auto select-none group/sidebar`}
+      className={`${
+        embedded
+          ? "relative w-full"
+          : `fixed top-0 left-0 z-40 transition-transform duration-200 ease-out ${
+              isOpen ? "translate-x-0" : "-translate-x-full pointer-events-none"
+            }`
+      } h-full flex flex-col pointer-events-auto select-none group/sidebar`}
       style={{
         ...(!embedded ? { width: "var(--sidebar-width, 260px)" } : {}),
-        transition: "none",
         background: embedded ? "#050811" : "rgba(6,9,19,0.85)",
         backdropFilter: embedded ? "none" : "blur(28px) saturate(140%)",
         WebkitBackdropFilter: embedded ? "none" : "blur(28px) saturate(140%)",
@@ -488,6 +494,60 @@ export default function ChatSessionSidebar({
         boxShadow: embedded ? "none" : "6px 0 40px rgba(0,0,0,0.55)",
       }}
     >
+      {/* ── Non-Blocking In-App Confirm Dialogs ── */}
+      {sessionToDelete && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="w-full max-w-[240px] p-3.5 rounded-2xl bg-slate-900 border border-white/15 shadow-2xl text-center space-y-3 font-sans">
+            <p className="text-xs font-semibold text-white">Delete conversation?</p>
+            <p className="text-[11px] text-slate-400 line-clamp-2">
+              &ldquo;{sessionToDelete.title || `Conversation #${sessionToDelete.id}`}&rdquo; and its messages will be permanently deleted.
+            </p>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setSessionToDelete(null)}
+                className="flex-1 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-slate-300 font-medium transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => confirmDeleteSession(sessionToDelete)}
+                className="flex-1 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-xs text-white font-medium shadow-md shadow-rose-500/30 transition-colors cursor-pointer"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showClearWorkspaceConfirm && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="w-full max-w-[240px] p-3.5 rounded-2xl bg-slate-900 border border-white/15 shadow-2xl text-center space-y-3 font-sans">
+            <p className="text-xs font-semibold text-white">Close folder?</p>
+            <p className="text-[11px] text-slate-400 line-clamp-2">
+              Remove &ldquo;{workspaceTree?.workspace_name || "workspace"}&rdquo; from this chat history?
+            </p>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowClearWorkspaceConfirm(false)}
+                className="flex-1 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-slate-300 font-medium transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmClearWorkspace}
+                className="flex-1 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-xs text-white font-medium shadow-md shadow-rose-500/30 transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* ── Top Header: Chat Sessions & Anara Code Navigation ── */}
       {activeSidebarTab === "history" ? (
         <div className="relative flex items-center justify-between px-3.5 py-3 border-b border-white/10 select-none">
@@ -520,7 +580,8 @@ export default function ChatSessionSidebar({
             onClick={() => {
               setActiveSidebarTab("history");
               try {
-                localStorage.setItem("anara_active_sidebar_tab", "history");
+                const storageKey = sessionType === "code" ? "anara_code_sidebar_tab" : "anara_active_sidebar_tab";
+                localStorage.setItem(storageKey, "history");
               } catch {}
             }}
             className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer text-xs font-mono"
@@ -603,30 +664,32 @@ export default function ChatSessionSidebar({
               <div className="flex-1 min-w-0 h-full flex flex-col overflow-hidden bg-slate-950/80">
                 <div className="flex-1 min-h-[140px] w-full overflow-hidden flex flex-col">
                   {activeIdeFile && activeIdeFile.isOpen ? (
-                    <AnaraCodeIDE
-                      isOpen={true}
-                      embedded={true}
-                      onClose={onCloseIDE ?? (() => {})}
-                      fileName={activeIdeFile.fileName}
-                      filePath={activeIdeFile.filePath}
-                      fileExt={activeIdeFile.fileExt}
-                      fileSizeKb={activeIdeFile.fileSizeKb}
-                      content={activeIdeFile.content}
-                      originalContent={activeIdeFile.originalContent}
-                      isTerminalOpen={isTerminalOpen}
-                      onToggleTerminal={() => onToggleTerminal?.(!isTerminalOpen)}
-                      tabs={ideTabs}
-                      onSelectTab={onSelectIdeTab}
-                      onCloseTab={onCloseIdeTab}
-                      onSaveFile={onSaveIdeFile}
-                      onAskAnara={(p: string, n: string) => {
-                        if (onAskAnaraIDE) {
-                          onAskAnaraIDE(p, n);
-                        } else if (onSendText) {
-                          onSendText(`Please analyze file @${n} (${p})`, agentMode);
-                        }
-                      }}
-                    />
+                    <Suspense fallback={null}>
+                      <AnaraCodeIDE
+                        isOpen={true}
+                        embedded={true}
+                        onClose={onCloseIDE ?? (() => {})}
+                        fileName={activeIdeFile.fileName}
+                        filePath={activeIdeFile.filePath}
+                        fileExt={activeIdeFile.fileExt}
+                        fileSizeKb={activeIdeFile.fileSizeKb}
+                        content={activeIdeFile.content}
+                        originalContent={activeIdeFile.originalContent}
+                        isTerminalOpen={isTerminalOpen}
+                        onToggleTerminal={() => onToggleTerminal?.(!isTerminalOpen)}
+                        tabs={ideTabs}
+                        onSelectTab={onSelectIdeTab}
+                        onCloseTab={onCloseIdeTab}
+                        onSaveFile={onSaveIdeFile}
+                        onAskAnara={(p: string, n: string) => {
+                          if (onAskAnaraIDE) {
+                            onAskAnaraIDE(p, n);
+                          } else if (onSendText) {
+                            onSendText(`Please analyze file @${n} (${p})`, agentMode);
+                          }
+                        }}
+                      />
+                    </Suspense>
                   ) : (
                     <div className="flex-1 flex flex-col items-center justify-center p-6 text-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-500">
@@ -653,15 +716,17 @@ export default function ChatSessionSidebar({
                       style={{ height: terminalHeight }}
                       className="w-full shrink-0 overflow-hidden transition-[height] duration-75"
                     >
-                      <WorkbenchTerminal
-                        logs={[
-                          `[anara-agent] Active mode: ${agentMode.toUpperCase()}`,
-                          `[system] Terminal worker ready (Files: ${activeIdeFile?.filePath || "workspace"}).`,
-                        ]}
-                        activeTask={status === "thinking" ? "AI Model Thinking..." : undefined}
-                        onExecuteCommand={() => {}}
-                        onClose={() => onToggleTerminal?.(false)}
-                      />
+                      <Suspense fallback={null}>
+                        <WorkbenchTerminal
+                          logs={[
+                            `[anara-agent] Active mode: ${agentMode.toUpperCase()}`,
+                            `[system] Terminal worker ready (Files: ${activeIdeFile?.filePath || "workspace"}).`,
+                          ]}
+                          activeTask={status === "thinking" ? "AI Model Thinking..." : undefined}
+                          onExecuteCommand={() => {}}
+                          onClose={() => onToggleTerminal?.(false)}
+                        />
+                      </Suspense>
                     </div>
                   </>
                 )}
@@ -712,7 +777,7 @@ export default function ChatSessionSidebar({
                     Workbench Capabilities:
                   </span>
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="p-2.5 rounded-xl bg-white/[0.025] border border-white/8 space-y-1">
+                    <div className="p-2.5 rounded-xl bg-white/[0.025] border border-white/[0.08] space-y-1">
                       <div className="flex items-center gap-1.5 text-cyan-300 font-mono text-[10.5px] font-semibold">
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
@@ -724,7 +789,7 @@ export default function ChatSessionSidebar({
                       </p>
                     </div>
 
-                    <div className="p-2.5 rounded-xl bg-white/[0.025] border border-white/8 space-y-1">
+                    <div className="p-2.5 rounded-xl bg-white/[0.025] border border-white/[0.08] space-y-1">
                       <div className="flex items-center gap-1.5 text-indigo-300 font-mono text-[10.5px] font-semibold">
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
@@ -737,7 +802,7 @@ export default function ChatSessionSidebar({
                     </div>
                   </div>
 
-                  <div className="p-2.5 rounded-xl bg-white/[0.025] border border-white/8 space-y-1">
+                  <div className="p-2.5 rounded-xl bg-white/[0.025] border border-white/[0.08] space-y-1">
                     <div className="flex items-center gap-1.5 text-emerald-300 font-mono text-[10.5px] font-semibold">
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />

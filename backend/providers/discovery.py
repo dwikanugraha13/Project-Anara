@@ -10,6 +10,9 @@ from .constants import (
     _CACHE_TTL_SECONDS,
     _DYNAMIC_CACHE_LOCK,
     _infer_model_badge_and_category,
+    extract_model_route,
+    extract_model_tier,
+    format_model_display_name,
 )
 from .accounts import (
     is_provider_configured,
@@ -22,12 +25,17 @@ logger = logging.getLogger(__name__)
 _OAUTH_REFRESH_LOCK = asyncio.Lock()
 
 _VISION_REGEX = re.compile(
-    r'(\bvision\b|-vl\b|\bllava\b|\bpixtral\b|\bmultimodal\b|\bgpt-4o\b|\bgpt-4-turbo\b|\bclaude-[3-9]\b|\bgemini-|\bqwen(?:2\.5)?-vl\b)',
+    r'(\bvision\b|-vl\b|\bllava\b|\bpixtral\b|\bmultimodal\b|\bgpt-4o\b|\bgpt-4-turbo\b|\bgpt-5\b|\bclaude-(?:sonnet|opus|haiku|[3-9])\b|\bgemini-|\bqwen(?:2\.5)?-vl\b|\bmimo-v)',
+    re.IGNORECASE
+)
+
+_VIDEO_REGEX = re.compile(
+    r'(\bgemini-(?:1\.5|2\.[0-9]|2\.5|3\.[0-9]|flash|pro)\b|\bqwen2(?:.5)?-vl\b|\bvideo\b|\bgpt-4o\b|\bgpt-5\b|\bclaude-(?:sonnet|opus)-[4-9]\b)',
     re.IGNORECASE
 )
 
 _REASONING_REGEX = re.compile(
-    r'(\b(o[1-9]|o[1-9]-mini|o[1-9]-preview|r1|deepseek-r1|deepseek-reasoner|qwq|claude-3[-.]7|thinking)\b|gemini-(?:2\.5|3\.[0-9]|flash-thinking))',
+    r'(\b(o[1-9]|o[1-9]-mini|o[1-9]-preview|r1|deepseek-r1|deepseek-reasoner|qwq|cot|thought|thinking|thinker|think|claude-3[-.]7|claude-(?:sonnet|opus|haiku)-[4-9]|claude-[4-9]|gpt-5|gpt-6|astra|ultra)\b|gemini-(?:2\.5|3\.[0-9]|flash-thinking))',
     re.IGNORECASE
 )
 
@@ -37,40 +45,61 @@ def _sanitize_error_message(msg: Any) -> str:
     return re.sub(r'(?:key|token|api_key|password)=[^\s&]+', r'key=[REDACTED]', str(msg))
 
 
-def detect_model_capabilities(item: Any = None, model_id: str = "") -> Dict[str, bool]:
+def detect_model_capabilities(item: Any = None, model_id: str = "") -> Dict[str, Any]:
     """
     Anara Enterprise Architecture: Dynamic Capability Handshake.
-    Infers vision, tools/reasoning, and audio capabilities directly from
-    upstream provider metadata (OpenRouter, Ollama, vLLM, OpenAI, DeepSeek) with
-    zero static hardcoding or model whitelist locking.
+    Infers vision, video, audio, tools/reasoning, and supported effort levels
+    directly from upstream provider metadata (OpenRouter, Ollama, vLLM, OpenAI, DeepSeek)
+    with zero static hardcoding or model whitelist locking.
     """
     mid = (model_id or "").lower()
     clean_id = mid.split("/", 1)[-1] if "/" in mid else mid
 
     supports_vision = bool(_VISION_REGEX.search(clean_id))
+    supports_video = bool(_VIDEO_REGEX.search(clean_id))
     supports_reasoning = bool(_REASONING_REGEX.search(clean_id)) or "reasoning" in clean_id or "reasoner" in clean_id
     supports_audio = any(k in clean_id for k in ("audio", "voice", "realtime", "live"))
+    if "live" in clean_id:
+        supports_reasoning = False
 
     if isinstance(item, dict):
-        # 1. Modalities list / set (OpenRouter / Standard OpenAI extended metadata)
+        # 0. Upstream explicit reasoning effort declarations
+        if any(k in item for k in ("reasoning_options", "reasoning_effort_levels", "supported_reasoning_levels", "allowed_effort")):
+            supports_reasoning = True
+
+        # 1. Direct upstream parameter declarations (OpenRouter / LM Studio / vLLM / GitHub Models)
+        supported_params = item.get("supported_parameters") or item.get("parameters") or []
+        if isinstance(supported_params, list):
+            param_set = {str(p).lower() for p in supported_params}
+            if any(p in param_set for p in ("reasoning", "include_reasoning", "reasoning_effort", "thinking", "effort")):
+                supports_reasoning = True
+
+        # 2. Modalities list / set (OpenRouter / Standard OpenAI extended metadata)
         modalities = item.get("modalities") or []
         if isinstance(modalities, list):
             mod_set = {str(m).lower() for m in modalities}
             if any(m in mod_set for m in ("image", "vision", "image_url")):
                 supports_vision = True
+            if any(m in mod_set for m in ("video",)):
+                supports_video = True
             if any(m in mod_set for m in ("audio", "voice")):
                 supports_audio = True
 
-        # 2. Architecture modality (OpenRouter format: "text+image->text")
+        # 3. Architecture modality & instruct type (OpenRouter format: "text+image->text", instruct_type: "thinking")
         arch = item.get("architecture") or {}
         if isinstance(arch, dict):
             arch_mod = str(arch.get("modality", "")).lower()
             if any(m in arch_mod for m in ("image", "multimodal", "vision")):
                 supports_vision = True
+            if "video" in arch_mod:
+                supports_video = True
             if "audio" in arch_mod:
                 supports_audio = True
+            instruct_type = str(arch.get("instruct_type", "")).lower()
+            if any(t in instruct_type for t in ("thinking", "reasoning", "cot")):
+                supports_reasoning = True
 
-        # 3. Ollama model family details (e.g. clip / mllama family means vision)
+        # 4. Ollama & HuggingFace capabilities / tags / details
         details = item.get("details") or {}
         if isinstance(details, dict):
             families = details.get("families") or []
@@ -79,18 +108,95 @@ def detect_model_capabilities(item: Any = None, model_id: str = "") -> Dict[str,
                 if any(f in fam_set for f in ("clip", "mllama", "vision")):
                     supports_vision = True
 
-        # 4. Features / supported generation methods
+        capabilities = item.get("capabilities") or item.get("tags") or []
+        if isinstance(capabilities, list):
+            cap_set = {str(c).lower() for c in capabilities}
+            if any(c in cap_set for c in ("thinking", "reasoning", "cot")):
+                supports_reasoning = True
+            if any(c in cap_set for c in ("vision", "image", "visual")):
+                supports_vision = True
+            if any(c in cap_set for c in ("video",)):
+                supports_video = True
+            if any(c in cap_set for c in ("audio", "voice", "speech")):
+                supports_audio = True
+
+        # 5. Features / supported generation methods (Google Gemini SDK & OpenAI-compatible)
         methods = item.get("supported_generation_methods") or []
         if isinstance(methods, list):
             meth_set = {str(m).lower() for m in methods}
             if any("bidi" in m or "audio" in m for m in meth_set):
                 supports_audio = True
 
+    # Assemble dynamic modalities list
+    modalities_list = ["text"]
+    if supports_vision:
+        modalities_list.append("image")
+    if supports_video:
+        modalities_list.append("video")
+    if supports_audio:
+        modalities_list.append("audio")
+    if supports_reasoning:
+        modalities_list.append("reasoning")
+
+    # Determine supported reasoning levels per model
+    if not supports_reasoning:
+        supported_reasoning_levels = []
+    else:
+        # 1. Upstream explicit declarations (OpenRouter / LM Studio / vLLM / GitHub Models)
+        upstream_levels = None
+        if isinstance(item, dict):
+            upstream_levels = (
+                item.get("supported_reasoning_levels")
+                or item.get("reasoning_options")
+                or item.get("reasoning_effort_levels")
+                or item.get("allowed_effort")
+            )
+        if isinstance(upstream_levels, list) and upstream_levels:
+            mapped = []
+            for ul in upstream_levels:
+                s_ul = str(ul).lower().strip()
+                if s_ul in ("none", "off", "0", "disabled"):
+                    mapped.append("off")
+                elif s_ul in ("low", "minimal", "min"):
+                    mapped.append("low")
+                elif s_ul in ("medium", "med", "default", "standard"):
+                    mapped.append("medium")
+                elif s_ul in ("high", "deep"):
+                    mapped.append("high")
+                elif s_ul in ("max", "maximum", "xhigh"):
+                    mapped.append("max")
+                elif s_ul in ("ultra", "extreme"):
+                    mapped.append("ultra")
+            if mapped:
+                seen = set()
+                supported_reasoning_levels = [x for x in mapped if not (x in seen or seen.add(x))]
+            else:
+                supported_reasoning_levels = ["off", "low", "medium", "high", "max"]
+        # 2. Dynamic heuristic classification for models without explicit level schemas
+        elif "astra" in clean_id or "gpt-6" in clean_id or "ultra" in clean_id or any(k in clean_id for k in ("claude-4", "claude-sonnet-4", "claude-opus-4", "opus-4", "sonnet-4")):
+            supported_reasoning_levels = ["off", "low", "medium", "high", "max", "ultra"]
+        elif any(k in clean_id for k in ("o1", "o3", "o4")):
+            supported_reasoning_levels = ["low", "medium", "high"]
+        elif "r1" in clean_id or "deepseek-reasoner" in clean_id:
+            supported_reasoning_levels = ["off", "high", "max"]
+        elif "gemini" in clean_id or "sonar" in clean_id:
+            # Google Gemini & Perplexity Sonar officially top out at High (budget ceiling ~24K tokens)
+            supported_reasoning_levels = ["off", "low", "medium", "high"]
+        elif any(k in clean_id for k in ("claude-4", "opus-4", "sonnet-4")):
+            supported_reasoning_levels = ["off", "low", "medium", "high", "max", "ultra"]
+        elif "claude" in clean_id:
+            supported_reasoning_levels = ["off", "low", "medium", "high", "max"]
+        else:
+            supported_reasoning_levels = ["off", "low", "medium", "high", "max"]
+
     return {
         "supports_vision": supports_vision,
+        "supports_video": supports_video,
         "supports_reasoning": supports_reasoning,
         "supports_audio": supports_audio,
         "supports_text": True,
+        "modalities": modalities_list,
+        "supported_reasoning_levels": supported_reasoning_levels,
     }
 
 
@@ -212,7 +318,7 @@ async def fetch_gemini_models(force_refresh: bool = False) -> List[Dict[str, Any
             fetch_ok = True
     except Exception as e:
         if not isinstance(e, TimeoutError):
-            logger.warning(f"[ModelRouter] Failed to fetch live Gemini models: {e}")
+            logger.warning(f"[ModelRouter] Failed to fetch live Gemini models: {_sanitize_error_message(e)}")
     with _DYNAMIC_CACHE_LOCK:
         if not fetch_ok and cache_key in _DYNAMIC_CACHE and _DYNAMIC_CACHE[cache_key].get("models"):
             logger.info("[ModelRouter] Gemini fetch failed — returning stale cache")
@@ -232,10 +338,11 @@ async def fetch_codex_models(force_refresh: bool = False) -> List[Dict[str, Any]
 
     cache_key = "codex"
     now = time.time()
-    if not force_refresh and cache_key in _DYNAMIC_CACHE:
-        entry = _DYNAMIC_CACHE[cache_key]
-        if now - entry["timestamp"] < _CACHE_TTL_SECONDS:
-            return entry["models"]
+    with _DYNAMIC_CACHE_LOCK:
+        if not force_refresh and cache_key in _DYNAMIC_CACHE:
+            entry = _DYNAMIC_CACHE[cache_key]
+            if now - entry["timestamp"] < _CACHE_TTL_SECONDS:
+                return entry["models"]
 
     models_list = []
     fetch_ok = False
@@ -372,10 +479,11 @@ async def fetch_anthropic_models(force_refresh: bool = False) -> List[Dict[str, 
 
     cache_key = "anthropic"
     now = time.time()
-    if not force_refresh and cache_key in _DYNAMIC_CACHE:
-        entry = _DYNAMIC_CACHE[cache_key]
-        if now - entry["timestamp"] < _CACHE_TTL_SECONDS:
-            return entry["models"]
+    with _DYNAMIC_CACHE_LOCK:
+        if not force_refresh and cache_key in _DYNAMIC_CACHE:
+            entry = _DYNAMIC_CACHE[cache_key]
+            if now - entry["timestamp"] < _CACHE_TTL_SECONDS:
+                return entry["models"]
 
     models_list = []
     fetch_ok = False
@@ -479,7 +587,7 @@ async def fetch_custom_providers_models(force_refresh: bool = False) -> List[Dic
                         m_id = item.get("id") or item.get("name") if isinstance(item, dict) else str(item)
                         if m_id:
                             full_mid = f"{prefix}/{m_id}"
-                            badge, cat, icon = _infer_model_badge_and_category(m_id, m_id, prefix)
+                            badge, cat, icon = _infer_model_badge_and_category(full_mid, m_id, prefix)
 
                             if isinstance(item, dict):
                                 ctx_len = item.get("context_length") or item.get("max_model_len") or item.get("context_window") or item.get("input_token_limit")
@@ -494,18 +602,30 @@ async def fetch_custom_providers_models(force_refresh: bool = False) -> List[Dic
                                         pass
 
                             caps = detect_model_capabilities(item, m_id)
+                            r_code, r_name = extract_model_route(full_mid)
+                            clean_disp = format_model_display_name(m_id, include_tier=False)
+                            display_title = f"{clean_disp} ({r_name})" if r_name else f"{m_id} ({node['name']})"
+                            model_badge = r_name if r_name else node["name"]
+                            desc = f"Model via {r_name} on {node['name']} ({base_url})" if r_name else f"Custom model via {node['name']} ({base_url})"
+
                             discovered.append({
                                 "id": full_mid,
-                                "name": f"{m_id} ({node['name']})",
+                                "name": display_title,
                                 "provider": prefix,
                                 "category": cat,
-                                "badge": node["name"],
-                                "description": f"Custom model via {node['name']} ({base_url})",
-                                "icon": "custom",
+                                "badge": model_badge,
+                                "route": r_code,
+                                "route_name": r_name,
+                                "upstream_provider": r_name,
+                                "description": desc,
+                                "icon": icon,
                                 "supports_voice": caps["supports_audio"],
                                 "supports_text": True,
                                 "supports_vision": caps["supports_vision"],
+                                "supports_video": caps["supports_video"],
                                 "supports_reasoning": caps["supports_reasoning"],
+                                "modalities": caps["modalities"],
+                                "supported_reasoning_levels": caps["supported_reasoning_levels"],
                             })
         except Exception as e:
             logger.debug(f"[CustomProvider] Error fetching /models for {node['name']}: {_sanitize_error_message(e)}")
@@ -600,10 +720,13 @@ async def fetch_native_open_endpoints_models(force_refresh: bool = False) -> Lis
                                 "supports_voice": caps["supports_audio"],
                                 "supports_text": True,
                                 "supports_vision": caps["supports_vision"],
+                                "supports_video": caps["supports_video"],
                                 "supports_reasoning": caps["supports_reasoning"],
+                                "modalities": caps["modalities"],
+                                "supported_reasoning_levels": caps["supported_reasoning_levels"],
                             })
         except Exception as e:
-            logger.debug(f"[ModelRouter] Error fetching models for {prov}: {e}")
+            logger.debug(f"[ModelRouter] Error fetching models for {prov}: {_sanitize_error_message(e)}")
 
         with _DYNAMIC_CACHE_LOCK:
             _DYNAMIC_CACHE[cache_key] = {"timestamp": now, "models": discovered}
@@ -658,6 +781,13 @@ async def get_all_dynamic_models(force_refresh: bool = False) -> List[Dict[str, 
             or "audio" in m_id_lower
         )
         m["supports_text"] = True
+        if "modalities" not in m or "supported_reasoning_levels" not in m:
+            caps = detect_model_capabilities(m, m["id"])
+            m["supports_vision"] = m.get("supports_vision", caps["supports_vision"])
+            m["supports_video"] = m.get("supports_video", caps["supports_video"])
+            m["supports_reasoning"] = m.get("supports_reasoning", caps["supports_reasoning"])
+            m["modalities"] = caps["modalities"]
+            m["supported_reasoning_levels"] = caps["supported_reasoning_levels"]
 
     try:
         from core import ModelCapabilityRegistry

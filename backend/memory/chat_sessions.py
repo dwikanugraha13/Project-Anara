@@ -298,6 +298,13 @@ class ChatSessionsMixin:
             ok = cursor.rowcount > 0
             conn.commit()
         if ok:
+            try:
+                from memory.memory_nudge import memory_nudge_manager
+                memory_nudge_manager.evict_session(sid)
+                if skey:
+                    memory_nudge_manager.evict_session(skey)
+            except Exception:
+                pass
             logger.info(f"[ChatSessions] Deleted session #{sid} with {removed_msgs} message(s)")
             self._emit_mutation("session_deleted", {"id": sid, "messages": removed_msgs})
         return ok
@@ -377,6 +384,14 @@ class ChatSessionsMixin:
                         pass
 
             conn.commit()
+        try:
+            from memory.memory_nudge import memory_nudge_manager
+            for sid_item in ids:
+                memory_nudge_manager.evict_session(sid_item)
+            for skey_item in skeys:
+                memory_nudge_manager.evict_session(skey_item)
+        except Exception:
+            pass
         logger.info(f"[ChatSessions] Bulk deleted {sess} session(s), {msgs} message(s)")
         self._emit_mutation("session_deleted", {"bulk": True, "sessions": sess})
         return {"sessions": sess, "messages": msgs}
@@ -461,7 +476,7 @@ class ChatSessionsMixin:
         current_title = (sess.get("title") or "").strip()
         is_placeholder = (
             not current_title
-            or current_title.lower() in ["new chat", "new session", "session", "chat"]
+            or current_title.lower() in ["new chat", "new session", "new project", "session", "chat"]
             or current_title.lower().startswith(("session #", "chat #"))
         )
         if not is_placeholder:
@@ -604,14 +619,23 @@ class ChatSessionsMixin:
         return last_id
 
     def delete_conversation_by_id(self, conversation_id: int) -> bool:
-        """Deletes a single conversation log entry by its ID."""
+        """Deletes a single conversation log entry by its ID and synchronizes session message count."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            cursor.execute("SELECT session_id FROM conversations WHERE id = ?", (conversation_id,))
+            row = cursor.fetchone()
+            sid = row["session_id"] if row else None
+
             cursor.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
-            conn.commit()
             ok = cursor.rowcount > 0
-            if ok:
-                self._emit_mutation("conversation_deleted", {"id": conversation_id})
+            if ok and sid:
+                cursor.execute(
+                    "UPDATE chat_sessions SET message_count = (SELECT COUNT(*) FROM conversations WHERE session_id = ?) WHERE id = ?",
+                    (sid, sid)
+                )
+            conn.commit()
+            if ok and hasattr(self, "_emit_mutation"):
+                self._emit_mutation("conversation_deleted", {"id": conversation_id, "session_id": sid})
             return ok
 
     def attach_visual_to_latest_conversation(
@@ -669,7 +693,10 @@ class ChatSessionsMixin:
                 (vis_type, vis_url, vis_json, target_id),
             )
             conn.commit()
-            return cursor.rowcount > 0
+            updated = cursor.rowcount > 0
+            if updated and hasattr(self, "_emit_mutation"):
+                self._emit_mutation("conversation_updated", {"id": target_id, "visual_data": visual_data})
+            return updated
 
     def get_recent_conversations(self, limit: int = 30, speaker_name: Optional[str] = None,
                                  session_id: Optional[Any] = None) -> List[Dict[str, Any]]:

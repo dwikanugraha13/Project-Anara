@@ -199,11 +199,14 @@ class WorkspaceSentinel:
             return False, "SECURITY ERROR: Access to sensitive credentials directory is blocked."
 
         # Prevent modification or deletion of sensitive credentials or active SQLite database (Hermes File-Safety Parity)
-        PROTECTED_SACRED_FILES = frozenset({"anara_brain.db", "state.db", "auth.json", ".env", ".env.local", "id_rsa", ".git-credentials", ".netrc"})
+        PROTECTED_SACRED_FILES = frozenset({
+            "anara_brain.db", "state.db", "auth.json", ".env", ".env.local",
+            "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa", ".git-credentials", ".netrc"
+        })
         if target_base in PROTECTED_SACRED_FILES or (target_base.startswith(".env") and not target_base.endswith(".example")):
             if action in ("write", "edit", "delete"):
                 return False, f"SECURITY ERROR: Direct modification of protected file '{target_base}' is restricted."
-            elif action == "read" and target_base in (".env", ".env.local", "auth.json", "id_rsa", ".git-credentials", ".netrc"):
+            elif action == "read" and target_base in (".env", ".env.local", "auth.json", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa", ".git-credentials", ".netrc"):
                 return False, f"SECURITY ERROR: Direct reading of sensitive credentials file '{target_base}' is blocked to prevent token exfiltration."
 
         return True, None
@@ -278,8 +281,8 @@ class WorkspaceSentinel:
         out_upper = out_clean.upper()
 
         has_failure_signals = any(sig in out_upper for sig in (
-            "FAILED (", "FAILURES=", "ERROR:", "ERRORS=", "EXCEPTION:", "TRACEBACK"
-        )) and ("0 FAILED" not in out_upper and "FAILED: 0" not in out_upper)
+            "FAILED (", "FAILURES=", "=== FAILURES ===", "ERRORS=", "FAILURE:"
+        )) or ("FAILED" in out_upper and not any(ok in out_upper for ok in ("0 FAILED", "FAILED: 0", "FAILED=0", "PASSED")))
 
         is_passed = (exit_code == 0) and not has_failure_signals
         eff_sid = self._resolve_session_id(session_id)

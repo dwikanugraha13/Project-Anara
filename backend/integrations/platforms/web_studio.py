@@ -21,14 +21,12 @@ class WebStudioPlatformAdapter(BasePlatformAdapter):
     async def send_message(self, target_id: str, text: str, **kwargs: Any) -> Dict[str, Any]:
         try:
             from telemetry.event_bus import telemetry_bus, EventType, ActivityProvenance
-            asyncio.create_task(
-                telemetry_bus.emit(
-                    event_type=EventType.TEXT_CHUNK,
-                    provenance=ActivityProvenance.AGENT_ORCHESTRATOR,
-                    session_id=str(target_id or "default"),
-                    trace_id="web_text",
-                    payload={"text": text, "status": "completed"}
-                )
+            await telemetry_bus.emit(
+                event_type=EventType.TEXT_CHUNK,
+                provenance=ActivityProvenance.AGENT_ORCHESTRATOR,
+                session_id=str(target_id or "default"),
+                trace_id="web_text",
+                payload={"text": text, "status": "completed"}
             )
             return {"status": "success", "platform": "web_studio"}
         except Exception as e:

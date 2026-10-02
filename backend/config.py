@@ -18,6 +18,7 @@ from pathlib import Path
 import re
 import shutil
 import tempfile
+import threading
 from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
@@ -26,6 +27,29 @@ from constants import get_anara_home
 logger = logging.getLogger(__name__)
 
 CURRENT_CONFIG_VERSION = 1
+
+
+def _safe_env_int(key: str, default: int) -> int:
+    """Safely parses integer environment variable with fallback."""
+    val = os.getenv(key)
+    if val is None or not val.strip():
+        return default
+    try:
+        return int(val.strip())
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_env_float(key: str, default: float) -> float:
+    """Safely parses float environment variable with fallback."""
+    val = os.getenv(key)
+    if val is None or not val.strip():
+        return default
+    try:
+        return float(val.strip())
+    except (ValueError, TypeError):
+        return default
+
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "_config_version": CURRENT_CONFIG_VERSION,
@@ -38,40 +62,40 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "fast_subagent": os.getenv("FAST_SUBAGENT_MODEL", ""),
     },
     "terminal": {
-        "timeout": int(os.getenv("TERMINAL_TIMEOUT", 180)),
+        "timeout": _safe_env_int("TERMINAL_TIMEOUT", 180),
         "cwd": ".",
     },
     "code_execution": {
-        "timeout": int(os.getenv("CODE_EXECUTION_TIMEOUT", 180)),
+        "timeout": _safe_env_int("CODE_EXECUTION_TIMEOUT", 180),
         "max_tool_calls": 30,
     },
     "browser": {
-        "timeout": int(os.getenv("BROWSER_TIMEOUT", 120)),
+        "timeout": _safe_env_int("BROWSER_TIMEOUT", 120),
         "viewport_width": 1280,
         "viewport_height": 800,
     },
     "compression": {
         "enabled": True,
-        "protect_last_n": int(os.getenv("COMPRESSION_PROTECT_LAST_N", 15)),
-        "max_summary_tokens": int(os.getenv("COMPRESSION_MAX_TOKENS", 500)),
+        "protect_last_n": _safe_env_int("COMPRESSION_PROTECT_LAST_N", 15),
+        "max_summary_tokens": _safe_env_int("COMPRESSION_MAX_TOKENS", 500),
     },
     "delegation": {
         "model": os.getenv("DELEGATION_AI_MODEL", ""),
-        "max_iterations": int(os.getenv("DELEGATION_MAX_ITERATIONS", 25)),
+        "max_iterations": _safe_env_int("DELEGATION_MAX_ITERATIONS", 25),
     },
     "agent": {
-        "turn_timeout": int(os.getenv("AGENT_TURN_TIMEOUT", 300)),
-        "max_iterations": int(os.getenv("AGENT_MAX_ITERATIONS", 30)),
+        "turn_timeout": _safe_env_int("AGENT_TURN_TIMEOUT", 300),
+        "max_iterations": _safe_env_int("AGENT_MAX_ITERATIONS", 30),
         "generation": {
-            "temperature": float(os.getenv("AGENT_TEMPERATURE", 0.7)),
-            "max_tokens": int(os.getenv("AGENT_MAX_TOKENS", 4096)),
+            "temperature": _safe_env_float("AGENT_TEMPERATURE", 0.7),
+            "max_tokens": _safe_env_int("AGENT_MAX_TOKENS", 4096),
             "plan_temperature": 0.4,
             "auxiliary_temperature": 0.2,
         }
     },
     "database": {
         "journal_mode": os.getenv("DB_JOURNAL_MODE", "wal"),
-        "busy_timeout_ms": int(os.getenv("DB_BUSY_TIMEOUT_MS", 15000)),
+        "busy_timeout_ms": _safe_env_int("DB_BUSY_TIMEOUT_MS", 15000),
         "wal_autocheckpoint": 1000,
         "journal_size_limit_bytes": 67108864,  # 64MB (Anara Standard)
     },
@@ -79,7 +103,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "root": os.getenv("ANARA_WORKSPACE_DIR", ""),
     },
     "biometrics": {
-        "threshold": float(os.getenv("VOICE_BIOMETRICS_THRESHOLD", 0.74)),
+        "threshold": _safe_env_float("VOICE_BIOMETRICS_THRESHOLD", 0.74),
     },
     "stt": {
         "model": os.getenv("STT_MODEL", ""),
@@ -107,6 +131,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 
 _CONFIG_CACHE: Optional[Dict[str, Any]] = None
 _CONFIG_SIGNATURE: Tuple[float, int] = (0.0, 0)
+_CONFIG_LOCK = threading.RLock()
 
 
 def _deep_merge(base: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[str, Any]:
@@ -129,7 +154,10 @@ def _expand_env_vars(val: Any) -> Any:
         def _replace_match(m):
             var_name = m.group(1)
             default_val = m.group(2) if m.group(2) is not None else ""
-            return os.getenv(var_name, default_val)
+            raw_v = os.getenv(var_name)
+            if raw_v is not None and raw_v != "":
+                return raw_v
+            return default_val
         return _ENV_VAR_PATTERN.sub(_replace_match, val)
     elif isinstance(val, dict):
         return {k: _expand_env_vars(v) for k, v in val.items()}
@@ -161,7 +189,7 @@ def _rotate_config_backups(cfg_file: Path, keep: int = 5) -> None:
     try:
         if not cfg_file.is_file():
             return
-        now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        now_str = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_file = cfg_file.with_name(f"{cfg_file.name}.bak.{now_str}")
         shutil.copy2(cfg_file, backup_file)
 
@@ -358,40 +386,41 @@ def load_config(force_reload: bool = False) -> Dict[str, Any]:
     """Loads, migrates, expands, and merges config.yaml with default settings."""
     global _CONFIG_CACHE, _CONFIG_SIGNATURE
 
-    cfg_file = _get_config_path()
-    if not cfg_file.is_file():
-        _seed_default_config_file(cfg_file)
-        if _CONFIG_CACHE is None or force_reload:
-            _CONFIG_CACHE = _expand_env_vars(copy.deepcopy(DEFAULT_CONFIG))
-        return _CONFIG_CACHE
+    with _CONFIG_LOCK:
+        cfg_file = _get_config_path()
+        if not cfg_file.is_file():
+            _seed_default_config_file(cfg_file)
+            if _CONFIG_CACHE is None or force_reload:
+                _CONFIG_CACHE = _expand_env_vars(copy.deepcopy(DEFAULT_CONFIG))
+            return copy.deepcopy(_CONFIG_CACHE or {})
 
-    try:
-        st = cfg_file.stat()
-        sig = (st.st_mtime, st.st_size)
-        if not force_reload and _CONFIG_CACHE is not None and sig == _CONFIG_SIGNATURE:
-            return _CONFIG_CACHE
+        try:
+            st = cfg_file.stat()
+            sig = (st.st_mtime, st.st_size)
+            if not force_reload and _CONFIG_CACHE is not None and sig == _CONFIG_SIGNATURE:
+                return copy.deepcopy(_CONFIG_CACHE or {})
 
-        with open(cfg_file, "r", encoding="utf-8") as f:
-            user_data = yaml.safe_load(f) or {}
+            with open(cfg_file, "r", encoding="utf-8") as f:
+                user_data = yaml.safe_load(f) or {}
 
-        # Apply schema migrations if needed
-        user_data = _apply_config_migrations(user_data, cfg_file)
+            # Apply schema migrations if needed
+            user_data = _apply_config_migrations(user_data, cfg_file)
 
-        # Deep merge default config with user overrides
-        merged = _deep_merge(DEFAULT_CONFIG, user_data)
+            # Deep merge default config with user overrides
+            merged = _deep_merge(DEFAULT_CONFIG, user_data)
 
-        # Expand environment variables (${VAR})
-        expanded = _expand_env_vars(merged)
+            # Expand environment variables (${VAR})
+            expanded = _expand_env_vars(merged)
 
-        _CONFIG_CACHE = expanded
-        _CONFIG_SIGNATURE = sig
-        return _CONFIG_CACHE
+            _CONFIG_CACHE = expanded
+            _CONFIG_SIGNATURE = (cfg_file.stat().st_mtime, cfg_file.stat().st_size)
+            return copy.deepcopy(_CONFIG_CACHE or {})
 
-    except Exception as e:
-        logger.warning(f"[Config] Error loading {cfg_file}: {e}. Using defaults.")
-        if _CONFIG_CACHE is None:
-            _CONFIG_CACHE = _expand_env_vars(copy.deepcopy(DEFAULT_CONFIG))
-        return _CONFIG_CACHE
+        except Exception as e:
+            logger.warning(f"[Config] Error loading {cfg_file}: {e}. Using defaults.")
+            if _CONFIG_CACHE is None:
+                _CONFIG_CACHE = _expand_env_vars(copy.deepcopy(DEFAULT_CONFIG))
+            return copy.deepcopy(_CONFIG_CACHE or {})
 
 
 def cfg_get(key_path: str, default: Any = None) -> Any:
@@ -412,32 +441,35 @@ def cfg_get(key_path: str, default: Any = None) -> Any:
 
 def save_config(updates: Dict[str, Any]) -> bool:
     """Updates and safely persists changes to config.yaml under ANARA_HOME."""
-    cfg_file = _get_config_path()
-    # Read unexpanded raw user data to avoid writing back expanded secrets
-    try:
-        if cfg_file.is_file():
-            with open(cfg_file, "r", encoding="utf-8") as f:
-                raw_data = yaml.safe_load(f) or {}
-        else:
-            raw_data = copy.deepcopy(DEFAULT_CONFIG)
-    except Exception:
-        raw_data = copy.deepcopy(DEFAULT_CONFIG)
-
-    for k, v in updates.items():
-        if "." in k:
-            parts = k.split(".")
-            d = raw_data
-            for p in parts[:-1]:
-                d = d.setdefault(p, {})
-            d[parts[-1]] = v
-        else:
-            if isinstance(v, dict) and isinstance(raw_data.get(k), dict):
-                raw_data[k].update(v)
+    with _CONFIG_LOCK:
+        cfg_file = _get_config_path()
+        # Read unexpanded raw user data to avoid writing back expanded secrets
+        try:
+            if cfg_file.is_file():
+                with open(cfg_file, "r", encoding="utf-8") as f:
+                    raw_data = yaml.safe_load(f) or {}
             else:
-                raw_data[k] = v
+                raw_data = copy.deepcopy(DEFAULT_CONFIG)
+        except Exception:
+            raw_data = copy.deepcopy(DEFAULT_CONFIG)
 
-    raw_data["_config_version"] = CURRENT_CONFIG_VERSION
-    success = atomic_config_write(cfg_file, raw_data, backup=True)
-    if success:
-        load_config(force_reload=True)
-    return success
+        for k, v in updates.items():
+            if "." in k:
+                parts = k.split(".")
+                d = raw_data
+                for p in parts[:-1]:
+                    if not isinstance(d.get(p), dict):
+                        d[p] = {}
+                    d = d[p]
+                d[parts[-1]] = v
+            else:
+                if isinstance(v, dict) and isinstance(raw_data.get(k), dict):
+                    raw_data[k].update(v)
+                else:
+                    raw_data[k] = v
+
+        raw_data["_config_version"] = CURRENT_CONFIG_VERSION
+        success = atomic_config_write(cfg_file, raw_data, backup=True)
+        if success:
+            load_config(force_reload=True)
+        return success

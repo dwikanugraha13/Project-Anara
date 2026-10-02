@@ -122,9 +122,6 @@ class TaskScratchpad:
                 if 0 <= idx < len(self.steps):
                     self.steps[idx]["status"] = clean_status
                     updated = True
-                elif 1 <= idx <= len(self.steps):
-                    self.steps[idx - 1]["status"] = clean_status
-                    updated = True
             except (ValueError, TypeError):
                 pass
 
@@ -255,6 +252,16 @@ class MemoryNudgeManager:
     def increment_and_get_nudge(self, session_id: Any) -> Optional[str]:
         tracker = self.get_tracker(session_id)
         return tracker.increment_turn()
+
+    def evict_session(self, session_id: Any) -> None:
+        """Evicts in-memory tracker and scratchpad caches for a deleted session."""
+        s_key = self._canonical_key(session_id)
+        raw_key = str(session_id)
+        with self._lock:
+            self._trackers.pop(s_key, None)
+            self._trackers.pop(raw_key, None)
+            self._scratchpads.pop(s_key, None)
+            self._scratchpads.pop(raw_key, None)
 
 
 # Global singleton instance

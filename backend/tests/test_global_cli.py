@@ -38,3 +38,14 @@ def test_global_cli_installer_paths_and_generation():
     with open(sh_file, "r", encoding="utf-8") as f:
         content_sh = f.read()
     assert "cli.py" in content_sh
+
+    ps_file = res["ps_file"]
+    assert os.path.isfile(ps_file)
+    with open(ps_file, "r", encoding="utf-8") as f:
+        content_ps = f.read()
+    assert "cli.py" in content_ps
+
+    if res.get("exe_file"):
+        assert os.path.isfile(res["exe_file"])
+
+    assert GlobalCLIInstaller.is_installed() is True

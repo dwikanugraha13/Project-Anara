@@ -95,26 +95,12 @@ from .messaging_tools import (
     _tool_telegram_read_messages,
     _tool_telegram_send_message,
 )
+from .google_tools import (
+    _tool_gmail_read_inbox,
+    _tool_calendar_get_schedule,
+)
 
 logger = logging.getLogger(__name__)
-
-
-async def _tool_gmail_read_inbox(limit: int = 5) -> Dict[str, Any]:
-    from integrations import get_unread_emails, get_google_status
-    st = await get_google_status()
-    if st.get("status") != "connected":
-        return {"status": "error", "message": "Google Workspace account not linked."}
-    emails = await get_unread_emails(limit=limit)
-    return {"status": "success", "emails": emails}
-
-
-async def _tool_calendar_get_schedule(days: int = 3) -> Dict[str, Any]:
-    from integrations import get_upcoming_events, get_google_status
-    st = await get_google_status()
-    if st.get("status") != "connected":
-        return {"status": "error", "message": "Google Workspace account not linked."}
-    events = await get_upcoming_events(days=days)
-    return {"status": "success", "events": events}
 
 
 # All 66 Tool Specifications (Anara Standard)

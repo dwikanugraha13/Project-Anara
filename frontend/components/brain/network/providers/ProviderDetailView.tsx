@@ -1,18 +1,16 @@
 "use client";
 
 import React, { useState } from "react";
-import { BrandIcon } from "../../types";
+import { BrandIcon, ProviderItem, ProviderAccount, ModelItem } from "../../types";
+import { formatModelDisplayName, extractModelRoute, extractModelTier } from "@/lib/modelFormat";
 
 interface ProviderDetailViewProps {
-  selectedProvider: any;
+  selectedProvider: ProviderItem;
   onBack: () => void;
-  activeAiModelId: string;
-  onSelectModel: (modelId: string) => void;
   handleHideModel: (modelId: string, provider: string) => void;
   handleUnhideModel: (modelId: string, provider: string) => void;
   handleRestoreAllHidden: (provider: string) => void;
   handleDeleteCustomProvider: (providerId: number, name: string) => void;
-  handleToggleCustomProvider: (providerId: number, e?: React.MouseEvent) => void;
   handleDisconnectProvider: (providerId: string) => void;
   handleOAuthLogin: (providerId: string) => void;
   handleAddAccount: (providerId: string) => void;
@@ -29,13 +27,10 @@ interface ProviderDetailViewProps {
 export default function ProviderDetailView({
   selectedProvider,
   onBack,
-  activeAiModelId,
-  onSelectModel,
   handleHideModel,
   handleUnhideModel,
   handleRestoreAllHidden,
   handleDeleteCustomProvider,
-  handleToggleCustomProvider,
   handleDisconnectProvider,
   handleOAuthLogin,
   handleAddAccount,
@@ -50,8 +45,6 @@ export default function ProviderDetailView({
 }: ProviderDetailViewProps) {
   const [providerDetailTab, setProviderDetailTab] = useState<"accounts" | "models" | "endpoint">("accounts");
   const [detailModelSearch, setDetailModelSearch] = useState("");
-  const [detailCategoryFilter, setDetailCategoryFilter] = useState("all");
-  const [detailOnlyEnabled, setDetailOnlyEnabled] = useState(false);
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -62,9 +55,11 @@ export default function ProviderDetailView({
           onClick={onBack}
           className="px-3.5 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-slate-200 hover:text-white border border-white/[0.12] text-xs font-mono font-medium transition-all cursor-pointer flex items-center gap-2 group shadow-sm w-fit"
         >
-        <span className="text-cyan-400 group-hover:-translate-x-1 transition-transform font-bold text-sm">←</span>
-        <span>Back to Provider List</span>
-      </button>
+          <svg className="w-3.5 h-3.5 text-cyan-400 group-hover:-translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          <span>Back to Provider List</span>
+        </button>
         
       <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
         <span className="text-slate-500">Providers</span>
@@ -268,7 +263,10 @@ export default function ProviderDetailView({
                 disabled={isConnectingProvider === selectedProvider.id || !(providerKeyInputs[selectedProvider.id] || "").trim()}
                 className="px-5 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-400/40 text-xs font-semibold text-white transition-all cursor-pointer disabled:opacity-40 flex items-center gap-1.5 shadow-sm"
               >
-                <span>+</span> {isConnectingProvider === selectedProvider.id ? "Saving..." : "Save & Connect"}
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                <span>{isConnectingProvider === selectedProvider.id ? "Saving..." : "Save & Connect"}</span>
               </button>
             </div>
           </div>
@@ -284,7 +282,7 @@ export default function ProviderDetailView({
               </div>
             ) : (
               <div className="space-y-2">
-                {selectedProvider.accounts.map((acc: any) => {
+                {selectedProvider.accounts.map((acc: ProviderAccount) => {
                   const isEnabled = acc.is_enabled !== 0;
                   return (
                     <div
@@ -365,11 +363,11 @@ export default function ProviderDetailView({
           {/* Portal link footer */}
           {selectedProvider.signup_url && (
             <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs font-mono">
-              <span className="text-slate-500 text-[11px]">Portal Resmi:</span>
+              <span className="text-slate-500 text-[11px]">Official Portal:</span>
               <a
                 href={selectedProvider.signup_url}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="text-cyan-300 hover:text-white underline text-[11px]"
               >
                 {selectedProvider.signup_label}
@@ -394,50 +392,64 @@ export default function ProviderDetailView({
               className="w-48 px-3 py-1.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
             />
           </div>
-        
+
           {(!selectedProvider.models || selectedProvider.models.length === 0) ? (
-            <div className="p-8 rounded-2xl bg-black/30 text-center text-xs text-slate-500 font-mono">
+            <div className="p-8 rounded-xl bg-black/30 border border-white/5 text-center text-xs font-mono text-slate-500">
               No active models. Please connect an account in the Accounts &amp; Connections tab.
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[480px] overflow-y-auto custom-scrollbar pr-1">
               {selectedProvider.models
-                .filter((m: any) =>
+                .filter((m: ModelItem) =>
                   !detailModelSearch ||
                   m.name.toLowerCase().includes(detailModelSearch.toLowerCase()) ||
                   m.id.toLowerCase().includes(detailModelSearch.toLowerCase()) ||
                   (m.badge || "").toLowerCase().includes(detailModelSearch.toLowerCase())
                 )
-                .map((m: any) => (
-                  <div
-                    key={m.id}
-                    className="flex items-center justify-between p-3 rounded-2xl text-xs bg-black/40 border border-white/5 hover:bg-white/[0.04] text-slate-200 group"
-                  >
-                    <div className="flex items-center gap-2.5 truncate flex-1 min-w-0">
-                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
-                      <div className="min-w-0">
-                        <p className="font-medium truncate text-white">{m.name}</p>
-                        <p className="text-[10px] text-slate-500 font-mono truncate">{m.id}</p>
+                .map((m: ModelItem) => {
+                  const displayName = formatModelDisplayName(m.name || m.id);
+                  const routeName = extractModelRoute(m.id) || m.badge;
+                  const inherentTier = extractModelTier(m.id);
+                  return (
+                    <div
+                      key={m.id}
+                      className="flex items-center justify-between p-3 rounded-2xl text-xs bg-black/40 border border-white/5 hover:bg-white/[0.04] text-slate-200 group"
+                    >
+                      <div className="flex items-center gap-2.5 truncate flex-1 min-w-0">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-medium truncate text-white">{displayName}</p>
+                            {inherentTier && (
+                              <span className="text-[8px] font-mono px-1.5 py-0.2 rounded border uppercase bg-purple-500/15 text-purple-300 border-purple-500/30 shrink-0">
+                                {inherentTier}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-slate-500 font-mono truncate">{m.id}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-white/5 text-slate-400 border border-white/10">
+                          {routeName}
+                        </span>
+                        <button
+                          onClick={() => handleHideModel(m.id, selectedProvider.id)}
+                          className="text-slate-500 hover:text-rose-400 p-1 rounded hover:bg-rose-500/10 transition-colors cursor-pointer"
+                          title="Hide this model"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-white/5 text-slate-400 border border-white/10">
-                        {m.badge}
-                      </span>
-                      <button
-                        onClick={() => handleHideModel(m.id, selectedProvider.id)}
-                        className="text-slate-500 hover:text-rose-400 p-1 rounded hover:bg-rose-500/10 transition-colors cursor-pointer"
-                        title="Hide this model"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
             </div>
           )}
         
-          {/* Disabled / Hidden Models Section (9Router-style below available models) */}
+          {/* Disabled / Hidden Models Section */}
           {hiddenModelsByProvider[selectedProvider.id] && hiddenModelsByProvider[selectedProvider.id].length > 0 && (
             <div className="pt-4 border-t border-white/10 space-y-2.5">
               <div className="flex items-center justify-between">
@@ -462,7 +474,9 @@ export default function ProviderDetailView({
                     className="px-3 py-1.5 rounded-xl bg-black/40 hover:bg-black/60 border border-white/10 hover:border-cyan-400/40 text-xs font-mono text-slate-400 hover:text-white transition-all cursor-pointer flex items-center gap-1.5 shadow-sm group"
                     title={`Reactivate model ${mId}`}
                   >
-                    <span className="text-cyan-400 font-bold group-hover:scale-110 transition-transform">+</span>
+                    <svg className="w-3 h-3 text-cyan-400 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
                     <span>{mId}</span>
                   </button>
                 ))}

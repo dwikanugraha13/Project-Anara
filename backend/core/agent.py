@@ -65,9 +65,15 @@ class AnaraAgent:
         cv_val = _ACTIVE_SESSION_CV.get()
         return cv_val if cv_val is not None else self._active_session_id
 
+    def get_effective_session_id(self, session_id: Optional[int] = None) -> Optional[int]:
+        """Returns explicit session ID or falls back to ContextVar / active instance."""
+        if session_id is not None:
+            return session_id
+        return self.get_active_session_id()
+
     def has_active_custom_workspace(self, session_id: Optional[int] = None) -> bool:
         """Returns True if the session has an explicitly attached user project folder (Anara Code mode)."""
-        effective_sid = session_id if session_id is not None else self._active_session_id
+        effective_sid = self.get_effective_session_id(session_id)
         if effective_sid is not None:
             if effective_sid in self._session_active_paths and os.path.isdir(self._session_active_paths[effective_sid]):
                 return True
@@ -102,7 +108,7 @@ class AnaraAgent:
 
     def get_session_dir(self, session_id: Optional[int] = None) -> str:
         """Returns the active external folder, or isolated temporary directory, strictly for a session (Anara Standard)."""
-        effective_sid = session_id if session_id is not None else self._active_session_id
+        effective_sid = self.get_effective_session_id(session_id)
 
         if effective_sid is not None and effective_sid != 0:
             # 1. Check in-memory active path
@@ -132,7 +138,7 @@ class AnaraAgent:
                 if os.path.isdir(repo_root):
                     return repo_root
 
-            # 4. Dedicated clean session workspace folder (Hermes Sandboxed Tenant Parity)
+            # 4. Dedicated clean session workspace folder (Anara Sandboxed Tenant Standard)
             s_dir = os.path.join(self.base_workspace_path, f"session_{effective_sid}")
             os.makedirs(s_dir, exist_ok=True)
             return s_dir
@@ -156,7 +162,7 @@ class AnaraAgent:
         if not os.path.isdir(clean_path):
             raise ValueError(f"Folder '{clean_path}' not found.")
 
-        effective_sid = session_id if session_id is not None else self._active_session_id
+        effective_sid = self.get_effective_session_id(session_id)
         folder_name = os.path.basename(clean_path.rstrip("\\/")) or "Project Workspace"
 
         if effective_sid is not None:
@@ -185,7 +191,7 @@ class AnaraAgent:
 
     def set_custom_folder_name(self, name: Optional[str], session_id: Optional[int] = None):
         """Sets the friendly display name for the imported project folder in a session."""
-        effective_sid = session_id if session_id is not None else (self._active_session_id or 0)
+        effective_sid = self.get_effective_session_id(session_id) or 0
         if name:
             self._session_custom_names[effective_sid] = name.strip()
         else:
@@ -223,7 +229,7 @@ class AnaraAgent:
 
     def ensure_git_repo(self, session_id: Optional[int] = None) -> bool:
         """Initializes a clean git repository in the workspace folder if not already present."""
-        effective_sid = session_id if session_id is not None else self._active_session_id
+        effective_sid = self.get_effective_session_id(session_id)
         target_dir = self.get_session_dir(effective_sid)
         if not os.path.exists(target_dir):
             return False
@@ -247,7 +253,7 @@ class AnaraAgent:
 
     def create_checkpoint(self, session_id: Optional[int] = None) -> Optional[str]:
         """Creates a snapshot backup of workspace files before agent modifications."""
-        effective_sid = session_id if session_id is not None else self._active_session_id
+        effective_sid = self.get_effective_session_id(session_id)
         target_dir = self.get_session_dir(effective_sid)
         if not os.path.exists(target_dir):
             return None
@@ -279,7 +285,7 @@ class AnaraAgent:
 
     def rollback_checkpoint(self, checkpoint_id: str, session_id: Optional[int] = None) -> bool:
         """Restores workspace files from a previously saved checkpoint snapshot."""
-        effective_sid = session_id if session_id is not None else self._active_session_id
+        effective_sid = self.get_effective_session_id(session_id)
         safe_cp = os.path.basename(checkpoint_id.strip())
         cp_dir = os.path.join(tempfile.gettempdir(), "anara_checkpoints", f"sess_{effective_sid or 0}", safe_cp)
         target_dir = self.get_session_dir(effective_sid)
@@ -309,7 +315,7 @@ class AnaraAgent:
         FR-18: Automatically stages and commits workspace file changes per build step.
         Returns the short git commit SHA or None.
         """
-        effective_sid = session_id if session_id is not None else self._active_session_id
+        effective_sid = self.get_effective_session_id(session_id)
         target_dir = self.get_session_dir(effective_sid)
         if not os.path.exists(target_dir):
             return None
@@ -362,7 +368,7 @@ class AnaraAgent:
         """
         FR-18: Rolls back or reverts a specific git commit in the workspace.
         """
-        effective_sid = session_id if session_id is not None else self._active_session_id
+        effective_sid = self.get_effective_session_id(session_id)
         target_dir = self.get_session_dir(effective_sid)
         if not os.path.exists(target_dir):
             return False
@@ -395,7 +401,7 @@ class AnaraAgent:
 
     def get_workspace_tree(self, session_id: Optional[int] = None) -> Dict[str, Any]:
         """Returns both flat file items and recursive nested folder tree of active workspace for a session."""
-        effective_sid = session_id if session_id is not None else self._active_session_id
+        effective_sid = self.get_effective_session_id(session_id)
         target_dir = self.get_session_dir(effective_sid)
 
         if not target_dir or not os.path.isdir(target_dir):
@@ -442,6 +448,14 @@ class AnaraAgent:
                     else:
                         display_rel = entry_rel
 
+                    # Skip Windows NTFS junction points and reparse points (e.g. 'Application Data', 'Cookies', 'Recent')
+                    try:
+                        st = entry.stat(follow_symlinks=False)
+                        if getattr(st, "st_file_attributes", 0) & 0x400:
+                            continue
+                    except Exception:
+                        continue
+
                     if entry.is_dir(follow_symlinks=False):
                         children = build_nested_node(entry.path, entry_rel)
                         nodes.append({
@@ -467,7 +481,7 @@ class AnaraAgent:
                         nodes.append(file_obj)
                         items.append(file_obj)
             except Exception as err:
-                logger.warning(f"[WorkspaceTree] Error reading {current_path}: {err}")
+                logger.debug(f"[WorkspaceTree] Notice reading {current_path}: {err}")
             return nodes
 
         nested_tree = []
@@ -526,7 +540,7 @@ class AnaraAgent:
 
     def clear_workspace(self, session_id: Optional[int] = None):
         """Detaches a session workspace. Never deletes a user-selected external folder."""
-        key = session_id if session_id is not None else 0
+        key = self.get_effective_session_id(session_id) or 0
         external_path = self._session_active_paths.get(key)
         target_dir = self.get_session_dir(session_id)
         if session_id is not None:
