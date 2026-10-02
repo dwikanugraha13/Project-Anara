@@ -843,20 +843,30 @@ async def _tool_glob_find_files(pattern: str, path: Optional[str] = None) -> Dic
         "icon": "search"
     })
 
-    IGNORED_DIRS = {".git", "node_modules", "venv", "__pycache__", ".next", "dist", "build", ".venv", ".vscode"}
-    matches = []
+    IGNORED_DIRS = {
+        ".git", "node_modules", "venv", "__pycache__", ".next", "dist", "build",
+        ".venv", ".vscode", "appdata", ".cache", ".cargo", ".rustup", ".conda",
+        ".npm", ".pnpm-store", ".gradle", "local settings", "application data"
+    }
 
-    for root, dirs, files in os.walk(root_dir):
-        dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
-        for f in files:
-            full_path = os.path.join(root, f)
-            rel_path = os.path.relpath(full_path, root_dir).replace("\\", "/")
-            if fnmatch.fnmatch(rel_path, pat) or fnmatch.fnmatch(f, pat):
-                matches.append(rel_path)
-                if len(matches) >= 100:
-                    break
-        if len(matches) >= 100:
-            break
+    def _sync_glob():
+        res = []
+        for root, dirs, files in os.walk(root_dir):
+            dirs[:] = [d for d in dirs if d.lower() not in IGNORED_DIRS and not d.startswith(".")]
+            for f in files:
+                full_path = os.path.join(root, f)
+                rel_path = os.path.relpath(full_path, root_dir).replace("\\", "/")
+                if fnmatch.fnmatch(rel_path, pat) or fnmatch.fnmatch(f, pat):
+                    res.append(rel_path)
+                    if len(res) >= 100:
+                        return res
+        return res
+
+    try:
+        matches = await asyncio.wait_for(asyncio.to_thread(_sync_glob), timeout=8.0)
+    except asyncio.TimeoutError:
+        matches = []
+        logger.debug(f"[fs_tools] glob search timed out for pattern '{pat}' in '{root_dir}'")
 
     summary_msg = f"Found {len(matches)} files matching pattern '{pat}'."
     _emit_agent_event("agent_action_complete", {
@@ -903,36 +913,49 @@ async def _tool_grep_search_code(pattern: str, path: Optional[str] = None, inclu
     except re.error as e:
         return {"status": "error", "message": f"Invalid regex pattern: {e}"}
 
-    IGNORED_DIRS = {".git", "node_modules", "venv", "__pycache__", ".next", "dist", "build", ".venv", ".vscode"}
+    IGNORED_DIRS = {
+        ".git", "node_modules", "venv", "__pycache__", ".next", "dist", "build",
+        ".venv", ".vscode", "appdata", ".cache", ".cargo", ".rustup", ".conda",
+        ".npm", ".pnpm-store", ".gradle", "local settings", "application data"
+    }
     BINARY_EXTS = {".png", ".jpg", ".jpeg", ".ico", ".pdf", ".zip", ".tar", ".exe", ".dll", ".woff", ".woff2", ".ttf", ".sqlite", ".db"}
-    matches = []
 
-    for root, dirs, files in os.walk(root_dir):
-        dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
-        for f in files:
-            ext = os.path.splitext(f)[1].lower()
-            if ext in BINARY_EXTS:
-                continue
-            if include and not (fnmatch.fnmatch(f, include) or fnmatch.fnmatch(f, f"*.{include.lstrip('.*')}")):
-                continue
+    def _sync_grep():
+        res = []
+        for root, dirs, files in os.walk(root_dir):
+            dirs[:] = [d for d in dirs if d.lower() not in IGNORED_DIRS and not d.startswith(".")]
+            for f in files:
+                ext = os.path.splitext(f)[1].lower()
+                if ext in BINARY_EXTS:
+                    continue
+                if include and not (fnmatch.fnmatch(f, include) or fnmatch.fnmatch(f, f"*.{include.lstrip('.*')}")):
+                    continue
 
-            full_path = os.path.join(root, f)
-            rel_path = os.path.relpath(full_path, root_dir).replace("\\", "/")
-            try:
-                with open(full_path, "r", encoding="utf-8", errors="ignore") as fp:
-                    for line_num, line in enumerate(fp, 1):
-                        if regex.search(line):
-                            matches.append({
-                                "file": rel_path,
-                                "line_number": line_num,
-                                "line": line.rstrip("\r\n")[:250]
-                            })
-                            if len(matches) >= 60:
-                                break
-            except Exception:
-                continue
-        if len(matches) >= 60:
-            break
+                full_path = os.path.join(root, f)
+                rel_path = os.path.relpath(full_path, root_dir).replace("\\", "/")
+                try:
+                    with open(full_path, "r", encoding="utf-8", errors="ignore") as fp:
+                        for line_num, line in enumerate(fp, 1):
+                            if regex.search(line):
+                                line_clean = line.rstrip()[:250]
+                                res.append({
+                                    "file": rel_path,
+                                    "line_number": line_num,
+                                    "line": line_clean
+                                })
+                                if len(res) >= 60:
+                                    return res
+                except Exception:
+                    continue
+            if len(res) >= 60:
+                return res
+        return res
+
+    try:
+        matches = await asyncio.wait_for(asyncio.to_thread(_sync_grep), timeout=10.0)
+    except asyncio.TimeoutError:
+        matches = []
+        logger.debug(f"[fs_tools] grep search timed out for pattern '{pat}' in '{root_dir}'")
 
     grep_detail = f"/ pattern={pat}" + (f" include={include}" if include else "")
     summary_str = "\n".join([f"{m['file']}:{m['line_number']}: {m['line']}" for m in matches[:20]])

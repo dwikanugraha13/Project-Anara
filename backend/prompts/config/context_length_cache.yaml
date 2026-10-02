@@ -242,6 +242,7 @@ context_lengths:
   9router/cl/nvidia/nemotron-3.5-content-safety@http://localhost:20128/v1: 128000
   9router/cl/nvidia/nemotron-3.5-lightning:free@http://localhost:20128/v1: 128000
   9router/cl/nvidia/nemotron-3.5-lightning@http://localhost:20128/v1: 128000
+  9router/cl/nvidia/switchyard@http://localhost:20128/v1: 200000
   9router/cl/openai/gpt-3.5-turbo-0613@http://localhost:20128/v1: 16385
   9router/cl/openai/gpt-3.5-turbo-16k@http://localhost:20128/v1: 16385
   9router/cl/openai/gpt-3.5-turbo-instruct@http://localhost:20128/v1: 16385
@@ -1094,6 +1095,7 @@ context_lengths:
   cl/nvidia/nemotron-3.5-content-safety@http://localhost:20128/v1: 128000
   cl/nvidia/nemotron-3.5-lightning:free@http://localhost:20128/v1: 128000
   cl/nvidia/nemotron-3.5-lightning@http://localhost:20128/v1: 128000
+  cl/nvidia/switchyard@http://localhost:20128/v1: 200000
   cl/openai/gpt-3.5-turbo-0613@http://localhost:20128/v1: 16385
   cl/openai/gpt-3.5-turbo-16k@http://localhost:20128/v1: 16385
   cl/openai/gpt-3.5-turbo-instruct@http://localhost:20128/v1: 16385
