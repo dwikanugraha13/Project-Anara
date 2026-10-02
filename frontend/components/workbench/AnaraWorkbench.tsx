@@ -37,6 +37,8 @@ const AnaraBrain = lazy(() => import("../brain/AnaraBrain"));
 const AnaraMediaPlayer = lazy(() => import("../dock/AnaraMediaPlayer"));
 import { WorkbenchTitlebar } from "./WorkbenchTitlebar";
 import { WorkbenchContextPanes } from "./WorkbenchContextPanes";
+import { WorkbenchChatColumn } from "./WorkbenchChatColumn";
+import { useWorkbenchCommandPalette } from "./useWorkbenchCommandPalette";
 
 export type AssistantStatus = "idle" | "listening" | "thinking" | "speaking";
 
@@ -611,93 +613,22 @@ export default function AnaraWorkbench({
     return null;
   }, [transcript]);
 
-  // Command palette items for fast keyboard-driven actions
-  const commandPaletteItems: CommandItem[] = useMemo(() => {
-    const items: CommandItem[] = [
-      {
-        id: "new-session",
-        label: "New Chat Session",
-        category: "Workstation",
-        shortcut: "Ctrl+N",
-        onSelect: () => handleNewSession(),
-      },
-      {
-        id: "toggle-editor",
-        label: activeIdeFile.isOpen ? "Close Context Editor" : "Open Context Editor",
-        category: "Context Panes",
-        sublabel: activeIdeFile.fileName || "Workspace code editor",
-        shortcut: "Ctrl+\\",
-        onSelect: () => {
-          if (activeIdeFile.isOpen) {
-            setActiveIdeFile((prev) => ({ ...prev, isOpen: false }));
-          } else if (activeIdeFile.filePath) {
-            setActiveIdeFile((prev) => ({ ...prev, isOpen: true }));
-          } else {
-            handleOpenFileIDE("README.md", "README.md");
-          }
-        },
-      },
-      {
-        id: "toggle-terminal",
-        label: isTerminalOpen ? "Hide Terminal Dock" : "Show Terminal Dock",
-        category: "Context Panes",
-        shortcut: "Ctrl+`",
-        onSelect: () => handleToggleTerminal(!isTerminalOpen),
-      },
-      {
-        id: "toggle-mode",
-        label: interactionMode === "voice" ? "Switch to Chat Mode (Silent Text)" : "Switch to Voice Mode (3D Avatar)",
-        category: "Workstation",
-        shortcut: "Ctrl+M",
-        onSelect: () => onSetInteractionMode?.(interactionMode === "voice" ? "chat" : "voice"),
-      },
-      {
-        id: "open-brain",
-        label: "Anara Brain (Memory, Skills & Providers)",
-        category: "Workstation",
-        onSelect: () => setIsBrainDrawerOpen(true),
-      },
-      {
-        id: "clear-transcript",
-        label: "Clear Conversation Transcript",
-        category: "Chat",
-        onSelect: () => onClearTranscript?.(),
-      },
-      {
-        id: "open-code-studio",
-        label: "Open Fullscreen Anara Code Studio (/code)",
-        category: "Navigation",
-        onSelect: () => {
-          if (typeof window !== "undefined") {
-            window.open(activeSessionId ? `/code?session_id=${activeSessionId}` : "/code", "_blank");
-          }
-        },
-      },
-    ];
-
-    models.forEach((m) => {
-      items.push({
-        id: `model-${m.id}`,
-        label: `Switch Model: ${m.name || m.id}`,
-        category: "AI Models",
-        sublabel: m.description,
-        onSelect: () => handleSelectModel(m.id),
-      });
-    });
-
-    return items;
-  }, [
+  // Command palette items for fast keyboard-driven actions (Modularized Hook)
+  const commandPaletteItems: CommandItem[] = useWorkbenchCommandPalette({
     activeIdeFile,
+    setActiveIdeFile,
     isTerminalOpen,
-    interactionMode,
-    models,
-    handleNewSession,
     handleToggleTerminal,
+    interactionMode,
     onSetInteractionMode,
+    handleNewSession,
+    setIsBrainDrawerOpen,
     onClearTranscript,
+    activeSessionId,
+    models,
     handleSelectModel,
     handleOpenFileIDE,
-  ]);
+  });
 
   return (
     <div className="relative w-full h-full pointer-events-none">
@@ -808,98 +739,56 @@ export default function AnaraWorkbench({
               <div className="absolute inset-0 z-50 cursor-col-resize select-none bg-transparent" />
             )}
 
-            {/* CHAT TIMELINE STREAM & COMPOSER COLUMN */}
-            <div
-              className="flex flex-col min-w-[360px] h-full relative overflow-hidden"
-              style={{
-                flex: isContextPaneOpen ? "1 1 auto" : "1 1 100%",
-              }}
-            >
-              {/* Unified Desktop Titlebar Band (Modularized Component) */}
-              <WorkbenchTitlebar
-                activeIdeFile={activeIdeFile}
-                transcript={transcript}
-                activeSessionId={activeSessionId}
-                handleNewSession={handleNewSession}
-                setIsBrainDrawerOpen={setIsBrainDrawerOpen}
-                isContextPaneOpen={isContextPaneOpen}
-                setIsContextPaneOpen={setIsContextPaneOpen}
-                contextTab={contextTab}
-                setContextTab={setContextTab}
-                fetchGitStatus={fetchGitStatus}
-                gitStatus={gitStatus}
-                setIsTerminalOpen={setIsTerminalOpen}
-              />
-
-              {/* Scrollable message timeline fills remaining vertical space */}
-              <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden">
-                <ChatTimeline
-                  transcript={transcript}
-                  status={status}
-                  activeSessionId={activeSessionId || undefined}
-                  activeSpeaker={activeSpeaker}
-                  activeModelId={activeModelId}
-                  liveToolProgress={liveToolProgress}
-                  footerDockHeight={footerDockHeight}
-                  onApprovePlan={onApprovePlan}
-                  activeThinkingText={activeThinkingText}
-                  onAnswerQuestion={onAnswerQuestion}
-                  onOpenFile={(p: string) => handleOpenFileIDE(p, p.split("/").pop() || "file")}
-                  onOpenLightbox={handleOpenLightbox}
-                  onSelectPrompt={(text: string) => {
-                    setInputMessage(text);
-                    const inputEl = document.querySelector('footer textarea') as HTMLTextAreaElement;
-                    inputEl?.focus();
-                  }}
-                />
-              </div>
-
-              {/* Anchored Composer Dock — seamless floating card, zero divider lines */}
-              <div className="shrink-0 px-3 py-2 sm:px-5 sm:py-3 relative z-20 bg-transparent">
-                <div className="max-w-3xl xl:max-w-4xl mx-auto w-full">
-                  <BottomDock
-                    embedded={true}
-                    showAgentModeToggle={false}
-                    showInteractionModeToggle={true}
-                    inputMessage={inputMessage}
-                    setInputMessage={setInputMessage}
-                    onSend={(text: string, mode: "plan" | "build") => onSendText?.(text, mode)}
-                    onSteer={onSteer}
-                    agentMode={agentMode}
-                    setAgentMode={setAgentMode}
-                    models={models}
-                    activeModelId={activeModelId}
-                    onSelectModel={handleSelectModel}
-                    status={status}
-                    isMicActive={isMicActive}
-                    isMuted={isMuted}
-                    onToggleMute={onToggleMute}
-                    onStartSession={onStartSession}
-                    onInterrupt={onInterrupt}
-                    micDenied={micDenied}
-                    activeIntensity={activeIntensity}
-                    interactionMode={interactionMode}
-                    onSetInteractionMode={onSetInteractionMode}
-                    isConnected={isConnected}
-                    activeSessionId={activeSessionId}
-                    onNewSession={handleNewSession}
-                    onFolderUpload={handleFolderUpload}
-                    onFileUpload={handleFileUpload}
-                    liveToolProgress={liveToolProgress}
-                    checklistData={latestPlanChecklist}
-                    activeQuestion={activeUnansweredQuestion}
-                    onAnswerQuestion={onAnswerQuestion}
-                    onHeightChange={setFooterDockHeight}
-                    onApprovePlan={onApprovePlan}
-                    onRejectPlan={onRejectPlan}
-                    reasoningEffort={reasoningEffort}
-                    onSelectReasoningEffort={onSelectReasoningEffort}
-                    gitStatus={gitStatus}
-                    promptTurnsCount={transcript.length}
-                  />
-                </div>
-              </div>
-            </div>
+            {/* CHAT TIMELINE STREAM & COMPOSER COLUMN (Modularized Component) */}
+            <WorkbenchChatColumn
+              isContextPaneOpen={isContextPaneOpen}
+              setIsContextPaneOpen={setIsContextPaneOpen}
+              activeIdeFile={activeIdeFile}
+              transcript={transcript}
+              activeSessionId={activeSessionId}
+              handleNewSession={handleNewSession}
+              setIsBrainDrawerOpen={setIsBrainDrawerOpen}
+              contextTab={contextTab}
+              setContextTab={setContextTab}
+              fetchGitStatus={fetchGitStatus}
+              gitStatus={gitStatus}
+              setIsTerminalOpen={setIsTerminalOpen}
+              status={status}
+              activeSpeaker={activeSpeaker}
+              activeModelId={activeModelId}
+              liveToolProgress={liveToolProgress}
+              footerDockHeight={footerDockHeight}
+              setFooterDockHeight={setFooterDockHeight}
+              onApprovePlan={onApprovePlan}
+              onRejectPlan={onRejectPlan}
+              activeThinkingText={activeThinkingText}
+              onAnswerQuestion={onAnswerQuestion}
+              handleOpenFileIDE={handleOpenFileIDE}
+              handleOpenLightbox={handleOpenLightbox}
+              inputMessage={inputMessage}
+              setInputMessage={setInputMessage}
+              onSendText={onSendText}
+              onSteer={onSteer}
+              agentMode={agentMode}
+              setAgentMode={setAgentMode}
+              models={models}
+              handleSelectModel={handleSelectModel}
+              isMicActive={isMicActive}
+              isMuted={isMuted}
+              onToggleMute={onToggleMute}
+              onStartSession={onStartSession}
+              onInterrupt={onInterrupt}
+              activeIntensity={activeIntensity}
+              interactionMode={interactionMode}
+              onSetInteractionMode={onSetInteractionMode}
+              isConnected={isConnected}
+              handleFolderUpload={() => handleFolderUpload()}
+              handleFileUpload={handleFileUpload}
+              checklistData={latestPlanChecklist}
+              activeUnansweredQuestion={activeUnansweredQuestion}
+              reasoningEffort={reasoningEffort}
+              onSelectReasoningEffort={onSelectReasoningEffort}
+            />
 
             {/* RESIZABLE SASH SPLITTER (Anara Desktop Standard) */}
             {isContextPaneOpen && (

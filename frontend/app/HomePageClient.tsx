@@ -22,6 +22,7 @@ const AVATAR_URL = "/avatar.glb";
 
 import { getDanceReplyPrompt } from "@/lib/danceDetector";
 import { mergeTranscriptText } from "@/lib/transcriptStream";
+import { restoreTranscriptFromMessages } from "@/lib/sessionRestoration";
 
 export type TranscriptEntry = TranscriptItem;
 
@@ -478,45 +479,7 @@ export default function HomePageClient({
     if (typeof window !== "undefined") {
       localStorage.setItem("anara_active_session_id", String(payload.sessionId));
     }
-    const restored: TranscriptEntry[] = [];
-    for (const m of payload.messages) {
-      const u = (m.user_text || "").trim();
-      const a = (m.ai_text || "").trim();
-      const vis = m.visual_data || {};
-      
-      if (u) {
-        restored.push({ speaker: "input", text: u });
-      }
-      if (a || vis.visualType || m.media_type) {
-        restored.push({
-          speaker: "output",
-          text: a,
-          visualType: vis.visualType || (m.media_type as any),
-          imageUrl: vis.imageUrl || m.media_url,
-          imageTitle: vis.imageTitle,
-          sourceDomain: vis.sourceDomain,
-          sourceUrl: vis.sourceUrl,
-          images: vis.images,
-          weatherData: vis.weatherData,
-          codeData: vis.codeData,
-          systemHudData: vis.systemHudData,
-          knowledgeCardData: vis.knowledgeCardData,
-          todoData: vis.todoData,
-          briefingData: vis.briefingData,
-          agentActionData: vis.agentActionData,
-          documentViewerData: vis.documentViewerData,
-          workspaceFolderData: vis.workspaceFolderData,
-          planData: vis.planData,
-          mediaType: m.media_type as any,
-          agentMode: (vis.agent_mode || vis.agentMode || "plan") as "plan" | "build",
-          modelId: vis.model || vis.model_id || vis.modelId,
-          durationText: vis.duration_text || vis.durationText || (vis.duration ? `${Math.round(vis.duration)}s` : undefined),
-          tokenUsage: vis.tokenUsage || vis.token_usage,
-          toolsUsed: vis.tools_used || vis.toolsUsed || vis.token_usage?.tools_used || vis.tokenUsage?.toolsUsed,
-          toolRecordsCount: vis.tool_records_count || vis.toolRecordsCount,
-        });
-      }
-    }
+    const restored = restoreTranscriptFromMessages(payload.messages);
 
     setTranscript((prev) => {
       // Race-condition guard: ONLY protect if the user is actively waiting for an AI response to finish

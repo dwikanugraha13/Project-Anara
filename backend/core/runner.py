@@ -502,17 +502,16 @@ class AnaraExecutionRunner:
         except Exception:
             pass
 
-        # Lifelong Learning Loop: extract reusable procedural skills from successful runs (Anara Standard)
-        if tools_used and agent_mode == "build":
-            try:
-                from core.skill_extractor import SkillExtractor
-                asyncio.create_task(SkillExtractor.extract_and_save_skill_async(
-                    user_prompt=clean_text,
-                    tools_used=tools_used,
-                    final_summary=final_reply,
-                ))
-            except Exception:
-                pass
+        # Lifelong Learning & Background Self-Improvement Review (Anara Standard)
+        try:
+            from core.self_improvement import self_improvement_reviewer
+            asyncio.create_task(self_improvement_reviewer.run_review_async(
+                user_prompt=clean_text,
+                ai_response=final_reply,
+                tools_used=tools_used,
+            ))
+        except Exception:
+            pass
 
         yield TurnEvent(
             type="final_text",

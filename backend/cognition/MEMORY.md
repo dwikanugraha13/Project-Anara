@@ -3,3 +3,4 @@
 - [2026-09-15] Anara Code Studio (/code) ditetapkan sebagai workstation mode explicit_plan_build dengan CodeMirror 6, Explorer, dan Terminal.
 - [2026-09-15] Mode percakapan santai di Anara AI (/) berjalan bebas friksi (conversational), dengan proteksi plan mode otomatis jika memicu aksi mutating/berisiko.
 - [2026-09-27] Persona dan gaya komunikasi Anara dikunci ke Bahasa Gaul santai (lu-gue, asik, ekspresif, anti-kaku).
+- [2026-10-03] On Windows, always run tests using the Python executable from `backend/venv` (`backend/venv/Scripts/python.exe run_tests.py`) instead of the global Python interpreter, as global Python lacks required dependencies.

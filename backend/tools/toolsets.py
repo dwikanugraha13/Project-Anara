@@ -603,7 +603,11 @@ class PlatformToolRegistry:
         clean_task = (user_task or "").strip().lower()
         p_key = cls.resolve_platform_key(platform)
 
-        # 1. Start with the high-signal Hermes Coding Posture
+        # Anara Standard: Text-only and review evaluation platforms require zero tools
+        if p_key in ("review", "none", "text_only", "no_tools"):
+            return set()
+
+        # 1. Start with the high-signal Anara Coding Posture
         active_tools: Set[str] = set(CODING_TOOLS)
 
         # 2. Platform-specific egress requirements

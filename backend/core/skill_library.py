@@ -257,6 +257,77 @@ Use this skill when requested or when detecting tasks with keywords: {', '.join(
             "file_path": skill_file,
         }
 
+    def patch_skill(
+        self,
+        name_or_slug: str,
+        old_string: str,
+        new_string: str,
+        relative_file_path: Optional[str] = None,
+        replace_all: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Applies a targeted find-and-replace patch to an existing skill (Anara skill_manage patch standard).
+        """
+        skill = self.get_skill(name_or_slug)
+        if not skill:
+            return {"ok": False, "error": f"Skill '{name_or_slug}' not found."}
+
+        target_file = skill["file_path"]
+        if relative_file_path:
+            clean_rel = relative_file_path.strip().replace("\\", "/").lstrip("/")
+            folder = os.path.dirname(skill["file_path"])
+            custom_path = os.path.normpath(os.path.join(folder, clean_rel))
+            if not custom_path.startswith(folder):
+                return {"ok": False, "error": "Path traversal prohibited."}
+            target_file = custom_path
+
+        if not os.path.isfile(target_file):
+            return {"ok": False, "error": f"File '{target_file}' not found."}
+
+        try:
+            with open(target_file, "r", encoding="utf-8") as f:
+                content = f.read(MAX_SKILL_FILE_BYTES)
+
+            needle = old_string
+            if needle not in content:
+                if needle.strip() in content:
+                    needle = needle.strip()
+                else:
+                    return {"ok": False, "error": f"old_string not found in '{os.path.basename(target_file)}'."}
+
+            if not replace_all and content.count(needle) > 1:
+                return {"ok": False, "error": f"old_string matches {content.count(needle)} occurrences. Please provide more context."}
+
+            if replace_all:
+                patched = content.replace(needle, new_string)
+            else:
+                patched = content.replace(needle, new_string, 1)
+
+            if os.path.basename(target_file) == "SKILL.md":
+                from core.skills_hub import validate_skill_content_safety
+                is_safe, threat = validate_skill_content_safety(patched)
+                if not is_safe:
+                    return {"ok": False, "error": f"Security verification failed: {threat}"}
+
+                now_iso = datetime.now().isoformat()
+                patched = re.sub(r"(updated_at:\s*).*(\n)", rf"\g<1>'{now_iso}'\2", patched)
+
+            with self._lock:
+                atomic_write_text(Path(target_file), patched)
+                self._invalidate_cache()
+
+            logger.info(f"[SkillLibrary] Successfully patched skill '{skill['name']}' at {target_file}")
+            return {
+                "ok": True,
+                "name": skill["name"],
+                "slug": skill["slug"],
+                "file_path": target_file,
+                "action": "patched"
+            }
+        except Exception as e:
+            logger.error(f"[SkillLibrary] Error patching skill '{name_or_slug}': {e}")
+            return {"ok": False, "error": str(e)}
+
     def _compute_scan_signature(self) -> float:
         """Computes composite mtime signature across root and all skill directories (Anara Standard)."""
         try:

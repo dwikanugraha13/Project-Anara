@@ -1228,6 +1228,29 @@ async def _process_channel_request_core(
     if turn_artifacts:
         await _auto_dispatch_artifacts_to_channel(req.channel, req.channel_id, turn_artifacts)
 
+    # Spawn background self-improvement review (Anara Native Omnichannel)
+    try:
+        from core.self_improvement import self_improvement_reviewer
+        async def _receipt_cb(receipt_text: str):
+            try:
+                from integrations.manager import channel_manager
+                await channel_manager.send_message(channel=req.channel, target_id=req.channel_id, text=f"<i>{receipt_text}</i>")
+            except Exception:
+                pass
+
+        asyncio.create_task(
+            self_improvement_reviewer.run_review_async(
+                user_prompt=clean_text,
+                ai_response=final_reply,
+                tools_used=tools_used,
+                channel=req.channel,
+                channel_id=req.channel_id,
+                summary_callback=_receipt_cb,
+            )
+        )
+    except Exception as e_si:
+        logger.debug(f"[ChannelGateway] Self-improvement trigger error: {e_si}")
+
     return ChannelResponse(
         text=final_reply,
         session_id=session_id,
@@ -1472,6 +1495,29 @@ async def _execute_build_mode_core(
     turn_artifacts = get_turn_artifacts()
     if turn_artifacts:
         await _auto_dispatch_artifacts_to_channel(req.channel, req.channel_id, turn_artifacts)
+
+    # Spawn background self-improvement review (Anara Native Omnichannel)
+    try:
+        from core.self_improvement import self_improvement_reviewer
+        async def _build_receipt_cb(receipt_text: str):
+            try:
+                from integrations.manager import channel_manager
+                await channel_manager.send_message(channel=req.channel, target_id=req.channel_id, text=f"<i>{receipt_text}</i>")
+            except Exception:
+                pass
+
+        asyncio.create_task(
+            self_improvement_reviewer.run_review_async(
+                user_prompt=resolved_task or user_prompt or req.text.strip(),
+                ai_response=final_reply,
+                tools_used=tools_used,
+                channel=req.channel,
+                channel_id=req.channel_id,
+                summary_callback=_build_receipt_cb,
+            )
+        )
+    except Exception as e_si:
+        logger.debug(f"[ChannelGateway] Self-improvement trigger error: {e_si}")
 
     return ChannelResponse(
         text=final_reply,
