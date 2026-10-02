@@ -380,47 +380,80 @@ export function ToolRunGroupCard({
               const file = lastSlash !== -1 ? cleanTarget.slice(lastSlash + 1) : cleanTarget;
               const opBadge = isRead ? "READ" : isGrep ? "GREP" : isGlob ? "GLOB" : "EXPLORE";
 
+              const hasExcerpt = Boolean(sub.rawResult || sub.content);
               return (
-                <div
-                  key={sIdx}
-                  onClick={() => onOpenFile && cleanTarget && onOpenFile(cleanTarget, file)}
-                  className={`flex items-center gap-2 py-0.5 px-1.5 rounded transition-colors group/row ${
-                    onOpenFile ? "hover:bg-white/[0.04] cursor-pointer" : "text-slate-300"
-                  }`}
-                >
-                  <span
-                    className={`px-1.5 py-px rounded text-[9.5px] font-bold shrink-0 tracking-wider border ${
-                      isRead
-                        ? "bg-cyan-500/10 text-cyan-300 border-cyan-400/20"
-                        : isGrep
-                        ? "bg-purple-500/10 text-purple-300 border-purple-400/20"
-                        : "bg-amber-500/10 text-amber-300 border-amber-400/20"
-                    }`}
-                  >
-                    {opBadge}
-                  </span>
-                  <div className="truncate flex items-baseline gap-0.5 min-w-0">
-                    {dir && <span className="text-slate-500 truncate text-[10px]">{dir}</span>}
-                    <span className="text-slate-200 font-medium group-hover/row:text-cyan-300 transition-colors truncate">
-                      {file}
-                    </span>
-                  </div>
-                  {onOpenFile && (
-                    <span className="text-slate-600 group-hover/row:text-slate-400 text-[10px] ml-auto shrink-0 opacity-0 group-hover/row:opacity-100 transition-opacity">
-                      ↗
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDismissedIndices((prev) => new Set([...prev, sIdx]));
+                <div key={sIdx} className="flex flex-col group/row">
+                  <div
+                    onClick={() => {
+                      if (hasExcerpt) {
+                        setExpandedRowIdx(isRowExpanded ? null : sIdx);
+                      } else if (onOpenFile && cleanTarget) {
+                        onOpenFile(cleanTarget, file);
+                      }
                     }}
-                    className="text-slate-600 hover:text-slate-300 p-0.5 rounded opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0 ml-1"
-                    title="Dismiss"
+                    className={`flex items-center gap-2 py-0.5 px-1.5 rounded transition-colors cursor-pointer hover:bg-white/[0.04] text-slate-300`}
                   >
-                    ✕
-                  </button>
+                    <span
+                      className={`px-1.5 py-px rounded text-[9.5px] font-bold shrink-0 tracking-wider border ${
+                        isRead
+                          ? "bg-cyan-500/10 text-cyan-300 border-cyan-400/20"
+                          : isGrep
+                          ? "bg-purple-500/10 text-purple-300 border-purple-400/20"
+                          : "bg-amber-500/10 text-amber-300 border-amber-400/20"
+                      }`}
+                    >
+                      {opBadge}
+                    </span>
+                    <div className="truncate flex items-baseline gap-0.5 min-w-0 flex-1">
+                      {dir && <span className="text-slate-500 truncate text-[10px]">{dir}</span>}
+                      <span className="text-slate-200 font-medium group-hover/row:text-cyan-300 transition-colors truncate">
+                        {file}
+                      </span>
+                    </div>
+                    {hasExcerpt && (
+                      <span className="text-slate-500 hover:text-slate-300 p-0.5 shrink-0 ml-auto">
+                        <svg
+                          className={`w-3 h-3 transition-transform duration-150 ${isRowExpanded ? "rotate-90" : ""}`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </span>
+                    )}
+                    {onOpenFile && (
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          cleanTarget && onOpenFile(cleanTarget, file);
+                        }}
+                        className="text-slate-600 hover:text-cyan-300 text-[10px] shrink-0 opacity-0 group-hover/row:opacity-100 transition-opacity ml-1"
+                        title="Open in Code Editor"
+                      >
+                        ↗
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDismissedIndices((prev) => new Set([...prev, sIdx]));
+                      }}
+                      className="text-slate-600 hover:text-slate-300 p-0.5 rounded opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0 ml-1"
+                      title="Dismiss"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {/* Inline Code / Search Excerpt (Anara Standard) */}
+                  {hasExcerpt && isRowExpanded && (
+                    <div className="pl-4 pr-1 py-1">
+                      <pre className="p-2.5 rounded border border-white/[0.06] bg-black/50 text-slate-300 text-[10.5px] leading-relaxed max-h-[220px] overflow-auto custom-scrollbar whitespace-pre-wrap break-all shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
+                        {sub.rawResult || sub.content}
+                      </pre>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -533,7 +566,9 @@ export function AgentActionCard({
   onOpenFile?: (filePath: string, fileName?: string) => void;
   onDismiss?: () => void;
 }) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const tool = (action?.toolName || "").toLowerCase();
+  const isFileEdit = Boolean(action?.added !== undefined || action?.deleted !== undefined || action?.checkpointId || tool.includes("patch") || tool.includes("write") || tool.includes("edit"));
+  const [isExpanded, setIsExpanded] = useState(isFileEdit);
   const [isReverting, setIsReverting] = useState(false);
   const [isReverted, setIsReverted] = useState(false);
   const [rollbackError, setRollbackError] = useState<string | null>(null);
@@ -644,8 +679,7 @@ export function AgentActionCard({
     }
   };
 
-  const tool = (action.toolName || "").toLowerCase();
-  const isStart = action.eventType === "agent_action_start";
+  const isStart = (action?.eventType || "") === "agent_action_start";
   const isWrite = FILE_EDIT_TOOLS.has(tool) || tool.includes("write") || tool.includes("edit") || tool.includes("patch") || tool.includes("artifact");
   const isShell = SHELL_TOOLS.has(tool) || tool.includes("bash") || tool.includes("shell") || tool.includes("terminal") || tool.includes("command") || tool.includes("cli");
   const isSearch = SEARCH_TOOLS.has(tool) || tool.includes("glob") || tool.includes("grep") || tool.includes("search");
@@ -790,6 +824,21 @@ export function AgentActionCard({
                         </tr>
                       );
                     })}
+                  </tbody>
+                </table>
+              ) : action.content ? (
+                <table className="w-full border-collapse">
+                  <tbody>
+                    {action.content.split("\n").slice(0, 150).map((lineText: string, lIdx: number) => (
+                      <tr key={lIdx} className="hover:bg-white/[0.02]">
+                        <td className="w-10 pr-2 text-right select-none text-slate-600 font-mono text-[9.5px] py-0.5 border-r border-white/[0.06]">
+                          {lIdx + 1}
+                        </td>
+                        <td className="pl-3 pr-3 py-0.5 whitespace-pre font-mono leading-relaxed text-[11px] text-slate-200">
+                          {lineText}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               ) : (
