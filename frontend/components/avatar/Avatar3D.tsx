@@ -33,135 +33,32 @@ import {
   type AvatarEmotion,
   type AvatarGestureType,
 } from "@/lib/sentimentAnalyzer";
+import {
+  type Avatar3DProps,
+  type Avatar3DHandle,
+  type BoneMap,
+  type CachedMorphMesh,
+  BLINK_CLOSE_DURATION,
+  BLINK_HOLD_DURATION,
+  BLINK_OPEN_DURATION,
+  BLINK_INTERVAL_MIN,
+  BLINK_INTERVAL_MAX,
+  BREATH_SPINE_AMP,
+  BREATH_SHOULDER_AMP,
+  BREATH_RATE,
+  CROSSFADE_DURATION,
+  _qGaze,
+  _eGaze,
+  _qNeckGaze,
+  _eNeckGaze,
+  retargetClips,
+} from "./avatarTypes";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Types & Interfaces
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface Avatar3DProps {
-  url: string;
-  idleAnimationUrl?: string;
-  talkingAnimationUrl?: string;
-  isSpeaking: boolean;
-  audioIntensity: number;
-  onLoad?: () => void;
-  /** Called when Rumba dance animation starts */
-  onDanceStart?: () => void;
-  /** Called when Rumba dance animation finishes — lets page.tsx clear any queued audio */
-  onDanceEnd?: () => void;
-  /** Emotion pushed from backend emotion engine */
-  backendEmotion?: string;
-  /** Gesture pushed from backend emotion engine */
-  backendGesture?: string;
-  isVoiceMode?: boolean;
-}
-
-export interface Avatar3DHandle {
-  setAudioIntensity: (intensity: number) => void;
-  resetLipSync: () => void;
-  queueTranscriptVisemes: (text: string, durationMs?: number) => void;
-  triggerTextMotion: (text: string) => void;
-  setEmotion: (emotion: AvatarEmotion) => void;
-  triggerGesture: (gesture: AvatarGestureType, durationMs?: number) => void;
-  /** Apply emotion + gesture received from backend WebSocket */
-  applyBackendEmotion: (emotion: string, gesture: string) => void;
-  /** Smoothly stop dance and crossfade back to conversation */
-  stopDance: () => void;
-  /**
-   * playAnimation — crossfade to any named animation.
-   * name: 'idle' | 'angry' | 'laugh' (or full clip key like 'idle_ext_...')
-   * duration: crossfade duration in seconds (default 0.4)
-   */
-  playAnimation: (name: "idle" | "angry" | "laugh" | string, duration?: number) => void;
-  /**
-   * registerClips — called by external animation loaders (IdleLayer etc.)
-   * to inject retargeted clips into the avatar's mixer.
-   * autoPlayPrefix: if set and no animation is currently playing, auto-plays
-   * the first clip matching that prefix.
-   */
-  registerClips: (clips: THREE.AnimationClip[], autoPlayPrefix?: string) => void;
-}
-
-interface BoneMap {
-  head?: THREE.Bone;
-  neck?: THREE.Bone;
-  spine?: THREE.Bone;
-  spine1?: THREE.Bone;
-  spine2?: THREE.Bone;
-  hips?: THREE.Bone;
-  leftShoulder?: THREE.Bone;
-  rightShoulder?: THREE.Bone;
-  leftArm?: THREE.Bone;
-  rightArm?: THREE.Bone;
-  leftForeArm?: THREE.Bone;
-  rightForeArm?: THREE.Bone;
-  leftHand?: THREE.Bone;
-  rightHand?: THREE.Bone;
-  leftFingers: THREE.Bone[];
-  rightFingers: THREE.Bone[];
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────────────────────────────────────────
-
-const BLINK_CLOSE_DURATION = 0.10;
-const BLINK_HOLD_DURATION = 0.03;
-const BLINK_OPEN_DURATION = 0.14;
-const BLINK_INTERVAL_MIN = 2.0;
-const BLINK_INTERVAL_MAX = 4.5;
-
-const BREATH_SPINE_AMP = 0.007;
-const BREATH_SHOULDER_AMP = 0.004;
-const BREATH_RATE = 0.25;
-const CROSSFADE_DURATION = 0.4;
-
-// Reusable Quaternions for zero-allocation additive head gaze tracking
-const _qGaze = new THREE.Quaternion();
-const _eGaze = new THREE.Euler(0, 0, 0, "YXZ");
-const _qNeckGaze = new THREE.Quaternion();
-const _eNeckGaze = new THREE.Euler(0, 0, 0, "YXZ");
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Animation Utilities — External GLB Loader (Safe, per-file Suspense)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Strip Mixamo "mixamorig" prefix from track names so clips match Avaturn rig */
-function retargetClips(clips: THREE.AnimationClip[], prefix: string): THREE.AnimationClip[] {
-  return (clips ?? []).map((clip) => {
-    const r = clip.clone();
-    r.name = `${prefix}${clip.name}`;
-    r.tracks = r.tracks.map((track) => {
-      const f = track.clone();
-      f.name = f.name
-        .replace(/mixamorig[:/]?/gi, "")
-        .replace(/^([A-Za-z])/, (_, c: string) => c.toUpperCase());
-      return f;
-    });
-    return r;
-  });
-}
+export type { Avatar3DProps, Avatar3DHandle };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
-
-interface CachedMorphMesh {
-  mesh: THREE.SkinnedMesh;
-  influences: number[];
-  dict: Record<string, number>;
-  blinkL?: number;
-  blinkR?: number;
-  eyesClosed?: number;
-  eyeLookUpLeft?: number;
-  eyeLookDownLeft?: number;
-  eyeLookUpRight?: number;
-  eyeLookDownRight?: number;
-  eyeLookInLeft?: number;
-  eyeLookOutLeft?: number;
-  eyeLookInRight?: number;
-  eyeLookOutRight?: number;
-}
 
 const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
   ({ url, idleAnimationUrl, talkingAnimationUrl, isSpeaking, audioIntensity, onLoad, onDanceStart, onDanceEnd, backendEmotion, backendGesture, isVoiceMode = true }, ref) => {

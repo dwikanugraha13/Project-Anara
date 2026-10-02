@@ -36,6 +36,7 @@ const AgentStatusBar = dynamic(() => import("../statusbar/AgentStatusBar"), {
 const AnaraBrain = lazy(() => import("../brain/AnaraBrain"));
 const AnaraMediaPlayer = lazy(() => import("../dock/AnaraMediaPlayer"));
 import { WorkbenchTitlebar } from "./WorkbenchTitlebar";
+import { WorkbenchContextPanes } from "./WorkbenchContextPanes";
 
 export type AssistantStatus = "idle" | "listening" | "thinking" | "speaking";
 
@@ -911,148 +912,29 @@ export default function AnaraWorkbench({
               </div>
             )}
 
-            {/* DOCKED CONTEXT PANE: MULTI-TENANT WORKBENCH (Anara Desktop Standard) */}
-            {isContextPaneOpen && (
-              <div
-                ref={contextPaneRef}
-                style={{ width: `${contextPaneWidth}px` }}
-                className="flex flex-col min-w-[320px] h-full bg-[#060913]/95 backdrop-blur-xl border-l border-white/[0.08] relative z-10"
-              >
-                {/* Context Pane Zone Header */}
-                <div className="h-[34px] px-3 bg-[#060913] border-b border-white/[0.08] flex items-center justify-between shrink-0 select-none">
-                  <div className="flex items-center gap-1.5 font-mono text-xs">
-                    <button
-                      type="button"
-                      onClick={() => setContextTab("editor")}
-                      className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all ${
-                        contextTab === "editor"
-                          ? "bg-white/10 text-cyan-300 font-semibold"
-                          : "text-slate-400 hover:text-slate-200"
-                      }`}
-                    >
-                      Editor {activeIdeFile.fileName ? `(${activeIdeFile.fileName})` : ""}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setContextTab("review");
-                        fetchGitStatus();
-                      }}
-                      className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all flex items-center gap-1.5 ${
-                        contextTab === "review"
-                          ? "bg-white/10 text-cyan-300 font-semibold"
-                          : "text-slate-400 hover:text-slate-200"
-                      }`}
-                    >
-                      <span>Review</span>
-                      {gitStatus && gitStatus.changed_count > 0 && (
-                        <span className="w-4 h-4 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 text-[9.5px] font-bold flex items-center justify-center font-mono">
-                          {gitStatus.changed_count}
-                        </span>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setContextTab("terminal");
-                        setIsTerminalOpen(true);
-                      }}
-                      className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all ${
-                        contextTab === "terminal"
-                          ? "bg-white/10 text-cyan-300 font-semibold"
-                          : "text-slate-400 hover:text-slate-200"
-                      }`}
-                    >
-                      Terminal
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsContextPaneOpen(false);
-                      setActiveIdeFile((prev) => ({ ...prev, isOpen: false }));
-                    }}
-                    className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
-                    title="Close Context Pane (Ctrl+\\)"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-
-                {/* Keep-Alive Pane Zones */}
-                <div className="flex-1 min-h-0 relative overflow-hidden flex flex-col">
-                  {/* Editor Container */}
-                  <div
-                    className="flex-1 min-h-0 w-full flex flex-col"
-                    style={{ display: contextTab === "editor" ? "flex" : "none" }}
-                  >
-                    <AnaraCodeIDE
-                      isOpen={true}
-                      onClose={() => {
-                        setIsContextPaneOpen(false);
-                        setActiveIdeFile((prev) => ({ ...prev, isOpen: false }));
-                      }}
-                      fileName={activeIdeFile.fileName}
-                      filePath={activeIdeFile.filePath}
-                      fileExt={activeIdeFile.fileExt}
-                      fileSizeKb={activeIdeFile.fileSizeKb}
-                      content={activeIdeFile.content}
-                      originalContent={activeIdeFile.originalContent}
-                      embedded={true}
-                      tabs={ideTabs}
-                      onSelectTab={handleSelectIdeTab}
-                      onCloseTab={handleCloseIdeTab}
-                      onSaveFile={handleSaveIdeFile}
-                      isTerminalOpen={isTerminalOpen}
-                      onToggleTerminal={handleToggleTerminal}
-                      onAskAnara={onSendText ? (fp, fn) => onSendText(`Explain or inspect file: ${fp}`, "plan") : undefined}
-                    />
-
-                    {/* Docked Split Terminal */}
-                    {isTerminalOpen && (
-                      <div className="h-56 border-t border-white/[0.08] shrink-0 flex flex-col">
-                        <WorkbenchTerminal
-                          embedded={true}
-                          isVisible={isTerminalOpen && contextTab === "editor"}
-                          onClose={() => setIsTerminalOpen(false)}
-                          cwd={typeof window !== "undefined" ? localStorage.getItem("anara_ide_workspace_key") || undefined : undefined}
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Review Git Container (Anara Desktop Standard) */}
-                  <div
-                    className="h-full w-full"
-                    style={{ display: contextTab === "review" ? "flex" : "none" }}
-                  >
-                    <ReviewGitPane
-                      gitStatus={gitStatus}
-                      onRefreshGit={fetchGitStatus}
-                      sessionId={activeSessionId}
-                      activeFilePath={activeIdeFile?.filePath}
-                      onSelectDiffFile={(path) => handleOpenFileIDE(path, path.split("/").pop() || "file")}
-                      onAgentShip={onSendText ? () => onSendText("Ship active git changes: review diffs, commit changes, and push PR to origin", "build") : undefined}
-                    />
-                  </div>
-
-                  {/* Full Terminal Container */}
-                  <div
-                    className="h-full w-full"
-                    style={{ display: contextTab === "terminal" ? "flex" : "none" }}
-                  >
-                    <WorkbenchTerminal
-                      embedded={true}
-                      isVisible={contextTab === "terminal"}
-                      onClose={() => setContextTab("editor")}
-                      cwd={typeof window !== "undefined" ? localStorage.getItem("anara_ide_workspace_key") || undefined : undefined}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* DOCKED CONTEXT PANE: MULTI-TENANT WORKBENCH (Modularized Component) */}
+            <WorkbenchContextPanes
+              isContextPaneOpen={isContextPaneOpen}
+              setIsContextPaneOpen={setIsContextPaneOpen}
+              contextPaneRef={contextPaneRef}
+              contextPaneWidth={contextPaneWidth}
+              contextTab={contextTab}
+              setContextTab={setContextTab}
+              activeIdeFile={activeIdeFile}
+              setActiveIdeFile={setActiveIdeFile}
+              gitStatus={gitStatus}
+              fetchGitStatus={fetchGitStatus}
+              isTerminalOpen={isTerminalOpen}
+              setIsTerminalOpen={setIsTerminalOpen}
+              ideTabs={ideTabs}
+              handleSelectIdeTab={handleSelectIdeTab}
+              handleCloseIdeTab={handleCloseIdeTab}
+              handleSaveIdeFile={handleSaveIdeFile}
+              handleToggleTerminal={handleToggleTerminal}
+              onSendText={onSendText}
+              activeSessionId={activeSessionId}
+              handleOpenFileIDE={handleOpenFileIDE}
+            />
           </div>
         </div>
 
