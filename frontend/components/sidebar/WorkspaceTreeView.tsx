@@ -1,308 +1,24 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { WorkspaceNode, WorkspaceTreeData, GitStatusData, WorkspaceFile } from "./types";
+import { WorkspaceNode, WorkspaceTreeData, GitStatusData } from "./types";
 import { renderFileSvgIcon } from "./FileIcons";
 import { anaraApi } from "@/lib/apiClient";
+import {
+  normalizePath,
+  nodeHasMatch,
+  getProjectBadge,
+  ContextMenuState,
+} from "./treeUtils";
+import { RecursiveTreeNode } from "./RecursiveTreeNode";
+import { TreeContextMenu } from "./TreeContextMenu";
+import { useLazyTree } from "./useLazyTree";
+import { useTreeExpansion } from "./useTreeExpansion";
 
-const EXPANDED_STORAGE_KEY = "anara_tree_expanded_paths";
+export { RecursiveTreeNode } from "./RecursiveTreeNode";
+export { nodeHasMatch } from "./treeUtils";
 
-/** Normalizes OS file paths to clean forward-slash relative/canonical paths */
-function normalizePath(p: string = ""): string {
-  return p.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, "");
-}
-
-/** Deep recursive checker to verify if a node or any of its descendants matches the filter query */
-export function nodeHasMatch(node: WorkspaceNode, q: string): boolean {
-  if (!q) return true;
-  const name = (node.name || "").toLowerCase();
-  if (name.includes(q)) {
-    return true;
-  }
-  if (node.children && node.children.length > 0) {
-    return node.children.some((child) => nodeHasMatch(child, q));
-  }
-  return false;
-}
-
-/** Rollup check to see if any descendant in a directory has an active Git status */
-function getDirectoryGitRollup(
-  node: WorkspaceNode,
-  gitFilesMap: Record<string, string>
-): "M" | "A" | "U" | "D" | null {
-  if (!node.children || node.children.length === 0) return null;
-
-  for (const child of node.children) {
-    if (child.type === "file") {
-      const normChildPath = normalizePath(child.path);
-      const st = gitFilesMap[normChildPath];
-      if (st) {
-        if (st.includes("M")) return "M";
-        if (st.includes("A")) return "A";
-        if (st === "??" || st.includes("U")) return "U";
-        if (st.includes("D")) return "D";
-      }
-    } else if (child.type === "directory") {
-      const subRollup = getDirectoryGitRollup(child, gitFilesMap);
-      if (subRollup) return subRollup;
-    }
-  }
-  return null;
-}
-
-interface ContextMenuState {
-  isOpen: boolean;
-  x: number;
-  y: number;
-  targetNode: WorkspaceNode | null;
-  targetPath: string;
-  isFolder: boolean;
-}
-
-/** Recursive File & Directory Tree Node Component for IDE support with Git Status badges.
- * Native Dynamic: `children === undefined` means not-loaded; expand triggers lazy fetch.
- */
-export function RecursiveTreeNode({
-  node,
-  depth = 0,
-  onOpenFileIDE,
-  gitFilesMap = {},
-  activeFilePath,
-  filterText = "",
-  expandedPaths,
-  onToggleExpand,
-  onContextMenu,
-  onLoadChildren,
-}: {
-  node: WorkspaceNode;
-  depth?: number;
-  onOpenFileIDE?: (filePath: string, fileName: string) => void;
-  gitFilesMap?: Record<string, string>;
-  activeFilePath?: string;
-  filterText?: string;
-  expandedPaths: Set<string>;
-  onToggleExpand: (path: string) => void;
-  onContextMenu: (e: React.MouseEvent, node: WorkspaceNode) => void;
-  onLoadChildren: (dirPath: string) => void;
-}) {
-  const normNodePath = normalizePath(node.path || node.name);
-  const isManuallyExpanded = expandedPaths.has(normNodePath);
-
-  // Filter check (matches by file/folder name to avoid matching whole drive paths)
-  const q = filterText.toLowerCase().trim();
-  const matchesSelf = !q || (node.name || "").toLowerCase().includes(q);
-
-  // Check if any descendant matches (only among loaded children)
-  const hasMatchingDescendant = useMemo(() => {
-    if (!q || !node.children || node.children.length === 0) return false;
-    return node.children.some((child) => nodeHasMatch(child, q));
-  }, [node, q]);
-
-  if (node.type === "directory") {
-    // children === undefined means NOT loaded yet (lazy convention)
-    const childrenLoaded = node.children !== undefined;
-    const hasChildren = childrenLoaded && node.children!.length > 0;
-    const isLoading = node.loading === true;
-
-    if (q && !matchesSelf && !hasMatchingDescendant) {
-      return null;
-    }
-
-    // Auto-expand folder when search query finds matches inside, otherwise use cached expand state
-    const isFolderOpen = q ? (hasMatchingDescendant || isManuallyExpanded) : isManuallyExpanded;
-    const gitRollup = !isFolderOpen ? getDirectoryGitRollup(node, gitFilesMap) : null;
-
-    const handleToggle = () => {
-      onToggleExpand(normNodePath);
-      // If expanding and children not loaded yet, trigger lazy fetch
-      if (!isManuallyExpanded && !childrenLoaded && !isLoading) {
-        onLoadChildren(node.path);
-      }
-    };
-
-    return (
-      <div className="flex flex-col">
-        <button
-          type="button"
-          onClick={handleToggle}
-          onContextMenu={(e) => onContextMenu(e, node)}
-          className="flex items-center gap-1.5 w-full text-left py-1 px-1.5 rounded-lg hover:bg-white/[0.06] text-slate-300 hover:text-white transition-colors cursor-pointer group select-none"
-          style={{ paddingLeft: `${Math.max(6, depth * 12)}px` }}
-        >
-          {/* Rotating vector chevron */}
-          {isLoading ? (
-            <svg className="w-3 h-3 text-cyan-400 shrink-0 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-          ) : (
-            <svg
-              className={`w-3 h-3 text-slate-400 group-hover:text-white transition-transform duration-150 shrink-0 ${
-                isFolderOpen ? "rotate-90" : ""
-              }`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M9 5l7 7-7 7" />
-            </svg>
-          )}
-
-          {/* Dynamic VS Code Folder Icon (Open vs Closed) */}
-          {isFolderOpen ? (
-            <svg className="w-3.5 h-3.5 text-amber-400 shrink-0" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M19 20H4c-1.1 0-2-.9-2-2l.01-11c0-1.1.89-2 1.99-2h5l2 2h7c1.1 0 2 .9 2 2v1h-8c-1.1 0-2 .9-2 2l-1.5 6H19v2zm1.75-8H7.38l-1.5 6h13.37l1.5-6z" />
-            </svg>
-          ) : (
-            <svg className="w-3.5 h-3.5 text-amber-400 shrink-0" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
-            </svg>
-          )}
-
-          <span className="truncate font-mono font-bold text-slate-200 group-hover:text-white transition-colors text-[11px]">
-            {node.name}
-          </span>
-
-          {/* Collapsed folder Git rollup indicator */}
-          {gitRollup && (
-            <span
-              className={`w-1.5 h-1.5 rounded-full shrink-0 ml-1.5 ${
-                gitRollup === "M"
-                  ? "bg-cyan-400"
-                  : gitRollup === "A"
-                  ? "bg-emerald-400"
-                  : gitRollup === "D"
-                  ? "bg-rose-400"
-                  : "bg-amber-400"
-              }`}
-              title={`Contains uncommitted changes (${gitRollup})`}
-            />
-          )}
-
-          {hasChildren && (
-            <span className="text-[9px] text-slate-500 ml-auto font-mono group-hover:text-slate-400">
-              {node.children?.length}
-            </span>
-          )}
-        </button>
-
-        {isFolderOpen && (
-          <div className="flex flex-col border-l border-white/[0.06] ml-2.5">
-            {isLoading && !hasChildren && (
-              <div className="flex items-center gap-1.5 py-1 px-1.5 text-[10px] text-slate-500 font-mono" style={{ paddingLeft: `${Math.max(6, (depth + 1) * 12)}px` }}>
-                <svg className="w-3 h-3 animate-spin text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Loading...
-              </div>
-            )}
-            {node.loadError && (
-              <div className="flex items-center gap-1.5 py-1 px-1.5 text-[10px] text-rose-400 font-mono" style={{ paddingLeft: `${Math.max(6, (depth + 1) * 12)}px` }}>
-                Error: {node.loadError}
-              </div>
-            )}
-            {hasChildren && node.children!.map((child, idx) => (
-              <RecursiveTreeNode
-                key={child.path || `${child.name}-${idx}`}
-                node={child}
-                depth={depth + 1}
-                onOpenFileIDE={onOpenFileIDE}
-                gitFilesMap={gitFilesMap}
-                activeFilePath={activeFilePath}
-                filterText={filterText}
-                expandedPaths={expandedPaths}
-                onToggleExpand={onToggleExpand}
-                onContextMenu={onContextMenu}
-                onLoadChildren={onLoadChildren}
-              />
-            ))}
-            {childrenLoaded && !hasChildren && !isLoading && !node.loadError && (
-              <div className="py-0.5 px-1.5 text-[10px] text-slate-600 font-mono italic" style={{ paddingLeft: `${Math.max(6, (depth + 1) * 12)}px` }}>
-                (empty)
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // File Item Filter
-  if (q && !matchesSelf) {
-    return null;
-  }
-
-  const isCode = node.is_code;
-  const isPdf = node.is_pdf;
-  const isImg = node.is_image;
-  const ext = (node.ext || "").toLowerCase();
-
-  const normPath = normalizePath(node.path || node.name);
-  const normActive = normalizePath(activeFilePath || "");
-  const isActive = Boolean(
-    normActive &&
-      (normPath === normActive ||
-        normPath.endsWith("/" + normActive) ||
-        normActive.endsWith("/" + normPath))
-  );
-
-  // Determine git status badge (M, A, U, D) strictly by normalized relative path match
-  const gitStatusRaw = gitFilesMap[normPath] || (node.path ? gitFilesMap[normalizePath(node.path)] : undefined);
-  let gitBadge: { label: string; cls: string; title: string } | null = null;
-
-  if (gitStatusRaw) {
-    const s = gitStatusRaw.trim();
-    if (s === "M" || s === "MM" || s === "M " || s === " M") {
-      gitBadge = { label: "M", cls: "text-cyan-400 bg-cyan-950/40 border border-cyan-500/20", title: "Git: Modified" };
-    } else if (s === "A" || s === "AM" || s === "A ") {
-      gitBadge = { label: "A", cls: "text-emerald-400 bg-emerald-950/40 border border-emerald-500/20", title: "Git: Staged / Added" };
-    } else if (s === "??" || s === "U" || s === "UU") {
-      gitBadge = { label: "U", cls: "text-amber-400 bg-amber-950/40 border border-amber-500/20", title: "Git: Untracked" };
-    } else if (s === "D" || s === "D ") {
-      gitBadge = { label: "D", cls: "text-rose-400 bg-rose-950/40 border border-rose-500/20", title: "Git: Deleted" };
-    } else if (s === "R") {
-      gitBadge = { label: "R", cls: "text-purple-400 bg-purple-950/40 border border-purple-500/20", title: "Git: Renamed" };
-    } else {
-      gitBadge = { label: s.slice(0, 1), cls: "text-slate-300 bg-white/[0.06] border border-white/10", title: `Git: ${s}` };
-    }
-  }
-
-  return (
-    <div
-      className={`flex items-center justify-between py-1 px-1.5 rounded-lg transition-all cursor-pointer group/file select-none border-l-2 ${
-        isActive
-          ? "border-cyan-400 bg-cyan-500/10 text-white font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
-          : "border-transparent hover:bg-white/[0.04] text-slate-300 hover:text-white"
-      }`}
-      style={{ paddingLeft: `${Math.max(6, depth * 12)}px` }}
-      title={`Open IDE: ${node.path} (${node.size_kb ?? 0} KB)`}
-      onClick={() => onOpenFileIDE?.(node.path, node.name)}
-      onContextMenu={(e) => onContextMenu(e, node)}
-    >
-      <div className="flex items-center gap-1.5 min-w-0 flex-1 pr-1">
-        {renderFileSvgIcon(ext, isPdf, isImg, isCode, node.name)}
-        <span className={`truncate font-mono text-[11px] ${isActive ? "text-white font-medium" : "group-hover/file:text-slate-200"}`}>
-          {node.name}
-        </span>
-      </div>
-
-      {/* Right status badge: Git status or file size */}
-      {gitBadge ? (
-        <span
-          className={`font-mono text-[10px] font-bold shrink-0 ml-1 px-1 py-0.2 rounded ${gitBadge.cls}`}
-          title={gitBadge.title}
-        >
-          {gitBadge.label}
-        </span>
-      ) : typeof node.size_kb === "number" ? (
-        <span className="text-[9px] text-slate-500 font-mono shrink-0">
-          {node.size_kb}k
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
-interface WorkspaceTreeViewProps {
+export interface WorkspaceTreeViewProps {
   workspaceTree: WorkspaceTreeData;
   gitStatus: GitStatusData | null;
   explorerMode: "tree" | "git";
@@ -318,24 +34,6 @@ interface WorkspaceTreeViewProps {
   onRefreshWorkspace?: () => void;
   onDeleteFile?: (filePath: string) => Promise<boolean>;
   onCreateFile?: (filePath: string) => Promise<boolean>;
-}
-
-function getProjectBadge(name: string): { icon?: string; letter: string; color: string } {
-  const n = (name || "").trim();
-  if (/^[a-zA-Z]:[\\/]?$/i.test(n) || n === "/") {
-    return { icon: "▲", letter: "", color: "bg-black text-white border border-white/25" };
-  }
-  const firstChar = (n[0] || "P").toUpperCase();
-  const colors: Record<string, string> = {
-    P: "bg-purple-600/90 text-purple-100",
-    J: "bg-pink-600/90 text-pink-100",
-    D: "bg-slate-600/90 text-slate-100",
-    C: "bg-black text-white border border-white/20",
-    A: "bg-cyan-600/90 text-cyan-100",
-    G: "bg-emerald-600/90 text-emerald-100",
-  };
-  const color = colors[firstChar] || "bg-indigo-600/90 text-indigo-100";
-  return { letter: firstChar, color };
 }
 
 export default function WorkspaceTreeView({
@@ -355,162 +53,18 @@ export default function WorkspaceTreeView({
   onDeleteFile,
   onCreateFile,
 }: WorkspaceTreeViewProps) {
-  // ── 0. Lazy Tree State (Anara Parity) ──────────────────────────────────
-  // Mutable tree nodes array — entries from backend are root-level only,
-  // children are fetched on-demand and merged into this state.
-  const [treeNodes, setTreeNodes] = useState<WorkspaceNode[]>([]);
-  const inFlightRef = useRef<Set<string>>(new Set());
+  // ── 0. Lazy Tree Hook ──
+  const { treeNodes, handleLoadChildren } = useLazyTree(workspaceTree);
 
-  // Sync root entries from workspaceTree prop into treeNodes
-  useEffect(() => {
-    const rootEntries = workspaceTree?.entries ?? workspaceTree?.nested_tree ?? [];
-    // Map backend entries to lazy tree nodes: directories have children=undefined (not loaded)
-    const mapped: WorkspaceNode[] = rootEntries.map((entry) => ({
-      ...entry,
-      // If backend already set children (legacy nested_tree), keep them; otherwise undefined = not-loaded
-      children: entry.type === "directory"
-        ? (entry.children !== undefined ? entry.children : undefined)
-        : undefined,
-    }));
-    setTreeNodes(mapped);
-  }, [workspaceTree]);
+  // ── 1. Expand/Collapse Hook ──
+  const {
+    expandedPaths,
+    togglePathExpanded,
+    expandAllFolders,
+    collapseAllFolders,
+  } = useTreeExpansion(workspaceTree, treeNodes);
 
-  /** Recursively find and update a node by path in the tree */
-  const updateNodeAtPath = useCallback(
-    (nodes: WorkspaceNode[], targetPath: string, updater: (node: WorkspaceNode) => WorkspaceNode): WorkspaceNode[] => {
-      return nodes.map((node) => {
-        const normNode = normalizePath(node.path);
-        const normTarget = normalizePath(targetPath);
-        if (normNode === normTarget) {
-          return updater(node);
-        }
-        if (node.children && node.type === "directory") {
-          const updatedChildren = updateNodeAtPath(node.children, targetPath, updater);
-          if (updatedChildren !== node.children) {
-            return { ...node, children: updatedChildren };
-          }
-        }
-        return node;
-      });
-    },
-    []
-  );
-
-  /** Lazy-load children for a directory node (Native Dynamic: one level per request) */
-  const handleLoadChildren = useCallback(
-    async (dirPath: string) => {
-      const normDir = normalizePath(dirPath);
-      if (inFlightRef.current.has(normDir)) return;
-      inFlightRef.current.add(normDir);
-
-      // Optimistic: set loading flag
-      setTreeNodes((prev) =>
-        updateNodeAtPath(prev, dirPath, (node) => ({
-          ...node,
-          loading: true,
-          loadError: undefined,
-        }))
-      );
-
-      try {
-        const result = await anaraApi.workspace.getTreeChildren(dirPath);
-        const childEntries: WorkspaceNode[] = (result.entries || []).map((entry: any) => ({
-          ...entry,
-          children: entry.type === "directory" ? undefined : undefined,
-        }));
-
-        setTreeNodes((prev) =>
-          updateNodeAtPath(prev, dirPath, (node) => ({
-            ...node,
-            children: childEntries,
-            loading: false,
-            loadError: undefined,
-          }))
-        );
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Failed to load";
-        setTreeNodes((prev) =>
-          updateNodeAtPath(prev, dirPath, (node) => ({
-            ...node,
-            loading: false,
-            loadError: msg,
-            children: [],
-          }))
-        );
-      } finally {
-        inFlightRef.current.delete(normDir);
-      }
-    },
-    [updateNodeAtPath]
-  );
-
-  // ── 1. Expand/Collapse Caching ──────────────────────────────────────────
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => {
-    try {
-      if (typeof window !== "undefined") {
-        const cached = localStorage.getItem(EXPANDED_STORAGE_KEY);
-        if (cached) {
-          const arr = JSON.parse(cached);
-          if (Array.isArray(arr) && arr.length > 0) {
-            return new Set<string>(arr);
-          }
-        }
-      }
-    } catch {}
-    // Default: root directories expanded
-    const initial = new Set<string>();
-    const rootEntries = workspaceTree?.entries ?? workspaceTree?.nested_tree;
-    if (rootEntries) {
-      for (const node of rootEntries) {
-        if (node.type === "directory") {
-          initial.add(normalizePath(node.path || node.name));
-        }
-      }
-    }
-    return initial;
-  });
-
-  const togglePathExpanded = useCallback((path: string) => {
-    setExpandedPaths((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      try {
-        localStorage.setItem(EXPANDED_STORAGE_KEY, JSON.stringify(Array.from(next)));
-      } catch {}
-      return next;
-    });
-  }, []);
-
-  const expandAllFolders = useCallback(() => {
-    const all = new Set<string>();
-    const collect = (nodes: WorkspaceNode[]) => {
-      for (const n of nodes) {
-        if (n.type === "directory") {
-          all.add(normalizePath(n.path || n.name));
-          if (n.children) collect(n.children);
-        }
-      }
-    };
-    collect(treeNodes);
-    setExpandedPaths(all);
-    try {
-      localStorage.setItem(EXPANDED_STORAGE_KEY, JSON.stringify(Array.from(all)));
-    } catch {}
-  }, [treeNodes]);
-
-  const collapseAllFolders = useCallback(() => {
-    const empty = new Set<string>();
-    setExpandedPaths(empty);
-    try {
-      localStorage.setItem(EXPANDED_STORAGE_KEY, JSON.stringify([]));
-    } catch {}
-  }, []);
-
-  // ── 2. Dynamic Git Status Map ───────────────────────────────────────────
+  // ── 2. Dynamic Git Status Map ──
   const gitFilesMap = useMemo(() => {
     const map: Record<string, string> = {};
     const rootNorm = normalizePath(workspaceTree?.root_path || "");
@@ -542,7 +96,7 @@ export default function WorkspaceTreeView({
     );
   }, [workspaceTree, explorerFilter]);
 
-  // ── 3. Project Switcher State ───────────────────────────────────────────
+  // ── 3. Project Switcher State ──
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
   const [recentProjects, setRecentProjects] = useState<Array<{ name: string; path: string }>>([]);
@@ -598,7 +152,7 @@ export default function WorkspaceTreeView({
     return treeNodes.some((node) => nodeHasMatch(node, q));
   }, [treeNodes, explorerFilter]);
 
-  // ── 4. Drag & Drop and Upload Affordance ─────────────────────────────────
+  // ── 4. Drag & Drop and Upload Affordance ──
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
@@ -649,7 +203,7 @@ export default function WorkspaceTreeView({
     handleFilesUpload(e.dataTransfer.files);
   };
 
-  // ── 5. Context Menu & New/Delete File Actions ────────────────────────────
+  // ── 5. Context Menu & File Actions ──
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     isOpen: false,
     x: 0,
@@ -683,17 +237,6 @@ export default function WorkspaceTreeView({
       isFolder,
     });
   };
-
-  useEffect(() => {
-    if (!contextMenu.isOpen) return;
-    const handleOutside = () => setContextMenu((prev) => ({ ...prev, isOpen: false }));
-    window.addEventListener("click", handleOutside);
-    window.addEventListener("contextmenu", handleOutside);
-    return () => {
-      window.removeEventListener("click", handleOutside);
-      window.removeEventListener("contextmenu", handleOutside);
-    };
-  }, [contextMenu.isOpen]);
 
   const handlePromptNewFile = (parentDir: string = "") => {
     setNewFileTargetDir(parentDir);
@@ -805,7 +348,7 @@ export default function WorkspaceTreeView({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center gap-1.5 min-w-0">
-            {/* Project Picker Button (anti-scale transform discipline) */}
+            {/* Project Picker Button */}
             <button
               type="button"
               onClick={() => setIsProjectDropdownOpen((v) => !v)}
@@ -886,7 +429,6 @@ export default function WorkspaceTreeView({
               className="absolute left-2 top-10 z-50 w-56 rounded-xl bg-[#060913]/95 backdrop-blur-2xl border border-white/[0.08] shadow-2xl p-1.5 space-y-1 font-sans text-xs animate-scale-up select-none"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Search Box with SVG Search Icon */}
               <div className="relative flex items-center mb-1">
                 <svg className="w-3.5 h-3.5 text-slate-400 absolute left-2 pointer-events-none shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -901,7 +443,6 @@ export default function WorkspaceTreeView({
                 />
               </div>
 
-              {/* Projects List */}
               <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-0.5">
                 {filteredProjects.map((p, idx) => {
                   const isActive = p.name.toLowerCase() === (workspaceTree?.workspace_name || "").toLowerCase();
@@ -937,10 +478,8 @@ export default function WorkspaceTreeView({
                 })}
               </div>
 
-              {/* Divider */}
               <div className="border-t border-white/10 my-1" />
 
-              {/* Action: + Add project */}
               <button
                 type="button"
                 onClick={() => {
@@ -958,7 +497,7 @@ export default function WorkspaceTreeView({
           )}
         </div>
 
-        {/* Git Changes Pill Header (+X -Y) */}
+        {/* Git Changes Pill Header */}
         {gitStatus && gitStatus.is_git && gitStatus.changed_count > 0 && (
           <div className="px-2.5 py-1 bg-[#060a14] border-b border-white/[0.06] flex items-center justify-between text-[10px] font-mono text-slate-300 shrink-0">
             <span className="text-cyan-300 font-bold truncate">
@@ -1189,71 +728,14 @@ export default function WorkspaceTreeView({
         </div>
 
         {/* ── Context Menu (Liquid Glass popover) ── */}
-        {contextMenu.isOpen && (
-          <div
-            style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
-            className="fixed z-50 w-48 rounded-xl bg-[#060913]/95 backdrop-blur-2xl border border-white/[0.10] shadow-[0_12px_36px_rgba(0,0,0,0.85)] p-1 text-xs font-sans text-slate-200 animate-in fade-in duration-100 select-none"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-2 py-1 text-[10px] font-mono text-slate-500 truncate border-b border-white/[0.06] mb-0.5">
-              {contextMenu.targetNode ? contextMenu.targetNode.name : "Workspace"}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => handlePromptNewFile(contextMenu.isFolder ? contextMenu.targetPath : "")}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-white/[0.07] hover:text-white transition-colors cursor-pointer"
-            >
-              <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 4v16m8-8H4" />
-              </svg>
-              <span>New File...</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                fileInputRef.current?.click();
-                setContextMenu((prev) => ({ ...prev, isOpen: false }));
-              }}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-white/[0.07] hover:text-white transition-colors cursor-pointer"
-            >
-              <svg className="w-3.5 h-3.5 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              <span>Upload Files...</span>
-            </button>
-
-            {contextMenu.targetPath && (
-              <button
-                type="button"
-                onClick={() => handleCopyPath(contextMenu.targetPath)}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-white/[0.07] hover:text-white transition-colors cursor-pointer"
-              >
-                <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
-                </svg>
-                <span>Copy Path</span>
-              </button>
-            )}
-
-            {contextMenu.targetNode && contextMenu.targetNode.type === "file" && (
-              <>
-                <div className="border-t border-white/[0.06] my-1" />
-                <button
-                  type="button"
-                  onClick={() => handlePromptDeleteFile(contextMenu.targetPath)}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-rose-300 hover:bg-rose-500/10 hover:text-rose-200 transition-colors cursor-pointer"
-                >
-                  <svg className="w-3.5 h-3.5 text-rose-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                  <span>Delete File</span>
-                </button>
-              </>
-            )}
-          </div>
-        )}
+        <TreeContextMenu
+          contextMenu={contextMenu}
+          onClose={() => setContextMenu((prev) => ({ ...prev, isOpen: false }))}
+          onPromptNewFile={handlePromptNewFile}
+          onUploadFiles={() => fileInputRef.current?.click()}
+          onCopyPath={handleCopyPath}
+          onPromptDeleteFile={handlePromptDeleteFile}
+        />
 
         {/* ── Non-blocking Modal: New File Creation ── */}
         {isNewFileDialogOpen && (
@@ -1351,14 +833,13 @@ export default function WorkspaceTreeView({
         )}
       </div>
 
-      {/* ── Single 1px Vertical Divider between Tree and Editor (only if not fullWidth) ── */}
+      {/* ── Single 1px Vertical Divider between Tree and Editor ── */}
       {!fullWidth && (
         <div
           onMouseDown={startResizingTree}
           className="relative w-px h-full cursor-col-resize shrink-0 select-none bg-white/[0.08] hover:bg-cyan-400/40 active:bg-cyan-400 transition-colors z-20"
           title="Drag to resize file tree width"
         >
-          {/* Expanded invisible hit area for easy mouse grabbing */}
           <div className="absolute inset-y-0 -left-1.5 w-3 cursor-col-resize bg-transparent hover:bg-transparent active:bg-transparent" />
         </div>
       )}

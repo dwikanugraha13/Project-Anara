@@ -4,8 +4,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from "react"
 import CodeMirror, { ReactCodeMirrorRef, Extension } from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
-import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { tags as t } from "@lezer/highlight";
+import { syntaxHighlighting } from "@codemirror/language";
 import {
   search,
   SearchQuery,
@@ -16,17 +15,15 @@ import {
   replaceAll,
 } from "@codemirror/search";
 import { unifiedMergeView } from "@codemirror/merge";
-import { javascript } from "@codemirror/lang-javascript";
-import { python } from "@codemirror/lang-python";
-import { php } from "@codemirror/lang-php";
-import { json } from "@codemirror/lang-json";
-import { html } from "@codemirror/lang-html";
-import { css } from "@codemirror/lang-css";
-import { markdown } from "@codemirror/lang-markdown";
-import { yaml } from "@codemirror/lang-yaml";
-import { sql } from "@codemirror/lang-sql";
 import AgentMarkdown from "../chat/AgentMarkdown";
 import { getBackendUrl } from "@/lib/apiClient";
+import {
+  getLanguageExtension,
+  anaraObsidianTheme,
+  vsCodeDarkPlusHighlightStyle,
+} from "./editorTheme";
+import { IdeTabBar } from "./IdeTabBar";
+import { IdeToolbar } from "./IdeToolbar";
 
 export interface IdeTabFile {
   filePath: string;
@@ -57,165 +54,12 @@ export interface AnaraCodeIDEProps {
   onSaveFile?: (filePath: string, newContent: string) => Promise<boolean>;
 }
 
-function getLanguageExtension(ext: string): Extension {
-  const clean = (ext || "").toLowerCase().replace(/^\./, "");
-  switch (clean) {
-    case "js":
-    case "jsx":
-    case "mjs":
-    case "cjs":
-      return javascript({ jsx: true, typescript: false });
-    case "ts":
-    case "tsx":
-      return javascript({ jsx: true, typescript: true });
-    case "py":
-      return python();
-    case "php":
-      return php();
-    case "json":
-      return json();
-    case "html":
-    case "htm":
-      return html();
-    case "css":
-    case "scss":
-    case "less":
-      return css();
-    case "md":
-    case "markdown":
-    case "mdown":
-      return markdown();
-    case "yaml":
-    case "yml":
-      return yaml();
-    case "sql":
-      return sql();
-    default:
-      return [];
-  }
-}
-
-// ── Anara Dark Obsidian Liquid Glass Theme for CodeMirror 6 ──
-const anaraObsidianTheme = EditorView.theme(
-  {
-    "&": {
-      color: "#f1f5f9",
-      backgroundColor: "#070b16",
-      height: "100%",
-      fontSize: "12.5px",
-      fontFamily: "var(--font-mono), 'JetBrains Mono', Consolas, monospace",
-    },
-    // Standard professional neutral cursor with smooth caret transition
-    ".cm-content": {
-      caretColor: "#22d3ee",
-      fontFamily: "var(--font-mono), 'JetBrains Mono', Consolas, monospace",
-      lineHeight: "20px",
-      padding: "8px 0",
-    },
-    "&.cm-focused .cm-cursor, .cm-cursor": {
-      borderLeftColor: "#22d3ee !important",
-      borderLeftWidth: "2px !important",
-      transition: "left 60ms ease-out, top 60ms ease-out",
-    },
-    ".cm-dropCursor": {
-      borderLeftColor: "#22d3ee !important",
-      borderLeftWidth: "2px !important",
-    },
-    "&.cm-focused .cm-selectionBackground, ::selection": {
-      backgroundColor: "rgba(34, 211, 238, 0.18) !important",
-    },
-    // Gutter & Line Numbers seamless Anara Obsidian #070b16
-    ".cm-gutters": {
-      backgroundColor: "#070b16 !important",
-      color: "#475569 !important",
-      borderRight: "1px solid rgba(255, 255, 255, 0.08) !important",
-      fontSize: "12px",
-    },
-    ".cm-gutter": {
-      backgroundColor: "#070b16 !important",
-    },
-    ".cm-lineNumbers": {
-      backgroundColor: "#070b16 !important",
-    },
-    ".cm-gutterElement": {
-      color: "#475569 !important",
-    },
-    ".cm-activeLineGutter, .cm-activeLineGutter .cm-gutterElement": {
-      backgroundColor: "rgba(255, 255, 255, 0.04) !important",
-      color: "#f8fafc !important",
-      fontWeight: "600 !important",
-    },
-    ".cm-activeLine": {
-      backgroundColor: "rgba(255, 255, 255, 0.03) !important",
-    },
-    // Minimalist Obsidian Scrollbar
-    ".cm-scroller": {
-      overflow: "auto",
-      fontFamily: "var(--font-mono), 'JetBrains Mono', Consolas, monospace",
-      scrollbarWidth: "thin",
-      scrollbarColor: "rgba(255, 255, 255, 0.18) transparent",
-    },
-    ".cm-scroller::-webkit-scrollbar": {
-      width: "6px",
-      height: "6px",
-    },
-    ".cm-scroller::-webkit-scrollbar-track": {
-      background: "#070b16 !important",
-    },
-    ".cm-scroller::-webkit-scrollbar-thumb": {
-      background: "rgba(255, 255, 255, 0.16) !important",
-      borderRadius: "9999px !important",
-    },
-    ".cm-scroller::-webkit-scrollbar-thumb:hover": {
-      background: "rgba(34, 211, 238, 0.45) !important",
-    },
-    // Clean search highlights in text
-    ".cm-searchMatch": {
-      backgroundColor: "rgba(255, 215, 0, 0.25) !important",
-      outline: "1px solid rgba(255, 215, 0, 0.4) !important",
-      borderRadius: "2px",
-    },
-    ".cm-searchMatch.cm-searchMatch-selected": {
-      backgroundColor: "rgba(255, 255, 255, 0.25) !important",
-      outline: "1px solid rgba(255, 255, 255, 0.5) !important",
-    },
-  },
-  { dark: true }
-);
-
-// ── 100% Faithful VS Code Dark+ TextMate Syntax Highlighting Palette ──
-const vsCodeDarkPlusHighlightStyle = HighlightStyle.define([
-  // Keywords (function, class, public, private, static, use, var, const, let, etc.) -> VS Code Blue
-  { tag: [t.keyword, t.modifier, t.processingInstruction, t.meta, t.definitionKeyword], color: "#569cd6" },
-  // Control flow keywords (if, else, return, for, while, do, switch, case, break, namespace) -> VS Code Purple
-  { tag: [t.controlKeyword, t.moduleKeyword], color: "#c586c0" },
-  // Functions & Methods (get, post, group, render, execute, etc.) -> VS Code Soft Yellow
-  { tag: [t.function(t.variableName), t.function(t.propertyName), t.function(t.definition(t.variableName)), t.function(t.name)], color: "#dcdcaa" },
-  // Variables & Properties ($routes, $var, object.property) -> VS Code Light Sky Blue
-  { tag: [t.definition(t.variableName), t.variableName, t.propertyName, t.attributeName, t.special(t.propertyName)], color: "#9cdcfe" },
-  // Strings ('auth/login', "text", template strings) -> VS Code Warm Terracotta Amber
-  { tag: [t.string, t.special(t.string), t.docString, t.character, t.attributeValue], color: "#ce9178" },
-  // Numbers (100, 3.14, 0) -> VS Code Pale Sage Green
-  { tag: [t.number, t.integer, t.float], color: "#b5cea8" },
-  // Booleans & Null (true, false, null) -> VS Code Blue
-  { tag: [t.bool, t.null], color: "#569cd6" },
-  // Classes, Types, Interfaces, Namespaces & Names (RouteCollection, BaseFilters, string, array) -> VS Code Teal
-  { tag: [t.typeName, t.className, t.namespace, t.standard(t.typeName), t.name], color: "#4ec9b0" },
-  // Comments (// Auth, /** @var ... */) -> VS Code Forest Green Italic
-  { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: "#6a9955", fontStyle: "italic" },
-  // Operators & Punctuation (->, =>, ::, =, ;, ,, .) -> VS Code Off-White
-  { tag: [t.operator, t.punctuation, t.derefOperator, t.separator, t.updateOperator, t.arithmeticOperator, t.compareOperator, t.definitionOperator, t.logicOperator, t.bitwiseOperator], color: "#d4d4d4" },
-  // Brackets, Parentheses & Braces -> VS Code Bracket Gold
-  { tag: [t.paren, t.brace, t.squareBracket, t.bracket], color: "#ffd700" },
-]);
-
 export default function AnaraCodeIDE({
   isOpen,
   onClose,
   fileName,
   filePath,
   fileExt,
-  fileSizeKb,
   content,
   originalContent,
   onAskAnara,
@@ -266,11 +110,12 @@ export default function AnaraCodeIDE({
     }, 1500);
     return () => clearTimeout(timer);
   }, [editedContents]);
+
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [unsavedCloseTab, setUnsavedCloseTab] = useState<IdeTabFile | null>(null);
 
-  // Floating Professional Find & Replace State
+  // Floating Find & Replace State
   const [isFindOpen, setIsFindOpen] = useState(false);
   const [isReplaceOpen, setIsReplaceOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -414,7 +259,7 @@ export default function AnaraCodeIDE({
     if (!onSaveFile || !filePath) return;
     const isForce = forceOverwrite === true;
 
-    // Stale-on-disk conflict guard (Anara Desktop Standard)
+    // Stale-on-disk conflict guard
     if (!isForce) {
       try {
         const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || (typeof window !== "undefined" ? getBackendUrl() : "http://localhost:8000");
@@ -476,12 +321,11 @@ export default function AnaraCodeIDE({
       const isInput = activeEl?.tagName === "INPUT" || activeEl?.tagName === "TEXTAREA";
       const isInsideIde = editorContainerRef.current?.contains(activeEl) || false;
 
-      // Do not hijack search/find if user is typing in another input outside IDE
       if (isInput && !isInsideIde && !isFindOpen) {
         return;
       }
 
-      // Ctrl + F / Cmd + F
+      // Ctrl + F
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
         if (isInsideIde || isFindOpen) {
           e.preventDefault();
@@ -490,7 +334,7 @@ export default function AnaraCodeIDE({
         }
       }
 
-      // Ctrl + H / Cmd + H
+      // Ctrl + H
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "h") {
         if (isInsideIde || isFindOpen) {
           e.preventDefault();
@@ -506,7 +350,7 @@ export default function AnaraCodeIDE({
         return;
       }
 
-      // Ctrl + S / Cmd + S to save
+      // Ctrl + S to save
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         if (isInsideIde) {
           e.preventDefault();
@@ -515,7 +359,7 @@ export default function AnaraCodeIDE({
         }
       }
 
-      // Ctrl + W / Cmd + W to close current tab
+      // Ctrl + W to close current tab
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "w") {
         if (isInsideIde && filePath) {
           e.preventDefault();
@@ -533,13 +377,11 @@ export default function AnaraCodeIDE({
     return () => window.removeEventListener("keydown", onKey);
   }, [isFindOpen, handleOpenSearch, handleCloseSearch, handleSave, filePath, tabs, handleTabClose]);
 
-  // Handle click on tab close (✕) button
   const handleTabCloseClick = (e: React.MouseEvent, tab: IdeTabFile) => {
     e.stopPropagation();
     handleTabClose(tab);
   };
 
-  // Confirm Save and Close
   const handleConfirmSaveAndClose = async () => {
     if (!unsavedCloseTab) return;
     const targetPath = unsavedCloseTab.filePath;
@@ -547,7 +389,7 @@ export default function AnaraCodeIDE({
     try {
       if (onSaveFile) {
         const ok = await onSaveFile(targetPath, targetCode);
-        if (ok === false) return; // Save rejected or failed, abort closing
+        if (ok === false) return;
       }
       setEditedContents((prev) => {
         const copy = { ...prev };
@@ -562,7 +404,6 @@ export default function AnaraCodeIDE({
     }
   };
 
-  // Confirm Discard Changes and Close
   const handleConfirmDiscardAndClose = () => {
     if (!unsavedCloseTab) return;
     const targetPath = unsavedCloseTab.filePath;
@@ -614,7 +455,7 @@ export default function AnaraCodeIDE({
     );
   };
 
-  // Diff stats count (multiset frequency comparison for accurate duplicated lines, normalized for CRLF)
+  // Diff stats count
   const diffCounts = useMemo(() => {
     if (!originalContent || originalContent === activeCode) return { added: 0, deleted: 0 };
     const cr = String.fromCharCode(13);
@@ -678,324 +519,50 @@ export default function AnaraCodeIDE({
           : "rounded-2xl liquid-glass border border-white/10 shadow-[0_0_60px_rgba(0,0,0,0.9)] max-h-[850px]"
       }`}
     >
-      {/* ── Confirmation Modal: Unsaved Changes on Tab Close ── */}
-      {unsavedCloseTab && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.stopPropagation();
-              setUnsavedCloseTab(null);
-            } else if (e.key === "Enter") {
-              e.stopPropagation();
-              handleConfirmSaveAndClose();
-            }
-          }}
-          tabIndex={-1}
-          className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in select-none"
-        >
-          <div className="w-full max-w-sm p-4.5 rounded-2xl liquid-glass border border-white/15 shadow-2xl space-y-3 font-sans">
-            <div className="flex items-start gap-3">
-              <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40 flex items-center justify-center shrink-0 font-bold text-xs mt-0.5 font-mono">
-                !
-              </span>
-              <div className="space-y-1 min-w-0">
-                <h4 className="text-xs font-semibold text-white leading-snug">
-                  Save changes to <span className="font-mono text-white font-bold">{unsavedCloseTab.fileName}</span>?
-                </h4>
-                <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
-                  Your changes will be lost if you don&apos;t save them.
-                </p>
-              </div>
-            </div>
+      {/* ── Multi-File Tab Strip & Unsaved Dialog ── */}
+      <IdeTabBar
+        tabs={tabs}
+        activeFilePath={filePath}
+        editedContents={editedContents}
+        onSelectTab={onSelectTab}
+        unsavedCloseTab={unsavedCloseTab}
+        onConfirmSaveAndClose={handleConfirmSaveAndClose}
+        onConfirmDiscardAndClose={handleConfirmDiscardAndClose}
+        onCancelCloseModal={() => setUnsavedCloseTab(null)}
+        onTabCloseClick={handleTabCloseClick}
+      />
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10 font-mono text-xs">
-              <button
-                type="button"
-                onClick={handleConfirmSaveAndClose}
-                className="px-3 py-1.5 rounded-xl bg-cyan-500/25 hover:bg-cyan-500/40 border border-cyan-400/50 text-cyan-100 font-semibold cursor-pointer transition-all active:scale-95"
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDiscardAndClose}
-                className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 cursor-pointer transition-all active:scale-95"
-              >
-                Don&apos;t Save
-              </button>
-              <button
-                type="button"
-                onClick={() => setUnsavedCloseTab(null)}
-                className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-400 hover:text-white transition-all cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Multi-File Tab Strip (Antigravity Obsidian Glass) ── */}
-      {tabs && tabs.length > 0 && (
-        <div className="flex items-center gap-0.5 px-2 pt-1 bg-[#060913]/90 backdrop-blur-2xl border-b border-white/[0.08] overflow-x-auto no-scrollbar font-mono text-xs select-none shrink-0">
-          {tabs.map((tab) => {
-            const isTabActive = tab.filePath === filePath;
-            const tabExt = (tab.fileExt || "").toLowerCase().replace(/^\./, "");
-            const tabCode = editedContents[tab.filePath] !== undefined ? editedContents[tab.filePath] : (tab.content || "");
-            const tabIsDirty = Boolean(tab.isDirty) || tabCode !== (tab.content || "");
-
-            return (
-              <div
-                key={tab.filePath}
-                onClick={() => onSelectTab?.(tab.filePath, tab.fileName)}
-                className={`group/tab relative flex items-center gap-2 px-3 py-1.5 rounded-t-md border-t border-x cursor-pointer transition-all duration-150 ${
-                  isTabActive
-                    ? "bg-[#070b16] border-white/[0.12] text-white font-medium shadow-sm"
-                    : "bg-white/[0.02] border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]"
-                }`}
-                title={tab.filePath}
-              >
-                {isTabActive && (
-                  <div className="absolute top-0 inset-x-0 h-0.5 bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
-                )}
-                <span className={`text-[9px] font-bold uppercase ${isTabActive ? "text-cyan-400" : "text-slate-500"}`}>
-                  {tabExt || "FILE"}
-                </span>
-                <span className="truncate max-w-[140px] text-[11px]">{tab.fileName}</span>
-
-                {onCloseTab && (
-                  <button
-                    type="button"
-                    onClick={(e) => handleTabCloseClick(e, tab)}
-                    className="w-4 h-4 rounded flex items-center justify-center hover:bg-white/10 transition-colors cursor-pointer text-[10px] group/tabbtn ml-0.5"
-                    title={tabIsDirty ? "Unsaved changes (Click to close)" : "Close tab"}
-                  >
-                    {tabIsDirty ? (
-                      <>
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 group-hover/tabbtn:hidden shadow-sm" />
-                        <svg className="w-2.5 h-2.5 hidden group-hover/tabbtn:inline text-slate-300 hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </>
-                    ) : (
-                      <svg className="w-2.5 h-2.5 text-slate-500 hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    )}
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ── Antigravity Studio Clean Breadcrumbs: Breadcrumb, Diff Stats, Status ── */}
-      <div className="flex items-center justify-between px-3 py-1 bg-[#060913]/90 backdrop-blur-2xl border-b border-white/[0.08] font-mono text-xs select-none shrink-0">
-        {/* Left: Status Badge M/A + Language Icon + File Name & Path */}
-        <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
-          <span
-            className={`px-1.5 py-0.2 rounded font-bold text-[9.5px] font-mono shrink-0 ${
-              isDirty
-                ? "bg-amber-500/20 text-amber-300 border border-amber-400/40"
-                : originalContent
-                ? "bg-cyan-500/20 text-cyan-300 border border-cyan-400/40"
-                : "bg-emerald-500/20 text-emerald-300 border border-emerald-400/40"
-            }`}
-          >
-            {isDirty ? "MODIFIED" : originalContent ? "DIFF" : "READY"}
-          </span>
-
-          {renderLanguageSvgIcon()}
-
-          <div className="flex items-center gap-1 truncate font-mono text-xs">
-            {dirPath ? (
-              dirPath.split(/[\/\\]/).filter(Boolean).map((segment, idx, arr) => (
-                <React.Fragment key={idx}>
-                  <span className="text-[11px] text-slate-400 hover:text-slate-200 transition-colors cursor-default">
-                    {segment}
-                  </span>
-                  <svg className="w-2.5 h-2.5 text-slate-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </React.Fragment>
-              ))
-            ) : null}
-            <span className="font-semibold text-slate-100 text-xs truncate" title={cleanName}>
-              {cleanName}
-            </span>
-          </div>
-
-          {/* Rendered Preview Switch for Markdown (Anara Desktop Standard) */}
-          {(fileExt === ".md" || fileExt === "md") && (
-            <div className="flex items-center bg-white/[0.04] rounded-lg p-0.5 border border-white/[0.08] ml-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setViewMode(viewMode === "preview" ? "code" : "preview")}
-                className={`px-2 py-0.5 rounded-md text-[10.5px] font-mono font-medium transition-all ${
-                  viewMode === "preview"
-                    ? "bg-cyan-500/25 text-cyan-300 shadow-sm"
-                    : "text-slate-400 hover:text-white"
-                }`}
-                title="Toggle rendered markdown preview"
-              >
-                {viewMode === "preview" ? "Source" : "Preview"}
-              </button>
-            </div>
-          )}
-
-          {/* Code vs Diff Mode Toggle Switch */}
-          {originalContent && originalContent !== activeCode && (
-            <div className="flex items-center bg-white/[0.04] rounded-lg p-0.5 border border-white/[0.08] ml-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setViewMode("code")}
-                className={`px-2 py-0.5 rounded-md text-[10.5px] font-mono font-medium transition-all ${
-                  viewMode === "code"
-                    ? "bg-cyan-500/25 text-cyan-300 shadow-sm"
-                    : "text-slate-400 hover:text-white"
-                }`}
-                title="View active editable code"
-              >
-                Code
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("diff")}
-                className={`px-2 py-0.5 rounded-md text-[10.5px] font-mono font-medium flex items-center gap-1 transition-all ${
-                  viewMode === "diff"
-                    ? "bg-purple-500/25 text-purple-300 shadow-sm"
-                    : "text-slate-400 hover:text-white"
-                }`}
-                title="View unified diff against original version"
-              >
-                <span>Diff</span>
-                {(diffCounts.added > 0 || diffCounts.deleted > 0) && (
-                  <span className="flex items-center gap-0.5 text-[9.5px]">
-                    {diffCounts.added > 0 && <span className="text-emerald-400 font-bold">+{diffCounts.added}</span>}
-                    {diffCounts.deleted > 0 && <span className="text-rose-400 font-bold">-{diffCounts.deleted}</span>}
-                  </span>
-                )}
-              </button>
-            </div>
-          )}
-
-          {/* Save Status Notification */}
-          {saveSuccess ? (
-            <span className="flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-mono font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-400/30 shrink-0 ml-1">
-              <svg className="w-2.5 h-2.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-              </svg>
-              <span>Saved</span>
-            </span>
-          ) : isDirty ? (
-            <span className="w-1.5 h-1.5 rounded-full bg-slate-300 shadow-sm shrink-0 ml-1" title="Unsaved changes (Ctrl+S to save)" />
-          ) : null}
-        </div>
-
-        {/* Right: Activity Bar Actions (Ask Anara, Terminal, Save, Find, Copy, Close) */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          {onAskAnara && (
-            <button
-              type="button"
-              onClick={() => onAskAnara(filePath, cleanName)}
-              className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/30 text-cyan-200 hover:text-cyan-100 text-xs font-medium font-mono cursor-pointer transition-all"
-              title="Ask Anara to analyze or explain this file"
-            >
-              <svg className="w-3 h-3 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              <span className="text-[10px]">Ask Anara</span>
-            </button>
-          )}
-
-          {onToggleTerminal && (
-            <button
-              type="button"
-              onClick={onToggleTerminal}
-              className={`flex items-center gap-1 px-2 py-0.5 rounded-lg border text-xs font-medium font-mono cursor-pointer transition-all ${
-                isTerminalOpen
-                  ? "bg-white/15 border-white/30 text-white shadow-sm"
-                  : "bg-white/[0.04] hover:bg-white/10 border-white/10 text-slate-400 hover:text-white"
-              }`}
-              title={isTerminalOpen ? "Hide Terminal Shell" : "Show Terminal Shell"}
-            >
-              <svg className="w-3 h-3 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              <span className="text-[10px]">Terminal</span>
-            </button>
-          )}
-
-          {isDirty && onSaveFile && (
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={isSaving}
-              className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 text-xs font-medium font-mono cursor-pointer transition-all active:scale-95"
-              title="Save changes (Ctrl + S)"
-            >
-              <svg className="w-3 h-3 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-              </svg>
-              <span className="text-[10px]">{isSaving ? "Saving..." : "Save"}</span>
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => handleOpenSearch(false)}
-            className={`flex items-center gap-1 px-2 py-0.5 rounded-lg border text-xs font-medium font-mono cursor-pointer transition-all ${
-              isFindOpen
-                ? "bg-white/15 border-white/30 text-white shadow-[0_0_12px_rgba(255,255,255,0.1)]"
-                : "bg-white/[0.04] hover:bg-white/10 border-white/10 text-slate-400 hover:text-white"
-            }`}
-            title="Find / Find & Replace (Ctrl + F)"
-          >
-            <svg className="w-3 h-3 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <span className="text-[10px]">Find</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white/[0.04] hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-xs font-medium font-mono cursor-pointer transition-all"
-            title="Copy file content"
-          >
-            {copied ? (
-              <>
-                <svg className="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                </svg>
-                <span>Copied</span>
-              </>
-            ) : (
-              <span>Copy</span>
-            )}
-          </button>
-
-          {!embedded && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1 rounded-xl bg-white/10 hover:bg-rose-500/30 hover:text-rose-200 text-slate-400 border border-white/10 transition-all cursor-pointer ml-1"
-              title="Close IDE Inspector"
-            >
-              <svg className="w-3.5 h-3.5 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
-        </div>
-      </div>
+      {/* ── Antigravity Studio Clean Breadcrumbs & Toolbar ── */}
+      <IdeToolbar
+        filePath={filePath}
+        cleanName={cleanName}
+        dirPath={dirPath}
+        fileExt={fileExt}
+        isDirty={isDirty}
+        originalContent={originalContent}
+        activeCode={activeCode}
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        diffCounts={diffCounts}
+        saveSuccess={saveSuccess}
+        isSaving={isSaving}
+        handleSave={handleSave}
+        onSaveFile={onSaveFile}
+        onAskAnara={onAskAnara}
+        isTerminalOpen={isTerminalOpen}
+        onToggleTerminal={onToggleTerminal}
+        isFindOpen={isFindOpen}
+        handleOpenSearch={handleOpenSearch}
+        handleCopy={handleCopy}
+        copied={copied}
+        embedded={embedded}
+        onClose={onClose}
+        renderLanguageSvgIcon={renderLanguageSvgIcon}
+      />
 
       {/* ── Modern CodeMirror 6 Engine with Floating Professional Search Bar ── */}
       <div className="flex-1 w-full h-full overflow-hidden bg-[#070b16] relative">
-        {/* Stale on Disk Conflict Warning (Anara Desktop Standard) */}
+        {/* Stale on Disk Conflict Warning */}
         {hasDiskConflict && (
           <div className="absolute top-0 inset-x-0 z-50 px-3 py-2 bg-amber-950/95 border-b border-amber-400/50 flex items-center justify-between text-xs text-amber-200 backdrop-blur-xl animate-fade-in font-mono">
             <div className="flex items-center gap-2">
@@ -1022,12 +589,12 @@ export default function AnaraCodeIDE({
             </div>
           </div>
         )}
+
         {/* ── Professional Floating Find & Replace Widget ── */}
         {isFindOpen && (
           <div className="absolute top-2 right-4 z-40 flex flex-col gap-1.5 p-2 rounded-xl bg-[#070b16]/95 backdrop-blur-2xl border border-white/15 shadow-[0_16px_40px_rgba(0,0,0,0.85)] font-mono text-xs animate-fade-in select-none max-w-md">
-            {/* Row 1: Chevron toggle, Find input with inline option toggles, Count, Arrows, Close */}
+            {/* Row 1: Find input with option toggles, Count, Arrows, Close */}
             <div className="flex items-center gap-1.5">
-              {/* Toggle Expand Replace */}
               <button
                 type="button"
                 onClick={() => setIsReplaceOpen((prev) => !prev)}
@@ -1039,7 +606,6 @@ export default function AnaraCodeIDE({
                 </svg>
               </button>
 
-              {/* Find Input with embedded option pills */}
               <div className="relative flex items-center bg-[#030712] border border-white/20 focus-within:border-white/50 focus-within:ring-1 focus-within:ring-white/20 rounded-lg px-2 py-1 transition-all">
                 <input
                   ref={findInputRef}
@@ -1060,7 +626,6 @@ export default function AnaraCodeIDE({
                   className="bg-transparent text-slate-100 text-xs outline-none w-36 sm:w-44 pr-16 placeholder:text-slate-500 font-mono"
                 />
 
-                {/* Option toggles (Aa, \\b, .*) inside the input */}
                 <div className="absolute right-1.5 flex items-center gap-0.5">
                   <button
                     type="button"
@@ -1095,12 +660,10 @@ export default function AnaraCodeIDE({
                 </div>
               </div>
 
-              {/* Match count badge */}
               <span className="text-[11px] text-slate-400 min-w-[50px] text-center font-mono shrink-0">
                 {searchQuery ? `${matchCount > 0 ? currentMatch : 0} of ${matchCount}` : "0 of 0"}
               </span>
 
-              {/* Previous match (↑) */}
               <button
                 type="button"
                 onClick={handleFindPrevious}
@@ -1112,7 +675,6 @@ export default function AnaraCodeIDE({
                 </svg>
               </button>
 
-              {/* Next match (↓) */}
               <button
                 type="button"
                 onClick={handleFindNext}
@@ -1124,7 +686,6 @@ export default function AnaraCodeIDE({
                 </svg>
               </button>
 
-              {/* Close button (✕) */}
               <button
                 type="button"
                 onClick={handleCloseSearch}
@@ -1137,7 +698,7 @@ export default function AnaraCodeIDE({
               </button>
             </div>
 
-            {/* Row 2: Replace row (when expanded) */}
+            {/* Row 2: Replace row */}
             {isReplaceOpen && (
               <div className="flex items-center gap-1.5 pl-6 pt-0.5 animate-fade-in">
                 <input
@@ -1179,9 +740,9 @@ export default function AnaraCodeIDE({
           </div>
         )}
 
-        {/* Markdown Rendered Mode Viewport (Anara Desktop Standard) */}
+        {/* Markdown Rendered Mode Viewport */}
         {viewMode === "preview" && (fileExt === ".md" || fileExt === "md") ? (
-          <div className="h-full overflow-y-auto p-4 custom-scrollbar bg-[#060913] text-slate-200">
+          <div className="h-full overflow-y-auto p-4 custom-scrollbar bg-[#070b16] text-slate-200">
             <AgentMarkdown content={activeCode} />
           </div>
         ) : (
@@ -1207,7 +768,7 @@ export default function AnaraCodeIDE({
               highlightActiveLine: true,
               highlightSelectionMatches: true,
               closeBracketsKeymap: true,
-              searchKeymap: false, // Use our floating professional UI instead of default panel
+              searchKeymap: false,
               foldKeymap: true,
               completionKeymap: true,
               lintKeymap: true,

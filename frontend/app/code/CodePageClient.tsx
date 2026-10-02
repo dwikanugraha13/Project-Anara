@@ -20,6 +20,9 @@ import type { AnaraBrainProps } from "@/components/brain/types";
 import type { AnaraCodeIDEProps, WorkbenchTerminalProps, IdeTabFile } from "@/components/ide";
 import WorkspaceTreeView from "@/components/sidebar/WorkspaceTreeView";
 import type { WorkspaceTreeData, GitStatusData, ChatSession } from "@/components/sidebar/types";
+import { CodeStudioHeader } from "./CodeStudioHeader";
+import { ActivityBar } from "./ActivityBar";
+import { useCodeStudioLayout } from "./useCodeStudioLayout";
 
 const AnaraBrain = lazy(() => import("@/components/brain/AnaraBrain"));
 const AnaraCodeIDE = lazy(() => import("@/components/ide/AnaraCodeIDE"));
@@ -72,28 +75,33 @@ export default function CodePageClient({
   const [explorerFilter, setExplorerFilter] = useState("");
   const [latestTokenUsage, setLatestTokenUsage] = useState<any>(null);
 
-  // ── Pane Layout & Resizing State ──
-  const [isLeftOpen, setIsLeftOpen] = useState(true);
-  const [isRightOpen, setIsRightOpen] = useState(true);
-  const [leftWidth, setLeftWidth] = useState(initialSidebarWidth);
-  const [rightWidth, setRightWidth] = useState(initialRightWidth);
-  const [isTerminalOpen, setIsTerminalOpen] = useState(initialTerminalOpen);
-  const [terminalHeight, setTerminalHeight] = useState(initialTerminalHeight);
-
-  const [isResizingLeft, setIsResizingLeft] = useState(false);
-  const [isResizingRight, setIsResizingRight] = useState(false);
-  const [isResizingTerminal, setIsResizingTerminal] = useState(false);
-
-  const leftStartXRef = useRef(0);
-  const startLeftWidthRef = useRef(initialSidebarWidth);
-  const rightStartXRef = useRef(0);
-  const startRightWidthRef = useRef(initialRightWidth);
-  const terminalStartYRef = useRef(0);
-  const startTerminalHeightRef = useRef(210);
-
-  const latestLeftWidthRef = useRef(initialSidebarWidth);
-  const latestRightWidthRef = useRef(initialRightWidth);
-  const latestTerminalHeightRef = useRef(initialTerminalHeight);
+  // ── Pane Layout & Resizing State (Modularized Hook) ──
+  const {
+    leftWidth,
+    setLeftWidth,
+    rightWidth,
+    setRightWidth,
+    terminalHeight,
+    setTerminalHeight,
+    isLeftOpen,
+    setIsLeftOpen,
+    isRightOpen,
+    setIsRightOpen,
+    isTerminalOpen,
+    setIsTerminalOpen,
+    isResizingLeft,
+    isResizingRight,
+    isResizingTerminal,
+    startResizingLeft,
+    startResizingRight,
+    startResizingTerminal,
+    handleResetLayout,
+  } = useCodeStudioLayout({
+    initialSidebarWidth,
+    initialRightWidth,
+    initialTerminalHeight,
+    initialTerminalOpen,
+  });
 
   // ── Code Studio IDE State ──
   const [activeIdeFile, setActiveIdeFile] = useState<{
@@ -928,103 +936,6 @@ export default function CodePageClient({
     return null;
   }, [transcript]);
 
-  // ── Drag Resizing Handlers (Crisp 1px hairline dividers) ──
-  const startResizingLeft = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizingLeft(true);
-    leftStartXRef.current = e.clientX;
-    startLeftWidthRef.current = leftWidth;
-  };
-
-  const startResizingRight = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizingRight(true);
-    rightStartXRef.current = e.clientX;
-    startRightWidthRef.current = rightWidth;
-  };
-
-  const startResizingTerminal = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizingTerminal(true);
-    terminalStartYRef.current = e.clientY;
-    startTerminalHeightRef.current = terminalHeight;
-  };
-
-  useEffect(() => {
-    if (!isResizingLeft && !isResizingRight && !isResizingTerminal) return;
-
-    let rafId: number | null = null;
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isResizingLeft) {
-        const dx = e.clientX - leftStartXRef.current;
-        const newW = Math.max(180, Math.min(500, startLeftWidthRef.current + dx));
-        latestLeftWidthRef.current = newW;
-        document.documentElement.style.setProperty("--studio-left-width", `${newW}px`);
-      }
-      if (isResizingRight) {
-        const dx = rightStartXRef.current - e.clientX;
-        const newW = Math.max(340, Math.min(700, startRightWidthRef.current + dx));
-        latestRightWidthRef.current = newW;
-        document.documentElement.style.setProperty("--studio-right-width", `${newW}px`);
-      }
-      if (isResizingTerminal) {
-        const dy = terminalStartYRef.current - e.clientY;
-        const newH = Math.max(100, Math.min(600, startTerminalHeightRef.current + dy));
-        latestTerminalHeightRef.current = newH;
-        document.documentElement.style.setProperty("--studio-terminal-height", `${newH}px`);
-      }
-
-      if (rafId === null) {
-        rafId = requestAnimationFrame(() => {
-          rafId = null;
-          if (isResizingLeft) setLeftWidth(latestLeftWidthRef.current);
-          if (isResizingRight) setRightWidth(latestRightWidthRef.current);
-          if (isResizingTerminal) setTerminalHeight(latestTerminalHeightRef.current);
-        });
-      }
-    };
-
-    const handleMouseUp = () => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      if (isResizingLeft) {
-        const w = latestLeftWidthRef.current;
-        setLeftWidth(w);
-        try {
-          localStorage.setItem("anara_studio_left_width", w.toString());
-          document.cookie = `anara_studio_left_width=${w}; path=/; max-age=31536000; SameSite=Lax`;
-          document.documentElement.style.setProperty("--studio-left-width", `${w}px`);
-        } catch {}
-      }
-      if (isResizingRight) {
-        const w = latestRightWidthRef.current;
-        setRightWidth(w);
-        try {
-          localStorage.setItem("anara_studio_right_width", w.toString());
-          document.cookie = `anara_studio_right_width=${w}; path=/; max-age=31536000; SameSite=Lax`;
-          document.documentElement.style.setProperty("--studio-right-width", `${w}px`);
-        } catch {}
-      }
-      if (isResizingTerminal) {
-        const h = latestTerminalHeightRef.current;
-        setTerminalHeight(h);
-        try {
-          localStorage.setItem("anara_studio_term_height", h.toString());
-          document.cookie = `anara_studio_term_height=${h}; path=/; max-age=31536000; SameSite=Lax`;
-        } catch {}
-      }
-      setIsResizingLeft(false);
-      setIsResizingRight(false);
-      setIsResizingTerminal(false);
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isResizingLeft, isResizingRight, isResizingTerminal]);
-
   const activeSession = useMemo(() => {
     return sessions.find((s) => s.id === activeSessionId) || null;
   }, [sessions, activeSessionId]);
@@ -1032,324 +943,46 @@ export default function CodePageClient({
   return (
     <main className="relative w-screen h-screen overflow-hidden flex flex-col font-sans select-none bg-[#030712] text-slate-100">
       {/* ══════════════════════════════════════════════════════════════════════
-          1. STUDIO TOP NAVIGATION BAR (Antigravity Obsidian Standard)
+          1. STUDIO TOP NAVIGATION BAR (Modularized Header)
          ══════════════════════════════════════════════════════════════════════ */}
-      <header className="h-[34px] shrink-0 px-3 border-b border-white/[0.08] flex items-center justify-between bg-[#060913]/95 backdrop-blur-2xl z-30 select-none shadow-[0_4px_24px_rgba(0,0,0,0.5)] relative">
-        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-cyan-400/25 to-transparent pointer-events-none" />
-
-        {/* Left Side: Brand Logo, Workspace / Git Branch Badge, Session Switcher */}
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_10px_#22d3ee]" />
-            <h1 className="text-xs font-bold font-mono text-white tracking-wider uppercase bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
-              Anara Code
-            </h1>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-400/25 text-cyan-300 font-semibold tracking-tight flex items-center gap-1.5">
-              <span>{workspaceTree?.workspace_name || "Project Anara"}</span>
-              <span className="text-slate-500">·</span>
-              <span className="text-slate-300 font-normal">{gitStatus?.branch || "main"}</span>
-            </span>
-          </div>
-
-          <div className="h-3.5 w-px bg-white/10 shrink-0 mx-1" />
-
-          {/* Session Selector Popover */}
-          <div className="relative" ref={sessionDropdownRef}>
-            <button
-              type="button"
-              onClick={() => setIsSessionDropdownOpen((v) => !v)}
-              className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] hover:border-cyan-400/30 text-xs font-mono text-slate-200 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
-              title="Select or switch coding workspace session"
-            >
-              <svg className="w-3.5 h-3.5 text-cyan-400/80 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
-              <span className="font-medium text-white truncate max-w-[150px]">
-                {activeSession?.title || `Session #${activeSessionId || 1}`}
-              </span>
-              <svg className={`w-3 h-3 text-slate-400 transition-transform duration-150 ${isSessionDropdownOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {isSessionDropdownOpen && (
-              <div className="absolute left-0 top-full mt-1.5 w-64 max-h-80 overflow-y-auto custom-scrollbar rounded-xl bg-[#060913]/95 backdrop-blur-2xl border border-white/15 shadow-2xl z-50 p-1.5 select-none font-mono animate-fade-in">
-                <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-white/10 flex items-center justify-between">
-                  <span>Workspace Sessions</span>
-                  <span>{sessions.length} sessions</span>
-                </div>
-
-                <div className="py-1 space-y-0.5">
-                  {sessions.length === 0 ? (
-                    <div className="p-3 text-center text-xs text-slate-500">No sessions yet</div>
-                  ) : (
-                    sessions.map((s) => {
-                      const isCur = s.id === activeSessionId;
-                      return (
-                        <div
-                          key={s.id}
-                          onClick={() => {
-                            handleSelectSession(s.id);
-                            setIsSessionDropdownOpen(false);
-                          }}
-                          className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
-                            isCur
-                              ? "bg-cyan-500/20 text-cyan-200 font-semibold border border-cyan-400/30"
-                              : "hover:bg-white/[0.06] text-slate-300 hover:text-white"
-                          }`}
-                        >
-                          <span className="truncate flex-1">{s.title || `Session #${s.id}`}</span>
-                          <span className="text-[10px] text-slate-500 ml-2 shrink-0">
-                            {s.message_count}
-                          </span>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-
-                <div className="pt-1 border-t border-white/10">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleNewSession();
-                      setIsSessionDropdownOpen(false);
-                    }}
-                    className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-xs font-semibold text-cyan-300 hover:text-white transition-colors cursor-pointer"
-                  >
-                    <span>+ New Session</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={handleNewSession}
-            className="flex items-center gap-1 px-2 py-1 rounded-md bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/25 hover:border-cyan-400/40 text-xs font-mono text-cyan-300 hover:text-cyan-100 transition-all cursor-pointer shadow-sm active:scale-95"
-            title="Create new coding workspace session"
-          >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            <span>New</span>
-          </button>
-        </div>
-
-        {/* Right Side: View Toggles, 3D Companion Link, and Brain */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* View Toggles: Explorer, Terminal & Agent */}
-          <div className="flex items-center p-0.5 rounded-md bg-white/[0.03] border border-white/[0.08] text-xs font-mono">
-            <button
-              type="button"
-              onClick={() => setIsLeftOpen((v) => !v)}
-              className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-all cursor-pointer ${
-                isLeftOpen ? "bg-white/10 text-white font-medium shadow-sm" : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
-              }`}
-              title="Toggle File Explorer (Sidebar)"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-              </svg>
-              <span className="hidden md:inline text-[11px]">Explorer</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setIsTerminalOpen((v) => {
-                  try {
-                    localStorage.setItem("anara_studio_term_open", String(!v));
-                    document.cookie = `anara_studio_term_open=${!v}; path=/; max-age=31536000; SameSite=Lax`;
-                  } catch {}
-                  return !v;
-                });
-              }}
-              className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-all cursor-pointer ${
-                isTerminalOpen ? "bg-white/10 text-white font-medium shadow-sm" : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
-              }`}
-              title="Toggle Integrated Terminal"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              <span className="hidden md:inline text-[11px]">Terminal</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsRightOpen((v) => !v)}
-              className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-all cursor-pointer ${
-                isRightOpen ? "bg-cyan-500/20 text-cyan-200 font-semibold border border-cyan-400/30 shadow-sm" : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
-              }`}
-              title="Toggle Anara Agent Console"
-            >
-              <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              <span className="hidden md:inline text-[11px]">Agent</span>
-            </button>
-          </div>
-
-          <Link
-            href={activeSessionId ? `/?session_id=${activeSessionId}` : "/"}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-slate-300 hover:text-white transition-all cursor-pointer active:scale-95 shadow-sm"
-            title="Switch to 3D Avatar & Voice Studio (Resume Session)"
-          >
-            <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="hidden sm:inline text-[11px]">3D Studio</span>
-          </Link>
-
-          <button
-            type="button"
-            onClick={() => setIsBrainDrawerOpen(true)}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-slate-300 hover:text-white transition-all cursor-pointer active:scale-95 shadow-sm"
-            title="Open Brain & Model Settings"
-          >
-            <svg className="w-3.5 h-3.5 text-purple-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            <span className="hidden sm:inline text-[11px]">Brain</span>
-          </button>
-        </div>
-      </header>
+      <CodeStudioHeader
+        workspaceTree={workspaceTree}
+        gitStatus={gitStatus}
+        activeSession={activeSession}
+        activeSessionId={activeSessionId}
+        sessions={sessions}
+        isSessionDropdownOpen={isSessionDropdownOpen}
+        setIsSessionDropdownOpen={setIsSessionDropdownOpen}
+        sessionDropdownRef={sessionDropdownRef}
+        handleSelectSession={handleSelectSession}
+        handleNewSession={handleNewSession}
+        isLeftOpen={isLeftOpen}
+        setIsLeftOpen={setIsLeftOpen}
+        isTerminalOpen={isTerminalOpen}
+        setIsTerminalOpen={setIsTerminalOpen}
+        isRightOpen={isRightOpen}
+        setIsRightOpen={setIsRightOpen}
+        setIsBrainDrawerOpen={setIsBrainDrawerOpen}
+      />
 
       {/* ══════════════════════════════════════════════════════════════════════
           2. THREE-PANE AUTONOMOUS CODING STUDIO WORKBENCH
          ══════════════════════════════════════════════════════════════════════ */}
       <div className="flex-1 flex min-h-0 items-stretch overflow-hidden relative">
         {/* ── ACTIVITY BAR (Antigravity Studio Primary Icon Rail) ── */}
-        <aside className="w-11 shrink-0 h-full bg-[#050811] border-r border-white/[0.08] flex flex-col items-center py-2 z-20 select-none">
-          {/* Top Activity Actions */}
-          <div className="flex flex-col items-center gap-1.5 w-full">
-            {/* Explorer Toggle */}
-            <button
-              type="button"
-              onClick={() => {
-                if (isLeftOpen && explorerMode === "tree") {
-                  setIsLeftOpen(false);
-                } else {
-                  setIsLeftOpen(true);
-                  setExplorerMode("tree");
-                }
-              }}
-              className={`relative w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
-                isLeftOpen && explorerMode === "tree"
-                  ? "bg-white/[0.08] text-cyan-300 shadow-sm"
-                  : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
-              }`}
-              title="File Explorer (Toggle Sidebar)"
-            >
-              {isLeftOpen && explorerMode === "tree" && (
-                <div className="absolute left-0 inset-y-1.5 w-0.5 bg-cyan-400 rounded-r shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
-              )}
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-              </svg>
-            </button>
+        <ActivityBar
+          isLeftOpen={isLeftOpen}
+          setIsLeftOpen={setIsLeftOpen}
+          explorerMode={explorerMode}
+          setExplorerMode={setExplorerMode}
+          isTerminalOpen={isTerminalOpen}
+          setIsTerminalOpen={setIsTerminalOpen}
+          isRightOpen={isRightOpen}
+          setIsRightOpen={setIsRightOpen}
+          gitStatus={gitStatus}
+          setIsBrainDrawerOpen={setIsBrainDrawerOpen}
+        />
 
-            {/* Source Control (Git) Toggle */}
-            <button
-              type="button"
-              onClick={() => {
-                if (isLeftOpen && explorerMode === "git") {
-                  setIsLeftOpen(false);
-                } else {
-                  setIsLeftOpen(true);
-                  setExplorerMode("git");
-                }
-              }}
-              className={`relative w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
-                isLeftOpen && explorerMode === "git"
-                  ? "bg-white/[0.08] text-cyan-300 shadow-sm"
-                  : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
-              }`}
-              title={`Source Control (Git Changes${gitStatus?.changed_count ? `: ${gitStatus.changed_count} files` : ""})`}
-            >
-              {isLeftOpen && explorerMode === "git" && (
-                <div className="absolute left-0 inset-y-1.5 w-0.5 bg-cyan-400 rounded-r shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
-              )}
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7a3 3 0 100-6 3 3 0 000 6zm0 0v10m0 0a3 3 0 100 6 3 3 0 000-6zm8-4a3 3 0 100-6 3 3 0 000 6zm0 0v3a4 4 0 01-4 4h-4" />
-              </svg>
-              {gitStatus && gitStatus.changed_count > 0 && (
-                <span className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-cyan-400 text-black font-mono font-bold text-[8.5px] flex items-center justify-center shadow-sm">
-                  {gitStatus.changed_count > 9 ? "9+" : gitStatus.changed_count}
-                </span>
-              )}
-            </button>
-
-            {/* Integrated Terminal Toggle */}
-            <button
-              type="button"
-              onClick={() => setIsTerminalOpen((v) => !v)}
-              className={`relative w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
-                isTerminalOpen
-                  ? "bg-white/[0.08] text-cyan-300 shadow-sm"
-                  : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
-              }`}
-              title="Integrated Terminal (Toggle)"
-            >
-              {isTerminalOpen && (
-                <div className="absolute left-0 inset-y-1.5 w-0.5 bg-cyan-400 rounded-r shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
-              )}
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </button>
-
-            {/* Agent Console Toggle */}
-            <button
-              type="button"
-              onClick={() => setIsRightOpen((v) => !v)}
-              className={`relative w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
-                isRightOpen
-                  ? "bg-white/[0.08] text-cyan-300 shadow-sm"
-                  : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
-              }`}
-              title="Anara Autonomous Agent Console"
-            >
-              {isRightOpen && (
-                <div className="absolute left-0 inset-y-1.5 w-0.5 bg-cyan-400 rounded-r shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
-              )}
-              <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Spacer */}
-          <div className="flex-1" />
-
-          {/* Bottom Activity Actions: 3D Avatar & Brain */}
-          <div className="flex flex-col items-center gap-1.5 w-full pt-2 border-t border-white/[0.06]">
-            <Link
-              href="/"
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-cyan-300 hover:bg-white/[0.04] transition-all cursor-pointer"
-              title="Switch to 3D Avatar & Voice Studio"
-            >
-              <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </Link>
-
-            <button
-              type="button"
-              onClick={() => setIsBrainDrawerOpen(true)}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-purple-300 hover:bg-white/[0.04] transition-all cursor-pointer"
-              title="Anara Brain & Model Settings"
-            >
-              <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </button>
-          </div>
-        </aside>
         {/* ── PANE 1 (LEFT): File Explorer & Git Status ── */}
         {isLeftOpen && (
           <>

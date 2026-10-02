@@ -9,4 +9,8 @@ export type { ReasoningPillProps } from "./ReasoningPill";
 export * from "./DockPlanChecklist";
 export * from "./DockAudioWaveform";
 export * from "./DockAttachmentChips";
+export * from "./DockComposerInput";
+export * from "./DockControlsCluster";
+export * from "./DockStatusStack";
+export * from "./usePromptHistory";
 
