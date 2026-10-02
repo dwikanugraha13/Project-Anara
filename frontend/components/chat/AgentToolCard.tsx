@@ -177,7 +177,7 @@ export function TerminalTranscript({
   );
 }
 
-// ── 3. TOOL RUN GROUP CARD (Hermes Parity: "Explored X files, ran Y commands") ──
+// ── 3. TOOL RUN GROUP CARD (Anara Standard: "Explored X files, ran Y commands") ──
 export function ToolRunGroupCard({
   items,
   isRunning = false,
@@ -804,7 +804,7 @@ export function AgentActionCard({
     );
   }
 
-  // ── Render Shell Execution Card (Hermes Parity) ──
+  // ── Render Shell Execution Card (Anara Standard) ──
   if (isShell) {
     const cmd = action.command || action.detail || action.actionTitle || "command";
     const duration = action.durationText;
