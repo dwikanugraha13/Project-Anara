@@ -40,7 +40,8 @@ class ChatSessionsMixin:
                        session_type: str = "chat",
                        channel: str = "web",
                        session_mode: Optional[str] = None,
-                       session_key: Optional[str] = None) -> Dict[str, Any]:
+                       session_key: Optional[str] = None,
+                       workspace_path: Optional[str] = None) -> Dict[str, Any]:
         """Starts a new conversation thread (defaults to 'New Chat') with canonical collision-free session_key."""
         from core.session_ids import new_session_key
         canonical_key = session_key or new_session_key()
@@ -53,11 +54,21 @@ class ChatSessionsMixin:
         else:
             clean_mode = session_mode.strip().lower()
 
+        # Build workspace_info_json if workspace_path provided
+        workspace_info_json = None
+        workspace_info = None
+        if workspace_path and workspace_path.strip():
+            import os
+            clean_wp = os.path.abspath(os.path.expanduser(workspace_path.strip()))
+            folder_name = os.path.basename(clean_wp.rstrip("\\/")) or "Project Workspace"
+            workspace_info = {"name": folder_name, "root_path": clean_wp, "is_external": True}
+            workspace_info_json = json.dumps(workspace_info)
+
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO chat_sessions (session_key, title, speaker_name, session_type, channel, session_mode) VALUES (?, ?, ?, ?, ?, ?)",
-                (canonical_key, initial_title, clean_name, clean_type, clean_channel, clean_mode)
+                "INSERT INTO chat_sessions (session_key, title, speaker_name, session_type, channel, session_mode, workspace_info_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (canonical_key, initial_title, clean_name, clean_type, clean_channel, clean_mode, workspace_info_json)
             )
             sid = cursor.lastrowid or 0
             conn.commit()
@@ -65,8 +76,8 @@ class ChatSessionsMixin:
         self.clean_empty_sessions(clean_name, exclude_session_id=sid)
 
         logger.info(f"[ChatSessions] Created {clean_type} session #{sid} ({canonical_key}) ('{initial_title}') [channel={clean_channel}, mode={clean_mode}] for {clean_name or 'Guest'}")
-        self._emit_mutation("session_created", {"id": sid, "session_key": canonical_key, "title": initial_title, "speaker_name": clean_name, "session_type": clean_type, "channel": clean_channel, "session_mode": clean_mode})
-        return {"id": sid, "session_key": canonical_key, "title": initial_title, "speaker_name": clean_name, "session_type": clean_type, "channel": clean_channel, "session_mode": clean_mode, "message_count": 0}
+        self._emit_mutation("session_created", {"id": sid, "session_key": canonical_key, "title": initial_title, "speaker_name": clean_name, "session_type": clean_type, "channel": clean_channel, "session_mode": clean_mode, "workspace_info": workspace_info})
+        return {"id": sid, "session_key": canonical_key, "title": initial_title, "speaker_name": clean_name, "session_type": clean_type, "channel": clean_channel, "session_mode": clean_mode, "message_count": 0, "workspace_info": workspace_info}
 
     def get_sessions(self, speaker_name: Optional[str] = None,
                      session_type: Optional[str] = None,
@@ -83,6 +94,7 @@ class ChatSessionsMixin:
                        COALESCE(s.session_mode, CASE WHEN s.session_type = 'code' THEN 'explicit_plan_build' ELSE 'conversational' END) AS session_mode,
                        COALESCE(s.run_type, 'interactive') AS run_type,
                        COALESCE(s.trust_level, 'supervised') AS trust_level,
+                       s.workspace_info_json,
                        s.created_at, s.updated_at,
                        (SELECT user_text FROM conversations c
                          WHERE c.session_id = s.id ORDER BY c.id DESC LIMIT 1) AS last_user_text
@@ -102,7 +114,20 @@ class ChatSessionsMixin:
             query += " ORDER BY s.is_pinned DESC, s.updated_at DESC LIMIT ?"
             params.append(limit)
             cursor.execute(query, params)
-            return [dict(r) for r in cursor.fetchall()]
+            rows = []
+            for r in cursor.fetchall():
+                row = dict(r)
+                # Parse workspace_info_json into workspace_info dict
+                wij = row.pop("workspace_info_json", None)
+                if wij:
+                    try:
+                        row["workspace_info"] = json.loads(wij)
+                    except (json.JSONDecodeError, TypeError):
+                        row["workspace_info"] = None
+                else:
+                    row["workspace_info"] = None
+                rows.append(row)
+            return rows
 
     def _resolve_session_id(self, session_id: Any) -> Optional[int]:
         """Resolves any session identifier (integer ID or canonical string session_key) to its numeric SQLite primary key."""

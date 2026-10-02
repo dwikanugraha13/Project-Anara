@@ -36,7 +36,7 @@ _ACTIVE_CHAT_TASKS: Dict[str, asyncio.Task] = {}
 
 
 class TelegramStatusTracker:
-    """Continuous typing heartbeat and status manager for Telegram turns (Hermes Standard)."""
+    """Continuous typing heartbeat and status manager for Telegram turns (Anara Standard)."""
     def __init__(self, chat_id: str):
         self.chat_id = chat_id
         self.status_msg_id: Optional[int] = None
@@ -232,7 +232,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                     await edit_telegram_message(chat_id=chat_id, message_id=message_id, text=skip_msg, reply_markup=None)
             return
 
-        # Case F: Plan & Action Approval (Hermes Decoupled State Machine)
+        # Case F: Plan & Action Approval (Anara Decoupled State Machine)
         if ":" in cb_data and (cb_data.startswith("approve:") or cb_data.startswith("reject:") or cb_data.startswith("appr:")):
             if cb_data.startswith("appr:"):
                 parts = cb_data.split(":")

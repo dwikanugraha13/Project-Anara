@@ -9,6 +9,7 @@ Anara Standard Unified Command Hub:
 5. Seamless zero-friction fallback to agent reasoning loop when input is not a command.
 """
 
+import asyncio
 import html
 import re
 from dataclasses import dataclass, field
@@ -392,7 +393,7 @@ async def _handle_cmd_workspace(ctx: UniversalCommandContext) -> UniversalComman
     effective_sid = ctx.session_id if ctx.session_id else anara_agent.get_active_session_id()
 
     if not clean_arg:
-        ws = anara_agent.get_workspace_tree(session_id=effective_sid)
+        ws = anara_agent.get_workspace_tree_shallow(session_id=effective_sid)
         name = ws.get("workspace_name", "Default Workspace")
         root_p = ws.get("root_path", "(Unset)")
         total_f = ws.get("total_files", 0)
@@ -512,7 +513,7 @@ async def _handle_cmd_plan(ctx: UniversalCommandContext) -> UniversalCommandResp
 
     plan_prompt = load_prompt("channel/plan_command", clean_arg=clean_arg)
 
-    sys_prompt = PromptAssembler.assemble(
+    sys_prompt = await asyncio.to_thread(PromptAssembler.assemble,
         mode="plan",
         speaker_name=ctx.sender_name,
         is_chat_mode=True,

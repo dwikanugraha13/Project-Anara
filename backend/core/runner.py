@@ -193,9 +193,9 @@ class AnaraExecutionRunner:
 
         # 5. Assemble System Prompt with Workspace Tree & Scratchpad
         from core.agent import anara_agent
-        ws_tree = anara_agent.get_workspace_tree(session_id=effective_sid)
+        ws_tree = anara_agent.get_workspace_tree_shallow(session_id=effective_sid)
         selected_model = model_id or get_active_model_id()
-        system_instruction = PromptAssembler.assemble(
+        system_instruction = await asyncio.to_thread(PromptAssembler.assemble,
             mode=agent_mode,
             speaker_name=effective_speaker,
             workspace_tree=ws_tree,

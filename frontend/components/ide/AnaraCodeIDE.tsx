@@ -414,7 +414,7 @@ export default function AnaraCodeIDE({
     if (!onSaveFile || !filePath) return;
     const isForce = forceOverwrite === true;
 
-    // Stale-on-disk conflict guard (Hermes Desktop Parity)
+    // Stale-on-disk conflict guard (Anara Desktop Standard)
     if (!isForce) {
       try {
         const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || (typeof window !== "undefined" ? getBackendUrl() : "http://localhost:8000");
@@ -828,7 +828,7 @@ export default function AnaraCodeIDE({
             </span>
           </div>
 
-          {/* Rendered Preview Switch for Markdown (Hermes Desktop Parity) */}
+          {/* Rendered Preview Switch for Markdown (Anara Desktop Standard) */}
           {(fileExt === ".md" || fileExt === "md") && (
             <div className="flex items-center bg-white/[0.04] rounded-lg p-0.5 border border-white/[0.08] ml-2 shrink-0">
               <button
@@ -995,7 +995,7 @@ export default function AnaraCodeIDE({
 
       {/* ── Modern CodeMirror 6 Engine with Floating Professional Search Bar ── */}
       <div className="flex-1 w-full h-full overflow-hidden bg-[#070b16] relative">
-        {/* Stale on Disk Conflict Warning (Hermes Desktop Parity) */}
+        {/* Stale on Disk Conflict Warning (Anara Desktop Standard) */}
         {hasDiskConflict && (
           <div className="absolute top-0 inset-x-0 z-50 px-3 py-2 bg-amber-950/95 border-b border-amber-400/50 flex items-center justify-between text-xs text-amber-200 backdrop-blur-xl animate-fade-in font-mono">
             <div className="flex items-center gap-2">
@@ -1179,7 +1179,7 @@ export default function AnaraCodeIDE({
           </div>
         )}
 
-        {/* Markdown Rendered Mode Viewport (Hermes Desktop Parity) */}
+        {/* Markdown Rendered Mode Viewport (Anara Desktop Standard) */}
         {viewMode === "preview" && (fileExt === ".md" || fileExt === "md") ? (
           <div className="h-full overflow-y-auto p-4 custom-scrollbar bg-[#060913] text-slate-200">
             <AgentMarkdown content={activeCode} />

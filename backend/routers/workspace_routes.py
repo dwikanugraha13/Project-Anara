@@ -141,7 +141,7 @@ async def upload_agent_folder(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    tree = anara_agent.get_workspace_tree(session_id=session_id)
+    tree = anara_agent.get_workspace_tree_shallow(session_id=session_id)
     if session_id is not None:
         try:
             memory_engine.set_session_workspace_info(session_id, {
@@ -171,8 +171,15 @@ async def init_empty_workspace_endpoint(req: InitEmptyWorkspaceRequest):
 
 @router.get("/api/agent/workspace/tree")
 async def get_agent_workspace_tree(session_id: Optional[Union[int, str]] = None):
-    """Returns the current file tree of the Anara Agent workspace."""
-    return anara_agent.get_workspace_tree(session_id=session_id)
+    """Returns workspace metadata + shallow root listing (Native Dynamic: lazy tree, 1 level per request).
+    Frontend expands folders on demand via /api/agent/workspace/tree/children?path=...
+    """
+    return await asyncio.to_thread(anara_agent.get_workspace_tree_shallow, session_id=session_id)
+
+@router.get("/api/agent/workspace/tree/children")
+async def get_agent_workspace_tree_children(path: str, session_id: Optional[Union[int, str]] = None):
+    """Returns children of a single directory (lazy expand on user click — Anara Parity)."""
+    return await asyncio.to_thread(anara_agent.get_workspace_dir_children, dir_path=path, session_id=session_id)
 
 @router.get("/api/agent/workspace/file-content")
 @router.get("/api/agent/workspace/file")
@@ -319,8 +326,9 @@ async def execute_terminal_command_endpoint(req: TerminalExecRequest):
     """Executes a real terminal shell command in the active workspace directory."""
     active_f = anara_agent.get_session_dir(req.session_id)
     cwd = os.path.abspath(os.path.expanduser(req.workdir)) if req.workdir else active_f
-    if not os.path.exists(cwd):
-        cwd = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    user_home = os.path.expanduser("~")
+    if not cwd or not os.path.exists(cwd):
+        cwd = user_home
 
     cmd = (req.command or "").strip()
     if not cmd:
@@ -382,8 +390,9 @@ async def stream_terminal_command_endpoint(req: TerminalExecRequest):
     """Streams terminal command execution line-by-line via Server-Sent Events (SSE)."""
     active_f = anara_agent.get_session_dir(req.session_id)
     cwd = os.path.abspath(os.path.expanduser(req.workdir)) if req.workdir else active_f
-    if not os.path.exists(cwd):
-        cwd = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    user_home = os.path.expanduser("~")
+    if not cwd or not os.path.exists(cwd):
+        cwd = user_home
 
     cmd = (req.command or "").strip()
     if not cmd:
@@ -572,7 +581,7 @@ class GitCommitRequest(BaseModel):
 
 @router.post("/api/agent/git/stage")
 async def stage_agent_git_file(req: GitFileActionRequest):
-    """Stages specific or all files into git staging index (Hermes Desktop Parity)."""
+    """Stages specific or all files into git staging index (Anara Desktop Standard)."""
     sid = req.session_id if req.session_id is not None else anara_agent.get_active_session_id()
     repo_dir = anara_agent.get_session_dir(sid) if sid is not None else anara_agent.default_workspace_dir
     cmd = f'git add "{req.path}"' if req.path else 'git add -A'
@@ -585,7 +594,7 @@ async def stage_agent_git_file(req: GitFileActionRequest):
 
 @router.post("/api/agent/git/unstage")
 async def unstage_agent_git_file(req: GitFileActionRequest):
-    """Unstages specific or all files from git staging index (Hermes Desktop Parity)."""
+    """Unstages specific or all files from git staging index (Anara Desktop Standard)."""
     sid = req.session_id if req.session_id is not None else anara_agent.get_active_session_id()
     repo_dir = anara_agent.get_session_dir(sid) if sid is not None else anara_agent.default_workspace_dir
     cmd = f'git restore --staged "{req.path}"' if req.path else 'git restore --staged .'
@@ -616,7 +625,7 @@ async def revert_agent_git_file(req: GitFileActionRequest):
 
 @router.post("/api/agent/git/commit")
 async def commit_agent_git_changes(req: GitCommitRequest):
-    """Commits staged changes with optional push and returns commit SHA (Hermes Desktop Parity)."""
+    """Commits staged changes with optional push and returns commit SHA (Anara Desktop Standard)."""
     sid = req.session_id if req.session_id is not None else anara_agent.get_active_session_id()
     repo_dir = anara_agent.get_session_dir(sid) if sid is not None else anara_agent.default_workspace_dir
     if not req.message.strip():
@@ -642,7 +651,7 @@ async def commit_agent_git_changes(req: GitCommitRequest):
 
 @router.get("/api/agent/git/file-diff")
 async def get_agent_git_file_diff(path: str, session_id: Optional[Union[int, str]] = None):
-    """Retrieves unified git diff for a specific file (Hermes Desktop Parity)."""
+    """Retrieves unified git diff for a specific file (Anara Desktop Standard)."""
     sid = session_id if session_id is not None else anara_agent.get_active_session_id()
     repo_dir = anara_agent.get_session_dir(sid) if sid is not None else anara_agent.default_workspace_dir
     cmd = f'git diff HEAD -- "{path}"'

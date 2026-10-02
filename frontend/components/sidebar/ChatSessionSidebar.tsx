@@ -21,6 +21,7 @@ import {
 } from "./types";
 
 import { renderFileSvgIcon } from "./FileIcons";
+import { anaraApi } from "@/lib/apiClient";
 import WorkspaceTreeView, { nodeHasMatch, RecursiveTreeNode } from "./WorkspaceTreeView";
 import SessionHistoryList from "./SessionHistoryList";
 import type { AnaraCodeIDEProps, WorkbenchTerminalProps } from "../ide";
@@ -261,11 +262,8 @@ export default function ChatSessionSidebar({
 
   const loadWorkspaceTree = useCallback(async (sessionId?: number | null) => {
     try {
-      const q = sessionId ? `?session_id=${sessionId}` : "";
-      const res = await fetch(`${BACKEND_URL}/api/agent/workspace/tree${q}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data && (data.total_files > 0 || data.is_custom_folder)) {
+      const data = await anaraApi.workspace.getTree(sessionId || undefined);
+      if (data && (data.total_files > 0 || data.is_custom_folder || (data.entries && data.entries.length > 0))) {
           const currentKey = data.root_path || data.workspace_name;
           const savedKey = typeof window !== "undefined" ? localStorage.getItem("anara_ide_workspace_key") : null;
           if (savedKey && currentKey && savedKey !== currentKey) {
@@ -276,7 +274,6 @@ export default function ChatSessionSidebar({
           }
           setWorkspaceTree(data);
           return;
-        }
       }
       setWorkspaceTree(null);
     } catch (e) {
@@ -314,15 +311,20 @@ export default function ChatSessionSidebar({
   const loadSessions = useCallback(async () => {
     setLoading(true);
     try {
-      const q = sessionType ? `?session_type=${encodeURIComponent(sessionType)}` : "";
-      const res = await fetch(`${BACKEND_URL}/api/chat/sessions${q}`);
-      if (res.ok) setSessions(await res.json());
+      // Universal session list: fetch all conversations across Chat & Code Studio (Anara Parity)
+      const res = await fetch(`${BACKEND_URL}/api/chat/sessions`);
+      if (res.ok) {
+        const all: ChatSession[] = await res.json();
+        // Session Pattern: hide sessions with 0 messages (created lazily but never used)
+        const active = all.filter((s) => s.message_count > 0);
+        setSessions(active);
+      }
     } catch (err) {
       console.warn("[Sessions] load failed:", err);
     } finally {
       setLoading(false);
     }
-  }, [sessionType]);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -548,59 +550,62 @@ export default function ChatSessionSidebar({
           </div>
         </div>
       )}
-      {/* ── Top Header: Chat Sessions & Anara Code Navigation ── */}
-      {activeSidebarTab === "history" ? (
-        <div className="relative flex items-center justify-between px-3.5 py-3 border-b border-white/10 select-none">
-          <div className="flex items-center gap-2 min-w-0">
-            <svg className="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-            </svg>
-            <h1 className="text-xs font-bold text-white tracking-wider uppercase truncate font-mono">
-              Chat Sessions
-            </h1>
-          </div>
+      {/* ── Top Header: Sidebar Tabs [SESSIONS | BOTS | TERMINAL] ── */}
+      <div className="h-[38px] px-3 bg-[#080B11] border-b border-white/[0.08] flex items-center justify-between shrink-0 select-none font-mono">
+        <div className="flex items-center gap-4 text-[11px] font-semibold tracking-wider">
+          <button
+            type="button"
+            onClick={() => setActiveSidebarTab("history")}
+            className={`h-[38px] flex items-center transition-colors cursor-pointer relative ${
+              activeSidebarTab === "history"
+                ? "text-white font-bold"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <span>SESSIONS</span>
+            {activeSidebarTab === "history" && (
+              <span className="absolute bottom-0 inset-x-0 h-[2px] bg-cyan-400 shadow-[0_0_8px_#22d3ee]" />
+            )}
+          </button>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span
-              className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                isConnected
-                  ? "bg-emerald-400 shadow-[0_0_8px_#34d399]"
-                  : connectionStatus === "connecting"
-                  ? "bg-amber-400 animate-pulse shadow-[0_0_8px_#fbbf24]"
-                  : "bg-rose-500 shadow-[0_0_8px_#f43f5e]"
-              }`}
-              title={isConnected ? "Online" : connectionStatus === "connecting" ? "Connecting..." : "Disconnected"}
-            />
-          </div>
-        </div>
-      ) : (
-        <div className="relative flex items-center justify-between px-3 py-2 border-b border-white/10 select-none">
           <button
             type="button"
             onClick={() => {
-              setActiveSidebarTab("history");
-              try {
-                const storageKey = sessionType === "code" ? "anara_code_sidebar_tab" : "anara_active_sidebar_tab";
-                localStorage.setItem(storageKey, "history");
-              } catch {}
+              if (onOpenBrain) onOpenBrain();
             }}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer text-xs font-mono"
-            title="Back to Chat Sessions"
+            className="h-[38px] flex items-center text-slate-500 hover:text-slate-300 transition-colors cursor-pointer"
+            title="Bot Profiles & Models"
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            <span>{sessionType === "code" ? "Project Session" : "Chat Sessions"}</span>
+            <span>BOTS</span>
           </button>
 
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-400/20 text-cyan-300 text-[10.5px] font-semibold font-mono">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-              <span>Anara Code</span>
-            </span>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (onToggleTerminal) onToggleTerminal(!isTerminalOpen);
+            }}
+            className={`h-[38px] flex items-center transition-colors cursor-pointer ${
+              isTerminalOpen ? "text-cyan-300" : "text-slate-500 hover:text-slate-300"
+            }`}
+            title="Terminal Console"
+          >
+            <span>TERMINAL</span>
+          </button>
         </div>
-      )}
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span
+            className={`w-2 h-2 rounded-full transition-all duration-300 ${
+              isConnected
+                ? "bg-emerald-400 shadow-[0_0_8px_#34d399]"
+                : connectionStatus === "connecting"
+                ? "bg-amber-400 animate-pulse shadow-[0_0_8px_#fbbf24]"
+                : "bg-rose-500 shadow-[0_0_8px_#f43f5e]"
+            }`}
+            title={isConnected ? "Gateway Online" : connectionStatus === "connecting" ? "Connecting..." : "Disconnected"}
+          />
+        </div>
+      </div>
 
       {/* ── TAB 1: Chat Sessions ── */}
       {activeSidebarTab === "history" && (
@@ -612,12 +617,15 @@ export default function ChatSessionSidebar({
           setSearch={setSearch}
           sessionType={sessionType}
           onSelectSession={(id) => {
+            // Eager-clear stale workspace before switching (Anara Parity)
+            setWorkspaceTree(null);
             onSelectSession(id);
             if (sessionType === "code") {
               setActiveSidebarTab("editor");
             }
           }}
           onNewSession={() => {
+            setWorkspaceTree(null);
             onNewSession();
             if (sessionType === "code") {
               setActiveSidebarTab("editor");
@@ -644,7 +652,7 @@ export default function ChatSessionSidebar({
       {/* ── TAB 2: VS Code Dual-Column Workbench (Tree + Editor + Terminal) ── */}
       {activeSidebarTab === "editor" && (
         <div className={`flex-1 min-h-0 flex flex-col ${embedded ? "m-0" : "m-1.5"} overflow-hidden`}>
-          {workspaceTree && (workspaceTree.total_files > 0 || workspaceTree.is_custom_folder) ? (
+          {workspaceTree && (workspaceTree.total_files > 0 || workspaceTree.is_custom_folder || (workspaceTree.entries && workspaceTree.entries.length > 0)) ? (
             <div className={`flex-1 min-h-0 flex flex-row w-full h-full overflow-hidden ${embedded ? "rounded-none border-0 shadow-none" : "rounded-xl border border-white/10 shadow-2xl"} bg-[#070c18]`}>
               <WorkspaceTreeView
                 workspaceTree={workspaceTree}
@@ -725,6 +733,7 @@ export default function ChatSessionSidebar({
                           activeTask={status === "thinking" ? "AI Model Thinking..." : undefined}
                           onExecuteCommand={() => {}}
                           onClose={() => onToggleTerminal?.(false)}
+                          cwd={workspaceTree?.root_path || undefined}
                         />
                       </Suspense>
                     </div>
@@ -819,6 +828,54 @@ export default function ChatSessionSidebar({
           )}
         </div>
       )}
+
+      {/* ── Sidebar Footer Rail (Anara Desktop Standard) ── */}
+      <div className="h-[36px] px-3 bg-[#080B11] border-t border-white/[0.08] flex items-center justify-between shrink-0 select-none text-slate-400">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onNewSession}
+            className="hover:text-white transition-colors cursor-pointer"
+            title="Home Workspace"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={onNewSession}
+            className="hover:text-white transition-colors cursor-pointer"
+            title="Create New Project"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="hover:text-white transition-colors cursor-pointer"
+            title="Sync Status: Up to date"
+          >
+            <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenBrain}
+            className="hover:text-cyan-300 transition-colors cursor-pointer"
+            title="Providers & Gateway"
+          >
+            <svg className="w-3.5 h-3.5 text-slate-400 hover:text-cyan-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </button>
+        </div>
+      </div>
 
       {/* ── Resizable Drag Handle on Right Border (1px clean white divider, 100% transparent hit area) ── */}
       {isOpen && (

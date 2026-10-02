@@ -240,7 +240,7 @@ class GlobalCLIInstaller:
             p_obj = Path(p_strip)
             if p_obj.is_dir() and os.access(p_obj, os.W_OK):
                 p_lower = str(p_obj).lower().replace("/", "\\")
-                if user_home_lower in p_lower and any(kw in p_lower for kw in ("python\\bin", "npm", "local\\bin", "scripts", "anara\\bin", "hermes\\bin")):
+                if user_home_lower in p_lower and any(kw in p_lower for kw in ("python\\bin", "npm", "local\\bin", "scripts", "anara\\bin", "anara\\bin")):
                     try:
                         shutil.copy2(cmd_path, p_obj / "anara.cmd")
                         shutil.copy2(ps_path, p_obj / "anara.ps1")

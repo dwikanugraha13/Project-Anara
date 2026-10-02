@@ -343,6 +343,12 @@ export const anaraApi = {
       const q = sessionId !== undefined ? `?session_id=${sessionId}` : "";
       return apiRequest<any>(`/api/agent/workspace/tree${q}`);
     },
+    getTreeChildren: (dirPath: string, sessionId?: number) => {
+      const q = sessionId !== undefined ? `&session_id=${sessionId}` : "";
+      return apiRequest<{ path: string; entries: any[] }>(
+        `/api/agent/workspace/tree/children?path=${encodeURIComponent(dirPath)}${q}`
+      );
+    },
     getFileContent: (path: string, sessionId?: number) => {
       const q = sessionId !== undefined ? `&session_id=${sessionId}` : "";
       return apiRequest<any>(`/api/agent/workspace/file-content?path=${encodeURIComponent(path)}${q}`);

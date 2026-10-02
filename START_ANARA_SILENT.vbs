@@ -25,6 +25,8 @@ If fso.FileExists(backendDir & "\venv\Scripts\python.exe") Then
     pythonExe = backendDir & "\venv\Scripts\python.exe"
 ElseIf fso.FileExists(backendDir & "\.venv\Scripts\python.exe") Then
     pythonExe = backendDir & "\.venv\Scripts\python.exe"
+ElseIf fso.FileExists(localAppData & "\Programs\Python\Python314\python.exe") Then
+    pythonExe = localAppData & "\Programs\Python\Python314\python.exe"
 ElseIf fso.FileExists(localAppData & "\Programs\Python\Python312\python.exe") Then
     pythonExe = localAppData & "\Programs\Python\Python312\python.exe"
 ElseIf fso.FileExists(localAppData & "\Programs\Python\Python311\python.exe") Then
@@ -49,9 +51,10 @@ env.Item("PYTHONIOENCODING") = "utf-8"
 env.Item("PYTHONPATH") = backendDir
 env.Item("ANARA_SILENT_DAEMON") = "1"
 
-' 4. Launch Backend quietly (Port 8000)
-sh.CurrentDirectory = backendDir
-backendCmd = "cmd.exe /c """"" & pythonExe & """ main.py > """ & logDir & "\backend.log"" 2>&1"""
+' 4. Launch Backend quietly (Port 8000) — uvicorn from project root
+sh.CurrentDirectory = rootDir
+env.Item("PYTHONPATH") = backendDir
+backendCmd = "cmd.exe /c """"" & pythonExe & """ -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 > """ & logDir & "\backend.log"" 2>&1"""
 sh.Run backendCmd, 0, False
 
 ' 5. Launch Frontend quietly (Port 3000)

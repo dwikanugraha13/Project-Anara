@@ -11,7 +11,7 @@ export interface DockAttachmentChipsProps {
 export function DockAttachmentChips({ attachedFiles, onRemove }: DockAttachmentChipsProps) {
   const prevFilesRef = useRef<AttachedItem[]>(attachedFiles);
 
-  // Revoke discarded object URLs on diff (Hermes Desktop revokeDiscardedAttachmentPreviews standard)
+  // Revoke discarded object URLs on diff (Attachment previews standard)
   useEffect(() => {
     const currentUrls = new Set(
       attachedFiles

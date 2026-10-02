@@ -674,7 +674,7 @@ function parseMarkdownBlocks(rawMarkdown: string): BlockToken[] {
   return blocks;
 }
 
-// Helper to safely remend open fences during streaming (Hermes Streamdown Parity)
+// Helper to safely remend open fences during streaming (Anara Streamdown Standard)
 function remendStream(content: string, isStreaming?: boolean): string {
   if (!isStreaming || !content) return content;
   const fenceMatches = content.match(/```/g);

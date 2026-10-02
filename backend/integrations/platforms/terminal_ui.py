@@ -1,7 +1,7 @@
 """
 terminal_ui.py — Rich Terminal Rendering Engine & Interactive UX for Project Anara.
 Anara Enterprise Architecture:
-Provides Claude Code & Hermes parity for terminal interactions:
+Provides Anara CLI & Anara parity for terminal interactions:
 1. Live token streaming with responsive framing.
 2. In-place animated tool spinners with per-action stopwatch timers.
 3. Syntax-highlighted unified diffs for file edits.
@@ -32,7 +32,7 @@ console = Console(highlight=False)
 def _canonical_tool_call(tool_name: str, detail: str = "") -> Tuple[str, str]:
     """
     Normalizes arbitrary internal tool names and raw argument strings into
-    Claude Code canonical activity signatures (e.g. Read, Edit, Write, Bash, Grep, Glob).
+    Canonical activity signatures (e.g. Read, Edit, Write, Bash, Grep, Glob).
     """
     t_lower = tool_name.lower().replace("-", "_").strip()
     arg = detail.strip().replace("\r", " ").replace("\n", " ")
@@ -116,7 +116,7 @@ def _canonical_tool_call(tool_name: str, detail: str = "") -> Tuple[str, str]:
 
 class ToolActivitySpinner:
     """
-    Claude Code & terminal-first activity feed renderer.
+    Terminal-first activity feed renderer.
     Single-line tool progression with live timer, symbol prefixes, and diff stats:
       ● Read(backend/terminal_ui.py) 0.1s
       ● Edit(cli.py) +12 -3 0.2s
@@ -475,7 +475,7 @@ from prompt_toolkit.completion import Completer, Completion
 class AnaraCliCompleter(Completer):
     """
     Intelligent fuzzy completer for slash commands and workspace file paths (@).
-    Provides Claude Code & Hermes parity tab-completion in the CLI.
+    Provides Anara CLI & Anara parity tab-completion in the CLI.
     """
     COMMANDS = {
         "/help": "Show interactive commands & shortcuts guide",

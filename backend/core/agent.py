@@ -36,7 +36,10 @@ os.makedirs(WORKSPACE_DIR, exist_ok=True)
 # Standard directories excluded from workspace scans and checkpoints (Anara Enterprise Architecture)
 WORKSPACE_IGNORED_DIRS = {
     ".git", "node_modules", "venv", ".venv", "__pycache__",
-    ".next", "dist", "build", ".vscode", ".idea", ".pytest_cache", ".coverage"
+    ".next", "dist", "build", ".vscode", ".idea", ".pytest_cache", ".coverage",
+    ".tox", ".mypy_cache", ".ruff_cache", ".turbo", ".parcel-cache",
+    ".yarn", ".pnp", "coverage", ".nyc_output", ".cache",
+    "vendor", "bower_components", ".svn", ".hg",
 }
 
 
@@ -178,7 +181,7 @@ class AnaraAgent:
             self._session_active_paths[0] = clean_path
             self.set_custom_folder_name(folder_name, session_id=0)
 
-        tree = self.get_workspace_tree(session_id=effective_sid)
+        tree = self.get_workspace_tree_shallow(session_id=effective_sid)
         _emit_agent_event("workspace_folder_imported", {
             "session_id": effective_sid,
             "folder_name": folder_name,
@@ -216,7 +219,7 @@ class AnaraAgent:
             except Exception as e:
                 logger.warning(f"[Workspace] Failed to persist empty workspace for session #{session_id}: {e}")
 
-        tree = self.get_workspace_tree(session_id=session_id)
+        tree = self.get_workspace_tree_shallow(session_id=session_id)
         _emit_agent_event("workspace_folder_imported", {
             "session_id": session_id,
             "folder_name": clean_name,
@@ -434,12 +437,18 @@ class AnaraAgent:
                 pass
 
         IGNORED = WORKSPACE_IGNORED_DIRS
+        MAX_DEPTH = 6          # Prevent MemoryError from deeply nested trees
+        MAX_FILES = 2000       # Cap total files to prevent OOM on json.dumps()
 
-        def build_nested_node(current_path: str, rel_path: str = "") -> List[Dict[str, Any]]:
+        def build_nested_node(current_path: str, rel_path: str = "", depth: int = 0) -> List[Dict[str, Any]]:
             nodes = []
+            if depth >= MAX_DEPTH or len(items) >= MAX_FILES:
+                return nodes
             try:
                 entries = sorted(os.scandir(current_path), key=lambda e: (not e.is_dir(), e.name.lower()))
                 for entry in entries:
+                    if len(items) >= MAX_FILES:
+                        break
                     if entry.name in IGNORED:
                         continue
                     entry_rel = os.path.join(rel_path, entry.name).replace("\\", "/")
@@ -457,7 +466,7 @@ class AnaraAgent:
                         continue
 
                     if entry.is_dir(follow_symlinks=False):
-                        children = build_nested_node(entry.path, entry_rel)
+                        children = build_nested_node(entry.path, entry_rel, depth + 1)
                         nodes.append({
                             "name": entry.name,
                             "path": display_rel or entry.name,
@@ -495,8 +504,123 @@ class AnaraAgent:
             "is_custom_folder": bool(custom_name),
             "root_path": target_dir,
             "total_files": len(items),
+            "truncated": len(items) >= MAX_FILES,
             "files": items,
             "nested_tree": nested_tree
+        }
+
+    # ── Native Dynamic: Lazy/Shallow Tree (one level per request) ──
+
+    def _resolve_workspace_dir(self, session_id: Optional[int] = None) -> tuple:
+        """Common workspace dir resolution for shallow tree methods."""
+        effective_sid = self.get_effective_session_id(session_id)
+        target_dir = self.get_session_dir(effective_sid)
+        custom_name = self._session_custom_names.get(effective_sid if effective_sid is not None else 0) or ""
+
+        if not custom_name and effective_sid is not None:
+            try:
+                from memory import memory_engine
+                sess = memory_engine.get_session(effective_sid)
+                if sess and sess.get("workspace_info"):
+                    custom_name = sess["workspace_info"].get("name", "")
+                    stored_path = sess["workspace_info"].get("root_path")
+                    if stored_path and sess["workspace_info"].get("is_external") and os.path.isdir(stored_path):
+                        self._session_active_paths[effective_sid] = stored_path
+                        target_dir = stored_path
+                    if custom_name:
+                        self._session_custom_names[effective_sid] = custom_name
+            except Exception:
+                pass
+
+        if not custom_name:
+            custom_name = os.path.basename(target_dir.rstrip("\\/")) if target_dir else "Project Workspace"
+
+        return target_dir, effective_sid, custom_name
+
+    def _list_dir_entries(self, dir_path: str) -> List[Dict[str, Any]]:
+        """List ONE directory level — no recursion. High-performance shallow directory listing."""
+        IGNORED = WORKSPACE_IGNORED_DIRS
+        entries = []
+        try:
+            for entry in sorted(os.scandir(dir_path), key=lambda e: (not e.is_dir(), e.name.lower())):
+                if entry.name in IGNORED:
+                    continue
+                # Skip NTFS junction/reparse points
+                try:
+                    st = entry.stat(follow_symlinks=False)
+                    if getattr(st, "st_file_attributes", 0) & 0x400:
+                        continue
+                except Exception:
+                    continue
+
+                if entry.is_dir(follow_symlinks=False):
+                    entries.append({
+                        "name": entry.name,
+                        "path": entry.path.replace("\\", "/"),
+                        "type": "directory",
+                        "isDirectory": True,
+                    })
+                elif entry.is_file(follow_symlinks=False):
+                    ext = os.path.splitext(entry.name)[1].lower()
+                    entries.append({
+                        "name": entry.name,
+                        "path": entry.path.replace("\\", "/"),
+                        "type": "file",
+                        "isDirectory": False,
+                        "ext": ext,
+                        "size_kb": round(st.st_size / 1024, 1),
+                    })
+        except Exception as err:
+            logger.debug(f"[WorkspaceTree] Shallow scan error on {dir_path}: {err}")
+        return entries
+
+    def get_workspace_tree_shallow(self, session_id: Optional[int] = None) -> Dict[str, Any]:
+        """Returns workspace metadata + root-level entries only.
+        Subdirectories are expanded on demand via get_workspace_dir_children().
+        """
+        target_dir, effective_sid, custom_name = self._resolve_workspace_dir(session_id)
+
+        if not target_dir or not os.path.isdir(target_dir):
+            return {
+                "workspace_name": "Project Workspace",
+                "root_path": "",
+                "total_files": 0,
+                "entries": [],
+                "is_custom_folder": False,
+                "session_id": session_id,
+            }
+
+        entries = self._list_dir_entries(target_dir)
+        file_entries = [e for e in entries if e.get("type") == "file"]
+        return {
+            "workspace_name": custom_name or "Project Workspace",
+            "session_id": session_id,
+            "is_custom_folder": bool(custom_name),
+            "root_path": target_dir.replace("\\", "/"),
+            "entries": entries,
+            "files": file_entries,  # backward compat for PromptAssembler
+            "total_files": len(file_entries),
+        }
+
+    def get_workspace_dir_children(self, dir_path: str, session_id: Optional[int] = None) -> Dict[str, Any]:
+        """Returns children of a single directory (lazy expand).
+        Frontend calls this when user clicks to expand a folder node.
+        """
+        target_dir, effective_sid, custom_name = self._resolve_workspace_dir(session_id)
+
+        # Security: ensure requested path is within workspace root
+        abs_requested = os.path.abspath(dir_path)
+        abs_root = os.path.abspath(target_dir) if target_dir else ""
+        if abs_root and not (abs_requested == abs_root or abs_requested.startswith(abs_root + os.sep)):
+            return {"entries": [], "error": "Path outside workspace boundary"}
+
+        if not os.path.isdir(abs_requested):
+            return {"entries": [], "error": "Directory not found"}
+
+        entries = self._list_dir_entries(abs_requested)
+        return {
+            "path": dir_path.replace("\\", "/"),
+            "entries": entries,
         }
 
     def save_uploaded_file(self, filename: str, content_bytes: bytes, relative_path: Optional[str] = None, session_id: Optional[int] = None) -> Dict[str, Any]:

@@ -161,7 +161,7 @@ export function getModelSupportedReasoningLevels(model?: MinimalModelInfo | null
     return ["off", "low", "medium", "high"];
   }
 
-  // Anthropic Claude 3.7+ / Claude Code extended thinking with explicit budget
+  // Anthropic Claude 3.7+ / Extended thinking with explicit budget
   if (mid.includes("claude-3-7") || mid.includes("claude-3.7") || mid.includes("claude") || name.includes("claude")) {
     return ["off", "low", "medium", "high", "budget", "max"];
   }

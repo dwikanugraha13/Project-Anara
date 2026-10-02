@@ -18,7 +18,7 @@ class WhatsAppPlatformAdapter(BasePlatformAdapter):
     name = "whatsapp"
 
     def format_message(self, content: str) -> str:
-        """Converts Markdown syntax to WhatsApp formatting conventions (Hermes Standard)."""
+        """Converts Markdown syntax to WhatsApp formatting conventions (Anara Standard)."""
         if not content:
             return content
 

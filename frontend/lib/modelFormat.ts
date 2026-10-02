@@ -1,12 +1,11 @@
 /**
  * Project Anara Model Display Formatter
- * Implements the exact, dynamic architecture of Hermes Agent
- * (Reference: C:/Users/Bravo/AppData/Local/hermes/hermes-agent/apps/desktop/src/lib/model-status-label.ts)
+ * Implements dynamic model architecture for Project Anara
  *
  * 100% dynamic - Zero static model-name hardcoding, zero vendor guessing.
  */
 
-// Trailing model-id variants that render as a clean tag beside the name (Hermes standard)
+// Trailing model-id variants that render as a clean tag beside the name (Anara standard)
 const VARIANT_TAGS: ReadonlyArray<readonly [RegExp, string]> = [
   [/-fast$/i, "Fast"],
   [/-thinking$/i, "Thinking"],
@@ -21,7 +20,7 @@ const VARIANT_TAGS: ReadonlyArray<readonly [RegExp, string]> = [
 const titleCase = (text: string): string => text.replace(/\b\w/g, (char) => char.toUpperCase()).trim();
 
 // Vendors write their own names in casing the model id does not carry,
-// and title-casing the id overrides it (Hermes standard: whole words only).
+// and title-casing the id overrides it (Whole words only).
 const VENDOR_CASING: ReadonlyArray<readonly [RegExp, string]> = [
   [/\bDeepseek\b/g, "DeepSeek"],
   [/\bGlm\b/g, "GLM"],
@@ -47,7 +46,7 @@ const applyVendorCasing = (text: string): string => {
   return cased;
 };
 
-/** Strip provider prefix and normalize for display (Hermes standard) */
+/** Strip provider prefix and normalize for display (Anara standard) */
 export function modelBaseId(model: string): string {
   const trimmed = model.trim();
   const slash = trimmed.lastIndexOf("/");
@@ -55,7 +54,7 @@ export function modelBaseId(model: string): string {
 }
 
 /**
- * Extracts pure, verbatim upstream route prefix from model slugs (Hermes standard).
+ * Extracts pure, verbatim upstream route prefix from model slugs (Anara standard).
  * E.g. '9router/ag/gemini-3.8-flash' -> 'ag'
  *      '9router/cx/gpt-5' -> 'cx'
  *      '9router/cl/google/gemini' -> 'cl'
@@ -99,7 +98,7 @@ export function extractModelTier(raw: string | undefined | null): "high" | "medi
 }
 
 function prettifyBase(base: string): string {
-  // Normalize hyphenated versions between digits (Hermes standard: 4-6 -> 4.6, 3-7 -> 3.7)
+  // Normalize hyphenated versions between digits (Version standard: 4-6 -> 4.6, 3-7 -> 3.7)
   const normalized = base.replace(/(\d)-(?=\d)/g, "$1.");
 
   if (/^deepseek-flash$/i.test(normalized)) {
@@ -127,7 +126,7 @@ function prettifyBase(base: string): string {
   return applyVendorCasing(titleCase(normalized.replace(/-/g, " ")));
 }
 
-/** Split a model id into a clean display name plus an optional variant tag (Hermes standard) */
+/** Split a model id into a clean display name plus an optional variant tag (Anara standard) */
 export function modelDisplayParts(model: string): { name: string; tag: string } {
   let base = modelBaseId(model);
   let tag = "";
@@ -167,7 +166,7 @@ export function modelDisplayParts(model: string): { name: string; tag: string } 
   return { name: prettifyBase(base) || model.trim() || "No model", tag };
 }
 
-/** Friendly one-line model name for menus and buttons (Hermes standard) */
+/** Friendly one-line model name for menus and buttons (Anara standard) */
 export function displayModelName(model: string): string {
   const { name, tag } = modelDisplayParts(model);
   return tag ? `${name} ${tag}` : name;

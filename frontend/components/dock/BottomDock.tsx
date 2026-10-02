@@ -23,7 +23,7 @@ export interface AttachedItem {
   content?: string;
 }
 
-/** Safely revokes blob: URLs to prevent client memory leaks (Hermes Desktop standard) */
+/** Safely revokes blob: URLs to prevent client memory leaks (Anara Desktop standard) */
 export function revokeAttachmentPreviews(items: AttachedItem[]) {
   items.forEach((item) => {
     if (item.previewUrl?.startsWith("blob:")) {
@@ -79,6 +79,14 @@ export interface BottomDockProps {
   onSelectReasoningEffort?: (effort: "off" | "low" | "medium" | "high") => void;
   onSteer?: (text: string) => void;
   workspaceFiles?: Array<{ path: string; name: string; isDir?: boolean }>;
+  gitStatus?: {
+    is_git: boolean;
+    branch?: string;
+    changed_count?: number;
+    insertions?: number;
+    deletions?: number;
+  } | null;
+  promptTurnsCount?: number;
 }
 
 export default function BottomDock({
@@ -119,6 +127,8 @@ export default function BottomDock({
   onSelectReasoningEffort,
   onSteer,
   workspaceFiles = [],
+  gitStatus,
+  promptTurnsCount,
 }: BottomDockProps) {
   const isAgentToggleVisible = showAgentModeToggle !== undefined ? showAgentModeToggle : false;
   const isInteractionModeVisible = showInteractionModeToggle !== undefined ? showInteractionModeToggle : Boolean(onSetInteractionMode);
@@ -185,7 +195,7 @@ export default function BottomDock({
     }
   };
 
-  // Prompt history ring (Claude Code & Hermes Desktop input history standard)
+  // Prompt history ring (Anara input history standard)
   const promptHistoryRef = useRef<string[]>([]);
   const historyIndexRef = useRef<number>(-1);
   const draftSnapshotRef = useRef<string>("");
@@ -202,7 +212,7 @@ export default function BottomDock({
     } catch {}
   }, []);
 
-  // Cleanup blob preview URLs strictly on unmount (Hermes Desktop store/composer.ts standard)
+  // Cleanup blob preview URLs strictly on unmount (Anara composer standard)
   const attachedFilesRef = useRef(attachedFiles);
   attachedFilesRef.current = attachedFiles;
   useEffect(() => {
@@ -407,7 +417,7 @@ export default function BottomDock({
       }
     }
 
-    // ArrowUp / ArrowDown prompt history navigation (Hermes & Claude Code REPL standard)
+    // ArrowUp / ArrowDown prompt history navigation (Anara & Anara CLI REPL standard)
     if (e.key === "ArrowUp") {
       const el = textareaRef.current;
       const isAtStart = !inputMessage || (el ? el.selectionStart === 0 && el.selectionEnd === 0 : false);
@@ -490,7 +500,7 @@ export default function BottomDock({
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (isBusy) {
-        // Mid-Turn Steering (Claude Code / Hermes Parity)
+        // Mid-Turn Steering (Anara Native Parity)
         if (inputMessage.trim() && onSteer) {
           const steerText = inputMessage.trim();
           setInputMessage("");
@@ -654,7 +664,7 @@ export default function BottomDock({
         </div>
       ) : null}
 
-      {/* ── Status Stack: Live Tool Execution Activity (Cursor/Hermes Engineering Standard) ── */}
+      {/* ── Status Stack: Live Tool Execution Activity (Anara Engineering Standard) ── */}
       {liveToolProgress && (
         <div className="w-full flex items-center justify-between px-3 py-1.5 rounded-xl border border-cyan-400/25 bg-[#030712]/95 backdrop-blur-2xl font-mono text-xs text-cyan-200 select-none animate-fade-in shadow-[0_4px_20px_rgba(0,0,0,0.6)]">
           <div className="flex items-center gap-2 min-w-0">
@@ -688,7 +698,7 @@ export default function BottomDock({
               : "border-white/[0.10] hover:border-white/[0.20]"
           } ${isInputExpanded ? "h-full flex-1 min-h-0" : ""}`}
         >
-          {/* Isolated Glass Backing: Keep backdrop-filter off the hot editable path to avoid typing frame drops (Hermes composer-dock.ts) */}
+          {/* Isolated Glass Backing: Keep backdrop-filter off the hot editable path to avoid typing frame drops (Composer Dock) */}
           <div
             aria-hidden="true"
             className={`pointer-events-none absolute inset-0 -z-10 rounded-[inherit] transition-[background-color] duration-150 ease-out backdrop-blur-2xl ${
@@ -719,6 +729,40 @@ export default function BottomDock({
               e.target.value = "";
             }}
           />
+
+        {/* Center Drag Handle (Anara Desktop Standard) */}
+        <div
+          onClick={() => setIsInputExpanded((v) => !v)}
+          className="w-16 h-1 bg-white/20 hover:bg-white/35 rounded-full mx-auto -mt-0.5 mb-1 cursor-pointer transition-colors"
+          title={isInputExpanded ? "Collapse composer" : "Expand composer"}
+        />
+
+        {/* Context & Git Telemetry Strip (Anara Desktop Standard) */}
+        <div className="w-full flex items-center justify-between pb-1.5 border-b border-white/[0.06] text-[11px] font-mono select-none">
+          {/* Left: Branch Indicator */}
+          <div className="flex items-center gap-1.5 text-slate-300">
+            <svg className="w-3.5 h-3.5 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7a3 3 0 100-6 3 3 0 000 6zm0 0v10m0 0a3 3 0 100 6 3 3 0 000-6zm8-4a3 3 0 100-6 3 3 0 000 6zm0 0v3a4 4 0 01-4 4h-4" />
+            </svg>
+            <span className="font-semibold text-slate-200">{gitStatus?.branch || "main"}</span>
+          </div>
+
+          {/* Right: Telemetry (Turns & Git Diff Delta) */}
+          <div className="flex items-center gap-3 text-slate-400">
+            {promptTurnsCount !== undefined && promptTurnsCount > 0 && (
+              <span className="flex items-center gap-0.5 text-slate-300" title="Conversation Turns">
+                <span className="text-slate-400">↑</span>
+                <span>{promptTurnsCount}</span>
+              </span>
+            )}
+            {(gitStatus?.insertions !== undefined || gitStatus?.deletions !== undefined) && (
+              <span className="flex items-center gap-1.5 font-mono tabular-nums text-[10.5px]">
+                {gitStatus.insertions ? <span className="text-emerald-400">+{gitStatus.insertions}</span> : null}
+                {gitStatus.deletions ? <span className="text-rose-400">-{gitStatus.deletions}</span> : null}
+              </span>
+            )}
+          </div>
+        </div>
 
         {/* 1. Top Section: Input / Voice Waveform */}
         <div className={`w-full flex items-center gap-2 ${isInputExpanded ? "flex-1 min-h-0 overflow-hidden" : "min-h-[36px]"}`}>
@@ -764,7 +808,7 @@ export default function BottomDock({
                     onChange={handleTextareaChange}
                     onKeyDown={handleKeyDown}
                     onPaste={handlePaste}
-                    placeholder="Plan architecture, edit code, or run commands..."
+                    placeholder="What's on your mind? (Shift+Enter for newline, / for commands, @ for files)"
                     className={`w-full bg-transparent border-none py-1.5 px-1 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none font-sans resize-none custom-scrollbar leading-relaxed ${
                       isInputOverflowed || isInputExpanded ? "overflow-y-auto" : "overflow-hidden"
                     } ${isInputExpanded ? "flex-1 h-full max-h-none" : ""}`}
@@ -1167,31 +1211,34 @@ export default function BottomDock({
               )
             )}
 
-            {/* Chat Mode Send / Stop Button */}
+            {/* Chat Mode Send / Stop Button (Anara Desktop Standard) */}
             {interactionMode === "chat" && (
               status === "thinking" || status === "speaking" || Boolean(liveToolProgress && liveToolProgress.status === "running") ? (
                 <button
                   type="button"
                   onClick={onInterrupt}
-                  className="w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200 cursor-pointer bg-white/[0.08] hover:bg-rose-500/25 text-white border border-white/20 hover:border-rose-400/40 shadow-sm active:scale-95 group"
+                  className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer bg-rose-500/20 hover:bg-rose-500/35 text-rose-200 border border-rose-400/40 shadow-sm active:scale-95 group"
                   title="Stop generating response (Escape or Click)"
                 >
-                  <div className="w-2.5 h-2.5 rounded-[2px] bg-white group-hover:bg-rose-300 transition-colors shadow-sm" />
+                  <div className="w-2.5 h-2.5 rounded-[2px] bg-rose-400 group-hover:bg-white transition-colors shadow-sm" />
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={() => handleFormSubmit()}
                   disabled={!inputMessage.trim() && attachedFiles.length === 0}
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200 cursor-pointer shadow-md ${
+                  className={`h-8 px-2.5 rounded-full flex items-center gap-1 transition-all duration-200 cursor-pointer shadow-md ${
                     inputMessage.trim() || attachedFiles.length > 0
-                      ? "bg-cyan-400 hover:bg-cyan-300 text-black shadow-[0_0_14px_rgba(34,211,238,0.4)] active:scale-95"
-                      : "bg-white/[0.04] text-slate-600 border border-white/10 cursor-not-allowed opacity-40"
+                      ? "bg-[#ECEEF2] hover:bg-white text-[#0F131A] shadow-[0_0_15px_rgba(255,255,255,0.25)] active:scale-95 font-semibold"
+                      : "bg-white/[0.06] text-slate-500 border border-white/10 cursor-not-allowed opacity-40"
                   }`}
-                  title="Send message (Enter, Shift+Enter for new line)"
+                  title="Send prompt (Enter, Shift+Enter for new line)"
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                  <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                    <path d="M12 3v10m0-10l-4 4m4-4l4 4M5 14v4a2 2 0 002 2h10a2 2 0 002-2v-4" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                  </svg>
+                  <svg className="w-3 h-3 opacity-60 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
                   </svg>
                 </button>
               )

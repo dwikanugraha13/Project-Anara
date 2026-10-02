@@ -59,7 +59,9 @@ interface ContextMenuState {
   isFolder: boolean;
 }
 
-/** Recursive File & Directory Tree Node Component for IDE support with Git Status badges */
+/** Recursive File & Directory Tree Node Component for IDE support with Git Status badges.
+ * Native Dynamic: `children === undefined` means not-loaded; expand triggers lazy fetch.
+ */
 export function RecursiveTreeNode({
   node,
   depth = 0,
@@ -70,6 +72,7 @@ export function RecursiveTreeNode({
   expandedPaths,
   onToggleExpand,
   onContextMenu,
+  onLoadChildren,
 }: {
   node: WorkspaceNode;
   depth?: number;
@@ -80,6 +83,7 @@ export function RecursiveTreeNode({
   expandedPaths: Set<string>;
   onToggleExpand: (path: string) => void;
   onContextMenu: (e: React.MouseEvent, node: WorkspaceNode) => void;
+  onLoadChildren: (dirPath: string) => void;
 }) {
   const normNodePath = normalizePath(node.path || node.name);
   const isManuallyExpanded = expandedPaths.has(normNodePath);
@@ -88,14 +92,18 @@ export function RecursiveTreeNode({
   const q = filterText.toLowerCase().trim();
   const matchesSelf = !q || (node.name || "").toLowerCase().includes(q);
 
-  // Check if any descendant matches
+  // Check if any descendant matches (only among loaded children)
   const hasMatchingDescendant = useMemo(() => {
     if (!q || !node.children || node.children.length === 0) return false;
     return node.children.some((child) => nodeHasMatch(child, q));
   }, [node, q]);
 
   if (node.type === "directory") {
-    const hasChildren = node.children && node.children.length > 0;
+    // children === undefined means NOT loaded yet (lazy convention)
+    const childrenLoaded = node.children !== undefined;
+    const hasChildren = childrenLoaded && node.children!.length > 0;
+    const isLoading = node.loading === true;
+
     if (q && !matchesSelf && !hasMatchingDescendant) {
       return null;
     }
@@ -104,26 +112,40 @@ export function RecursiveTreeNode({
     const isFolderOpen = q ? (hasMatchingDescendant || isManuallyExpanded) : isManuallyExpanded;
     const gitRollup = !isFolderOpen ? getDirectoryGitRollup(node, gitFilesMap) : null;
 
+    const handleToggle = () => {
+      onToggleExpand(normNodePath);
+      // If expanding and children not loaded yet, trigger lazy fetch
+      if (!isManuallyExpanded && !childrenLoaded && !isLoading) {
+        onLoadChildren(node.path);
+      }
+    };
+
     return (
       <div className="flex flex-col">
         <button
           type="button"
-          onClick={() => onToggleExpand(normNodePath)}
+          onClick={handleToggle}
           onContextMenu={(e) => onContextMenu(e, node)}
           className="flex items-center gap-1.5 w-full text-left py-1 px-1.5 rounded-lg hover:bg-white/[0.06] text-slate-300 hover:text-white transition-colors cursor-pointer group select-none"
           style={{ paddingLeft: `${Math.max(6, depth * 12)}px` }}
         >
           {/* Rotating vector chevron */}
-          <svg
-            className={`w-3 h-3 text-slate-400 group-hover:text-white transition-transform duration-150 shrink-0 ${
-              isFolderOpen ? "rotate-90" : ""
-            }`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M9 5l7 7-7 7" />
-          </svg>
+          {isLoading ? (
+            <svg className="w-3 h-3 text-cyan-400 shrink-0 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          ) : (
+            <svg
+              className={`w-3 h-3 text-slate-400 group-hover:text-white transition-transform duration-150 shrink-0 ${
+                isFolderOpen ? "rotate-90" : ""
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M9 5l7 7-7 7" />
+            </svg>
+          )}
 
           {/* Dynamic VS Code Folder Icon (Open vs Closed) */}
           {isFolderOpen ? (
@@ -163,9 +185,22 @@ export function RecursiveTreeNode({
           )}
         </button>
 
-        {isFolderOpen && hasChildren && (
+        {isFolderOpen && (
           <div className="flex flex-col border-l border-white/[0.06] ml-2.5">
-            {node.children!.map((child, idx) => (
+            {isLoading && !hasChildren && (
+              <div className="flex items-center gap-1.5 py-1 px-1.5 text-[10px] text-slate-500 font-mono" style={{ paddingLeft: `${Math.max(6, (depth + 1) * 12)}px` }}>
+                <svg className="w-3 h-3 animate-spin text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Loading...
+              </div>
+            )}
+            {node.loadError && (
+              <div className="flex items-center gap-1.5 py-1 px-1.5 text-[10px] text-rose-400 font-mono" style={{ paddingLeft: `${Math.max(6, (depth + 1) * 12)}px` }}>
+                Error: {node.loadError}
+              </div>
+            )}
+            {hasChildren && node.children!.map((child, idx) => (
               <RecursiveTreeNode
                 key={child.path || `${child.name}-${idx}`}
                 node={child}
@@ -177,8 +212,14 @@ export function RecursiveTreeNode({
                 expandedPaths={expandedPaths}
                 onToggleExpand={onToggleExpand}
                 onContextMenu={onContextMenu}
+                onLoadChildren={onLoadChildren}
               />
             ))}
+            {childrenLoaded && !hasChildren && !isLoading && !node.loadError && (
+              <div className="py-0.5 px-1.5 text-[10px] text-slate-600 font-mono italic" style={{ paddingLeft: `${Math.max(6, (depth + 1) * 12)}px` }}>
+                (empty)
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -314,6 +355,95 @@ export default function WorkspaceTreeView({
   onDeleteFile,
   onCreateFile,
 }: WorkspaceTreeViewProps) {
+  // ── 0. Lazy Tree State (Anara Parity) ──────────────────────────────────
+  // Mutable tree nodes array — entries from backend are root-level only,
+  // children are fetched on-demand and merged into this state.
+  const [treeNodes, setTreeNodes] = useState<WorkspaceNode[]>([]);
+  const inFlightRef = useRef<Set<string>>(new Set());
+
+  // Sync root entries from workspaceTree prop into treeNodes
+  useEffect(() => {
+    const rootEntries = workspaceTree?.entries ?? workspaceTree?.nested_tree ?? [];
+    // Map backend entries to lazy tree nodes: directories have children=undefined (not loaded)
+    const mapped: WorkspaceNode[] = rootEntries.map((entry) => ({
+      ...entry,
+      // If backend already set children (legacy nested_tree), keep them; otherwise undefined = not-loaded
+      children: entry.type === "directory"
+        ? (entry.children !== undefined ? entry.children : undefined)
+        : undefined,
+    }));
+    setTreeNodes(mapped);
+  }, [workspaceTree]);
+
+  /** Recursively find and update a node by path in the tree */
+  const updateNodeAtPath = useCallback(
+    (nodes: WorkspaceNode[], targetPath: string, updater: (node: WorkspaceNode) => WorkspaceNode): WorkspaceNode[] => {
+      return nodes.map((node) => {
+        const normNode = normalizePath(node.path);
+        const normTarget = normalizePath(targetPath);
+        if (normNode === normTarget) {
+          return updater(node);
+        }
+        if (node.children && node.type === "directory") {
+          const updatedChildren = updateNodeAtPath(node.children, targetPath, updater);
+          if (updatedChildren !== node.children) {
+            return { ...node, children: updatedChildren };
+          }
+        }
+        return node;
+      });
+    },
+    []
+  );
+
+  /** Lazy-load children for a directory node (Native Dynamic: one level per request) */
+  const handleLoadChildren = useCallback(
+    async (dirPath: string) => {
+      const normDir = normalizePath(dirPath);
+      if (inFlightRef.current.has(normDir)) return;
+      inFlightRef.current.add(normDir);
+
+      // Optimistic: set loading flag
+      setTreeNodes((prev) =>
+        updateNodeAtPath(prev, dirPath, (node) => ({
+          ...node,
+          loading: true,
+          loadError: undefined,
+        }))
+      );
+
+      try {
+        const result = await anaraApi.workspace.getTreeChildren(dirPath);
+        const childEntries: WorkspaceNode[] = (result.entries || []).map((entry: any) => ({
+          ...entry,
+          children: entry.type === "directory" ? undefined : undefined,
+        }));
+
+        setTreeNodes((prev) =>
+          updateNodeAtPath(prev, dirPath, (node) => ({
+            ...node,
+            children: childEntries,
+            loading: false,
+            loadError: undefined,
+          }))
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Failed to load";
+        setTreeNodes((prev) =>
+          updateNodeAtPath(prev, dirPath, (node) => ({
+            ...node,
+            loading: false,
+            loadError: msg,
+            children: [],
+          }))
+        );
+      } finally {
+        inFlightRef.current.delete(normDir);
+      }
+    },
+    [updateNodeAtPath]
+  );
+
   // ── 1. Expand/Collapse Caching ──────────────────────────────────────────
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => {
     try {
@@ -329,8 +459,9 @@ export default function WorkspaceTreeView({
     } catch {}
     // Default: root directories expanded
     const initial = new Set<string>();
-    if (workspaceTree?.nested_tree) {
-      for (const node of workspaceTree.nested_tree) {
+    const rootEntries = workspaceTree?.entries ?? workspaceTree?.nested_tree;
+    if (rootEntries) {
+      for (const node of rootEntries) {
         if (node.type === "directory") {
           initial.add(normalizePath(node.path || node.name));
         }
@@ -364,12 +495,12 @@ export default function WorkspaceTreeView({
         }
       }
     };
-    if (workspaceTree?.nested_tree) collect(workspaceTree.nested_tree);
+    collect(treeNodes);
     setExpandedPaths(all);
     try {
       localStorage.setItem(EXPANDED_STORAGE_KEY, JSON.stringify(Array.from(all)));
     } catch {}
-  }, [workspaceTree?.nested_tree]);
+  }, [treeNodes]);
 
   const collapseAllFolders = useCallback(() => {
     const empty = new Set<string>();
@@ -462,10 +593,10 @@ export default function WorkspaceTreeView({
   }, [recentProjects, projectSearch]);
 
   const hasTreeMatches = useMemo(() => {
-    if (!workspaceTree?.nested_tree || !explorerFilter.trim()) return true;
+    if (!treeNodes.length || !explorerFilter.trim()) return true;
     const q = explorerFilter.toLowerCase().trim();
-    return workspaceTree.nested_tree.some((node) => nodeHasMatch(node, q));
-  }, [workspaceTree?.nested_tree, explorerFilter]);
+    return treeNodes.some((node) => nodeHasMatch(node, q));
+  }, [treeNodes, explorerFilter]);
 
   // ── 4. Drag & Drop and Upload Affordance ─────────────────────────────────
   const [isDragOver, setIsDragOver] = useState(false);
@@ -965,9 +1096,9 @@ export default function WorkspaceTreeView({
                 )}
               </div>
             )
-          ) : workspaceTree?.nested_tree && workspaceTree.nested_tree.length > 0 ? (
+          ) : treeNodes.length > 0 ? (
             hasTreeMatches ? (
-              workspaceTree.nested_tree.map((node, idx) => (
+              treeNodes.map((node, idx) => (
                 <RecursiveTreeNode
                   key={node.path || `${node.name}-${idx}`}
                   node={node}
@@ -978,6 +1109,7 @@ export default function WorkspaceTreeView({
                   expandedPaths={expandedPaths}
                   onToggleExpand={togglePathExpanded}
                   onContextMenu={handleOpenContextMenu}
+                  onLoadChildren={handleLoadChildren}
                 />
               ))
             ) : (

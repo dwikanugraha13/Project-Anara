@@ -22,6 +22,11 @@ export interface ChatSession {
   created_at: string;
   updated_at: string;
   last_user_text?: string | null;
+  workspace_info?: {
+    name: string;
+    root_path: string;
+    is_external?: boolean;
+  } | null;
 }
 
 export interface WorkspaceFile {
@@ -43,7 +48,18 @@ export interface WorkspaceNode {
   is_pdf?: boolean;
   is_image?: boolean;
   is_code?: boolean;
+  isDirectory?: boolean;
+  /**
+   * Lazy tree convention (Anara Parity):
+   * - `undefined`  → children NOT loaded yet (directory not expanded)
+   * - `[]`         → children loaded, directory is empty
+   * - `[...nodes]` → children loaded with entries
+   */
   children?: WorkspaceNode[];
+  /** True while children are being fetched from the backend */
+  loading?: boolean;
+  /** Error message if children fetch failed */
+  loadError?: string;
 }
 
 export interface WorkspaceTreeData {
@@ -52,7 +68,10 @@ export interface WorkspaceTreeData {
   root_path: string;
   total_files: number;
   files: WorkspaceFile[];
+  /** @deprecated Use `entries` for lazy tree (Anara Parity) */
   nested_tree?: WorkspaceNode[];
+  /** Lazy tree root-level entries (shallow, 1 level only) */
+  entries?: WorkspaceNode[];
 }
 
 export interface GitStatusData {
@@ -165,6 +184,21 @@ export function formatSmartDateTime(iso: string): string {
   return `${dateStr}, ${timeStr}`;
 }
 
+export function formatRelativeTime(iso: string): string {
+  const d = toDate(iso);
+  if (!d) return "";
+  const diffSec = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+  if (diffSec < 60) return "now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours}h`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 30) return `${diffDays}d`;
+  const diffMonths = Math.floor(diffDays / 30);
+  return `${diffMonths}mo`;
+}
+
 export interface SessionDisplayInfo {
   title: string;
   subtitle: string;
@@ -225,31 +259,92 @@ export function resolveSessionDisplay(s: ChatSession): SessionDisplayInfo {
   return { title, subtitle, channel, speaker };
 }
 
-export function groupSessions(sessions: ChatSession[]) {
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const startOfYesterday = startOfToday - 86400_000;
-  const sevenDaysAgo = startOfToday - 7 * 86400_000;
+export interface SessionCategory {
+  category: "pinned" | "home" | "project";
+  label: string;
+  /** All sessions in this category, sorted by recency (newest first). */
+  items: ChatSession[];
+  /** Workspace root path for project categories (used as unique key). */
+  workspacePath?: string;
+}
 
-  const buckets: { label: string; items: ChatSession[] }[] = [
-    { label: "Pinned", items: [] },
-    { label: "Today", items: [] },
-    { label: "Yesterday", items: [] },
-    { label: "Last 7 days", items: [] },
-    { label: "Older", items: [] },
-  ];
+/** Preview count before "Show all N sessions" — matches preview count. */
+export const SESSION_PREVIEW_COUNT = 3;
+
+/**
+ * Native session categorization by workspace:
+ * 1. Pinned — all pinned sessions (regardless of workspace)
+ * 2. Home — sessions WITHOUT a workspace (general chat / unattached code)
+ * 3. Per-Project — sessions WITH a workspace, grouped by workspace root_path
+ *
+ * Each category carries a flat list sorted by recency. The renderer handles
+ * the preview cap (SESSION_PREVIEW_COUNT) and "Show all N sessions" button.
+ */
+export function groupSessions(sessions: ChatSession[]): SessionCategory[] {
+  const pinned: ChatSession[] = [];
+  const homeSessions: ChatSession[] = [];
+  const projectMap = new Map<string, { name: string; sessions: ChatSession[] }>();
 
   for (const s of sessions) {
     if (s.is_pinned === 1) {
-      buckets[0].items.push(s);
+      pinned.push(s);
       continue;
     }
-    const t = toDate(s.updated_at)?.getTime() ?? 0;
-    if (t >= startOfToday) buckets[1].items.push(s);
-    else if (t >= startOfYesterday) buckets[2].items.push(s);
-    else if (t >= sevenDaysAgo) buckets[3].items.push(s);
-    else buckets[4].items.push(s);
+
+    const wp = s.workspace_info?.root_path;
+    if (wp) {
+      const existing = projectMap.get(wp);
+      if (existing) {
+        existing.sessions.push(s);
+      } else {
+        projectMap.set(wp, {
+          name: s.workspace_info?.name || wp.split(/[\\/]/).filter(Boolean).pop() || "Project",
+          sessions: [s],
+        });
+      }
+    } else {
+      homeSessions.push(s);
+    }
   }
 
-  return buckets.filter((b) => b.items.length > 0);
+  const byRecency = (a: ChatSession, b: ChatSession) => {
+    const ta = toDate(a.updated_at)?.getTime() ?? 0;
+    const tb = toDate(b.updated_at)?.getTime() ?? 0;
+    return tb - ta;
+  };
+
+  pinned.sort(byRecency);
+  homeSessions.sort(byRecency);
+
+  const categories: SessionCategory[] = [];
+
+  if (pinned.length > 0) {
+    categories.push({ category: "pinned", label: "Pinned", items: pinned });
+  }
+
+  if (homeSessions.length > 0) {
+    categories.push({ category: "home", label: "Home", items: homeSessions });
+  }
+
+  // Sort project groups by most recent session in each group
+  const projectEntries = [...projectMap.entries()].map(([wp, data]) => {
+    data.sessions.sort(byRecency);
+    return { wp, ...data };
+  });
+  projectEntries.sort((a, b) => {
+    const ta = toDate(a.sessions[0]?.updated_at)?.getTime() ?? 0;
+    const tb = toDate(b.sessions[0]?.updated_at)?.getTime() ?? 0;
+    return tb - ta;
+  });
+
+  for (const entry of projectEntries) {
+    categories.push({
+      category: "project",
+      label: entry.name,
+      items: entry.sessions,
+      workspacePath: entry.wp,
+    });
+  }
+
+  return categories;
 }

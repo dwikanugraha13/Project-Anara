@@ -291,7 +291,7 @@ export interface InteractiveQuestionPayload {
   questions: InteractiveQuestionItem[];
 }
 
-// ── Reconnect Backoff & Liveness Constants (Hermes Desktop / Claude Code standards) ──
+// ── Reconnect Backoff & Liveness Constants (Anara Desktop / Anara CLI standards) ──
 export interface ReconnectBackoffOptions {
   baseDelayMs?: number;
   capMs?: number;
@@ -306,7 +306,7 @@ const HEARTBEAT_TIMEOUT_MS = 65000;
 const MAX_MESSAGE_QUEUE_SIZE = 100;
 
 /**
- * Exponential reconnect backoff with full jitter (AWS / Hermes Desktop standard).
+ * Exponential reconnect backoff with full jitter (AWS / Anara Desktop standard).
  * Spreads retries evenly across [0, ceiling) to prevent fleet reconnect stampedes.
  */
 export function reconnectBackoffDelayMs(attempt: number, options: ReconnectBackoffOptions = {}): number {
@@ -953,14 +953,14 @@ export function useWebSocket({
         wsRef.current = null;
 
         if (!isIntentionalClose.current) {
-          // Reset ladder if connection was open and stable for >= 5s (Hermes Desktop standard)
+          // Reset ladder if connection was open and stable for >= 5s (Anara Desktop standard)
           const isStable = connectTimeRef.current > 0 && Date.now() - connectTimeRef.current >= RECONNECT_STABLE_OPEN_MS;
           if (isStable) {
             retryCountRef.current = 0;
           }
           connectTimeRef.current = 0;
 
-          // Exponential backoff with full jitter (AWS / Hermes standard)
+          // Exponential backoff with full jitter (AWS / Anara standard)
           const delay = reconnectBackoffDelayMs(retryCountRef.current, {
             baseDelayMs: DEFAULT_BASE_DELAY_MS,
             capMs: DEFAULT_CAP_MS,
@@ -1056,7 +1056,7 @@ export function useWebSocket({
     sendJSON({ type: "text_input", text });
   }, [sendJSON]);
 
-  // Mid-Turn Steering Protocol (Claude Code & Hermes Parity)
+  // Mid-Turn Steering Protocol (Anara Native Protocol Parity)
   const sendSteer = useCallback((message: string) => {
     sendJSON({ type: "steer", message });
   }, [sendJSON]);

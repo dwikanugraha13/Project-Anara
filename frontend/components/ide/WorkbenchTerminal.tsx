@@ -4,12 +4,15 @@ import React, { useState, useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { SearchAddon } from "@xterm/addon-search";
 import "@xterm/xterm/css/xterm.css";
 import { getBackendUrl } from "@/lib/apiClient";
 
 export interface TerminalTab {
   id: string;
   name: string;
+  shell: string;
+  cwd?: string;
 }
 
 export interface WorkbenchTerminalProps {
@@ -19,6 +22,7 @@ export interface WorkbenchTerminalProps {
   onClose?: () => void;
   embedded?: boolean;
   isVisible?: boolean;
+  cwd?: string;
 }
 
 const COSMIC_OBSIDIAN_PALETTE = {
@@ -45,36 +49,28 @@ const COSMIC_OBSIDIAN_PALETTE = {
   brightWhite: "#ffffff",
 };
 
-export default function WorkbenchTerminal({
-  logs = [],
-  activeTask,
-  onExecuteCommand,
-  onClose,
-  embedded = false,
-  isVisible = true,
-}: WorkbenchTerminalProps) {
-  const [tabs, setTabs] = useState<TerminalTab[]>([
-    { id: "term-1", name: "Terminal 1" },
-  ]);
-  const [activeTabId, setActiveTabId] = useState<string>("term-1");
-  const [commandInput, setCommandInput] = useState<string>("");
-  const [executingTabs, setExecutingTabs] = useState<Record<string, boolean>>({});
-  const [history, setHistory] = useState<string[]>([]);
-  const [historyIdx, setHistoryIdx] = useState<number>(-1);
+interface TerminalInstanceProps {
+  tab: TerminalTab;
+  isActive: boolean;
+  isVisible: boolean;
+  logs?: string[];
+}
 
-  const terminalContainerRef = useRef<HTMLDivElement>(null);
-  const termInstanceRef = useRef<Terminal | null>(null);
+function TerminalInstance({ tab, isActive, isVisible, logs = [] }: TerminalInstanceProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const abortControllersRef = useRef<Record<string, AbortController>>({});
-  const resizeObserverRef = useRef<ResizeObserver | null>(null);
-  const processedLogIndexRef = useRef<number>(0);
-  const tabCounterRef = useRef<number>(2);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const processedLogsIndexRef = useRef(0);
 
-  const isExecuting = Boolean(executingTabs[activeTabId]);
-
-  // ── Initialize Native Xterm.js Instance (Liquid Glass Theme) ──
+  // Initialize Isolated Terminal and WebSocket PTY connection
   useEffect(() => {
-    if (!terminalContainerRef.current) return;
+    if (!containerRef.current) return;
 
     const term = new Terminal({
       theme: COSMIC_OBSIDIAN_PALETTE,
@@ -85,25 +81,112 @@ export default function WorkbenchTerminal({
       cursorStyle: "bar",
       scrollback: 5000,
       allowTransparency: true,
+      minimumContrastRatio: 4.5,
+      logLevel: "off",
     });
 
     const fitAddon = new FitAddon();
     const webLinksAddon = new WebLinksAddon();
+    const searchAddon = new SearchAddon();
 
     term.loadAddon(fitAddon);
     term.loadAddon(webLinksAddon);
-    term.open(terminalContainerRef.current);
+    term.loadAddon(searchAddon);
+
+    term.open(containerRef.current);
+    termRef.current = term;
+    fitAddonRef.current = fitAddon;
+    searchAddonRef.current = searchAddon;
 
     try {
       fitAddon.fit();
     } catch {}
 
-    term.writeln("\x1b[38;2;34;211;238m[anara-terminal]\x1b[0m Session initialized. Cosmic Obsidian PTY ready.");
+    // Resolve WebSocket URL
+    const rawBackend = process.env.NEXT_PUBLIC_BACKEND_URL || (typeof window !== "undefined" ? getBackendUrl() : "http://localhost:8000");
+    const wsBase = rawBackend.replace(/^http/, "ws");
+    const wsUrl = `${wsBase}/ws/terminal/${tab.id}?shell=${tab.shell}&cwd=${encodeURIComponent(tab.cwd || "")}`;
 
-    termInstanceRef.current = term;
-    fitAddonRef.current = fitAddon;
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
 
-    // Debounced Resize Observer to prevent PTY wrapping corruption
+    ws.onopen = () => {
+      setIsConnected(true);
+    };
+
+    ws.onmessage = (evt) => {
+      if (typeof evt.data === "string") {
+        try {
+          term.write(evt.data);
+        } catch {}
+      } else if (evt.data instanceof Blob) {
+        evt.data.text().then((text) => {
+          try {
+            term.write(text);
+          } catch {}
+        });
+      }
+    };
+
+    ws.onerror = () => {
+      setIsConnected(false);
+      term.writeln("\x1b[38;2;244;63;94m[anara-terminal] Shell connection offline. Connecting fallback...\x1b[0m");
+    };
+
+    ws.onclose = () => {
+      setIsConnected(false);
+      term.writeln("\x1b[90m[anara-terminal] Process terminated.\x1b[0m");
+    };
+
+    // Direct Stdin Piping: Every keypress streams directly into the PTY
+    const onDataDisposable = term.onData((data) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "input", data }));
+      }
+    });
+
+    // Intelligent Keyboard Shortcut Handling (Terminal Parity)
+    term.attachCustomKeyEventHandler((event) => {
+      // Ctrl+C / Cmd+C: Copy if selection exists; send SIGINT (\x03) if no selection
+      if (event.ctrlKey && event.key.toLowerCase() === "c") {
+        if (term.hasSelection()) {
+          navigator.clipboard.writeText(term.getSelection());
+          return false;
+        }
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "input", data: "\x03" }));
+          return false;
+        }
+      }
+
+      // Ctrl+Shift+V or Ctrl+V: Paste from clipboard
+      if ((event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "v") || (event.ctrlKey && event.key.toLowerCase() === "v")) {
+        navigator.clipboard.readText().then((text) => {
+          if (text && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "input", data: text }));
+          }
+        });
+        return false;
+      }
+
+      // Ctrl+F: Open In-Terminal Search
+      if (event.ctrlKey && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        setIsSearchOpen(true);
+        return false;
+      }
+
+      // Ctrl+K: Clear terminal buffer
+      if (event.ctrlKey && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        term.clear();
+        return false;
+      }
+
+      return true;
+    });
+
+    // Debounced Resize Observer
     let resizeTimer: NodeJS.Timeout;
     const ro = new ResizeObserver(() => {
       clearTimeout(resizeTimer);
@@ -113,185 +196,247 @@ export default function WorkbenchTerminal({
         } catch {}
       }, 50);
     });
-    ro.observe(terminalContainerRef.current);
-    resizeObserverRef.current = ro;
+    ro.observe(containerRef.current);
 
     return () => {
       clearTimeout(resizeTimer);
       ro.disconnect();
+      onDataDisposable.dispose();
+      ws.close();
       term.dispose();
-      // Terminate any running tab sub-processes on unmount
-      Object.values(abortControllersRef.current).forEach((ctrl) => ctrl.abort());
     };
-  }, []);
+  }, [tab.id, tab.shell, tab.cwd]);
 
-  // Auto-fit xterm canvas whenever visibility is restored (Hermes Desktop keep-alive parity)
+  // Re-fit canvas on visibility restore (Keep-Alive Parity)
   useEffect(() => {
-    if (isVisible && fitAddonRef.current) {
+    if (isVisible && isActive && fitAddonRef.current) {
       const timer = setTimeout(() => {
         try {
           fitAddonRef.current?.fit();
         } catch {}
-      }, 60);
+      }, 50);
       return () => clearTimeout(timer);
     }
-  }, [isVisible]);
+  }, [isVisible, isActive]);
 
-  // Append external agent/tool execution logs with pure ANSI escapes
+  // Stream external logs if provided
   useEffect(() => {
-    if (!termInstanceRef.current) return;
-    if (logs.length < processedLogIndexRef.current) {
-      processedLogIndexRef.current = 0;
-    }
-    if (logs.length > processedLogIndexRef.current) {
-      const newLines = logs.slice(processedLogIndexRef.current);
-      processedLogIndexRef.current = logs.length;
-      newLines.forEach((line) => {
-        termInstanceRef.current?.writeln(`\x1b[90m[agent]\x1b[0m ${line}`);
+    if (!termRef.current) return;
+    if (logs.length > processedLogsIndexRef.current) {
+      const newItems = logs.slice(processedLogsIndexRef.current);
+      processedLogsIndexRef.current = logs.length;
+      newItems.forEach((line) => {
+        termRef.current?.writeln(`\x1b[90m[agent]\x1b[0m ${line}`);
       });
     }
   }, [logs]);
 
-  const handleRunCommand = async (e: React.FormEvent) => {
+  // Search actions
+  const handleFindNext = () => {
+    if (searchQuery && searchAddonRef.current) {
+      searchAddonRef.current.findNext(searchQuery);
+    }
+  };
+
+  const handleFindPrev = () => {
+    if (searchQuery && searchAddonRef.current) {
+      searchAddonRef.current.findPrevious(searchQuery);
+    }
+  };
+
+  // Context Menu Handlers
+  const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (!commandInput.trim()) return;
-    const cmd = commandInput.trim();
-    const currentTabId = activeTabId;
-    const term = termInstanceRef.current;
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  };
 
-    setHistory((prev) => [cmd, ...prev.filter((c) => c !== cmd)].slice(0, 50));
-    setHistoryIdx(-1);
-    setCommandInput("");
-    setExecutingTabs((prev) => ({ ...prev, [currentTabId]: true }));
+  const handleCopy = () => {
+    if (termRef.current && termRef.current.hasSelection()) {
+      navigator.clipboard.writeText(termRef.current.getSelection());
+    }
+    setContextMenu(null);
+  };
 
-    term?.writeln(`
-\n\x1b[38;2;34;211;238manara\x1b[0m \x1b[90m>\x1b[0m ${cmd}`);
+  const handlePaste = () => {
+    navigator.clipboard.readText().then((text) => {
+      if (text && wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "input", data: text }));
+      }
+    });
+    setContextMenu(null);
+  };
 
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || (typeof window !== "undefined" ? getBackendUrl() : "http://localhost:8000");
-    const controller = new AbortController();
-    abortControllersRef.current[currentTabId] = controller;
+  const handleClear = () => {
+    termRef.current?.clear();
+    setContextMenu(null);
+  };
 
-    try {
-      const res = await fetch(`${backendUrl}/api/agent/terminal/stream`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command: cmd }),
-        signal: controller.signal,
-      });
+  const handleKill = () => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "kill" }));
+    }
+    setContextMenu(null);
+  };
 
-      if (res.ok && res.body) {
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
+  const handleSelectAll = () => {
+    termRef.current?.selectAll();
+    setContextMenu(null);
+  };
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop() || "";
+  return (
+    <div
+      className="w-full h-full relative"
+      onContextMenu={handleContextMenu}
+      onClick={() => {
+        if (contextMenu) setContextMenu(null);
+        termRef.current?.focus();
+      }}
+    >
+      <div ref={containerRef} className="w-full h-full" />
 
-          for (const part of parts) {
-            const line = part.trim();
-            if (line.startsWith("data:")) {
-              try {
-                const parsed = JSON.parse(line.slice(5).trim());
-                if (parsed.line !== undefined) {
-                  term?.writeln(parsed.line);
-                } else if (parsed.done) {
-                  term?.writeln(`\x1b[90m[Process finished with exit code ${parsed.returncode}]\x1b[0m`);
-                } else if (parsed.error) {
-                  term?.writeln(`\x1b[38;2;244;63;94m[error]: ${parsed.error}\x1b[0m`);
-                }
-              } catch {}
-            }
-          }
-        }
-
-        // Flush trailing chunk if present
-        if (buffer.trim()) {
-          const line = buffer.trim();
-          if (line.startsWith("data:")) {
-            try {
-              const parsed = JSON.parse(line.slice(5).trim());
-              if (parsed.line !== undefined) {
-                term?.writeln(parsed.line);
-              } else if (parsed.done) {
-                term?.writeln(`\x1b[90m[Process finished with exit code ${parsed.returncode}]\x1b[0m`);
+      {/* In-Terminal Floating Search Bar (Ctrl+F) */}
+      {isSearchOpen && (
+        <div
+          className="absolute top-2 right-4 z-40 flex items-center gap-1.5 p-1 px-2 rounded-lg bg-[#0e1219]/95 border border-white/20 backdrop-blur-xl shadow-2xl text-xs font-mono select-none"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <input
+            autoFocus
+            type="text"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              searchAddonRef.current?.findNext(e.target.value);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                if (e.shiftKey) handleFindPrev();
+                else handleFindNext();
               }
-            } catch {}
-          }
-        }
-      } else {
-        term?.writeln(`\x1b[38;2;244;63;94m[HTTP Error]: ${res.status} ${res.statusText}\x1b[0m`);
-      }
-    } catch (err: any) {
-      if (err.name !== "AbortError") {
-        term?.writeln(`\x1b[38;2;244;63;94m[error]: ${err.message || String(err)}\x1b[0m`);
-      } else {
-        term?.writeln(`\x1b[90m[Process cancelled by user]\x1b[0m`);
-      }
-    } finally {
-      setExecutingTabs((prev) => {
-        const copy = { ...prev };
-        delete copy[currentTabId];
-        return copy;
-      });
-      delete abortControllersRef.current[currentTabId];
-      onExecuteCommand?.(cmd);
-    }
+              if (e.key === "Escape") setIsSearchOpen(false);
+            }}
+            placeholder="Find in terminal..."
+            className="w-40 bg-black/40 border border-white/10 rounded px-2 py-0.5 text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400"
+          />
+          <button
+            type="button"
+            onClick={handleFindPrev}
+            className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer"
+            title="Previous (Shift+Enter)"
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            onClick={handleFindNext}
+            className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer"
+            title="Next (Enter)"
+          >
+            ↓
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsSearchOpen(false)}
+            className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer"
+            title="Close (Esc)"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Floating Right-Click Context Menu */}
+      {contextMenu && (
+        <div
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          className="fixed z-50 w-44 p-1 rounded-xl bg-[#0e1219]/95 border border-white/15 backdrop-blur-2xl shadow-2xl text-xs font-mono text-slate-200 select-none animate-in fade-in zoom-in-95 duration-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-left hover:text-white transition-colors cursor-pointer"
+          >
+            <span>Copy</span>
+            <span className="text-[10px] text-slate-500">Ctrl+C</span>
+          </button>
+          <button
+            type="button"
+            onClick={handlePaste}
+            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-left hover:text-white transition-colors cursor-pointer"
+          >
+            <span>Paste</span>
+            <span className="text-[10px] text-slate-500">Ctrl+V</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleSelectAll}
+            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-left hover:text-white transition-colors cursor-pointer"
+          >
+            <span>Select All</span>
+          </button>
+          <div className="h-px bg-white/[0.08] my-1" />
+          <button
+            type="button"
+            onClick={handleClear}
+            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-left hover:text-white transition-colors cursor-pointer"
+          >
+            <span>Clear Buffer</span>
+            <span className="text-[10px] text-slate-500">Ctrl+K</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleKill}
+            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-rose-500/20 text-left text-rose-300 hover:text-rose-100 transition-colors cursor-pointer"
+          >
+            <span>Kill Process</span>
+            <span className="text-[10px] text-rose-400">SIGINT</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function WorkbenchTerminal({
+  logs = [],
+  activeTask,
+  onExecuteCommand,
+  onClose,
+  embedded = false,
+  isVisible = true,
+  cwd,
+}: WorkbenchTerminalProps) {
+  const [tabs, setTabs] = useState<TerminalTab[]>([
+    { id: "term-1", name: "PowerShell 1", shell: "powershell", cwd },
+  ]);
+  const [activeTabId, setActiveTabId] = useState<string>("term-1");
+  const [isShellMenuOpen, setIsShellMenuOpen] = useState(false);
+  const tabCounterRef = useRef<number>(2);
+
+  // Add new terminal tab
+  const handleAddTab = (shell = "powershell") => {
+    const id = `term-${Date.now()}`;
+    const shellName = shell === "bash" ? "Git Bash" : shell === "cmd" ? "CMD" : "PowerShell";
+    const name = `${shellName} ${tabCounterRef.current++}`;
+    setTabs((prev) => [...prev, { id, name, shell, cwd }]);
+    setActiveTabId(id);
+    setIsShellMenuOpen(false);
   };
 
-  const handleStopExecution = () => {
-    const currentController = abortControllersRef.current[activeTabId];
-    if (currentController) {
-      currentController.abort();
+  // Close terminal tab
+  const handleCloseTab = (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (tabs.length === 1) {
+      onClose?.();
+      return;
     }
-  };
-
-  const handleAddTab = () => {
-    const nextIdx = tabCounterRef.current++;
-    const newTab: TerminalTab = {
-      id: `term-${nextIdx}`,
-      name: `Terminal ${nextIdx}`,
-    };
-    setTabs((prev) => [...prev, newTab]);
-    setActiveTabId(newTab.id);
-    termInstanceRef.current?.writeln(`
-\n\x1b[38;2;34;211;238m[terminal]\x1b[0m Spawned ${newTab.name}.`);
-  };
-
-  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      if (history.length === 0) return;
-      const nextIdx = Math.min(history.length - 1, historyIdx + 1);
-      setHistoryIdx(nextIdx);
-      setCommandInput(history[nextIdx] || "");
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      if (historyIdx <= 0) {
-        setHistoryIdx(-1);
-        setCommandInput("");
-      } else {
-        const nextIdx = historyIdx - 1;
-        setHistoryIdx(nextIdx);
-        setCommandInput(history[nextIdx] || "");
-      }
-    }
-  };
-
-  const handleCloseTab = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (tabs.length <= 1) return;
-    if (abortControllersRef.current[id]) {
-      abortControllersRef.current[id].abort();
-      delete abortControllersRef.current[id];
-    }
-    setTabs((prev) => prev.filter((t) => t.id !== id));
+    const idx = tabs.findIndex((t) => t.id === id);
+    const remaining = tabs.filter((t) => t.id !== id);
+    setTabs(remaining);
     if (activeTabId === id) {
-      const remaining = tabs.filter((t) => t.id !== id);
-      setActiveTabId(remaining[0].id);
+      const nextActive = remaining[Math.max(0, idx - 1)];
+      setActiveTabId(nextActive.id);
     }
   };
 
@@ -301,8 +446,9 @@ export default function WorkbenchTerminal({
         embedded ? "rounded-none border-none shadow-none" : "rounded-xl border border-white/[0.08] shadow-xl"
       }`}
     >
-      {/* Terminal Tab Bar */}
-      <div className="flex items-center justify-between px-3 py-1 bg-[#060913]/95 border-b border-white/[0.08] select-none shrink-0">
+      {/* ── Terminal Tab Bar Header ── */}
+      <div className="flex items-center justify-between px-3 py-1 bg-[#080B11] border-b border-white/[0.08] select-none shrink-0">
+        {/* Left Tabs with Shell Selector */}
         <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
           {tabs.map((tab) => {
             const isActive = tab.id === activeTabId;
@@ -310,7 +456,7 @@ export default function WorkbenchTerminal({
               <div
                 key={tab.id}
                 onClick={() => setActiveTabId(tab.id)}
-                className={`flex items-center gap-2 px-2.5 py-1 rounded-lg text-[11px] font-mono transition-all cursor-pointer border ${
+                className={`flex items-center gap-2 px-2.5 py-1 rounded-md text-[11px] font-mono transition-all cursor-pointer border ${
                   isActive
                     ? "bg-white/[0.08] text-white border-white/[0.12] shadow-sm font-semibold"
                     : "text-slate-400 hover:text-slate-200 border-transparent hover:bg-white/[0.03]"
@@ -325,27 +471,66 @@ export default function WorkbenchTerminal({
                     type="button"
                     onClick={(e) => handleCloseTab(tab.id, e)}
                     className="text-slate-500 hover:text-rose-400 p-0.5 rounded transition-colors cursor-pointer"
+                    title="Close tab"
                   >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </button>
                 )}
               </div>
             );
           })}
-          <button
-            type="button"
-            onClick={handleAddTab}
-            className="p-1 px-1.5 rounded-md text-slate-500 hover:text-white hover:bg-white/10 text-xs transition-colors cursor-pointer"
-            title="New Terminal Tab"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
+
+          {/* New Tab Button with Shell Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsShellMenuOpen((v) => !v)}
+              className="p-1 px-1.5 rounded-md text-slate-500 hover:text-white hover:bg-white/10 text-xs transition-colors cursor-pointer flex items-center gap-0.5"
+              title="Add Terminal (Select Shell)"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              <span className="text-[9px]">▾</span>
+            </button>
+
+            {isShellMenuOpen && (
+              <div
+                className="absolute top-7 left-0 z-50 w-36 p-1 rounded-xl bg-[#0e1219]/95 border border-white/15 backdrop-blur-xl shadow-2xl text-[11px] font-mono space-y-0.5"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  onClick={() => handleAddTab("powershell")}
+                  className="w-full text-left px-2 py-1 rounded hover:bg-white/10 text-slate-300 hover:text-white flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                  <span>PowerShell</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAddTab("bash")}
+                  className="w-full text-left px-2 py-1 rounded hover:bg-white/10 text-slate-300 hover:text-white flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  <span>Git Bash</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAddTab("cmd")}
+                  className="w-full text-left px-2 py-1 rounded hover:bg-white/10 text-slate-300 hover:text-white flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span>CMD</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
+        {/* Right Toolbar Actions */}
         <div className="flex items-center gap-2 shrink-0">
           {activeTask && (
             <div className="flex items-center gap-1.5 text-[10px] text-cyan-300 bg-cyan-500/10 border border-cyan-400/25 px-2 py-0.5 rounded-md truncate max-w-[200px]">
@@ -353,7 +538,8 @@ export default function WorkbenchTerminal({
               <span className="truncate">{activeTask}</span>
             </div>
           )}
-          <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" title="PTY Connected" />
+
+          <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" title="PTY Ready" />
 
           {onClose && (
             <button
@@ -371,45 +557,23 @@ export default function WorkbenchTerminal({
         </div>
       </div>
 
-      {/* Native Xterm.js Canvas Host */}
-      <div className="flex-1 min-h-0 relative p-2 overflow-hidden bg-[#060913]">
-        <div ref={terminalContainerRef} className="w-full h-full" />
+      {/* ── Absolute-Stacked Isolated Terminal Hosts (Keep-Alive Lifecycle) ── */}
+      <div className="flex-1 min-h-0 relative p-1.5 overflow-hidden bg-[#060913]">
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            style={{ display: tab.id === activeTabId ? "block" : "none" }}
+            className="w-full h-full relative"
+          >
+            <TerminalInstance
+              tab={tab}
+              isActive={tab.id === activeTabId}
+              isVisible={isVisible}
+              logs={tab.id === activeTabId ? logs : undefined}
+            />
+          </div>
+        ))}
       </div>
-
-      {/* Interactive Prompt Command Input */}
-      <form
-        onSubmit={handleRunCommand}
-        className="flex items-center gap-2 px-3 py-2 bg-[#060913]/95 border-t border-white/[0.08]"
-      >
-        <span className="text-cyan-400 font-bold text-[11px] shrink-0 font-mono">anara &gt;</span>
-        <input
-          type="text"
-          value={commandInput}
-          onChange={(e) => setCommandInput(e.target.value)}
-          onKeyDown={handleInputKeyDown}
-          placeholder={isExecuting ? "Executing command..." : "Type terminal command or build script..."}
-          disabled={isExecuting}
-          className="flex-1 bg-transparent border-none text-xs text-white placeholder:text-slate-600 focus:outline-none font-mono disabled:opacity-50"
-        />
-        {isExecuting ? (
-          <button
-            type="button"
-            onClick={handleStopExecution}
-            className="px-2.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[10px] cursor-pointer flex items-center gap-1.5 font-mono"
-            title="Cancel terminal process"
-          >
-            <span className="w-1.5 h-1.5 rounded-sm bg-rose-400" />
-            <span>Cancel</span>
-          </button>
-        ) : commandInput ? (
-          <button
-            type="submit"
-            className="px-2 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-200 border border-cyan-400/40 text-[10px] cursor-pointer"
-          >
-            Enter
-          </button>
-        ) : null}
-      </form>
     </div>
   );
 }

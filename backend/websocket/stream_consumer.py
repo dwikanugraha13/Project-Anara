@@ -47,7 +47,7 @@ class AgentRunner:
         get_current_speaker: Callable[[], str],
         get_active_session_id: Callable[[], Optional[int]],
         set_active_session_id: Callable[[int], None],
-        ensure_session: Callable[[], int],
+        ensure_session: Callable[..., int],
         log_turn: Callable[..., int],
         push_emotion: Callable[[str, str, float], Any],
         dance_blocked: Callable[[], bool],
@@ -111,7 +111,13 @@ class AgentRunner:
                 except (TypeError, ValueError):
                     pass
 
-            sid = self.ensure_session()
+            # Resolve session_type from request (for lazy session creation — Anara pattern)
+            req_session_type = data.get("session_type") or data.get("sessionType") or "chat"
+            effective_session_type = "code" if str(req_session_type).lower() == "code" else "chat"
+            # Resolve workspace_path for project grouping (sidebar workspace grouping parity)
+            req_workspace_path = data.get("workspace_path") or data.get("workspacePath") or ""
+
+            sid = self.ensure_session(session_type=effective_session_type, workspace_path=str(req_workspace_path))
             session_obj = memory_engine.get_session(sid) if sid else None
             await self.websocket.send_json({
                 "type": "session_id_sync",
@@ -120,7 +126,7 @@ class AgentRunner:
                 "sessionKey": session_obj.get("session_key") if session_obj else None,
             })
 
-            # 2. Resolve session context & mode (Hermes Model-Driven Parity: Zero Pre-Turn Keyword Guessing)
+            # 2. Resolve session context & mode (Anara Model-Driven Parity: Zero Pre-Turn Keyword Guessing)
             session_type = (session_obj.get("session_type") or "chat") if session_obj else "chat"
             session_mode = (session_obj.get("session_mode") or ("explicit_plan_build" if session_type == "code" else "conversational")) if session_obj else "conversational"
             req_channel = str(data.get("channel") or data.get("platform") or ("code" if session_type == "code" else "web")).strip().lower()

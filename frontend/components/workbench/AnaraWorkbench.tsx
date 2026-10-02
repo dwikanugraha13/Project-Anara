@@ -29,6 +29,10 @@ const ReviewGitPane = dynamic(() => import("../sidebar/ReviewGitPane"), {
   ssr: false,
 });
 
+const AgentStatusBar = dynamic(() => import("../statusbar/AgentStatusBar"), {
+  ssr: false,
+});
+
 const AnaraBrain = lazy(() => import("../brain/AnaraBrain"));
 const AnaraMediaPlayer = lazy(() => import("../dock/AnaraMediaPlayer"));
 
@@ -128,6 +132,7 @@ export interface AnaraWorkbenchProps {
   onAnswerQuestion?: (questionId: string, answers: any, dismissed?: boolean) => void;
   reasoningEffort?: "off" | "low" | "medium" | "high" | string;
   onSelectReasoningEffort?: (effort: "off" | "low" | "medium" | "high") => void;
+  latestTokenUsage?: any;
 }
 
 const BACKEND_URL = (
@@ -172,6 +177,7 @@ export default function AnaraWorkbench({
   onAnswerQuestion,
   reasoningEffort,
   onSelectReasoningEffort,
+  latestTokenUsage,
 }: AnaraWorkbenchProps) {
   const [inputMessage, setInputMessage] = useState("");
   const [isBrainDrawerOpen, setIsBrainDrawerOpen] = useState(false);
@@ -269,7 +275,7 @@ export default function AnaraWorkbench({
     fetchGitStatus();
   }, [fetchGitStatus]);
 
-  // ── Integrated Workbench Context Pane Resizing (Hermes Track-Model Parity) ──
+  // ── Integrated Workbench Context Pane Resizing (Context Pane Track Parity) ──
   const {
     size: contextPaneWidth,
     isResizing: isResizingContextPane,
@@ -377,7 +383,7 @@ export default function AnaraWorkbench({
     } catch {}
   }, [isTerminalOpen]);
 
-  // ── Keyboard-First Command Palette & Hotkeys (Hermes/Cursor standard) ──
+  // ── Keyboard-First Command Palette & Hotkeys (Keyboard-First Hotkeys Standard) ──
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
   useEffect(() => {
@@ -660,7 +666,9 @@ export default function AnaraWorkbench({
         label: "Open Fullscreen Anara Code Studio (/code)",
         category: "Navigation",
         onSelect: () => {
-          if (typeof window !== "undefined") window.open("/code", "_blank");
+          if (typeof window !== "undefined") {
+            window.open(activeSessionId ? `/code?session_id=${activeSessionId}` : "/code", "_blank");
+          }
         },
       },
     ];
@@ -746,12 +754,14 @@ export default function AnaraWorkbench({
       {/* ── CHAT MODE: FULL WORKSPACE DUAL-PANE WORKBENCH ── */}
       {interactionMode === "chat" && (
         <div
-          className="fixed top-0 bottom-0 z-20 pointer-events-auto flex items-stretch overflow-hidden"
+          className="fixed top-0 bottom-0 z-20 pointer-events-auto flex flex-col overflow-hidden"
           style={{ left: 0, right: 0 }}
         >
-          {/* LEFT PANEL: SIDEBAR CHAT SESSION & EDITOR (Default Left Pane) */}
-          <div
-            className="hidden md:flex flex-col min-w-0 h-full shrink-0 border-r border-white/10"
+          {/* Main Workbench Workspace Row */}
+          <div className="flex-1 min-h-0 flex items-stretch overflow-hidden">
+            {/* LEFT PANEL: SIDEBAR CHAT SESSION & EDITOR (Default Left Pane) */}
+            <div
+              className="hidden md:flex flex-col min-w-0 h-full shrink-0 border-r border-white/10"
             style={{ width: sidebarWidth ? `${sidebarWidth}px` : "var(--sidebar-width, 260px)", transition: "none" }}
             suppressHydrationWarning
           >
@@ -803,42 +813,63 @@ export default function AnaraWorkbench({
                 flex: isContextPaneOpen ? "1 1 auto" : "1 1 100%",
               }}
             >
-              {/* Unified Desktop Titlebar Band (Hermes Desktop Parity: 34px) */}
-              <div className="h-[34px] shrink-0 px-3 border-b border-white/[0.08] bg-[#060913]/95 backdrop-blur-xl flex items-center justify-between text-xs font-mono select-none z-10">
-                <div className="flex items-center gap-2 text-slate-400">
-                  <span className="text-white font-medium">Project Anara</span>
-                  <span className="text-slate-600">/</span>
-                  <span className="text-slate-300">Session #{activeSessionId || "live"}</span>
-                  {activeIdeFile && activeIdeFile.isOpen && (
-                    <>
-                      <span className="text-slate-600">/</span>
-                      <span className="text-cyan-300 truncate max-w-[180px]">{activeIdeFile.fileName}</span>
-                    </>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.03] border border-white/[0.08] text-[11px] text-slate-300">
-                    <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? "bg-emerald-400 shadow-[0_0_8px_#34d399]" : "bg-rose-400"}`} />
-                    <span className="text-[10px] text-slate-400 uppercase tracking-wider">{activeModelId.split("/").pop()}</span>
+              {/* Unified Desktop Titlebar Band (Anara Desktop Titlebar: 38px) */}
+              <div className="h-[38px] shrink-0 px-3 border-b border-white/[0.08] bg-[#080B11] flex items-center justify-between text-xs font-mono select-none z-10">
+                {/* Left: Active Tab Badge with Status Dot + Plus New Tab */}
+                <div className="flex items-center gap-2 text-slate-400 min-w-0">
+                  <div className="flex items-center gap-2 px-3 py-1 rounded-md bg-white/[0.05] border border-white/[0.08] text-white font-semibold text-[11px] tracking-wider uppercase">
+                    <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]" />
+                    <span className="truncate max-w-[260px]">
+                      {activeIdeFile && activeIdeFile.isOpen
+                        ? activeIdeFile.fileName
+                        : transcript.length > 0
+                        ? (transcript[0]?.text?.slice(0, 32) || `SESSION #${activeSessionId || "LIVE"}`)
+                        : `SESSION #${activeSessionId || "LIVE"}`}
+                    </span>
                   </div>
 
-                  {/* Context Pane Quick Toggle */}
+                  <button
+                    type="button"
+                    onClick={handleNewSession}
+                    className="p-1 rounded-md hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                    title="New session"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M12 4v16m8-8H4" />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* Right: Window & Tool Controls Cluster (Anara Desktop Standard) */}
+                <div className="flex items-center gap-1.5 text-slate-400">
+                  {/* Settings */}
+                  <button
+                    type="button"
+                    onClick={() => setIsBrainDrawerOpen(true)}
+                    className="p-1.5 rounded-md hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+                    title="Settings & Brain"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </button>
+
+                  {/* Split Pane */}
                   <button
                     type="button"
                     onClick={() => setIsContextPaneOpen((v) => !v)}
-                    className={`p-1 rounded-md border transition-all cursor-pointer ${
-                      isContextPaneOpen
-                        ? "bg-cyan-500/20 border-cyan-400/40 text-cyan-300"
-                        : "bg-white/[0.02] border-white/[0.08] text-slate-400 hover:text-white hover:bg-white/[0.06]"
+                    className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                      isContextPaneOpen ? "bg-cyan-500/20 text-cyan-300" : "hover:bg-white/10 hover:text-white"
                     }`}
-                    title={isContextPaneOpen ? "Hide Context Pane (Ctrl+\\)" : "Show Context Pane (Ctrl+\\)"}
+                    title="Toggle Context Pane (Ctrl+\\)"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
                     </svg>
                   </button>
 
-                  {/* Git Review Quick Toggle (Hermes Desktop Parity) */}
+                  {/* Git Review */}
                   <button
                     type="button"
                     onClick={() => {
@@ -846,10 +877,8 @@ export default function AnaraWorkbench({
                       setContextTab("review");
                       fetchGitStatus();
                     }}
-                    className={`p-1 rounded-md border transition-all cursor-pointer flex items-center gap-1 ${
-                      isContextPaneOpen && contextTab === "review"
-                        ? "bg-cyan-500/20 border-cyan-400/40 text-cyan-300"
-                        : "bg-white/[0.02] border-white/[0.08] text-slate-400 hover:text-white hover:bg-white/[0.06]"
+                    className={`p-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-1 ${
+                      isContextPaneOpen && contextTab === "review" ? "bg-cyan-500/20 text-cyan-300" : "hover:bg-white/10 hover:text-white"
                     }`}
                     title="Toggle Git Review Diff Panel"
                   >
@@ -857,13 +886,13 @@ export default function AnaraWorkbench({
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7a3 3 0 100-6 3 3 0 000 6zm0 0v10m0 0a3 3 0 100 6 3 3 0 000-6zm8-4a3 3 0 100-6 3 3 0 000 6zm0 0v3a4 4 0 01-4 4h-4" />
                     </svg>
                     {gitStatus && gitStatus.changed_count > 0 && (
-                      <span className="text-[10px] font-mono font-bold text-cyan-300 pr-0.5">
+                      <span className="text-[10px] font-mono font-bold text-cyan-300">
                         {gitStatus.changed_count}
                       </span>
                     )}
                   </button>
 
-                  {/* Terminal Quick Toggle */}
+                  {/* Terminal Toggle */}
                   <button
                     type="button"
                     onClick={() => {
@@ -871,10 +900,8 @@ export default function AnaraWorkbench({
                       setContextTab("terminal");
                       setIsTerminalOpen((v) => !v);
                     }}
-                    className={`p-1 rounded-md border transition-all cursor-pointer ${
-                      isContextPaneOpen && contextTab === "terminal"
-                        ? "bg-cyan-500/20 border-cyan-400/40 text-cyan-300"
-                        : "bg-white/[0.02] border-white/[0.08] text-slate-400 hover:text-white hover:bg-white/[0.06]"
+                    className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                      isContextPaneOpen && contextTab === "terminal" ? "bg-cyan-500/20 text-cyan-300" : "hover:bg-white/10 hover:text-white"
                     }`}
                     title="Toggle Terminal Panel (Ctrl+`)"
                   >
@@ -883,17 +910,14 @@ export default function AnaraWorkbench({
                     </svg>
                   </button>
 
-                  {/* Switch to Code Studio IDE Page */}
-                  <a
-                    href="/code"
-                    className="px-2 py-0.5 rounded-md bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] text-[11px] text-slate-300 hover:text-white transition-all flex items-center gap-1"
-                    title="Open Full Code Studio IDE"
-                  >
-                    <span>Studio</span>
-                    <svg className="w-2.5 h-2.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
-                  </a>
+                  <span className="text-slate-700 mx-0.5">|</span>
+
+                  {/* Window Action Glyphs (Anara Desktop Standard) */}
+                  <div className="flex items-center gap-1 text-slate-500">
+                    <span className="px-1 text-xs select-none" title="Minimize">—</span>
+                    <span className="px-1 text-xs select-none" title="Maximize">▢</span>
+                    <span className="px-1 text-xs select-none hover:text-rose-400" title="Close">✕</span>
+                  </div>
                 </div>
               </div>
 
@@ -960,12 +984,14 @@ export default function AnaraWorkbench({
                     onRejectPlan={onRejectPlan}
                     reasoningEffort={reasoningEffort}
                     onSelectReasoningEffort={onSelectReasoningEffort}
+                    gitStatus={gitStatus}
+                    promptTurnsCount={transcript.length}
                   />
                 </div>
               </div>
             </div>
 
-            {/* RESIZABLE SASH SPLITTER (Hermes Desktop Parity) */}
+            {/* RESIZABLE SASH SPLITTER (Anara Desktop Standard) */}
             {isContextPaneOpen && (
               <div
                 onMouseDown={startResizingContextPane}
@@ -976,12 +1002,12 @@ export default function AnaraWorkbench({
               </div>
             )}
 
-            {/* DOCKED CONTEXT PANE: MULTI-TENANT WORKBENCH (Hermes Desktop Parity) */}
+            {/* DOCKED CONTEXT PANE: MULTI-TENANT WORKBENCH (Anara Desktop Standard) */}
             {isContextPaneOpen && (
               <div
                 ref={contextPaneRef}
                 style={{ width: `${contextPaneWidth}px` }}
-                className="hidden lg:flex flex-col min-w-[380px] h-full bg-[#060913]/95 backdrop-blur-xl border-l border-white/[0.08] relative z-10"
+                className="flex flex-col min-w-[320px] h-full bg-[#060913]/95 backdrop-blur-xl border-l border-white/[0.08] relative z-10"
               >
                 {/* Context Pane Zone Header */}
                 <div className="h-[34px] px-3 bg-[#060913] border-b border-white/[0.08] flex items-center justify-between shrink-0 select-none">
@@ -1082,12 +1108,13 @@ export default function AnaraWorkbench({
                           embedded={true}
                           isVisible={isTerminalOpen && contextTab === "editor"}
                           onClose={() => setIsTerminalOpen(false)}
+                          cwd={typeof window !== "undefined" ? localStorage.getItem("anara_ide_workspace_key") || undefined : undefined}
                         />
                       </div>
                     )}
                   </div>
 
-                  {/* Review Git Container (Hermes Desktop Parity) */}
+                  {/* Review Git Container (Anara Desktop Standard) */}
                   <div
                     className="h-full w-full"
                     style={{ display: contextTab === "review" ? "flex" : "none" }}
@@ -1111,6 +1138,7 @@ export default function AnaraWorkbench({
                       embedded={true}
                       isVisible={contextTab === "terminal"}
                       onClose={() => setContextTab("editor")}
+                      cwd={typeof window !== "undefined" ? localStorage.getItem("anara_ide_workspace_key") || undefined : undefined}
                     />
                   </div>
                 </div>
@@ -1118,7 +1146,30 @@ export default function AnaraWorkbench({
             )}
           </div>
         </div>
-      )}
+
+        {/* Unified Agent Statusbar (Anara Desktop Standard) */}
+        <AgentStatusBar
+          isConnected={isConnected}
+          activeSessionId={activeSessionId}
+          gitStatus={gitStatus}
+          onOpenGitReview={() => {
+            setIsContextPaneOpen(true);
+            setContextTab("review");
+            fetchGitStatus();
+          }}
+          tokenUsage={latestTokenUsage}
+          assistantStatus={status}
+          activeModelId={activeModelId}
+          reasoningEffort={reasoningEffort}
+          onToggleTerminal={() => {
+            setIsContextPaneOpen(true);
+            setContextTab("terminal");
+            setIsTerminalOpen((v) => !v);
+          }}
+          isTerminalOpen={isContextPaneOpen && contextTab === "terminal"}
+        />
+      </div>
+    )}
 
       {/* ── VOICE MODE FLOATING HUD ── */}
       {interactionMode === "voice" && latestVisual && (
@@ -1190,6 +1241,8 @@ export default function AnaraWorkbench({
           onRejectPlan={onRejectPlan}
           reasoningEffort={reasoningEffort}
           onSelectReasoningEffort={onSelectReasoningEffort}
+          gitStatus={gitStatus}
+          promptTurnsCount={transcript.length}
           />
       )}
 

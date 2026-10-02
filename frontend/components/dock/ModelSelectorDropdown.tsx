@@ -45,7 +45,7 @@ export interface ModelSelectorDropdownProps {
 }
 
 /**
- * Curated static fallback catalog (Hermes Desktop / Claude Code resilience standard).
+ * Curated static fallback catalog (Anara Desktop / Anara CLI resilience standard).
  * Guaranteed fallback if backend model endpoint is down, slow, or returning empty.
  */
 export const DEFAULT_CURATED_MODELS: AIModelInfo[] = [
@@ -345,7 +345,7 @@ export default function ModelSelectorDropdown({
   }, [modeFilteredModels]);
 
   /**
-   * Provider Groups ordered canonically according to Hermes standards
+   * Provider Groups ordered canonically according to Anara standards
    */
   const providerGroups = useMemo(() => {
     const counts: Record<string, { label: string; count: number; order: number }> = {};
@@ -426,7 +426,7 @@ export default function ModelSelectorDropdown({
 
   /**
    * Group displayed models by provider preserving provider headers even during search
-   * (Hermes Desktop CommandGroup parity)
+   * (CommandGroup parity)
    */
   const groupedSections = useMemo(() => {
     const map = new Map<string, AIModelInfo[]>();
@@ -707,7 +707,7 @@ export default function ModelSelectorDropdown({
         ) : (
           groupedSections.map((sec, secIdx) => (
             <div key={sec.title || `sec-${secIdx}`} className="space-y-0.5">
-              {/* Provider Heading (Always preserved, Claude Code / Hermes standard) */}
+              {/* Provider Heading (Always preserved, Anara standard) */}
               <div className="sticky top-0 z-10 text-[9.5px] font-mono font-semibold uppercase tracking-wider text-zinc-400 px-2 py-1 bg-[#090d16]/95 backdrop-blur-sm border-b border-white/[0.04] flex items-center justify-between">
                 <span>{sec.title}</span>
                 <span className="text-[8.5px] text-zinc-500">{sec.models.length}</span>
@@ -758,7 +758,7 @@ export default function ModelSelectorDropdown({
                         {displayName}
                       </span>
 
-                      {/* Tier Badges (Reasoning, Fast, Vision, Pro - Hermes Standard) */}
+                      {/* Tier Badges (Reasoning, Fast, Vision, Pro - Anara Standard) */}
                       <div className="flex items-center gap-0.5 shrink-0">
                         {isReasoning && (
                           <span

@@ -138,7 +138,7 @@ def extract_model_route(model_id: Optional[str]) -> Tuple[Optional[str], Optiona
     """
     Extracts the pure upstream router codename (e.g. 'ag', 'cx', 'cl', 'yz')
     from a model slug like '9router/ag/gemini-3.8-flash-high' or 'ag/gemini-3.8-flash-high'.
-    Preserves raw provider route codes without artificial naming overrides (Hermes standard).
+    Preserves raw provider route codes without artificial naming overrides (Anara standard).
     """
     if not model_id:
         return None, None

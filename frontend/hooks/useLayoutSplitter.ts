@@ -180,7 +180,7 @@ export function useLayoutSplitter({
           rafIdRef.current = null;
           if (pendingSizeRef.current !== null) {
             currentSizeRef.current = pendingSizeRef.current;
-            // Direct zero-commit DOM mutation (Hermes Desktop Parity)
+            // Direct zero-commit DOM mutation (Anara Desktop Standard)
             if (targetRef && targetRef.current) {
               if (dimension === "width") {
                 targetRef.current.style.width = `${pendingSizeRef.current}px`;
@@ -262,7 +262,7 @@ export function useLayoutSplitter({
       finishResize(current);
     };
 
-    // Keyboard Escape cancels and restores starting size (Hermes Desktop / Claude Code parity)
+    // Keyboard Escape cancels and restores starting size (Anara Desktop / Anara CLI parity)
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();

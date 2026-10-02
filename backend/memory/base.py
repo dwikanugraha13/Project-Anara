@@ -73,13 +73,14 @@ class BaseMemoryEngine:
                 logger.warning(f"[MemoryMutation] Error in listener callback: {e}")
 
     @contextlib.contextmanager
-    def _get_connection(self):
+    def _get_connection(self, timeout_ms: int = 15000):
         dir_name = os.path.dirname(os.path.abspath(self.db_path))
         os.makedirs(dir_name, exist_ok=True)
-        conn = sqlite3.connect(self.db_path, timeout=15.0)
+        timeout_sec = max(2.0, timeout_ms / 1000.0)
+        conn = sqlite3.connect(self.db_path, timeout=timeout_sec)
         conn.row_factory = sqlite3.Row
         try:
-            conn.execute("PRAGMA busy_timeout=15000;")
+            conn.execute(f"PRAGMA busy_timeout={timeout_ms};")
             conn.execute("PRAGMA foreign_keys=ON;")
             conn.execute("PRAGMA synchronous=NORMAL;")
             with conn:

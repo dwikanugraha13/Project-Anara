@@ -178,7 +178,7 @@ export default function InteractiveQuestionCard({ data, onSubmitAnswers }: Inter
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [currentStep, totalSteps, currentQ, isAnswered, currentSelection, selectedAnswers, customInputs, isCustomActive]);
 
-  // If already answered or dismissed, show flat Liquid Glass scaffold (Hermes Desktop Parity)
+  // If already answered or dismissed, show flat Liquid Glass scaffold (Anara Desktop Standard)
   if (isAnswered) {
     const answeredCount = questions.filter((q, idx) => {
       const ans = (Array.isArray(data.answers) ? data.answers[idx] : data.answers?.[idx]) || selectedAnswers[idx];

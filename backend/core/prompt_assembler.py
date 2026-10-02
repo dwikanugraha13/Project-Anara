@@ -22,6 +22,9 @@ class PromptAssembler:
         Extracts live, real-time Git status and worktree facts bounded by strict timeouts (Anara Standard).
         Provides the ground truth of changed and untracked files so the agent is never blind to local edits.
         Supports standard repositories, submodules, and linked Git worktrees.
+
+        IMPORTANT: Uses synchronous subprocess.run — callers in async context MUST wrap
+        with asyncio.to_thread() or run_in_executor() to prevent event loop blocking.
         """
         if not root_path or not os.path.isdir(root_path):
             return ""
@@ -33,13 +36,17 @@ class PromptAssembler:
         import subprocess
         lines = []
 
+        # Suppress CRLF warnings that spam Windows stdout and slow git on large repos
+        git_env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+
         # 1. Branch name
         try:
             b_res = subprocess.run(
-                ["git", "-C", root_path, "rev-parse", "--abbrev-ref", "HEAD"],
+                ["git", "-C", root_path, "-c", "core.safecrlf=false", "rev-parse", "--abbrev-ref", "HEAD"],
                 capture_output=True,
                 text=True,
-                timeout=0.6
+                timeout=0.6,
+                env=git_env
             )
             branch = b_res.stdout.strip() if b_res.returncode == 0 else "main"
             lines.append(f"- Git Branch: {branch}")
@@ -49,10 +56,11 @@ class PromptAssembler:
         # 2. Live Git Status
         try:
             st_res = subprocess.run(
-                ["git", "-C", root_path, "status", "--short"],
+                ["git", "-C", root_path, "-c", "core.safecrlf=false", "status", "--short"],
                 capture_output=True,
                 text=True,
-                timeout=0.8
+                timeout=0.8,
+                env=git_env
             )
             if st_res.returncode == 0:
                 raw_st = st_res.stdout.strip()
@@ -70,10 +78,11 @@ class PromptAssembler:
         # 3. Recent commits
         try:
             log_res = subprocess.run(
-                ["git", "-C", root_path, "log", "-3", "--oneline"],
+                ["git", "-C", root_path, "-c", "core.safecrlf=false", "log", "-3", "--oneline"],
                 capture_output=True,
                 text=True,
-                timeout=0.6
+                timeout=0.6,
+                env=git_env
             )
             if log_res.returncode == 0 and log_res.stdout.strip():
                 log_lines = "\n    ".join(log_res.stdout.strip().splitlines())

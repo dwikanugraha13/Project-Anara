@@ -57,6 +57,7 @@ echo.
 :: ── [1/4] Resolve path python.exe & npm.cmd (resilient in Administrator context) ──
 set "PYTHON_CMD="
 if exist "%~dp0backend\venv\Scripts\python.exe" set "PYTHON_CMD=%~dp0backend\venv\Scripts\python.exe"
+if not defined PYTHON_CMD if exist "%~dp0backend\.venv\Scripts\python.exe" set "PYTHON_CMD=%~dp0backend\.venv\Scripts\python.exe"
 if not defined PYTHON_CMD for /f "delims=" %%i in ('where python.exe 2^>nul') do (
     if not defined PYTHON_CMD set "PYTHON_CMD=%%i"
 )
@@ -111,8 +112,11 @@ echo.
 echo  [4/4] Starting servers...
 echo.
 
+:: Set PYTHONPATH so backend modules resolve correctly
+set "PYTHONPATH=%~dp0backend"
+
 echo   ^> Backend FastAPI  ^(http://localhost:8000^)
-start "Anara - Backend Server" cmd /k "cd /d ""%~dp0backend"" && ""%PYTHON_CMD%"" main.py"
+start "Anara - Backend Server" cmd /k "cd /d ""%~dp0"" && set PYTHONPATH=""%~dp0backend"" && ""%PYTHON_CMD%"" -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload"
 
 echo   ^> Frontend Next.js ^(http://localhost:3000^)
 start "Anara - Frontend Web" cmd /k "cd /d ""%~dp0frontend"" && ""%NPM_CMD%"" run dev"

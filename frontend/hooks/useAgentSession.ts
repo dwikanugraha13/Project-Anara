@@ -347,7 +347,7 @@ export function useAgentSession({
         event === "conversation_deleted" ||
         event === "batch"
       ) {
-        // Coalesce rapid event bursts into a single trailing refresh (Hermes Desktop standard: 300ms)
+        // Coalesce rapid event bursts into a single trailing refresh (Anara standard: 300ms)
         if (brainSyncTimerRef.current) clearTimeout(brainSyncTimerRef.current);
         brainSyncTimerRef.current = setTimeout(() => {
           if (isMountedRef.current) {

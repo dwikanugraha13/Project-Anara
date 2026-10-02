@@ -138,7 +138,7 @@ export default function HomePageClient({
     } catch {}
   }, []);
 
-  const isNewSessionPendingRef = useRef(false);
+
 
   const [audioIntensity, setAudioIntensity] = useState(0);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
@@ -466,7 +466,10 @@ export default function HomePageClient({
     }, 300);
   }, []);
 
+  const [latestTokenUsage, setLatestTokenUsage] = useState<any>(null);
+
   const handleTokenUsage = useCallback((usage: TokenUsagePayload) => {
+    setLatestTokenUsage(usage);
     pendingTokenUsageRef.current = usage;
     setTranscript((prev) => {
       const lastIndex = [...prev].map((entry) => entry.speaker).lastIndexOf("output");
@@ -550,10 +553,6 @@ export default function HomePageClient({
     }
 
     setTranscript((prev) => {
-      if (isNewSessionPendingRef.current) {
-        isNewSessionPendingRef.current = false;
-        return restored;
-      }
       // Race-condition guard: ONLY protect if the user is actively waiting for an AI response to finish
       if (prev.length > 0 && restored.length === 0) {
         const lastBubble = prev[prev.length - 1];
@@ -712,6 +711,8 @@ export default function HomePageClient({
 
   const handleSelectSession = useCallback(
     (id: number) => {
+      // Eager-clear stale state BEFORE switching session (Anara Parity)
+      setTranscript([]);
       setActiveSessionId(id);
       if (typeof window !== "undefined") {
         localStorage.setItem("anara_active_session_id", String(id));
@@ -722,14 +723,14 @@ export default function HomePageClient({
   );
 
   const handleNewSession = useCallback(() => {
-    isNewSessionPendingRef.current = true;
+    // Session Pattern: clear state only — session is created lazily on first message send
+    // This prevents accumulation of empty "New Chat" sessions
     setActiveSessionId(null);
     if (typeof window !== "undefined") {
       localStorage.removeItem("anara_active_session_id");
     }
     setTranscript([]);
-    sendJSON({ type: "new_session", session_type: "chat" });
-  }, [sendJSON]);
+  }, []);
 
   // Wire sendInterrupt & sendText to refs so callbacks can call them without stale closures
   useEffect(() => {
@@ -891,6 +892,7 @@ export default function HomePageClient({
         reasoning_effort: reasoningEffort,
         sessionId: activeSessionId,
         session_id: activeSessionId,
+        session_type: "chat",
       });
       setAssistantStatus("thinking");
     },
@@ -1148,6 +1150,7 @@ export default function HomePageClient({
           activeThinkingText={activeThinkingText}
           reasoningEffort={reasoningEffort}
           onSelectReasoningEffort={handleSelectReasoningEffort}
+          latestTokenUsage={latestTokenUsage}
         />
       )}
     </main>

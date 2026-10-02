@@ -9,6 +9,7 @@ echo.
 :: 1. Try stopping gracefully via CLI daemon manager
 set "PYTHON_EXE=python"
 if exist "%~dp0backend\venv\Scripts\python.exe" set "PYTHON_EXE=%~dp0backend\venv\Scripts\python.exe"
+if not defined PYTHON_EXE if exist "%~dp0backend\.venv\Scripts\python.exe" set "PYTHON_EXE=%~dp0backend\.venv\Scripts\python.exe"
 
 "%PYTHON_EXE%" "%~dp0cli.py" daemon stop >nul 2>&1
 if %ERRORLEVEL% equ 0 (

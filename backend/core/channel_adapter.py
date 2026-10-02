@@ -262,7 +262,7 @@ async def synthesize_action_rationale(tool_name: str, tool_args: Dict[str, Any],
 
 def generate_dynamic_action_rationale(tool_name: str, tool_args: Dict[str, Any], prompt: str = "") -> str:
     """
-    Factual parameter-grounded action summary (Hermes build_tool_preview parity).
+    Factual parameter-grounded action summary (Anara build_tool_preview parity).
     Clean, direct, and zero robotic canned templates.
     """
     t_clean = (tool_name or "tool").strip().lower()
@@ -499,7 +499,7 @@ _VOICE_DIRECTIVE_RE = re.compile(r'\[\[audio_as_voice\]\]', re.IGNORECASE)
 
 async def _extract_and_dispatch_media_tags(channel: str, channel_id: str, text: str) -> str:
     """
-    Extracts native MEDIA:<path> and [[audio_as_voice]] directives (Hermes Omnichannel Standard).
+    Extracts native MEDIA:<path> and [[audio_as_voice]] directives (Anara Omnichannel Standard).
     Dispatches matched files as native photos/videos/audio/voice/documents, and strips tags from chat text.
     """
     if not text or ("MEDIA:" not in text and "[[audio_as_voice]]" not in text):
@@ -576,7 +576,7 @@ async def process_channel_request(
     try:
         session_id = get_or_create_channel_session(req)
         if is_stop_req:
-            # Hermes Cancel Fence Parity: /stop must execute immediately without blocking behind session lock
+            # Anara Cancel Fence Parity: /stop must execute immediately without blocking behind session lock
             return await _process_channel_request_core(req, progress_callback, token_callback)
         async with session_state_manager.get_session_lock(str(session_id)):
             return await _process_channel_request_core(req, progress_callback, token_callback)
@@ -821,7 +821,7 @@ async def _process_channel_request_core(
             _PENDING_PLANS.pop(session_plan_key, None)
             active_pending = None
 
-    # 5. Check session mode (Hermes Model-Driven Parity: 0 regex guessing on user text)
+    # 5. Check session mode (Anara Model-Driven Parity: 0 regex guessing on user text)
     # In conversational mode, user turns execute directly with runtime tool interception.
     # Plan proposal gate is triggered only when the session is explicitly configured for Plan Mode.
     session_obj = memory_engine.get_session(session_id)
@@ -836,7 +836,7 @@ async def _process_channel_request_core(
         from core.prompt_loader import load_prompt
         plan_prompt = load_prompt("channel/plan_gate", clean_text=clean_text)
 
-        sys_prompt = PromptAssembler.assemble(
+        sys_prompt = await asyncio.to_thread(PromptAssembler.assemble,
             mode="plan",
             speaker_name=req.sender_name,
             is_chat_mode=True,
@@ -948,9 +948,9 @@ async def _process_channel_request_core(
     dialogue_context = ContextCompactor.compact_history(prior_turns, verbatim_turns=5)
     full_user_prompt = f"{dialogue_context}User: {clean_text}" if dialogue_context else clean_text
 
-    ws_tree = anara_agent.get_workspace_tree(session_id=session_id)
+    ws_tree = anara_agent.get_workspace_tree_shallow(session_id=session_id)
     eff_mode = "conversational" if actual_session_mode == "conversational" else "build"
-    sys_prompt = PromptAssembler.assemble(
+    sys_prompt = await asyncio.to_thread(PromptAssembler.assemble,
         mode=eff_mode,
         speaker_name=req.sender_name,
         workspace_tree=ws_tree,
@@ -1214,7 +1214,7 @@ async def _process_channel_request_core(
         if not final_reply or not final_reply.strip():
             final_reply = _format_empty_model_notice(clean_text)
 
-    # Extract native MEDIA: and [[audio_as_voice]] directives (Hermes Omnichannel Standard)
+    # Extract native MEDIA: and [[audio_as_voice]] directives (Anara Omnichannel Standard)
     final_reply = await _extract_and_dispatch_media_tags(req.channel, req.channel_id, final_reply)
 
     memory_engine.log_conversation(
@@ -1307,8 +1307,8 @@ async def _execute_build_mode_core(
         except Exception:
             pass
 
-    ws_tree = anara_agent.get_workspace_tree(session_id=session_id)
-    sys_prompt = PromptAssembler.assemble(
+    ws_tree = anara_agent.get_workspace_tree_shallow(session_id=session_id)
+    sys_prompt = await asyncio.to_thread(PromptAssembler.assemble,
         mode="build",
         speaker_name=req.sender_name,
         workspace_tree=ws_tree,
@@ -1459,7 +1459,7 @@ async def _execute_build_mode_core(
     else:
         final_reply = str(reply) if reply else f"Completed action '{resolved_task}'."
 
-    # Extract native MEDIA: and [[audio_as_voice]] directives (Hermes Omnichannel Standard)
+    # Extract native MEDIA: and [[audio_as_voice]] directives (Anara Omnichannel Standard)
     final_reply = await _extract_and_dispatch_media_tags(req.channel, req.channel_id, final_reply)
 
     memory_engine.log_conversation(

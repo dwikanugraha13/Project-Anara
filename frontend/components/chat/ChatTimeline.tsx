@@ -367,7 +367,7 @@ export default function ChatTimeline({
                           </div>
                         )}
 
-                        {/* Tool Execution Summary Pill in History (Hermes Desktop Parity) */}
+                        {/* Tool Execution Summary Pill in History (Anara Desktop Standard) */}
                         {item.toolsUsed && item.toolsUsed.length > 0 && !item.agentActionData && (
                           <div className="flex items-center gap-2 mb-2 select-none">
                             <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-white/[0.03] hover:bg-white/[0.05] border border-white/[0.08] text-[11px] font-mono text-slate-300 transition-colors">
@@ -440,7 +440,7 @@ export default function ChatTimeline({
         </div>
       </div>
 
-      {/* Floating Circular Scroll Down Button with Unread Pulse (Hermes Desktop Parity) */}
+      {/* Floating Circular Scroll Down Button with Unread Pulse (Anara Desktop Standard) */}
       {!isNearBottom && (
         <button
           type="button"

@@ -70,7 +70,7 @@ export default function ReviewShipBar({
           className="w-full bg-[#030712] border border-white/15 focus:border-cyan-400/50 rounded-lg p-2 pr-9 text-xs text-slate-100 placeholder:text-slate-500 font-sans resize-none outline-none transition-all custom-scrollbar leading-relaxed"
         />
 
-        {/* AI Generate Button (Hermes Desktop Parity) */}
+        {/* AI Generate Button (Anara Desktop Standard) */}
         <button
           type="button"
           onClick={handleGenerateMessage}

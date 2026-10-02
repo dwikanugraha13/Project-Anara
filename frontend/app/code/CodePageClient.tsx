@@ -25,6 +25,7 @@ const AnaraBrain = lazy(() => import("@/components/brain/AnaraBrain"));
 const AnaraCodeIDE = lazy(() => import("@/components/ide/AnaraCodeIDE"));
 const WorkbenchTerminal = lazy(() => import("@/components/ide/WorkbenchTerminal"));
 const ReviewGitPane = lazy(() => import("@/components/sidebar/ReviewGitPane"));
+const AgentStatusBar = lazy(() => import("@/components/statusbar/AgentStatusBar"));
 
 export interface CodePageClientProps {
   initialSidebarWidth?: number;
@@ -69,6 +70,7 @@ export default function CodePageClient({
   const [gitStatus, setGitStatus] = useState<GitStatusData | null>(null);
   const [explorerMode, setExplorerMode] = useState<"tree" | "git">("tree");
   const [explorerFilter, setExplorerFilter] = useState("");
+  const [latestTokenUsage, setLatestTokenUsage] = useState<any>(null);
 
   // ── Pane Layout & Resizing State ──
   const [isLeftOpen, setIsLeftOpen] = useState(true);
@@ -193,7 +195,8 @@ export default function CodePageClient({
       }
 
       // Pre-warm active session id from localStorage for instant workspace tree loading
-      const savedSess = localStorage.getItem("anara_active_code_session_id");
+      const urlSid = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("session_id") : null;
+      const savedSess = urlSid || localStorage.getItem("anara_active_session_id") || localStorage.getItem("anara_active_code_session_id");
       if (savedSess && !isNaN(Number(savedSess))) {
         setActiveSessionId(Number(savedSess));
       }
@@ -250,7 +253,8 @@ export default function CodePageClient({
         const params = new URLSearchParams(window.location.search);
         const sid = params.get("session_id");
         if (sid && !isNaN(Number(sid))) {
-          localStorage.setItem("anara_active_code_session_id", sid);
+          localStorage.setItem("anara_active_session_id", sid);
+          setActiveSessionId(Number(sid));
         }
       } catch {}
     }
@@ -301,11 +305,11 @@ export default function CodePageClient({
     }
   }, [models]);
 
-  // ── Fetch Sessions List ──
+  // ── Fetch Sessions List (Universal: All sessions accessible in Code Studio) ──
   const loadSessions = useCallback(async () => {
     setSessionsLoading(true);
     try {
-      const data = await anaraApi.sessions.list("code");
+      const data = await anaraApi.sessions.list();
       setSessions(data || []);
     } catch (err) {
       console.warn("[CodeStudio] loadSessions error:", err);
@@ -318,7 +322,7 @@ export default function CodePageClient({
   const loadWorkspaceTree = useCallback(async (sid?: number | null) => {
     try {
       const data = await anaraApi.workspace.getTree(sid || undefined);
-      if (data && (data.total_files > 0 || data.is_custom_folder)) {
+      if (data && (data.total_files > 0 || data.is_custom_folder || (data.entries && data.entries.length > 0))) {
         setWorkspaceTree(data);
         return;
       }
@@ -607,6 +611,7 @@ export default function CodePageClient({
       });
     },
     onTokenUsage: (usage) => {
+      setLatestTokenUsage(usage);
       setTranscript((prev) => {
         if (prev.length === 0) return prev;
         const lastIdx = prev.length - 1;
@@ -619,6 +624,7 @@ export default function CodePageClient({
     },
     onError: (msg) => {
       if (msg === "Conversation session not found.") {
+        localStorage.removeItem("anara_active_session_id");
         localStorage.removeItem("anara_active_code_session_id");
         setActiveSessionId(null);
         setTranscript([]);
@@ -709,36 +715,29 @@ export default function CodePageClient({
     },
     onSessionIdSync: (sessionId) => {
       setActiveSessionId(sessionId);
-      localStorage.setItem("anara_active_code_session_id", String(sessionId));
+      localStorage.setItem("anara_active_session_id", String(sessionId));
       setSessionRefreshKey((k) => k + 1);
     },
   });
 
-  // ── Auto-Initialize Code Session on Mount ──
+  // ── Auto-Initialize Code Session on Mount (Universal Session Standard) ──
   useEffect(() => {
     const initCodeSession = async () => {
       try {
-        const list = await anaraApi.sessions.list("code");
+        const list = await anaraApi.sessions.list();
         if (Array.isArray(list) && list.length > 0) {
-          const savedSess = localStorage.getItem("anara_active_code_session_id");
+          const urlSid = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("session_id") : null;
+          const savedSess = urlSid || localStorage.getItem("anara_active_session_id") || localStorage.getItem("anara_active_code_session_id");
           const match = savedSess ? list.find((s) => s.id === Number(savedSess)) : null;
           const targetId = match ? match.id : list[0].id;
           setActiveSessionId(targetId);
-          localStorage.setItem("anara_active_code_session_id", String(targetId));
+          localStorage.setItem("anara_active_session_id", String(targetId));
           if (wsStatus === "connected") {
             sendJSON({ type: "switch_session", sessionId: targetId });
           }
-        } else {
-          const data = await anaraApi.sessions.create({ title: "New Project", session_type: "code" });
-          if (data && (data as any).session?.id) {
-            const sid = (data as any).session.id;
-            setActiveSessionId(sid);
-            localStorage.setItem("anara_active_code_session_id", String(sid));
-            if (wsStatus === "connected") {
-              sendJSON({ type: "switch_session", sessionId: sid });
-            }
-          }
         }
+        // Session Pattern: if no sessions exist, leave activeSessionId null.
+        // A session will be created lazily on first message send via ensure_session().
       } catch (err) {
         console.warn("[CodeStudio] init session error:", err);
       }
@@ -747,16 +746,24 @@ export default function CodePageClient({
   }, [wsStatus, sendJSON]);
 
   const handleSelectSession = (id: number) => {
+    // Eager-clear stale workspace state BEFORE switching session (Anara Parity)
+    setWorkspaceTree(null);
+    setGitStatus(null);
+    setTranscript([]);
     setActiveSessionId(id);
-    localStorage.setItem("anara_active_code_session_id", String(id));
+    localStorage.setItem("anara_active_session_id", String(id));
     sendJSON({ type: "switch_session", sessionId: id });
   };
 
   const handleNewSession = () => {
+    // Session Pattern: clear state only — session is created lazily on first message send
+    // This prevents accumulation of empty "New Chat" / "New Project" sessions
+    setWorkspaceTree(null);
+    setGitStatus(null);
     setActiveSessionId(null);
+    localStorage.removeItem("anara_active_session_id");
     localStorage.removeItem("anara_active_code_session_id");
     setTranscript([]);
-    sendJSON({ type: "new_session", session_type: "code", title: "New Project" });
   };
 
   const handlePatchSession = async (id: number, body: Record<string, unknown>) => {
@@ -796,6 +803,8 @@ export default function CodePageClient({
       agent_mode: mode,
       reasoning_effort: reasoningEffort,
       sessionId: activeSessionId,
+      session_type: "code",
+      workspace_path: workspaceTree?.root_path || "",
     });
     setAssistantStatus("thinking");
   };
@@ -871,6 +880,8 @@ export default function CodePageClient({
         platform: "code",
         agent_mode: "plan",
         sessionId: activeSessionId,
+        session_type: "code",
+        workspace_path: workspaceTree?.root_path || "",
       });
     },
     [transcript, sendJSON, activeSessionId]
@@ -1126,17 +1137,6 @@ export default function CodePageClient({
           </button>
         </div>
 
-        {/* Center: Quick Search Affordance (Antigravity Palette Bar) */}
-        <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-md bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.08] text-xs text-slate-400 font-mono cursor-pointer transition-colors max-w-xs w-full justify-between select-none">
-          <span className="flex items-center gap-2 truncate">
-            <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <span className="truncate">Search files &amp; actions...</span>
-          </span>
-          <kbd className="px-1.5 py-0.2 rounded bg-white/[0.06] text-[10px] text-slate-400 shrink-0">Ctrl+P</kbd>
-        </div>
-
         {/* Right Side: View Toggles, 3D Companion Link, and Brain */}
         <div className="flex items-center gap-2 shrink-0">
           {/* View Toggles: Explorer, Terminal & Agent */}
@@ -1191,9 +1191,9 @@ export default function CodePageClient({
           </div>
 
           <Link
-            href="/"
+            href={activeSessionId ? `/?session_id=${activeSessionId}` : "/"}
             className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-slate-300 hover:text-white transition-all cursor-pointer active:scale-95 shadow-sm"
-            title="Switch to 3D Avatar & Voice Studio"
+            title="Switch to 3D Avatar & Voice Studio (Resume Session)"
           >
             <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
@@ -1366,7 +1366,7 @@ export default function CodePageClient({
                   onSelectDiffFile={(path) => handleOpenFileIDE(path, path.split("/").pop() || "file")}
                   onAgentShip={() => handleSendText("Ship active git changes: review diffs, commit changes, and push PR to origin", "build")}
                 />
-              ) : workspaceTree && (workspaceTree.total_files > 0 || workspaceTree.is_custom_folder) ? (
+              ) : workspaceTree && (workspaceTree.total_files > 0 || workspaceTree.is_custom_folder || (workspaceTree.entries && workspaceTree.entries.length > 0)) ? (
                 <WorkspaceTreeView
                   workspaceTree={workspaceTree}
                   gitStatus={gitStatus}
@@ -1520,7 +1520,7 @@ export default function CodePageClient({
             )}
           </div>
 
-          {/* Integrated PowerShell Terminal Dock with Keep-Alive (Hermes Desktop Parity) */}
+          {/* Integrated PowerShell Terminal Dock with Keep-Alive (Anara Desktop Standard) */}
           {isTerminalOpen && (
             <div
               onMouseDown={startResizingTerminal}
@@ -1548,6 +1548,7 @@ export default function CodePageClient({
                 onExecuteCommand={() => {}}
                 onClose={() => setIsTerminalOpen(false)}
                 isVisible={isTerminalOpen}
+                cwd={workspaceTree?.root_path || undefined}
               />
             </Suspense>
           </div>
@@ -1652,10 +1653,32 @@ export default function CodePageClient({
               onSelectReasoningEffort={handleSelectReasoningEffort}
               onSteer={sendSteer}
               workspaceFiles={workspaceFilesList}
+              gitStatus={gitStatus}
+              promptTurnsCount={transcript.length}
             />
           </div>
         )}
       </div>
+
+      {/* ── Unified Agent Statusbar (Anara Desktop Standard) ── */}
+      <Suspense fallback={null}>
+        <AgentStatusBar
+          isConnected={wsStatus === "connected"}
+          activeSessionId={activeSessionId}
+          gitStatus={gitStatus}
+          onOpenGitReview={() => {
+            setIsLeftOpen(true);
+            setExplorerMode("git");
+            loadGitStatus(activeSessionId);
+          }}
+          tokenUsage={latestTokenUsage}
+          assistantStatus={assistantStatus}
+          activeModelId={activeModelId}
+          reasoningEffort={reasoningEffort}
+          onToggleTerminal={() => setIsTerminalOpen((v) => !v)}
+          isTerminalOpen={isTerminalOpen}
+        />
+      </Suspense>
 
       {/* ── Anara Brain Modal Drawer ── */}
       {isBrainDrawerOpen && (

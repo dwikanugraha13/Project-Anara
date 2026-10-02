@@ -57,7 +57,7 @@ async def websocket_endpoint(websocket: WebSocket):
     session_id = str(id(websocket))
     logger.info(f"WebSocket connected: {session_id}")
 
-    initial_primary_speaker = memory_engine.get_last_active_speaker_name() or "User"
+    initial_primary_speaker = await asyncio.to_thread(memory_engine.get_last_active_speaker_name) or "User"
     current_speaker_name = initial_primary_speaker
     await websocket.send_json({"type": "speaker_identified", "name": initial_primary_speaker})
 
@@ -66,10 +66,11 @@ async def websocket_endpoint(websocket: WebSocket):
     api_key = key_manager.get_active_key()
     gemini_service: Optional[GeminiLiveService] = None
     gemini_task: Optional[asyncio.Task] = None
-    if api_key:
-        gemini_service = GeminiLiveService(api_key=api_key, active_speaker=initial_primary_speaker, model_id=live_model)
-        active_sessions[session_id] = gemini_service
-    else:
+    # Lazy init: do NOT eagerly start Gemini Live session on WebSocket connect.
+    # GeminiLiveService is only instantiated when the client actually sends audio
+    # data or requests voice mode — prevents event loop deadlock from multiple
+    # concurrent streaming gRPC sessions when many browser tabs are open.
+    if not api_key:
         logger.info(f"[WebSocket] Connected without Google AI Studio key (session {session_id}). Ready for Chat mode & Brain Console configuration.")
 
     emotion_engine = EmotionEngine()
@@ -89,7 +90,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     active_session_id: Optional[int] = None
     try:
-        last_sid = memory_engine.get_last_active_session_id(initial_primary_speaker)
+        last_sid = await asyncio.to_thread(memory_engine.get_last_active_session_id, initial_primary_speaker)
         if last_sid:
             active_session_id = last_sid
             if gemini_service:
@@ -118,17 +119,21 @@ async def websocket_endpoint(websocket: WebSocket):
     def dance_blocked() -> bool:
         return _time.monotonic() < dance_mode_until
 
-    def ensure_session() -> int:
+    def ensure_session(session_type: str = "chat", workspace_path: str = "") -> int:
         nonlocal active_session_id
         if active_session_id is not None:
             existing = memory_engine.get_session(active_session_id)
             if existing:
                 anara_agent.set_active_session_id(active_session_id)
                 return active_session_id
-        created = memory_engine.create_session(speaker_name=current_speaker_name)
+        created = memory_engine.create_session(
+            speaker_name=current_speaker_name,
+            session_type=session_type,
+            workspace_path=workspace_path or None,
+        )
         active_session_id = created["id"]
         anara_agent.set_active_session_id(active_session_id)
-        logger.info(f"[ChatSessions] Active session -> #{active_session_id}")
+        logger.info(f"[ChatSessions] Active session -> #{active_session_id} (type={session_type})")
         return active_session_id
 
     def log_turn(user_text: str, ai_text: str, **kwargs) -> int:
@@ -561,10 +566,11 @@ async def websocket_endpoint(websocket: WebSocket):
                         if target:
                             active_session_id = int(target)
                             anara_agent.set_active_session_id(active_session_id)
-                            sess = memory_engine.get_session(active_session_id) or {}
-                            msgs = memory_engine.get_session_messages(active_session_id)
+                            sess = await asyncio.to_thread(memory_engine.get_session, active_session_id) or {}
+                            msgs = await asyncio.to_thread(memory_engine.get_session_messages, active_session_id)
 
-                            bridge_ctx = memory_engine.get_conversational_bridge_context(
+                            bridge_ctx = await asyncio.to_thread(
+                                memory_engine.get_conversational_bridge_context,
                                 session_id=active_session_id,
                                 speaker_name=current_speaker_name
                             )
@@ -585,7 +591,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     elif msg_type == "new_session":
                         req_type = data.get("session_type") or data.get("sessionType") or "chat"
                         req_title = data.get("title")
-                        created = memory_engine.create_session(
+                        created = await asyncio.to_thread(memory_engine.create_session,
                             speaker_name=current_speaker_name,
                             title=req_title,
                             session_type="code" if str(req_type).lower() == "code" else "chat"

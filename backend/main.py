@@ -29,7 +29,7 @@ from shared_state import (
     set_main_event_loop,
 )
 
-# Import Modular Routers (Hermes Desktop Parity)
+# Import Modular Routers (Anara Desktop Standard)
 from routers.brain_routes import router as brain_router
 from routers.provider_routes import router as provider_router
 from routers.workspace_routes import router as workspace_router
@@ -37,6 +37,7 @@ from routers.integration_routes import router as integration_router
 from routers.session_routes import router as session_router
 from routers.gateway_routes import router as gateway_router
 from routers.telemetry_routes import router as telemetry_router
+from routers.terminal_routes import router as terminal_router
 from websocket.handler import router as websocket_router
 
 from core.logger import setup_anara_logging
@@ -246,20 +247,41 @@ app = FastAPI(
 )
 
 # ── Enterprise Security & Sandbox Middlewares (Anara Enterprise Architecture) ──
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
+from starlette.types import ASGIApp, Receive, Scope, Send
 
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        response: Response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        if request.url.path.startswith("/api/"):
-            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
-        return response
+# Pure ASGI middleware — avoids BaseHTTPMiddleware deadlock with WebSocket connections
+# (Starlette issue #1012: BaseHTTPMiddleware starves thread pool when WS are active)
+class SecurityHeadersMiddleware:
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        if scope["type"] != "http":
+            # Let WebSocket and lifespan pass through untouched
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = dict(message.get("headers", []))
+                extra = [
+                    (b"x-content-type-options", b"nosniff"),
+                    (b"x-frame-options", b"DENY"),
+                    (b"x-xss-protection", b"1; mode=block"),
+                    (b"referrer-policy", b"strict-origin-when-cross-origin"),
+                ]
+                path = scope.get("path", "")
+                if path.startswith("/api/"):
+                    extra.append((b"cache-control", b"no-store, no-cache, must-revalidate"))
+                message = {
+                    **message,
+                    "headers": list(message.get("headers", [])) + extra,
+                }
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 app.add_middleware(SecurityHeadersMiddleware)
 
@@ -331,6 +353,7 @@ app.include_router(workspace_router, dependencies=[Depends(require_gateway_auth)
 app.include_router(integration_router, dependencies=[Depends(require_gateway_auth)])
 app.include_router(session_router, dependencies=[Depends(require_gateway_auth)])
 app.include_router(telemetry_router, dependencies=[Depends(require_gateway_auth)])
+app.include_router(terminal_router, dependencies=[Depends(require_gateway_auth)])
 app.include_router(websocket_router, dependencies=[Depends(require_gateway_auth)])
 
 def _assert_port_free(port: int):
