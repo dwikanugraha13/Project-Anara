@@ -26,6 +26,130 @@ import { restoreTranscriptFromMessages } from "@/lib/sessionRestoration";
 
 export type TranscriptEntry = TranscriptItem;
 
+// ── Holographic Voice Orb Fallback (Zero Black Screen guarantee) ──────────────
+function VoiceHologramFallback({
+  isSpeaking,
+  audioIntensity,
+  onRetry,
+}: {
+  isSpeaking: boolean;
+  audioIntensity: number;
+  onRetry: () => void;
+}) {
+  const [showGuide, setShowGuide] = React.useState(false);
+  const pulseScale = 1 + Math.min(0.45, audioIntensity * 0.5);
+  const ringOpacity = 0.35 + Math.min(0.55, audioIntensity * 0.65);
+
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center p-6 select-none z-10 overflow-hidden">
+      {/* Cosmic Radial Glow Background */}
+      <div
+        className="absolute w-[600px] h-[600px] rounded-full pointer-events-none transition-all duration-300"
+        style={{
+          background: "radial-gradient(circle, rgba(34, 211, 238, 0.12) 0%, rgba(99, 102, 241, 0.06) 45%, transparent 70%)",
+          transform: `scale(${pulseScale})`,
+          opacity: ringOpacity,
+        }}
+      />
+
+      {/* Center Holographic Voice Orb */}
+      <div className="relative flex items-center justify-center mb-8">
+        {/* Outer Pulsing Aura Ring */}
+        <div
+          className="absolute w-64 h-64 rounded-full border border-cyan-500/20 transition-all duration-300 animate-pulse pointer-events-none"
+          style={{ transform: `scale(${pulseScale * 1.15})` }}
+        />
+        {/* Intermediate Specular Kinetic Ring */}
+        <div
+          className="absolute w-48 h-48 rounded-full border border-dashed border-cyan-400/30 transition-transform duration-500 pointer-events-none"
+          style={{
+            transform: `scale(${pulseScale}) rotate(${isSpeaking ? 45 : 0}deg)`,
+            borderColor: isSpeaking ? "rgba(34, 211, 238, 0.6)" : "rgba(34, 211, 238, 0.25)",
+          }}
+        />
+        {/* Core Hologram Sphere */}
+        <div
+          className="relative w-36 h-36 rounded-full flex flex-col items-center justify-center shadow-2xl backdrop-blur-3xl transition-all duration-200"
+          style={{
+            background: isSpeaking
+              ? "radial-gradient(circle at 35% 35%, rgba(34, 211, 238, 0.55) 0%, rgba(99, 102, 241, 0.4) 60%, rgba(6, 9, 19, 0.95) 100%)"
+              : "radial-gradient(circle at 35% 35%, rgba(34, 211, 238, 0.28) 0%, rgba(99, 102, 241, 0.2) 60%, rgba(6, 9, 19, 0.95) 100%)",
+            boxShadow: isSpeaking
+              ? "0 0 50px rgba(34, 211, 238, 0.45), inset 0 0 25px rgba(255, 255, 255, 0.3)"
+              : "0 0 30px rgba(34, 211, 238, 0.2), inset 0 0 15px rgba(255, 255, 255, 0.15)",
+            border: "1px solid rgba(255, 255, 255, 0.18)",
+          }}
+        >
+          {/* Waveform Visualizer */}
+          <div className="flex items-center gap-1.5 h-8">
+            {[0.4, 0.8, 1.2, 0.9, 0.5].map((factor, idx) => {
+              const barHeight = isSpeaking
+                ? Math.max(8, 28 * factor * (0.4 + audioIntensity * 0.8))
+                : 6 + Math.sin(Date.now() / 300 + idx) * 2;
+              return (
+                <div
+                  key={idx}
+                  className="w-1.5 rounded-full bg-gradient-to-t from-cyan-400 to-indigo-300 transition-all duration-75"
+                  style={{ height: `${barHeight}px` }}
+                />
+              );
+            })}
+          </div>
+          <span className="text-[10px] font-mono tracking-widest text-cyan-300/80 uppercase mt-1">
+            {isSpeaking ? "Speaking" : "Anara Core"}
+          </span>
+        </div>
+      </div>
+
+      {/* Status Card */}
+      <div className="max-w-md w-full px-5 py-4 rounded-2xl bg-[#060913]/90 border border-white/10 shadow-2xl backdrop-blur-xl text-center pointer-events-auto">
+        <div className="flex items-center justify-center gap-2 mb-1.5">
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+          <h4 className="text-xs font-semibold text-white tracking-wide font-sans">
+            Mode Hologram Suara Aktif
+          </h4>
+        </div>
+        <p className="text-[11px] text-slate-400 leading-relaxed mb-3 font-sans">
+          Avatar 3D tidak dapat dirender. Interaksi suara dan teks berjalan 100% normal.
+        </p>
+        <div className="flex items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowGuide(!showGuide)}
+            className="px-3 py-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] text-slate-300 font-medium transition-colors cursor-pointer"
+          >
+            {showGuide ? "Tutup Panduan" : "Cara Aktifkan 3D"}
+          </button>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="px-3 py-1 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-[11px] text-cyan-300 font-medium transition-colors cursor-pointer"
+          >
+            Coba 3D Lagi
+          </button>
+          <a
+            href="/code"
+            className="px-3 py-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] text-slate-300 font-medium transition-colors"
+          >
+            Code Studio
+          </a>
+        </div>
+        {showGuide && (
+          <div className="mt-3.5 pt-3 border-t border-white/10 text-left text-[11px] text-slate-300 space-y-1.5 font-sans leading-normal">
+            <p className="font-semibold text-white">Langkah mengaktifkan 3D di Brave / Chrome:</p>
+            <ol className="list-decimal list-inside space-y-1 text-slate-400 pl-1">
+              <li>Buka <code className="text-cyan-300 bg-white/5 px-1 py-0.5 rounded font-mono text-[10px]">brave://settings/system</code></li>
+              <li>Aktifkan <span className="text-slate-200">&quot;Gunakan akselerasi grafis jika tersedia&quot;</span></li>
+              <li>Brave Shields: pastikan Proteksi Sidik Jari tidak &quot;Agresif&quot;</li>
+              <li>Klik <span className="text-cyan-300">Relaunch</span> browser</li>
+            </ol>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export interface HomePageClientProps {
   initialSidebarTab?: "history" | "editor";
   initialSidebarWidth?: number;
@@ -953,8 +1077,11 @@ export default function HomePageClient({
     setTranscript([]);
   }, []);
 
+  const [sceneRenderVerified, setSceneRenderVerified] = useState(false);
+
   const handleAvatarLoad = useCallback(() => {
     setIsAvatarLoaded(true);
+    setSceneRenderVerified(true);
   }, []);
 
   // Safety timer: prevent getting permanently stuck on loading screen if WebGL takes too long or fails
@@ -962,6 +1089,28 @@ export default function HomePageClient({
     if (interactionMode === "voice" && !isAvatarLoaded) {
       const timer = setTimeout(() => {
         setIsAvatarLoaded(true);
+        // Avatar didn't call onLoad within 5s — check if canvas actually rendered pixels
+        try {
+          const canvas = document.getElementById("avatar-canvas") as HTMLCanvasElement | null;
+          if (canvas) {
+            const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+            if (gl) {
+              const pixel = new Uint8Array(4);
+              gl.readPixels(
+                Math.floor(canvas.width / 2), Math.floor(canvas.height / 2),
+                1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel
+              );
+              // If center pixel is fully black/transparent, canvas isn't rendering
+              if (pixel[0] === 0 && pixel[1] === 0 && pixel[2] === 0 && pixel[3] === 0) {
+                console.warn("[AvatarVerify] Canvas exists but rendering blank — activating holographic fallback");
+              } else {
+                setSceneRenderVerified(true);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("[AvatarVerify] Canvas verification failed:", e);
+        }
       }, 5000);
       return () => clearTimeout(timer);
     }
@@ -1049,6 +1198,45 @@ export default function HomePageClient({
       {/* Loading overlay (only in voice mode when waiting for 3D model) */}
       {interactionMode === "voice" && !isAvatarLoaded && (
         <LoadingScreen onCancel={() => handleSetInteractionMode("chat")} />
+      )}
+
+      {/* Holographic Voice Fallback — shown when in voice mode, avatar loaded but canvas rendering is blank/failed */}
+      {interactionMode === "voice" && isAvatarLoaded && !sceneRenderVerified && (
+        <div
+          className="absolute inset-0 z-[5] pointer-events-auto"
+          style={{
+            transform: `translateX(calc(var(--sidebar-width, 260px) / 2))`,
+          }}
+        >
+          <VoiceHologramFallback
+            isSpeaking={assistantStatus === "speaking"}
+            audioIntensity={audioIntensity}
+            onRetry={() => {
+              setSceneRenderVerified(false);
+              setIsAvatarLoaded(false);
+              // Force re-check after remount
+              setTimeout(() => {
+                setIsAvatarLoaded(true);
+                const canvas = document.getElementById("avatar-canvas") as HTMLCanvasElement | null;
+                if (canvas) {
+                  try {
+                    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+                    if (gl) {
+                      const pixel = new Uint8Array(4);
+                      gl.readPixels(
+                        Math.floor(canvas.width / 2), Math.floor(canvas.height / 2),
+                        1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel
+                      );
+                      if (pixel[0] !== 0 || pixel[1] !== 0 || pixel[2] !== 0 || pixel[3] !== 0) {
+                        setSceneRenderVerified(true);
+                      }
+                    }
+                  } catch {}
+                }
+              }, 3000);
+            }}
+          />
+        </div>
       )}
 
       {/* Liquid Glass UI Controls & Chat Dock (Always rendered) */}
