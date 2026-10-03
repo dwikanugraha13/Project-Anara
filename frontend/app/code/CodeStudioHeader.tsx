@@ -53,31 +53,52 @@ export function CodeStudioHeader({
     <header className="h-[34px] shrink-0 px-3 border-b border-white/[0.08] flex items-center justify-between bg-[#060913]/95 backdrop-blur-2xl z-30 select-none shadow-[0_4px_24px_rgba(0,0,0,0.5)] relative">
       <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-cyan-400/25 to-transparent pointer-events-none" />
 
-      {/* Left Side: Brand Logo, Workspace / Git Branch Badge, Session Switcher */}
+      {/* Left Side: Segmented Switcher [SESSIONS | CODE | BOTS] & Session Popover */}
       <div className="flex items-center gap-2.5 min-w-0">
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_10px_#22d3ee]" />
-          <h1 className="text-xs font-bold font-mono text-white tracking-wider uppercase bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
-            Anara Code
-          </h1>
-          {workspaceTree?.is_custom_folder && workspaceTree?.workspace_name ? (
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-400/25 text-cyan-300 font-semibold tracking-tight flex items-center gap-1.5">
-              <span>{workspaceTree.workspace_name}</span>
-              {gitStatus?.is_git && gitStatus?.branch && (
-                <>
-                  <span className="text-slate-500">·</span>
-                  <span className="text-slate-300 font-normal">{gitStatus.branch}</span>
-                </>
-              )}
-            </span>
-          ) : (
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/10 text-slate-400 font-normal tracking-tight flex items-center gap-1.5">
-              <span>No Workspace</span>
-            </span>
-          )}
+        {/* Connected Segmented Tab Control [SESSIONS | CODE | BOTS] with CODE active */}
+        <div className="relative flex items-center p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.08] backdrop-blur-md font-mono text-xs shrink-0">
+          <Link
+            href={activeSessionId ? `/?session_id=${activeSessionId}` : "/"}
+            className="relative z-10 px-2.5 py-1 text-[11px] font-semibold tracking-wider text-slate-400 hover:text-white transition-colors cursor-pointer"
+            title="Switch to Chat & 3D Companion Studio"
+          >
+            SESSIONS
+          </Link>
+
+          <div
+            className="relative z-10 px-2.5 py-1 text-[11px] font-bold tracking-wider text-cyan-300 rounded-[6px] bg-gradient-to-r from-cyan-500/20 via-blue-500/15 to-cyan-500/20 border border-cyan-400/35 shadow-[0_0_12px_rgba(34,211,238,0.2)] flex items-center gap-1.5"
+            title="Active Coding Studio"
+          >
+            <svg className="w-3 h-3 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+            </svg>
+            <span>CODE</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsBrainDrawerOpen(true)}
+            className="relative z-10 px-2.5 py-1 text-[11px] font-semibold tracking-wider text-slate-400 hover:text-white transition-colors cursor-pointer"
+            title="Open Brain & Model Settings"
+          >
+            BOTS
+          </button>
         </div>
 
-        <div className="h-3.5 w-px bg-white/10 shrink-0 mx-1" />
+        {/* Optional Workspace / Git Branch Badge (if workspace is attached) */}
+        {workspaceTree?.is_custom_folder && workspaceTree?.workspace_name && (
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-400/25 text-cyan-300 font-semibold tracking-tight flex items-center gap-1.5 shrink-0">
+            <span>{workspaceTree.workspace_name}</span>
+            {gitStatus?.is_git && gitStatus?.branch && (
+              <>
+                <span className="text-slate-500">·</span>
+                <span className="text-slate-300 font-normal">{gitStatus.branch}</span>
+              </>
+            )}
+          </span>
+        )}
+
+        <div className="h-3.5 w-px bg-white/10 shrink-0 mx-0.5" />
 
         {/* Session Selector Popover */}
         <div className="relative" ref={sessionDropdownRef as any}>
@@ -219,36 +240,6 @@ export function CodeStudioHeader({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
             <span className="hidden md:inline text-[11px]">Agent</span>
-          </button>
-        </div>
-
-        {/* Connected Segmented Tab Control [SESSIONS | CODE | BOTS] with CODE active */}
-        <div className="relative flex items-center p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.08] backdrop-blur-md font-mono text-xs">
-          <Link
-            href={activeSessionId ? `/?session_id=${activeSessionId}` : "/"}
-            className="relative z-10 px-2.5 py-1 text-[11px] font-semibold tracking-wider text-slate-400 hover:text-white transition-colors cursor-pointer"
-            title="Switch to Chat & 3D Companion Studio"
-          >
-            SESSIONS
-          </Link>
-
-          <div
-            className="relative z-10 px-2.5 py-1 text-[11px] font-bold tracking-wider text-cyan-300 rounded-[6px] bg-gradient-to-r from-cyan-500/20 via-blue-500/15 to-cyan-500/20 border border-cyan-400/35 shadow-[0_0_12px_rgba(34,211,238,0.2)] flex items-center gap-1.5"
-            title="Active Coding Studio"
-          >
-            <svg className="w-3 h-3 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-            </svg>
-            <span>CODE</span>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setIsBrainDrawerOpen(true)}
-            className="relative z-10 px-2.5 py-1 text-[11px] font-semibold tracking-wider text-slate-400 hover:text-white transition-colors cursor-pointer"
-            title="Open Brain & Model Settings"
-          >
-            BOTS
           </button>
         </div>
       </div>
