@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { detectArtifact } from "@/lib/artifactDetect";
 
 // ── Types & Interfaces ────────────────────────────────────────────────────────
 export interface AgentMarkdownProps {
@@ -285,6 +286,7 @@ function CodeBlock({
   }, [code]);
 
   const tokenizedLines = useMemo(() => tokenizeCode(code, language), [code, language]);
+  const artifact = useMemo(() => detectArtifact(language, code), [language, code]);
 
   const cleanLang = (language || "code").toLowerCase();
   const langLabel =
@@ -321,6 +323,31 @@ function CodeBlock({
         </div>
 
         <div className="flex items-center gap-2">
+          {artifact && (
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  window.dispatchEvent(
+                    new CustomEvent("anara-open-code-viewer", {
+                      detail: {
+                        title: artifact.title,
+                        language: artifact.language,
+                        content: code,
+                      },
+                    })
+                  );
+                }
+              }}
+              className="cursor-pointer flex items-center gap-1 px-2 py-0.5 rounded text-[10.5px] font-medium text-cyan-300 hover:text-white bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/30 transition-all shadow-[0_0_8px_rgba(34,211,238,0.15)] mr-1"
+              title="Open in Right Split View (Studio)"
+            >
+              <svg className="w-3 h-3 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+              </svg>
+              <span>Split View</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setLinesActive(!linesActive)}

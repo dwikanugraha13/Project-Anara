@@ -465,10 +465,46 @@ export default function AnaraWorkbench({
         content: "",
         originalContent: "",
       });
+      setIsContextPaneOpen(false);
     } else if (activeIdeFile.filePath === filePath) {
       setActiveIdeFile({ ...remaining[remaining.length - 1], isOpen: true });
     }
   };
+
+  // Anara Artifact Promotion: Open code snippets or generated documents in split view
+  const handleOpenArtifactIDE = useCallback((title: string, language: string, content: string) => {
+    const ext = language || "txt";
+    const fileObj = {
+      isOpen: true,
+      fileName: title,
+      filePath: `artifact://${title}`,
+      fileExt: ext,
+      fileSizeKb: Math.round((content.length / 1024) * 10) / 10,
+      content: content,
+      originalContent: content,
+    };
+    setActiveIdeFile(fileObj);
+    setIsContextPaneOpen(true);
+    setContextTab("editor");
+    setIdeTabs((prev) => {
+      const exists = prev.some((t) => t.filePath === fileObj.filePath);
+      if (exists) {
+        return prev.map((t) => (t.filePath === fileObj.filePath ? { ...t, ...fileObj } : t));
+      }
+      return [...prev, fileObj];
+    });
+  }, []);
+
+  useEffect(() => {
+    const onOpenViewer = (e: any) => {
+      const detail = e.detail;
+      if (detail && detail.content) {
+        handleOpenArtifactIDE(detail.title || "snippet.ts", detail.language || "ts", detail.content);
+      }
+    };
+    window.addEventListener("anara-open-code-viewer", onOpenViewer);
+    return () => window.removeEventListener("anara-open-code-viewer", onOpenViewer);
+  }, [handleOpenArtifactIDE]);
 
   const handleSaveIdeFile = async (filePath: string, newContent: string): Promise<boolean> => {
     try {

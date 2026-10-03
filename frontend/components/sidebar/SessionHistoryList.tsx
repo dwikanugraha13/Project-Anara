@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useRef } from "react";
 import { ChatSession, formatSmartDateTime, formatRelativeTime, resolveSessionDisplay, groupSessions, type SessionCategory, SESSION_PREVIEW_COUNT } from "./types";
+import { exportSession } from "@/lib/sessionExport";
 
 interface SessionHistoryListProps {
   sessions: ChatSession[];
@@ -269,6 +270,8 @@ export default function SessionHistoryList({
                   { label: "Rename", action: () => { setRenameValue(s.title || ""); setRenamingId(s.id); setMenuOpenId(null); } },
                   { label: s.is_pinned === 1 ? "Unpin" : "Pin", action: () => { onPatchSession(s.id, { is_pinned: s.is_pinned !== 1 }); setMenuOpenId(null); } },
                   { label: "Branch / Fork", action: () => { onForkSession?.(s); setMenuOpenId(null); } },
+                  { label: "Export as Markdown", action: () => { exportSession({ sessionId: s.id, title: s.title, format: "markdown" }); setMenuOpenId(null); } },
+                  { label: "Export as JSON", action: () => { exportSession({ sessionId: s.id, title: s.title, format: "json" }); setMenuOpenId(null); } },
                 ].map((item) => (
                   <button key={item.label} onClick={item.action} className="w-full text-left px-3 py-1.5 text-[11px] text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer">
                     {item.label}
