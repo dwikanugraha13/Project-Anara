@@ -280,6 +280,20 @@ export interface SceneProps {
   isVoiceMode?: boolean;
 }
 
+// ── In-Canvas Loading Indicator (3D sphere visible while GLTF suspended) ─────
+function AvatarLoadingIndicator() {
+  React.useEffect(() => {
+    console.log("[Scene] Avatar3D Suspense: GLTF loading in progress...");
+    return () => console.log("[Scene] Avatar3D Suspense: resolved, GLTF loaded");
+  }, []);
+  return (
+    <mesh position={[0, 0, 0]}>
+      <sphereGeometry args={[0.3, 16, 16]} />
+      <meshStandardMaterial color="#22d3ee" wireframe transparent opacity={0.4} />
+    </mesh>
+  );
+}
+
 // ── Stable constants (outside component to avoid re-render loops) ────────────
 const CONTAINER_STYLE: React.CSSProperties = {
   position: "absolute",
@@ -338,7 +352,9 @@ export default function Scene({
   const [webglSupported, setWebglSupported] = React.useState<boolean | null>(null);
 
   React.useEffect(() => {
+    console.log("[Scene] Component mounted, checking WebGL support...");
     const res = checkWebGLSupport();
+    console.log("[Scene] WebGL support check result:", res);
     if (!res.supported) {
       setWebglSupported(false);
       onAvatarLoad?.();
@@ -424,7 +440,7 @@ export default function Scene({
 
           {/* 3D Photorealistic Avatar */}
           <AvatarErrorBoundary onError={onAvatarLoad}>
-            <Suspense fallback={null}>
+            <Suspense fallback={<AvatarLoadingIndicator />}>
               <Avatar3D
                 ref={avatarRef}
                 url={avatarUrl}
