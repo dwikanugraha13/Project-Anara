@@ -1081,7 +1081,24 @@ export default function HomePageClient({
 
   const handleAvatarLoad = useCallback(() => {
     setIsAvatarLoaded(true);
-    setSceneRenderVerified(true);
+    // Schedule a render verification after Three.js has painted
+    setTimeout(() => {
+      try {
+        const canvas = document.getElementById("avatar-canvas") as HTMLCanvasElement | null;
+        if (canvas && canvas.width > 0 && canvas.height > 0) {
+          const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+          if (gl && !gl.isContextLost()) {
+            setSceneRenderVerified(true);
+          } else {
+            console.warn("[AvatarVerify] WebGL context lost or unavailable after model load");
+          }
+        } else {
+          console.warn("[AvatarVerify] Canvas not found or zero-size after model load");
+        }
+      } catch (e) {
+        console.warn("[AvatarVerify] Post-load canvas check failed:", e);
+      }
+    }, 500);
   }, []);
 
   // Safety timer: prevent getting permanently stuck on loading screen if WebGL takes too long or fails
@@ -1089,27 +1106,21 @@ export default function HomePageClient({
     if (interactionMode === "voice" && !isAvatarLoaded) {
       const timer = setTimeout(() => {
         setIsAvatarLoaded(true);
-        // Avatar didn't call onLoad within 5s — check if canvas actually rendered pixels
+        // Avatar didn't call onLoad within 5s — check if canvas context is alive
         try {
           const canvas = document.getElementById("avatar-canvas") as HTMLCanvasElement | null;
-          if (canvas) {
+          if (canvas && canvas.width > 0 && canvas.height > 0) {
             const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
-            if (gl) {
-              const pixel = new Uint8Array(4);
-              gl.readPixels(
-                Math.floor(canvas.width / 2), Math.floor(canvas.height / 2),
-                1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel
-              );
-              // If center pixel is fully black/transparent, canvas isn't rendering
-              if (pixel[0] === 0 && pixel[1] === 0 && pixel[2] === 0 && pixel[3] === 0) {
-                console.warn("[AvatarVerify] Canvas exists but rendering blank — activating holographic fallback");
-              } else {
-                setSceneRenderVerified(true);
-              }
+            if (gl && !gl.isContextLost()) {
+              setSceneRenderVerified(true);
+            } else {
+              console.warn("[AvatarVerify] Safety timer: WebGL context lost — showing fallback");
             }
+          } else {
+            console.warn("[AvatarVerify] Safety timer: No canvas found — showing fallback");
           }
         } catch (e) {
-          console.warn("[AvatarVerify] Canvas verification failed:", e);
+          console.warn("[AvatarVerify] Safety timer canvas check failed:", e);
         }
       }, 5000);
       return () => clearTimeout(timer);
@@ -1218,18 +1229,11 @@ export default function HomePageClient({
               setTimeout(() => {
                 setIsAvatarLoaded(true);
                 const canvas = document.getElementById("avatar-canvas") as HTMLCanvasElement | null;
-                if (canvas) {
+                if (canvas && canvas.width > 0 && canvas.height > 0) {
                   try {
                     const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
-                    if (gl) {
-                      const pixel = new Uint8Array(4);
-                      gl.readPixels(
-                        Math.floor(canvas.width / 2), Math.floor(canvas.height / 2),
-                        1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel
-                      );
-                      if (pixel[0] !== 0 || pixel[1] !== 0 || pixel[2] !== 0 || pixel[3] !== 0) {
-                        setSceneRenderVerified(true);
-                      }
+                    if (gl && !gl.isContextLost()) {
+                      setSceneRenderVerified(true);
                     }
                   } catch {}
                 }
