@@ -47,7 +47,10 @@ export default function ChatTimeline({
   const isFollowingRef = useRef(true);
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [hasUnread, setHasUnread] = useState(false);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editText, setEditText] = useState<string>("");
 
   const handleScroll = () => {
     const el = scrollContainerRef.current;
@@ -58,6 +61,7 @@ export default function ChatTimeline({
     if (near) {
       isFollowingRef.current = true;
       setHasUnread(false);
+      setUnreadCount(0);
     }
   };
 
@@ -116,8 +120,9 @@ export default function ChatTimeline({
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
     } else if (!isNearBottom) {
       setHasUnread(true);
+      setUnreadCount((c) => c + 1);
     }
-  }, [transcript, isNearBottom]);
+  }, [transcript.length, isNearBottom]);
 
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -305,13 +310,91 @@ export default function ChatTimeline({
                   ) : null;
 
                   if (item.speaker === "input") {
+                    const isEditing = editingIndex === idx;
+
                     return (
                       <div key={idx} className="flex flex-col items-end my-3 animate-fade-in group/user">
-                        <div className="relative max-w-[85%] sm:max-w-[75%] px-4 py-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.06] border border-white/[0.09] hover:border-white/[0.15] text-slate-100 text-[13.5px] leading-relaxed select-text backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.35)] transition-all font-sans">
-                          {/* Top specular hairline */}
-                          <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none rounded-t-2xl" />
-                          <p className="whitespace-pre-wrap">{item.text}</p>
-                        </div>
+                        {isEditing ? (
+                          <div className="w-full max-w-[85%] sm:max-w-[75%] rounded-2xl bg-[#060913]/90 border border-cyan-500/30 p-3 shadow-2xl backdrop-blur-2xl">
+                            <textarea
+                              value={editText}
+                              onChange={(e) => setEditText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                                  e.preventDefault();
+                                  if (editText.trim()) {
+                                    setEditingIndex(null);
+                                    onSelectPrompt?.(editText.trim());
+                                  }
+                                } else if (e.key === "Escape") {
+                                  setEditingIndex(null);
+                                }
+                              }}
+                              autoFocus
+                              rows={Math.min(8, Math.max(2, editText.split("\n").length))}
+                              className="w-full resize-none bg-transparent font-sans text-[13.5px] leading-relaxed text-slate-100 placeholder-slate-500 outline-none"
+                            />
+                            <div className="mt-2 flex items-center justify-end gap-2 border-t border-white/[0.06] pt-2 text-[11px] font-mono">
+                              <span className="text-[10px] text-slate-500 mr-auto">Esc to cancel · Ctrl+Enter to send</span>
+                              <button
+                                type="button"
+                                onClick={() => setEditingIndex(null)}
+                                className="rounded px-2.5 py-1 text-slate-400 hover:text-white hover:bg-white/[0.05] transition-colors cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (editText.trim()) {
+                                    setEditingIndex(null);
+                                    onSelectPrompt?.(editText.trim());
+                                  }
+                                }}
+                                className="rounded bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 px-3 py-1 font-medium text-cyan-200 hover:text-white transition-all cursor-pointer"
+                              >
+                                Save &amp; Re-run
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="relative max-w-[85%] sm:max-w-[75%] px-4 py-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.06] border border-white/[0.09] hover:border-white/[0.15] text-slate-100 text-[13.5px] leading-relaxed select-text backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.35)] transition-all font-sans">
+                              {/* Top specular hairline */}
+                              <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none rounded-t-2xl" />
+                              <p className="whitespace-pre-wrap">{item.text}</p>
+                            </div>
+
+                            {/* User Bubble Hover Actions (Edit & Copy) */}
+                            <div className="flex items-center gap-1.5 mt-1 mr-1 opacity-0 group-hover/user:opacity-100 transition-opacity duration-150 select-none">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingIndex(idx);
+                                  setEditText(item.text);
+                                }}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] font-mono text-slate-500 hover:text-slate-300 hover:bg-white/[0.05] border border-white/[0.04] hover:border-white/[0.1] transition-all cursor-pointer"
+                                title="Edit prompt"
+                              >
+                                <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                </svg>
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyMessage(item.text, idx)}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] font-mono text-slate-500 hover:text-slate-300 hover:bg-white/[0.05] border border-white/[0.04] hover:border-white/[0.1] transition-all cursor-pointer"
+                                title="Copy prompt"
+                              >
+                                <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                                <span>Copy</span>
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </div>
                     );
                   }
@@ -450,7 +533,14 @@ export default function ChatTimeline({
           aria-label="Scroll to bottom"
         >
           {hasUnread && (
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_6px_#22d3ee]" />
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_6px_#22d3ee]" />
+              {unreadCount > 1 && (
+                <span className="rounded bg-cyan-400/20 px-1 py-0.2 text-[9px] font-mono text-cyan-300">
+                  {unreadCount}
+                </span>
+              )}
+            </span>
           )}
           <span>Jump to latest</span>
           <svg className="w-3.5 h-3.5 text-slate-400 group-hover:text-cyan-300 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
