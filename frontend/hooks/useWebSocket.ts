@@ -31,6 +31,7 @@ import {
   MAX_MESSAGE_QUEUE_SIZE,
   reconnectBackoffDelayMs,
 } from "./websocketTypes";
+import { createGatewayEventDedupe } from "@/lib/gatewayEventDedupe";
 
 export * from "./websocketTypes";
 
@@ -67,6 +68,26 @@ export function useWebSocket({
   const messageQueueRef = useRef<(string | ArrayBuffer)[]>([]);
   const isIntentionalClose = useRef(false);
   const retryCountRef = useRef(0);
+  const dedupeRef = useRef(createGatewayEventDedupe());
+  const watchdogTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const armWatchdog = useCallback((timeoutMs = 45000) => {
+    if (watchdogTimerRef.current) clearTimeout(watchdogTimerRef.current);
+    watchdogTimerRef.current = setTimeout(() => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        try {
+          wsRef.current.send(JSON.stringify({ type: "ping", watchdog: true, timestamp: Date.now() }));
+        } catch {}
+      }
+    }, timeoutMs);
+  }, []);
+
+  const disarmWatchdog = useCallback(() => {
+    if (watchdogTimerRef.current) {
+      clearTimeout(watchdogTimerRef.current);
+      watchdogTimerRef.current = null;
+    }
+  }, []);
 
   const callbacksRef = useRef({
     onAudioChunk,
@@ -214,6 +235,13 @@ export function useWebSocket({
               return;
             }
 
+            // Deduplicate incoming events across rapid reconnects and multi-socket fanouts
+            const eventKey = (msg as any).seq ?? (msg as any).messageId ?? (msg as any).event_id;
+            const eventSid = (msg as any).sessionId ?? (msg as any).session_id;
+            if (eventKey !== undefined && !dedupeRef.current.admit(eventSid, eventKey)) {
+              return;
+            }
+
             switch (msg.type) {
               case "audio_chunk":
                 if (msg.data && cb.onAudioChunk) {
@@ -232,6 +260,7 @@ export function useWebSocket({
                 break;
 
               case "transcript_partial": {
+                armWatchdog();
                 // Zero-dropped chunks: support delta, text, or data without falsy-dropping empty strings
                 const chunkText =
                   msg.text !== undefined
@@ -367,10 +396,12 @@ export function useWebSocket({
                 break;
 
               case "interrupted":
+                disarmWatchdog();
                 cb.onInterrupted?.();
                 break;
 
               case "turn_complete":
+                disarmWatchdog();
                 cb.onTurnComplete?.();
                 break;
 
