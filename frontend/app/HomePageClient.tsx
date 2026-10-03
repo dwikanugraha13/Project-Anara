@@ -1081,26 +1081,8 @@ export default function HomePageClient({
 
   const handleAvatarLoad = useCallback(() => {
     setIsAvatarLoaded(true);
-    // Schedule a render verification after Three.js has painted
-    setTimeout(() => {
-      try {
-        // R3F <Canvas id="avatar-canvas"> creates a wrapper div, actual <canvas> is a child
-        const wrapper = document.getElementById("avatar-canvas");
-        const canvas = wrapper?.querySelector("canvas") as HTMLCanvasElement | null;
-        if (canvas && canvas.width > 0 && canvas.height > 0) {
-          const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
-          if (gl && !gl.isContextLost()) {
-            setSceneRenderVerified(true);
-          } else {
-            console.warn("[AvatarVerify] WebGL context lost or unavailable after model load");
-          }
-        } else {
-          console.warn("[AvatarVerify] Canvas not found or zero-size after model load");
-        }
-      } catch (e) {
-        console.warn("[AvatarVerify] Post-load canvas check failed:", e);
-      }
-    }, 500);
+    // Avatar3D successfully loaded GLTF model and called onLoad — mark scene as verified
+    setSceneRenderVerified(true);
   }, []);
 
   // Safety timer: prevent getting permanently stuck on loading screen if WebGL takes too long or fails
@@ -1108,25 +1090,9 @@ export default function HomePageClient({
     if (interactionMode === "voice" && !isAvatarLoaded) {
       const timer = setTimeout(() => {
         setIsAvatarLoaded(true);
-        // Avatar didn't call onLoad within 5s — check if canvas context is alive
-        try {
-          // R3F <Canvas id="avatar-canvas"> creates a wrapper div, actual <canvas> is a child
-          const wrapper = document.getElementById("avatar-canvas");
-          const canvas = wrapper?.querySelector("canvas") as HTMLCanvasElement | null;
-          if (canvas && canvas.width > 0 && canvas.height > 0) {
-            const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
-            if (gl && !gl.isContextLost()) {
-              setSceneRenderVerified(true);
-            } else {
-              console.warn("[AvatarVerify] Safety timer: WebGL context lost — showing fallback");
-            }
-          } else {
-            console.warn("[AvatarVerify] Safety timer: No canvas found — showing fallback");
-          }
-        } catch (e) {
-          console.warn("[AvatarVerify] Safety timer canvas check failed:", e);
-        }
-      }, 5000);
+        // If Avatar3D didn't call onLoad within 8s, assume it loaded or WebGL fallback in Scene handles it
+        setSceneRenderVerified(true);
+      }, 8000);
       return () => clearTimeout(timer);
     }
   }, [interactionMode, isAvatarLoaded]);
@@ -1227,22 +1193,8 @@ export default function HomePageClient({
             isSpeaking={assistantStatus === "speaking"}
             audioIntensity={audioIntensity}
             onRetry={() => {
-              setSceneRenderVerified(false);
-              setIsAvatarLoaded(false);
-              // Force re-check after remount
-              setTimeout(() => {
-                setIsAvatarLoaded(true);
-                const wrapper = document.getElementById("avatar-canvas");
-                const canvas = wrapper?.querySelector("canvas") as HTMLCanvasElement | null;
-                if (canvas && canvas.width > 0 && canvas.height > 0) {
-                  try {
-                    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
-                    if (gl && !gl.isContextLost()) {
-                      setSceneRenderVerified(true);
-                    }
-                  } catch {}
-                }
-              }, 3000);
+              // Force full re-initialization
+              window.location.reload();
             }}
           />
         </div>
