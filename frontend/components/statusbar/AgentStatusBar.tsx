@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import ContextUsagePopover, { ContextUsageData } from "./ContextUsagePopover";
+import ApprovalModePopover, { ApprovalMode } from "./ApprovalModePopover";
 
 export interface AgentStatusBarProps {
   isConnected: boolean;
@@ -46,8 +47,44 @@ export default function AgentStatusBar({
   subagentsCount = 0,
 }: AgentStatusBarProps) {
   const [isContextPopoverOpen, setIsContextPopoverOpen] = useState(false);
+  const [approvalMode, setApprovalMode] = useState<ApprovalMode>("smart");
+  const [isApprovalPopoverOpen, setIsApprovalPopoverOpen] = useState(false);
   const [turnElapsedSec, setTurnElapsedSec] = useState<number | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Sync approval mode from localStorage and backend
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("anara_approval_mode") as ApprovalMode | null;
+      if (saved && (saved === "manual" || saved === "smart" || saved === "off")) {
+        setApprovalMode(saved);
+      }
+    } catch {}
+
+    fetch("/api/approvals/mode")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.mode && (data.mode === "manual" || data.mode === "smart" || data.mode === "off")) {
+          setApprovalMode(data.mode);
+          try {
+            localStorage.setItem("anara_approval_mode", data.mode);
+          } catch {}
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleApprovalModeChange = (newMode: ApprovalMode) => {
+    setApprovalMode(newMode);
+    try {
+      localStorage.setItem("anara_approval_mode", newMode);
+    } catch {}
+    fetch("/api/approvals/mode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: newMode }),
+    }).catch(() => {});
+  };
 
   const isGenerating = assistantStatus === "thinking" || assistantStatus === "speaking";
 
@@ -192,11 +229,41 @@ export default function AgentStatusBar({
 
           <span className="text-slate-700">|</span>
 
-          {/* Mode Indicator */}
-          <div className="flex items-center gap-1 text-[10.5px] text-slate-300">
-            <span className="text-amber-400">⚡</span>
-            <span className="font-medium text-slate-200">Smart</span>
-          </div>
+          {/* Approval Mode Popover Trigger */}
+          <button
+            type="button"
+            onClick={() => setIsApprovalPopoverOpen((v) => !v)}
+            className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-all cursor-pointer text-[10.5px] ${
+              approvalMode === "off"
+                ? "bg-rose-500/15 text-rose-300 border border-rose-400/25 hover:bg-rose-500/25"
+                : approvalMode === "manual"
+                ? "bg-amber-500/15 text-amber-300 border border-amber-400/25 hover:bg-amber-500/25"
+                : "text-slate-300 hover:text-white hover:bg-white/10"
+            }`}
+            title={`Approval mode: ${approvalMode} (Click to change)`}
+          >
+            {/* SVG Zap Icon (Liquid Glass styling, zero raw emoji) */}
+            <svg
+              className={`w-3 h-3 ${
+                approvalMode === "off"
+                  ? "text-rose-400"
+                  : approvalMode === "manual"
+                  ? "text-amber-400"
+                  : "text-cyan-400"
+              }`}
+              viewBox="0 0 24 24"
+              fill={approvalMode === "off" ? "currentColor" : "none"}
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.8}
+                d="M13 10V3L4 14h7v7l9-11h-7z"
+              />
+            </svg>
+            <span className="font-semibold capitalize text-slate-200">{approvalMode}</span>
+          </button>
 
           <span className="text-slate-700">|</span>
 
@@ -244,6 +311,14 @@ export default function AgentStatusBar({
         isOpen={isContextPopoverOpen}
         onClose={() => setIsContextPopoverOpen(false)}
         usage={tokenUsage}
+      />
+
+      {/* Approval Mode Popover */}
+      <ApprovalModePopover
+        isOpen={isApprovalPopoverOpen}
+        onClose={() => setIsApprovalPopoverOpen(false)}
+        mode={approvalMode}
+        onChange={handleApprovalModeChange}
       />
     </>
   );
