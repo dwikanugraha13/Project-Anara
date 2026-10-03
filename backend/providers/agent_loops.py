@@ -285,12 +285,22 @@ async def _execute_native_agent_loop(
                 from core.plan_detector import smart_evaluate_command_safety
                 t_risk = await smart_evaluate_command_safety(t_args.get("command", ""), description=user_prompt[:80])
 
-            # Safety Interception:
-            # 1. 'ask' tier (fatal commands: rm -rf /, format, drop db, bulk wipes) ALWAYS intercepts
-            # 2. Plan Mode (intercept_mutating_tools=True) intercepts both 'mutating' and 'ask'
-            should_intercept = (t_risk == "ask") or (intercept_mutating_tools and t_risk in ("mutating", "ask"))
+            # Safety Interception based on approvals.mode (manual, smart, off):
+            from config import cfg_get
+            approval_mode = str(cfg_get("approvals.mode", "smart")).strip().lower()
+
+            if approval_mode == "off":
+                # 'off': Run without approval prompts (only fatal sandbox hard violations are blocked by sandbox.py)
+                should_intercept = False
+            elif approval_mode == "manual":
+                # 'manual': Ask before actions that require approval (intercept all mutating and ask actions)
+                should_intercept = t_risk in ("mutating", "ask")
+            else:
+                # 'smart' (default): Automatically assess actions and ask when needed
+                should_intercept = (t_risk == "ask") or (intercept_mutating_tools and t_risk in ("mutating", "ask"))
+
             if should_intercept:
-                logger.info(f"[NativeToolInterceptor] Intercepted tool '{t_name}' (risk={t_risk}) for Plan/Safety approval.")
+                logger.info(f"[NativeToolInterceptor] Intercepted tool '{t_name}' (risk={t_risk}, mode={approval_mode}) for Plan/Safety approval.")
                 cmd_preview = t_args.get("command") or t_args.get("file_path") or t_args.get("title") or t_args.get("app") or ""
                 is_intercepted = True
                 interception_result = {
@@ -949,12 +959,22 @@ async def _execute_json_agent_loop(
                 from core.plan_detector import smart_evaluate_command_safety
                 t_risk = await smart_evaluate_command_safety(t_args.get("command", ""), description=user_prompt[:80])
 
-            # Safety Interception:
-            # 1. 'ask' tier (fatal commands: rm -rf /, format, drop db, bulk wipes) ALWAYS intercepts
-            # 2. Plan Mode (intercept_mutating_tools=True) intercepts both 'mutating' and 'ask'
-            should_intercept = (t_risk == "ask") or (intercept_mutating_tools and t_risk in ("mutating", "ask"))
+            # Safety Interception based on approvals.mode (manual, smart, off):
+            from config import cfg_get
+            approval_mode = str(cfg_get("approvals.mode", "smart")).strip().lower()
+
+            if approval_mode == "off":
+                # 'off': Run without approval prompts (only fatal sandbox hard violations are blocked by sandbox.py)
+                should_intercept = False
+            elif approval_mode == "manual":
+                # 'manual': Ask before actions that require approval (intercept all mutating and ask actions)
+                should_intercept = t_risk in ("mutating", "ask")
+            else:
+                # 'smart' (default): Automatically assess actions and ask when needed
+                should_intercept = (t_risk == "ask") or (intercept_mutating_tools and t_risk in ("mutating", "ask"))
+
             if should_intercept:
-                logger.info(f"[ToolInterceptor JSON] Intercepted tool '{t_name}' (risk={t_risk}) for Plan/Safety approval.")
+                logger.info(f"[ToolInterceptor JSON] Intercepted tool '{t_name}' (risk={t_risk}, mode={approval_mode}) for Plan/Safety approval.")
                 cmd_preview = t_args.get("command") or t_args.get("file_path") or t_args.get("title") or t_args.get("app") or ""
                 is_intercepted = True
                 interception_result = {

@@ -202,3 +202,33 @@ async def stop_gateway_tunnel_endpoint(request: Request):
     from core.tunnel_manager import stop_tunnel
     ok = await asyncio.to_thread(stop_tunnel)
     return {"status": "success" if ok else "stopped", "is_running": False}
+
+
+# ── Approval Mode (Manual / Smart / Off) ─────────────────────────────────────
+
+class ApprovalModeRequest(BaseModel):
+    mode: str
+
+
+@router.get("/api/approvals/mode")
+async def get_approval_mode_endpoint():
+    """Returns the persistent approval mode (manual, smart, off)."""
+    from config import cfg_get
+    mode = str(cfg_get("approvals.mode", "smart")).strip().lower()
+    if mode not in ("manual", "smart", "off"):
+        mode = "smart"
+    return {"status": "ok", "mode": mode}
+
+
+@router.post("/api/approvals/mode")
+async def set_approval_mode_endpoint(req: ApprovalModeRequest):
+    """Sets and persists the approval mode to config.yaml."""
+    from config import save_config
+    mode = req.mode.strip().lower()
+    if mode not in ("manual", "smart", "off"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid approval mode. Must be 'manual', 'smart', or 'off'."
+        )
+    save_config({"approvals.mode": mode})
+    return {"status": "ok", "mode": mode}

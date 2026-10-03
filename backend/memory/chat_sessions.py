@@ -476,6 +476,34 @@ class ChatSessionsMixin:
             self._emit_mutation("session_workspace_updated", {"id": sid, "workspace_info": workspace_info})
         return ok
 
+    def get_recent_workspace_paths(self, limit: int = 5) -> List[str]:
+        """Returns list of distinct recent project workspace paths from sessions (Anara Standard)."""
+        paths: List[str] = []
+        with self._lock:
+            try:
+                with self._get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT workspace_info_json FROM chat_sessions "
+                        "WHERE workspace_info_json IS NOT NULL AND workspace_info_json != '' "
+                        "ORDER BY updated_at DESC LIMIT 50"
+                    )
+                    seen = set()
+                    for (wij,) in cursor.fetchall():
+                        try:
+                            data = json.loads(wij) if isinstance(wij, str) else {}
+                            p = data.get("root_path")
+                            if p and os.path.isdir(p) and p not in seen:
+                                seen.add(p)
+                                paths.append(p)
+                                if len(paths) >= limit:
+                                    break
+                        except Exception:
+                            pass
+            except Exception as e:
+                logger.debug(f"[ChatSessions] Error getting recent workspace paths: {e}")
+        return paths
+
     def get_session_pending_plan(self, session_id: Any) -> Optional[Dict[str, Any]]:
         """Returns the saved Plan Mode proposal for one chat session."""
         sess = self.get_session(session_id)

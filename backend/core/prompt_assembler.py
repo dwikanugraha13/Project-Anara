@@ -224,13 +224,24 @@ class PromptAssembler:
                     "Use the live Git worktree status above as ground truth when verifying or resuming tasks."
                 )
         else:
+            home_dir = os.path.expanduser('~')
+            recent_projects = []
+            try:
+                from memory import memory_engine
+                recent_projects = memory_engine.get_recent_workspace_paths(limit=3)
+            except Exception:
+                pass
+            recent_line = f"\n- Recent Project Workspaces: {', '.join(recent_projects)}" if recent_projects else ""
+            switch_prompt = f"Ask if they would like to switch to one of their project workspaces ({recent_projects[0]}) or another directory." if recent_projects else "Inform them they can attach or pick a project folder anytime."
             slot7_project = (
-                "[ENVIRONMENT & WORKSPACE CONTEXT]:\n"
-                f"- User Home Directory: {os.path.expanduser('~')}\n"
-                "- Active Workspace: None (no project folder has been attached to this session yet).\n"
-                "- GUIDELINES: The user has not selected or attached a project workspace folder for this session. "
-                "Do NOT claim or assume you are inside any specific project folder (such as Project Anara) unless the user explicitly attaches one or asks to inspect a specific directory. "
-                "If the user asks what workspace or folder is currently open, state truthfully that no workspace folder is attached to this session, and that they can attach or pick one anytime."
+                "[ENVIRONMENT & WORKSPACE CONTEXT (ANARA STANDARD)]:\n"
+                f"- Host OS: Windows (11)\n"
+                f"- User Home Directory: {home_dir}\n"
+                f"- Current Working Directory: {home_dir}\n"
+                f"- Active Project Workspace: None (no project folder has been attached to this session yet).{recent_line}\n"
+                f"- GUIDELINES: You are currently operating at {home_dir}. The user has not selected or attached a project workspace for this session. "
+                f"When asked what workspace or folder you are currently in, state that you are currently at {home_dir}. "
+                f"{switch_prompt}"
             )
 
         # Scan for local AGENTS.md / CLAUDE.md / RULES.md in project root
@@ -328,7 +339,7 @@ class PromptAssembler:
             f"- Current Session: {sess_disp}\n"
             f"- Current User / Speaker: {speaker_name or 'Agnan'}\n"
             f"{model_display_line}"
-            f"- Active Workspace Root: {root_path}\n\n"
+            f"- Active Workspace Root: {root_path if root_path else os.path.expanduser('~')}\n\n"
             f"{model_grounding_instruction}"
         )
         if ch_clean == "cli":

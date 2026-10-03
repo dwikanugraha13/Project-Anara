@@ -117,6 +117,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "security": {
         "redact_secrets": True,
     },
+    "approvals": {
+        "mode": "smart",
+    },
     "display": {
         "show_reasoning": True,
         "reasoning_style": "code",
