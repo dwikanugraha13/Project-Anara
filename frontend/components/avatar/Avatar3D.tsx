@@ -60,6 +60,20 @@ export type { Avatar3DProps, Avatar3DHandle };
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Robust GLTF Loader extension: forces HTMLImageElement TextureLoader
+// instead of ImageBitmapLoader. In Chromium / Brave, concurrent ImageBitmapLoader
+// decoding of 27 embedded blob textures hits blob concurrency bugs and Brave Shields
+// fingerprinting protections, resulting in "Couldn't load texture blob" and WebGL context loss.
+const configureRobustGLTFLoader = (loader: any) => {
+  if (!loader) return;
+  loader.register((parser: any) => {
+    if (typeof window !== "undefined") {
+      parser.textureLoader = new THREE.TextureLoader(parser.options.manager);
+    }
+    return { name: "anara_robust_native_texture_loader" };
+  });
+};
+
 const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
   ({ url, idleAnimationUrl, talkingAnimationUrl, isSpeaking, audioIntensity, onLoad, onDanceStart, onDanceEnd, backendEmotion, backendGesture, isVoiceMode = true }, ref) => {
     const group = useRef<THREE.Group>(null!);
@@ -67,9 +81,9 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
     const cachedMorphMeshesRef = useRef<CachedMorphMesh[]>([]);
     const frameThrottleRef = useRef(0);
 
-    // Load avatar model and lightweight GLTF animations (no Draco, no Meshopt — plain GLB)
-    const { scene, animations: gltfAnimations } = useGLTF(url, false, false);
-    const { animations: externalAnimations } = useGLTF('/animations.glb', false, false);
+    // Load avatar model and lightweight GLTF animations with robust native TextureLoader
+    const { scene, animations: gltfAnimations } = useGLTF(url, false, false, configureRobustGLTFLoader);
+    const { animations: externalAnimations } = useGLTF('/animations.glb', false, false, configureRobustGLTFLoader);
     const dancePhaseRef = useRef<"idle" | "awaiting_intro" | "speaking_intro" | "dancing">("idle");
     const isDancingRef = useRef(false);
     const danceSafetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -936,6 +950,6 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
 Avatar3D.displayName = "Avatar3D";
 export default Avatar3D;
 
-// Preload avatar model and animations locally without Draco CDN dependencies
-useGLTF.preload('/avatar.glb', false);
-useGLTF.preload('/animations.glb', false);
+// Preload avatar model and animations locally with robust native TextureLoader
+useGLTF.preload('/avatar.glb', false, false, configureRobustGLTFLoader);
+useGLTF.preload('/animations.glb', false, false, configureRobustGLTFLoader);

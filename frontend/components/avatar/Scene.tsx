@@ -28,8 +28,6 @@ class CanvasErrorBoundary extends Component<
   },
   { hasError: boolean; errorMessage: string }
 > {
-  private rejectionHandler: ((event: PromiseRejectionEvent) => void) | null = null;
-
   constructor(props: {
     children: React.ReactNode;
     onWebGLFailure?: () => void;
@@ -48,29 +46,6 @@ class CanvasErrorBoundary extends Component<
   componentDidCatch(error: Error) {
     console.warn("[CanvasErrorBoundary] WebGL GPU context unavailable:", error.message);
     this.props.onWebGLFailure?.();
-  }
-
-  componentDidMount() {
-    this.rejectionHandler = (event: PromiseRejectionEvent) => {
-      const reason = event?.reason?.message || String(event?.reason || "");
-      if (
-        reason.toLowerCase().includes("webgl") ||
-        reason.toLowerCase().includes("context") ||
-        reason.toLowerCase().includes("three.webglrenderer")
-      ) {
-        event.preventDefault();
-        this.setState({ hasError: true, errorMessage: reason });
-        this.props.onWebGLFailure?.();
-      }
-    };
-    window.addEventListener("unhandledrejection", this.rejectionHandler);
-  }
-
-  componentWillUnmount() {
-    if (this.rejectionHandler) {
-      window.removeEventListener("unhandledrejection", this.rejectionHandler);
-      this.rejectionHandler = null;
-    }
   }
 
   render() {
@@ -317,6 +292,11 @@ function checkWebGLSupport(): { supported: boolean; reason?: string } {
     if (!gl) {
       return { supported: false, reason: "WebGL context creation failed (hardware acceleration disabled in browser)." };
     }
+    // Release the temporary probe context immediately to prevent occupying context limits
+    const loseContext = (gl as any).getExtension?.("WEBGL_lose_context");
+    if (loseContext) {
+      loseContext.loseContext();
+    }
     return { supported: true };
   } catch (e: any) {
     return { supported: false, reason: e?.message || "WebGL initialization error" };
@@ -391,6 +371,16 @@ export default function Scene({
           dpr={[1, 1.5]}
           onCreated={({ gl }) => {
             gl.debug.checkShaderErrors = false;
+            const domEl = gl.domElement;
+            if (domEl) {
+              domEl.addEventListener("webglcontextlost", (e) => {
+                e.preventDefault();
+                console.warn("[Scene] WebGL context temporarily interrupted, awaiting automatic GPU restoration...");
+              });
+              domEl.addEventListener("webglcontextrestored", () => {
+                console.info("[Scene] WebGL context restored successfully!");
+              });
+            }
           }}
         >
           {/* ── 6-Point Warm Studio Portrait Lighting Setup ── */}
