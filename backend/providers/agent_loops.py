@@ -726,12 +726,15 @@ async def _execute_json_agent_loop(
 
             if is_tool_candidate is False:
                 accumulated_narrative.append(delta)
-                if token_cb:
-                    scrubbed = loop_scrubber.feed(delta)
-                    if scrubbed:
-                        res = token_cb(scrubbed)
-                        if asyncio.iscoroutine(res):
-                            await res
+                scrubbed = loop_scrubber.feed(delta)
+                if loop_scrubber.last_hidden and progress_cb:
+                    p_res = progress_cb({"type": "thought", "thought": loop_scrubber.last_hidden})
+                    if asyncio.iscoroutine(p_res):
+                        await p_res
+                if token_cb and scrubbed:
+                    res = token_cb(scrubbed)
+                    if asyncio.iscoroutine(res):
+                        await res
                 return
 
             buffered_chunks.append(delta)

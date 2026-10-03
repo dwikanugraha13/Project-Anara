@@ -158,7 +158,7 @@ export function WorkbenchChatColumn({
           onOpenLightbox={handleOpenLightbox}
           onSelectPrompt={(text: string) => {
             setInputMessage(text);
-            const inputEl = document.querySelector("footer textarea") as HTMLTextAreaElement;
+            const inputEl = document.querySelector("textarea") as HTMLTextAreaElement;
             inputEl?.focus();
           }}
         />

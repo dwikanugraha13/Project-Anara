@@ -339,31 +339,94 @@ export default function ChatTimeline({
 
                   const footerElement = item.text ? (
                     <div className="flex items-center justify-between pt-2 min-h-[28px] opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100 transition-opacity duration-200 select-none pointer-events-none group-hover/turn:pointer-events-auto">
-                      <span className="text-[10.5px] font-mono text-slate-500 tabular-nums">
-                        {item.timestamp ? new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyMessage(item.text, idx)}
-                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono text-slate-500 hover:text-slate-300 hover:bg-white/[0.05] border border-white/[0.04] hover:border-white/[0.1] transition-all cursor-pointer pointer-events-auto"
-                        title={copiedMessageIndex === idx ? "Copied!" : "Copy message"}
-                      >
-                        {copiedMessageIndex === idx ? (
-                          <>
-                            <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                            </svg>
-                            <span className="text-emerald-400 font-medium">Copied</span>
-                          </>
-                        ) : (
-                          <>
-                            <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
-                            <span>Copy</span>
-                          </>
+                      <div className="flex items-center gap-2 text-[10.5px] font-mono text-slate-500 tabular-nums">
+                        <span>
+                          {item.timestamp ? new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null}
+                        </span>
+                        {item.durationText && (
+                          <span className="flex items-center gap-1 text-slate-500/80">
+                            <span>·</span>
+                            <span>⏱ {item.durationText}</span>
+                          </span>
                         )}
-                      </button>
+                      </div>
+                      <div className="flex items-center gap-1 pointer-events-auto">
+                        {/* Branch in new session */}
+                        {onSelectPrompt && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onSelectPrompt(`/branch ${item.id || ""}`.trim());
+                            }}
+                            className="inline-flex items-center gap-1 p-1 rounded text-slate-500 hover:text-slate-300 hover:bg-white/[0.05] border border-white/[0.04] hover:border-white/[0.1] transition-all cursor-pointer"
+                            title="Branch in new session"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                            </svg>
+                          </button>
+                        )}
+
+                        {/* Read Aloud / Speak */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (typeof window !== "undefined" && window.speechSynthesis) {
+                              window.speechSynthesis.cancel();
+                              const utterance = new SpeechSynthesisUtterance(item.text);
+                              utterance.rate = 1.05;
+                              window.speechSynthesis.speak(utterance);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 p-1 rounded text-slate-500 hover:text-slate-300 hover:bg-white/[0.05] border border-white/[0.04] hover:border-white/[0.1] transition-all cursor-pointer"
+                          title="Read aloud"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                          </svg>
+                        </button>
+
+                        {/* Retry Prompt */}
+                        {onSelectPrompt && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const lastUser = [...transcript.slice(0, idx)].reverse().find((t) => t.speaker === "input");
+                              if (lastUser?.text) onSelectPrompt(lastUser.text);
+                            }}
+                            className="inline-flex items-center gap-1 p-1 rounded text-slate-500 hover:text-slate-300 hover:bg-white/[0.05] border border-white/[0.04] hover:border-white/[0.1] transition-all cursor-pointer"
+                            title="Retry response"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                          </button>
+                        )}
+
+                        {/* Copy message */}
+                        <button
+                          type="button"
+                          onClick={() => handleCopyMessage(item.text, idx)}
+                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono text-slate-500 hover:text-slate-300 hover:bg-white/[0.05] border border-white/[0.04] hover:border-white/[0.1] transition-all cursor-pointer"
+                          title={copiedMessageIndex === idx ? "Copied!" : "Copy message"}
+                        >
+                          {copiedMessageIndex === idx ? (
+                            <>
+                              <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                              </svg>
+                              <span className="text-emerald-400 font-medium">Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                              <span>Copy</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   ) : null;
 

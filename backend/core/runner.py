@@ -221,6 +221,14 @@ class AnaraExecutionRunner:
         event_queue: asyncio.Queue[TurnEvent] = asyncio.Queue()
 
         def _progress_cb(evt: Dict[str, Any]):
+            if evt.get("type") == "thought":
+                event_queue.put_nowait(TurnEvent(
+                    type="thought",
+                    content=evt.get("thought", ""),
+                    thought=evt.get("thought", ""),
+                ))
+                return
+
             t_name = evt.get("tool_name", "")
             t_args = evt.get("args") or evt.get("tool_args") or {}
             t_status = evt.get("status") or ""

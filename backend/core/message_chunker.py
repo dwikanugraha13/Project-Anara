@@ -100,6 +100,39 @@ def format_omnichannel_tool_progress(evt: Dict[str, Any]) -> Optional[str]:
         u = args.get("url") or detail or ""
         return f"🌐 Extracting {u}"
 
+    if t_name in ("browser_exec", "browser_code"):
+        code = args.get("code") or detail or ""
+        first_line = code.strip().splitlines()[0] if code.strip() else ""
+        if first_line.startswith("#"):
+            label = first_line.lstrip("#").strip()
+            return f"🌐 {label[:80]}"
+        return "🌐 Executing browser automation"
+
+    if t_name in ("browser_navigate", "browser_open", "browser_goto"):
+        u = args.get("url") or detail or ""
+        return f"🌐 Browsing {u[:80]}"
+
+    if t_name in ("delegate_task", "spawn_subagent", "subagent"):
+        tasks = args.get("tasks") or []
+        if isinstance(tasks, list) and len(tasks) > 0:
+            first_goal = tasks[0].get("goal") or ""
+            goal_snippet = f": {first_goal[:60]}..." if len(first_goal) > 60 else (f": {first_goal}" if first_goal else "")
+            return f"👥 Delegating {len(tasks)} subtask{'s' if len(tasks) > 1 else ''}{goal_snippet}"
+        return "👥 Delegating subagent workflow"
+
+    if t_name in ("todo_list", "task_scratchpad", "todos"):
+        return "📋 Updating task checklist"
+
+    if t_name in ("vision_analyze", "image_analyze"):
+        return "👁️ Inspecting visual media"
+
+    if t_name in ("text_to_speech", "voice_synthesize"):
+        return "🎙️ Generating voice audio"
+
+    if t_name in ("computer_use", "cua_driver"):
+        action = args.get("action") or "action"
+        return f"🖥️ Desktop {action}"
+
     # Default fallback
     target = detail or summary or ""
     if isinstance(target, str) and target.strip():

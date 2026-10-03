@@ -134,12 +134,21 @@ async def _make_gemini_native_turn(
             cand = res.candidates[0]
             if cand.content and cand.content.parts:
                 for idx, part in enumerate(cand.content.parts):
+                    is_thought = getattr(part, "thought", False)
                     if getattr(part, "text", None):
-                        text_parts.append(part.text)
-                        if on_chunk:
-                            r = on_chunk(part.text)
-                            if asyncio.iscoroutine(r):
-                                await r
+                        if is_thought:
+                            # Deliver thought wrapped in tags so ThinkScrubber routes it to ThinkingCard
+                            thought_wrapped = f"<thought>{part.text}</thought>\n"
+                            if on_chunk:
+                                r = on_chunk(thought_wrapped)
+                                if asyncio.iscoroutine(r):
+                                    await r
+                        else:
+                            text_parts.append(part.text)
+                            if on_chunk:
+                                r = on_chunk(part.text)
+                                if asyncio.iscoroutine(r):
+                                    await r
                     if getattr(part, "function_call", None):
                         fc = part.function_call
                         call_id = f"call_{fc.name}_{idx}"
