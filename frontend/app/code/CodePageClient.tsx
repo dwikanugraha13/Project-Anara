@@ -1001,6 +1001,7 @@ export default function CodePageClient({
         <AgentStatusBar
           isConnected={wsStatus === "connected"}
           activeSessionId={activeSessionId}
+          workspaceName={workspaceTree?.is_custom_folder && workspaceTree?.workspace_name ? workspaceTree.workspace_name : ""}
           gitStatus={gitStatus}
           onOpenGitReview={() => {
             setIsLeftOpen(true);

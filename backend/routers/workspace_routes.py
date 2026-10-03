@@ -497,7 +497,7 @@ async def revert_checkpoint_endpoint(req: CheckpointRevertRequest):
 async def get_agent_git_status(session_id: Optional[Union[int, str]] = None):
     """Returns real git status strictly for the active session project workspace."""
     sid = session_id if session_id is not None else anara_agent.get_active_session_id()
-    if sid is None:
+    if sid is None or not anara_agent.has_attached_workspace(sid):
         return {"is_git": False, "changed_count": 0, "files": []}
 
     active_f = anara_agent.get_session_dir(sid)

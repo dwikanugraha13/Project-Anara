@@ -178,44 +178,59 @@ class PromptAssembler:
                 skill_lines = "\n".join([f"- **{sk['name']}** ({sk.get('category', 'general')}): {sk.get('description', '')}" for sk in skills_list[:8]])
                 slot6_skills = load_prompt("skills_manifest", skill_lines=skill_lines).strip()
 
-        # Slot 7: Project Context & Repository Snapshot (Anara Ground-Truth)
+        # Slot 7: Project Context & Repository Snapshot (Workspace Context)
         from core.agent import anara_agent
-        root_path = (workspace_tree or {}).get("root_path") or anara_agent.get_session_dir(session_id)
-        if not root_path or not os.path.isdir(root_path):
-            root_path = anara_agent.get_project_repo_root()
+        has_custom = (
+            bool((workspace_tree or {}).get("is_custom_folder"))
+            or anara_agent.has_attached_workspace(session_id)
+            or bool((workspace_tree or {}).get("root_path"))
+        )
+        is_build_mode = mode in ("build", "code")
+        has_attached = has_custom or is_build_mode
+        
+        slot7_project = ""
+        slot_git_status = ""
+        root_path = ""
 
-        project_name = (workspace_tree or {}).get("workspace_name") or os.path.basename(root_path.rstrip("\\/")) or "Project Anara"
-        total_files = (workspace_tree or {}).get("total_files") or 0
+        if has_attached:
+            if has_custom:
+                root_path = (workspace_tree or {}).get("root_path") or anara_agent.get_session_dir(session_id)
+            else:
+                root_path = anara_agent.get_project_repo_root()
 
-        git_snapshot = cls.probe_git_worktree_snapshot(root_path)
+            if not root_path or not os.path.isdir(root_path):
+                root_path = anara_agent.get_project_repo_root()
 
-        files_info = ""
-        if total_files > 0:
-            files_preview = ', '.join([f['path'] for f in (workspace_tree or {}).get('files', [])[:25]]) or '(Empty / clean folder)'
-            files_info = f"- Indexed Files ({total_files} total): {files_preview}\n"
+            project_name = (workspace_tree or {}).get("workspace_name") or (os.path.basename(root_path.rstrip("\\/")) if root_path else "Project Anara")
+            total_files = (workspace_tree or {}).get("total_files") or 0
+            git_snapshot = cls.probe_git_worktree_snapshot(root_path) if root_path else ""
 
-        slot7_project = load_prompt(
-            "workspace_snapshot",
-            project_name=project_name,
-            root_path=root_path,
-            git_snapshot="",
-            files_info=files_info,
-            default=(
+            files_info = ""
+            if total_files > 0:
+                files_preview = ', '.join([f['path'] for f in (workspace_tree or {}).get('files', [])[:25]]) or '(Empty / clean folder)'
+                files_info = f"- Indexed Files ({total_files} total): {files_preview}\n"
+
+            slot7_project = (
                 f"[LIVE WORKSPACE & REPOSITORY SNAPSHOT (ANARA GROUND-TRUTH)]:\n"
                 f"- Project Name: {project_name}\n"
                 f"- Physical Root Path: {root_path}\n"
                 f"{files_info}"
                 "- WORKSPACE GUIDELINES: All file operations are confined within this project root."
             )
-        ).strip()
-
-        # Live Git worktree status is positioned in Tier 3 (Volatile Tail) to preserve KV cache
-        slot_git_status = ""
-        if git_snapshot:
-            slot_git_status = (
-                f"[LIVE GIT WORKTREE STATUS (GROUND-TRUTH)]:\n"
-                f"{git_snapshot}\n"
-                "Use the live Git worktree status above as ground truth when verifying or resuming tasks."
+            if git_snapshot:
+                slot_git_status = (
+                    f"[LIVE GIT WORKTREE STATUS (GROUND-TRUTH)]:\n"
+                    f"{git_snapshot}\n"
+                    "Use the live Git worktree status above as ground truth when verifying or resuming tasks."
+                )
+        else:
+            slot7_project = (
+                "[ENVIRONMENT & WORKSPACE CONTEXT]:\n"
+                f"- User Home Directory: {os.path.expanduser('~')}\n"
+                "- Active Workspace: None (no project folder has been attached to this session yet).\n"
+                "- GUIDELINES: The user has not selected or attached a project workspace folder for this session. "
+                "Do NOT claim or assume you are inside any specific project folder (such as Project Anara) unless the user explicitly attaches one or asks to inspect a specific directory. "
+                "If the user asks what workspace or folder is currently open, state truthfully that no workspace folder is attached to this session, and that they can attach or pick one anytime."
             )
 
         # Scan for local AGENTS.md / CLAUDE.md / RULES.md in project root

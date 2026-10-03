@@ -269,14 +269,22 @@ export default function AnaraWorkbench({
   const [isContextPaneOpen, setIsContextPaneOpen] = useState(false);
   const [contextTab, setContextTab] = useState<"editor" | "review" | "terminal">("editor");
   const [gitStatus, setGitStatus] = useState<any>(null);
+  const [workspaceName, setWorkspaceName] = useState<string>("");
 
   const fetchGitStatus = useCallback(async () => {
     try {
       const q = activeSessionId ? `?session_id=${activeSessionId}` : "";
-      const res = await fetch(`${BACKEND_URL}/api/agent/git/status${q}`);
-      if (res.ok) {
-        const data = await res.json();
+      const [resGit, resWs] = await Promise.all([
+        fetch(`${BACKEND_URL}/api/agent/git/status${q}`),
+        fetch(`${BACKEND_URL}/api/agent/workspace/tree${q}`)
+      ]);
+      if (resGit.ok) {
+        const data = await resGit.json();
         setGitStatus(data);
+      }
+      if (resWs.ok) {
+        const wsData = await resWs.json();
+        setWorkspaceName(wsData?.is_custom_folder && wsData?.workspace_name ? wsData.workspace_name : "");
       }
     } catch {}
   }, [activeSessionId]);
@@ -875,6 +883,7 @@ export default function AnaraWorkbench({
         <AgentStatusBar
           isConnected={isConnected}
           activeSessionId={activeSessionId}
+          workspaceName={workspaceName}
           gitStatus={gitStatus}
           onOpenGitReview={() => {
             setIsContextPaneOpen(true);

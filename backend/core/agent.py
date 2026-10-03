@@ -109,6 +109,23 @@ class AnaraAgent:
                 return os.path.abspath(cand)
         return cwd
 
+    def has_attached_workspace(self, session_id: Optional[int] = None) -> bool:
+        """Returns True if the session has an explicitly attached project workspace folder."""
+        effective_sid = self.get_effective_session_id(session_id)
+        if effective_sid is not None and effective_sid in self._session_active_paths:
+            return True
+        if effective_sid is not None and effective_sid != 0:
+            try:
+                from memory import memory_engine
+                sess = memory_engine.get_session(effective_sid)
+                if sess and sess.get("workspace_info"):
+                    stored_path = sess["workspace_info"].get("root_path")
+                    if stored_path and os.path.isdir(stored_path):
+                        return True
+            except Exception:
+                pass
+        return False
+
     def get_session_dir(self, session_id: Optional[int] = None) -> str:
         """Returns the active external folder, or isolated temporary directory, strictly for a session (Anara Standard)."""
         effective_sid = self.get_effective_session_id(session_id)
@@ -134,9 +151,8 @@ class AnaraAgent:
             except Exception:
                 pass
 
-            # 3. Dynamic Anara Standard: Connects to the active project repository root
-            # if enabled (default True for single-user dev agent), or creates sandboxed workspace
-            if cfg_get("agent.workspace.default_to_repo_root", True):
+            # 3. Dynamic Anara Standard: Only default to repo root if explicitly requested via configuration
+            if cfg_get("agent.workspace.default_to_repo_root", False):
                 repo_root = self.get_project_repo_root()
                 if os.path.isdir(repo_root):
                     return repo_root
@@ -150,7 +166,7 @@ class AnaraAgent:
         if active_path and os.path.isdir(active_path):
             return active_path
 
-        if cfg_get("agent.workspace.default_to_repo_root", True):
+        if cfg_get("agent.workspace.default_to_repo_root", False):
             repo_root = self.get_project_repo_root()
             if os.path.isdir(repo_root):
                 return repo_root
@@ -514,6 +530,11 @@ class AnaraAgent:
     def _resolve_workspace_dir(self, session_id: Optional[int] = None) -> tuple:
         """Common workspace dir resolution for shallow tree methods."""
         effective_sid = self.get_effective_session_id(session_id)
+        has_attached = self.has_attached_workspace(effective_sid)
+
+        if not has_attached:
+            return "", effective_sid, ""
+
         target_dir = self.get_session_dir(effective_sid)
         custom_name = self._session_custom_names.get(effective_sid if effective_sid is not None else 0) or ""
 
@@ -533,7 +554,7 @@ class AnaraAgent:
                 pass
 
         if not custom_name:
-            custom_name = os.path.basename(target_dir.rstrip("\\/")) if target_dir else "Project Workspace"
+            custom_name = os.path.basename(target_dir.rstrip("\\/")) if target_dir else ""
 
         return target_dir, effective_sid, custom_name
 

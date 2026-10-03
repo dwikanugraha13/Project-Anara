@@ -641,12 +641,18 @@ export default function BottomDock({
           {/* Context & Git Telemetry Strip */}
           <div className="w-full flex items-center justify-between pb-1.5 border-b border-white/[0.06] text-[11px] font-mono select-none">
             {/* Left: Branch Indicator */}
-            <div className="flex items-center gap-1.5 text-slate-300">
-              <svg className="w-3.5 h-3.5 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7a3 3 0 100-6 3 3 0 000 6zm0 0v10m0 0a3 3 0 100 6 3 3 0 000-6zm8-4a3 3 0 100-6 3 3 0 000 6zm0 0v3a4 4 0 01-4 4h-4" />
-              </svg>
-              <span className="font-semibold text-slate-200">{gitStatus?.branch || "main"}</span>
-            </div>
+            {gitStatus?.is_git && gitStatus?.branch ? (
+              <div className="flex items-center gap-1.5 text-slate-300">
+                <svg className="w-3.5 h-3.5 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7a3 3 0 100-6 3 3 0 000 6zm0 0v10m0 0a3 3 0 100 6 3 3 0 000-6zm8-4a3 3 0 100-6 3 3 0 000 6zm0 0v3a4 4 0 01-4 4h-4" />
+                </svg>
+                <span className="font-semibold text-slate-200">{gitStatus.branch}</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 text-slate-400 text-[10.5px]">
+                <span>No workspace attached</span>
+              </div>
+            )}
 
             {/* Right: Telemetry (Turns & Git Diff Delta) */}
             <div className="flex items-center gap-3 text-slate-400">

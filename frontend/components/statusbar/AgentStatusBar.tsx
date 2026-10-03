@@ -6,6 +6,7 @@ import ContextUsagePopover, { ContextUsageData } from "./ContextUsagePopover";
 export interface AgentStatusBarProps {
   isConnected: boolean;
   activeSessionId?: number | string | null;
+  workspaceName?: string | null;
   gitStatus?: {
     is_git: boolean;
     branch?: string;
@@ -33,6 +34,7 @@ function formatTokens(n: number): string {
 export default function AgentStatusBar({
   isConnected,
   activeSessionId,
+  workspaceName,
   gitStatus,
   onOpenGitReview,
   tokenUsage,
@@ -107,7 +109,11 @@ export default function AgentStatusBar({
             <svg className="w-3 h-3 text-amber-400/90 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
             </svg>
-            <span className="font-semibold text-slate-200">Project Anara</span>
+            {workspaceName ? (
+              <span className="font-semibold text-slate-200">{workspaceName}</span>
+            ) : (
+              <span className="text-slate-400 font-normal">No workspace</span>
+            )}
           </div>
 
           {/* Git Branch & Churn Badge */}

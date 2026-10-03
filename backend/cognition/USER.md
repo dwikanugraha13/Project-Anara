@@ -7,3 +7,4 @@
 - Preferensi Gaya Bahasa & Persona: Bahasa gaul santai, kasual, asik, dan luwes (lu-gue, santai, ekspresif, anti-kaku).
 - Preferensi komunikasi: Selalu gunakan bahasa gaul santai, kasual, dan kata ganti lu-gue saat merespons.
 - User is addressed as 'Nan' and prefers casual Indonesian (lu-gue) communication style.
+- Expects agent response UI/UX to be strictly consistent across desktop and omnichannel platforms (Telegram, WhatsApp): deliverables (file edits/writes) prominently presented with clean diffs, ephemeral tasks (file reads, greps, searches) kept compact and zero-clutter, and sub-agent executions clearly structured with goal and status.
