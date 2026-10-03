@@ -476,6 +476,19 @@ export default function BottomDock({
         const dt = new DataTransfer();
         files.forEach((f) => dt.items.add(f));
         handleAttachFiles(dt.files);
+        return;
+      }
+
+      // Anara Large Paste Protection: convert >3k chars text paste to file attachment
+      const pastedText = e.clipboardData?.getData("text/plain");
+      if (pastedText && pastedText.length > 3000) {
+        e.preventDefault();
+        const blob = new Blob([pastedText], { type: "text/plain" });
+        const stamp = Date.now().toString(36);
+        const file = new File([blob], `pasted_text_${stamp}.txt`, { type: "text/plain" });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        handleAttachFiles(dt.files);
       }
     },
     [handleAttachFiles]
