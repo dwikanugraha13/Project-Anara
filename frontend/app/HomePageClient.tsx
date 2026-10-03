@@ -1084,7 +1084,9 @@ export default function HomePageClient({
     // Schedule a render verification after Three.js has painted
     setTimeout(() => {
       try {
-        const canvas = document.getElementById("avatar-canvas") as HTMLCanvasElement | null;
+        // R3F <Canvas id="avatar-canvas"> creates a wrapper div, actual <canvas> is a child
+        const wrapper = document.getElementById("avatar-canvas");
+        const canvas = wrapper?.querySelector("canvas") as HTMLCanvasElement | null;
         if (canvas && canvas.width > 0 && canvas.height > 0) {
           const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
           if (gl && !gl.isContextLost()) {
@@ -1108,7 +1110,9 @@ export default function HomePageClient({
         setIsAvatarLoaded(true);
         // Avatar didn't call onLoad within 5s — check if canvas context is alive
         try {
-          const canvas = document.getElementById("avatar-canvas") as HTMLCanvasElement | null;
+          // R3F <Canvas id="avatar-canvas"> creates a wrapper div, actual <canvas> is a child
+          const wrapper = document.getElementById("avatar-canvas");
+          const canvas = wrapper?.querySelector("canvas") as HTMLCanvasElement | null;
           if (canvas && canvas.width > 0 && canvas.height > 0) {
             const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
             if (gl && !gl.isContextLost()) {
@@ -1228,7 +1232,8 @@ export default function HomePageClient({
               // Force re-check after remount
               setTimeout(() => {
                 setIsAvatarLoaded(true);
-                const canvas = document.getElementById("avatar-canvas") as HTMLCanvasElement | null;
+                const wrapper = document.getElementById("avatar-canvas");
+                const canvas = wrapper?.querySelector("canvas") as HTMLCanvasElement | null;
                 if (canvas && canvas.width > 0 && canvas.height > 0) {
                   try {
                     const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
