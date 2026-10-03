@@ -134,8 +134,12 @@ class ConvergenceDetector:
                 offset = args.get("offset")
                 limit = args.get("limit")
                 if offset is not None or limit is not None:
-                    return f"{norm_fp}#{offset or 1}:{limit or 'all'}"
+                    return f"{norm_fp}#L{offset or 1}-L{(int(offset or 1) + int(limit or 250) - 1)}"
             return norm_fp
+
+        if tool_name in ("list_directory", "scan_workspace_folder", "scan_directory"):
+            dp = args.get("directory_path") or args.get("folder_path") or args.get("path") or "."
+            return os.path.normpath(str(dp).strip().replace("\\", "/")).lower()
 
         if tool_name in ("glob_find_files", "grep_search_code"):
             patt = args.get("pattern") or ""
@@ -201,7 +205,7 @@ class ConvergenceDetector:
                 self.phase = "MUTATING"
                 if target:
                     self.modified_targets.add(target)
-                    # Staleness Tracking (Hermes mark_workspace_edited parity):
+                    # Staleness Tracking (Anara Standard):
                     # Any new verifiable code mutation immediately renders prior test evidence stale!
                     if _is_verifiable_code_target(target):
                         self.last_test_passed = False
@@ -329,18 +333,32 @@ class ConvergenceDetector:
 
         # 3. Information Saturation (repeated inspection of already-inspected entities)
         if self.redundant_inspections >= 4:
-            logger.info(f"[Convergence] Information saturation detected ({self.redundant_inspections} redundant inspections). Triggering convergence.")
-            default_sat = (
-                "[INFORMATION SATURATION]: You have repeatedly examined the same workspace targets without uncovering new data. "
-                "Conclude your turn now and deliver your complete findings or solution to the user."
-            )
-            return ConvergenceStatus(
-                is_converged=True,
-                should_nudge=True,
-                guidance=g_cfg.get("information_saturation", default_sat),
-                reason="information_saturated",
-                phase=self.phase
-            )
+            if not self.read_only:
+                # In build mode, give a firm transition nudge without stripping tools prematurely
+                default_sat = (
+                    "[SATURATION NOTICE]: You have gathered all necessary context. "
+                    "Stop calling read/inspection tools and invoke editing tools (edit_file, write_local_file) now."
+                )
+                return ConvergenceStatus(
+                    is_converged=False,
+                    should_nudge=True,
+                    guidance=g_cfg.get("saturation_notice", default_sat),
+                    reason="diminishing_returns",
+                    phase=self.phase
+                )
+            else:
+                logger.info(f"[Convergence] Information saturation detected ({self.redundant_inspections} redundant inspections). Triggering convergence.")
+                default_sat = (
+                    "[INFORMATION SATURATION]: You have repeatedly examined the same workspace targets without uncovering new data. "
+                    "Conclude your turn now and deliver your complete findings or solution to the user."
+                )
+                return ConvergenceStatus(
+                    is_converged=True,
+                    should_nudge=True,
+                    guidance=g_cfg.get("information_saturation", default_sat),
+                    reason="information_saturated",
+                    phase=self.phase
+                )
         elif self.redundant_inspections >= 2:
             default_sat_n = (
                 "[SATURATION NOTICE]: You are inspecting files or targets you have already reviewed. "
@@ -383,11 +401,12 @@ class ConvergenceDetector:
         elif self.phase == "EXPLORING":
             if current_step >= 12:
                 default_exh = (
-                    "[INSPECTION BUDGET EXHAUSTION]: You have conducted extensive exploration across 12+ steps. "
-                    "Synthesize your findings and proceed with implementation or conclusion now."
+                    "[INSPECTION COMPLETE — PROCEED TO EDIT]: You have conducted extensive exploration across 12 steps. "
+                    "Do not continue calling inspection tools. Proceed immediately to invoke editing tools (edit_file, write_local_file) "
+                    "to implement the requested modifications."
                 )
                 return ConvergenceStatus(
-                    is_converged=True,
+                    is_converged=False,
                     should_nudge=True,
                     guidance=g_cfg.get("inspection_budget_exhaustion", default_exh),
                     reason="inspection_budget_exhausted",

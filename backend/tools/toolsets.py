@@ -596,7 +596,7 @@ class PlatformToolRegistry:
     ) -> Set[str]:
         """
         Anara Enterprise Architecture: Posture-Based Dynamic Toolset Pruning.
-        Zero hardcoded keyword dictionaries. Adopts Hermes Coding Posture in software
+        Zero hardcoded keyword dictionaries. Adopts Anara Coding Posture in software
         workspaces, while dynamically discovering domain tools from ToolRegistry
         when specific domain identifiers are referenced.
         """
@@ -661,7 +661,7 @@ class PlatformToolRegistry:
             active_tools = {t for t in active_tools if t in READ_ONLY_TOOL_NAMES}
 
         logger.info(
-            f"[Toolsets] Hermes Posture active ({p_key}): {len(active_tools)} tools loaded "
+            f"[Toolsets] Anara Posture active ({p_key}): {len(active_tools)} tools loaded "
             f"(pruned from full catalog of {len(CORE_TOOLS)})"
         )
         return active_tools

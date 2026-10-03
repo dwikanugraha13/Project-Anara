@@ -36,7 +36,7 @@ _ACTIVE_CHAT_TASKS: Dict[str, asyncio.Task] = {}
 
 
 class TelegramStatusTracker:
-    """Live in-place tool progress accumulator and continuous typing heartbeat for Telegram (Hermes Parity)."""
+    """Live in-place tool progress accumulator and continuous typing heartbeat for Telegram (Anara Standard)."""
     def __init__(self, chat_id: str):
         self.chat_id = str(chat_id)
         self.status_msg_id: Optional[int] = None

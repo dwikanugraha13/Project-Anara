@@ -495,58 +495,70 @@ async def _execute_native_agent_loop(
             })
         conv_status = convergence_detector.record_turn_actions(step, executed_items_for_convergence)
 
+        # Inject convergence nudge into the last tool result if model needs guidance
+        if conv_status.should_nudge and conv_status.guidance and executed_results_for_history:
+            last_call, last_out, last_err = executed_results_for_history[-1]
+            nudged_out = f"{last_out}\n\n[System Guidance]: {conv_status.guidance}"
+            executed_results_for_history[-1] = (last_call, nudged_out, last_err)
+
         # Append assistant turn and tool results to native history
         record_results_fn(history, turn, executed_results_for_history)
 
         if conv_status.is_converged:
-            logger.info(f"[NativeAgentLoop] Trajectory converged (reason: {conv_status.reason}). Forcing final conclusion.")
-            try:
-                from core.prompt_loader import load_prompt
-                closing_instruction = load_prompt(
-                    "agent_loop/closing_narrative",
-                    default="Based on all the work, observations, and attachments above, provide a clear, helpful, and complete final response to the user in natural conversational prose matching the active language."
-                ).strip()
-                closing_history = _build_closing_history(history, closing_instruction)
+            # Active Build Turn Protection: If the turn allows mutations (not read_only)
+            # and no mutations have been performed yet, do not strip tools unless near step limit!
+            if not read_only and convergence_detector.mutations_count == 0 and step < max_steps - 3:
+                logger.info(f"[NativeAgentLoop] Build mode with 0 mutations: preserving tools and nudging model to implement (reason={conv_status.reason}).")
+            else:
+                logger.info(f"[NativeAgentLoop] Trajectory converged (reason: {conv_status.reason}). Forcing final conclusion.")
                 try:
-                    final_turn = await native_turn_caller(closing_history, allow_tools=False)
-                except TypeError:
-                    final_turn = await native_turn_caller(closing_history)
-                if final_turn and final_turn.clean_text:
-                    final_text = _clean_model_chat_text(final_turn.clean_text) or final_turn.clean_text
-                    if token_cb and final_text:
-                        r = token_cb(final_text)
-                        if asyncio.iscoroutine(r):
-                            await r
-                    return final_text
-            except Exception as e_close:
-                logger.warning(f"[NativeAgentLoop] Closing pass error: {e_close}")
+                    from core.prompt_loader import load_prompt
+                    closing_instruction = load_prompt(
+                        "agent_loop/closing_narrative",
+                        default="Based on all the work, observations, and attachments above, provide a clear, helpful, and complete final response to the user in natural conversational prose matching the active language."
+                    ).strip()
+                    closing_history = _build_closing_history(history, closing_instruction)
+                    try:
+                        final_turn = await native_turn_caller(closing_history, allow_tools=False)
+                    except TypeError:
+                        final_turn = await native_turn_caller(closing_history)
+                    if final_turn and final_turn.clean_text:
+                        final_text = _clean_model_chat_text(final_turn.clean_text) or final_turn.clean_text
+                        if token_cb and final_text:
+                            r = token_cb(final_text)
+                            if asyncio.iscoroutine(r):
+                                await r
+                        return final_text
+                except Exception as e_close:
+                    logger.warning(f"[NativeAgentLoop] Closing pass error: {e_close}")
 
-            cleaned_last = _clean_model_chat_text(last_text)
-            if cleaned_last:
-                return cleaned_last
+                cleaned_last = _clean_model_chat_text(last_text)
+                if cleaned_last:
+                    return cleaned_last
 
-            # High-assurance conversational fallback: synthesize response via fast auxiliary model
-            try:
-                from core.capabilities import get_fast_auxiliary_model
-                aux_model = get_fast_auxiliary_model() or model_id
-                highlights = "\n".join([f"- {item.get('tool_name', 'action')}: {str(item.get('summary', ''))[:140]}" for item in executed_items_for_convergence[-10:]])
-                synthesis_prompt = (
-                    f"User asked: \"{user_prompt}\"\n\n"
-                    f"The agent executed the following workspace actions and checks:\n{highlights}\n\n"
-                    "Provide a direct, helpful, and natural response to the user in their active language (Indonesian gaul santai, lu-gue), summarizing what was checked and the final conclusion."
-                )
-                fallback_res = await call_universal_chat_model(
-                    model_id=aux_model,
-                    user_prompt=synthesis_prompt,
-                    max_tokens=None,
-                    temperature=0.3,
-                    read_only=True
-                )
-                cleaned_fallback = _clean_model_chat_text(fallback_res or "")
-                if cleaned_fallback:
-                    return cleaned_fallback
-            except Exception as e_synth:
-                logger.debug(f"[NativeAgentLoop] Auxiliary synthesis fallback failed: {e_synth}")
+                # High-assurance conversational fallback: synthesize response via fast auxiliary model
+                try:
+                    from core.capabilities import get_fast_auxiliary_model
+                    from .caller import call_universal_chat_model
+                    aux_model = get_fast_auxiliary_model() or model_id
+                    highlights = "\n".join([f"- {item.get('tool_name', 'action')}: {str(item.get('summary', ''))[:140]}" for item in executed_items_for_convergence[-10:]])
+                    synthesis_prompt = (
+                        f"User asked: \"{user_prompt}\"\n\n"
+                        f"The agent executed the following workspace actions and checks:\n{highlights}\n\n"
+                        "Provide a direct, helpful, and natural response to the user in their active language (Indonesian gaul santai, lu-gue), summarizing what was checked and the final conclusion."
+                    )
+                    fallback_res = await call_universal_chat_model(
+                        model_id=aux_model,
+                        user_prompt=synthesis_prompt,
+                        max_tokens=None,
+                        temperature=0.3,
+                        read_only=True
+                    )
+                    cleaned_fallback = _clean_model_chat_text(fallback_res or "")
+                    if cleaned_fallback:
+                        return cleaned_fallback
+                except Exception as e_synth:
+                    logger.debug(f"[NativeAgentLoop] Auxiliary synthesis fallback failed: {e_synth}")
 
             return _format_empty_model_notice(user_prompt)
 
@@ -571,6 +583,7 @@ async def _execute_native_agent_loop(
         # High-assurance conversational fallback
         try:
             from core.capabilities import get_fast_auxiliary_model
+            from .caller import call_universal_chat_model
             aux_model = get_fast_auxiliary_model() or model_id
             synthesis_prompt = (
                 f"User asked: \"{user_prompt}\"\n\n"
@@ -1190,7 +1203,10 @@ async def _execute_json_agent_loop(
         })
 
         if conv_status.is_converged:
-            break
+            if not read_only and convergence_detector.mutations_count == 0 and step < max_steps - 3:
+                logger.info(f"[AgentLoop] Build mode with 0 mutations: preserving tools and nudging model to implement (reason={conv_status.reason}).")
+            else:
+                break
 
         if progress_cb:
             try:

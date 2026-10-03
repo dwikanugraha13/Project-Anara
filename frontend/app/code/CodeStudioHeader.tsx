@@ -58,11 +58,21 @@ export function CodeStudioHeader({
           <h1 className="text-xs font-bold font-mono text-white tracking-wider uppercase bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
             Anara Code
           </h1>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-400/25 text-cyan-300 font-semibold tracking-tight flex items-center gap-1.5">
-            <span>{workspaceTree?.workspace_name || "Project Anara"}</span>
-            <span className="text-slate-500">·</span>
-            <span className="text-slate-300 font-normal">{gitStatus?.branch || "main"}</span>
-          </span>
+          {workspaceTree?.is_custom_folder && workspaceTree?.workspace_name ? (
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-400/25 text-cyan-300 font-semibold tracking-tight flex items-center gap-1.5">
+              <span>{workspaceTree.workspace_name}</span>
+              {gitStatus?.is_git && gitStatus?.branch && (
+                <>
+                  <span className="text-slate-500">·</span>
+                  <span className="text-slate-300 font-normal">{gitStatus.branch}</span>
+                </>
+              )}
+            </span>
+          ) : (
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/10 text-slate-400 font-normal tracking-tight flex items-center gap-1.5">
+              <span>No Workspace</span>
+            </span>
+          )}
         </div>
 
         <div className="h-3.5 w-px bg-white/10 shrink-0 mx-1" />
