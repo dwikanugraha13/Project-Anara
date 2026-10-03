@@ -2,7 +2,7 @@ import asyncio
 import logging
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import httpx
 
 from .constants import (
@@ -583,6 +583,7 @@ async def fetch_custom_providers_models(force_refresh: bool = False) -> List[Dic
                 if res.status_code == 200:
                     d_json = res.json()
                     raw_data = d_json.get("data") or d_json.get("models") if isinstance(d_json, dict) else (d_json if isinstance(d_json, list) else [])
+                    batch_ctx: Dict[str, Tuple[int, Optional[int], str]] = {}
                     for item in (raw_data or []):
                         m_id = item.get("id") or item.get("name") if isinstance(item, dict) else str(item)
                         if m_id:
@@ -593,13 +594,9 @@ async def fetch_custom_providers_models(force_refresh: bool = False) -> List[Dic
                                 ctx_len = item.get("context_length") or item.get("max_model_len") or item.get("context_window") or item.get("input_token_limit")
                                 max_out = item.get("max_output_tokens") or item.get("max_tokens") or item.get("output_token_limit")
                                 if ctx_len and isinstance(ctx_len, (int, float)) and int(ctx_len) > 0:
-                                    try:
-                                        from core.token_budget import save_context_length
-                                        out_val = int(max_out) if max_out and isinstance(max_out, (int, float)) else None
-                                        save_context_length(full_mid, int(ctx_len), max_output=out_val, base_url=base_url)
-                                        save_context_length(m_id, int(ctx_len), max_output=out_val, base_url=base_url)
-                                    except Exception:
-                                        pass
+                                    out_val = int(max_out) if max_out and isinstance(max_out, (int, float)) else None
+                                    batch_ctx[full_mid] = (int(ctx_len), out_val, base_url)
+                                    batch_ctx[m_id] = (int(ctx_len), out_val, base_url)
 
                             caps = detect_model_capabilities(item, m_id)
                             r_code, r_name = extract_model_route(full_mid)
@@ -627,6 +624,13 @@ async def fetch_custom_providers_models(force_refresh: bool = False) -> List[Dic
                                 "modalities": caps["modalities"],
                                 "supported_reasoning_levels": caps["supported_reasoning_levels"],
                             })
+
+                    if batch_ctx:
+                        try:
+                            from core.token_budget import save_context_lengths_batch
+                            save_context_lengths_batch(batch_ctx)
+                        except Exception:
+                            pass
         except Exception as e:
             logger.debug(f"[CustomProvider] Error fetching /models for {node['name']}: {_sanitize_error_message(e)}")
         if not discovered and node.get("default_model"):

@@ -16,6 +16,7 @@ import logging
 import os
 from pathlib import Path
 import re
+import threading
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -161,38 +162,64 @@ def _load_persisted_context_cache_doc() -> Dict[str, Any]:
     return {}
 
 
+_PERSISTED_CACHE_DOC: Optional[Dict[str, Any]] = None
+_CACHE_LOCK = threading.Lock()
+
+
+def _get_persisted_cache_doc() -> Dict[str, Any]:
+    global _PERSISTED_CACHE_DOC
+    with _CACHE_LOCK:
+        if _PERSISTED_CACHE_DOC is None:
+            _PERSISTED_CACHE_DOC = _load_persisted_context_cache_doc()
+        return _PERSISTED_CACHE_DOC
+
+
 def save_context_length(model: str, length: int, max_output: Optional[int] = None, base_url: str = "") -> None:
     """
     Persists a dynamically discovered or error-learned context window limit (Anara Standard).
     Saves to runtime cache under ANARA_HOME/cache to avoid polluting codebase or triggering dev file reloaders.
     """
-    if not model or length <= 0:
-        return
-    out_cap = max_output or min(65536, max(4096, int(length * _OUTPUT_RESERVE_RATIO)))
-    key = _clean_model_key(model, base_url)
-    
-    # Check if already present with identical limit in memory
-    existing = _DYNAMIC_CONTEXT_CACHE.get(key)
-    if existing and existing[0] == length:
+    save_context_lengths_batch({model: (length, max_output, base_url)})
+
+
+def save_context_lengths_batch(items: Dict[str, Tuple[int, Optional[int], str]]) -> None:
+    """
+    Batch-persists model context limits in a single atomic disk write (Anara High-Throughput Standard).
+    Eliminates thousands of synchronous I/O operations and disk lock thrashing during provider model sync.
+    """
+    if not items:
         return
 
-    _DYNAMIC_CONTEXT_CACHE[key] = (length, out_cap)
-    _DYNAMIC_CONTEXT_CACHE[model.strip().lower()] = (length, out_cap)
+    doc = _get_persisted_cache_doc()
+    lengths_dict = doc.setdefault("context_lengths", {})
+    dirty = False
 
-    # Persist to persistent ANARA_HOME/cache/context_length_cache.yaml
-    try:
-        cfg_path = _get_context_cache_path()
-        current_cfg = _load_persisted_context_cache_doc()
-        lengths_dict = current_cfg.get("context_lengths") or {}
-        if lengths_dict.get(key) != length:
-            lengths_dict[key] = length
-            current_cfg["context_lengths"] = lengths_dict
+    with _CACHE_LOCK:
+        for model, (length, max_output, base_url) in items.items():
+            if not model or length <= 0:
+                continue
+            out_cap = max_output or min(65536, max(4096, int(length * _OUTPUT_RESERVE_RATIO)))
+            key = _clean_model_key(model, base_url)
+            m_lower = model.strip().lower()
+
+            _DYNAMIC_CONTEXT_CACHE[key] = (length, out_cap)
+            _DYNAMIC_CONTEXT_CACHE[m_lower] = (length, out_cap)
+
+            if lengths_dict.get(key) != length:
+                lengths_dict[key] = length
+                dirty = True
+
+        if not dirty:
+            return
+
+        try:
+            cfg_path = _get_context_cache_path()
             import yaml, tempfile
             os.makedirs(cfg_path.parent, exist_ok=True)
             tmp_fd, tmp_path = tempfile.mkstemp(dir=cfg_path.parent, prefix="ctx_cache_", suffix=".tmp")
             try:
                 with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
-                    yaml.safe_dump(current_cfg, f, default_flow_style=False)
+                    yaml.safe_dump(doc, f, default_flow_style=False)
                 os.replace(tmp_path, cfg_path)
             finally:
                 if os.path.exists(tmp_path):
@@ -200,9 +227,9 @@ def save_context_length(model: str, length: int, max_output: Optional[int] = Non
                         os.remove(tmp_path)
                     except OSError:
                         pass
-            logger.info(f"[TokenBudget] Persisted learned context window: {key} -> {length:,} tokens (out={out_cap:,})")
-    except Exception as e:
-        logger.debug(f"[TokenBudget] Cache persist notice: {e}")
+            logger.info(f"[TokenBudget] Batch persisted context cache ({len(items)} models synced).")
+        except Exception as e:
+            logger.debug(f"[TokenBudget] Batch cache persist notice: {e}")
 
 
 def get_cached_context_length(model: str, base_url: str = "") -> Optional[Tuple[int, int]]:
