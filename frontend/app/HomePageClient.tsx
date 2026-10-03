@@ -24,6 +24,13 @@ import { getDanceReplyPrompt } from "@/lib/danceDetector";
 import { mergeTranscriptText } from "@/lib/transcriptStream";
 import { restoreTranscriptFromMessages } from "@/lib/sessionRestoration";
 
+import {
+  saveInFlightSnapshot,
+  getInFlightSnapshot,
+  clearInFlightSnapshot,
+  mergeInFlightWithTranscript,
+} from "@/lib/inflightJournal";
+
 export type TranscriptEntry = TranscriptItem;
 
 export interface HomePageClientProps {
@@ -380,9 +387,11 @@ export default function HomePageClient({
         ];
       });
 
-      if (speaker === "output" && !isPartial) {
-        setAssistantStatus("idle");
-        setLiveToolProgress(null);
+      if (speaker === "output") {
+        if (!isPartial) {
+          clearInFlightSnapshot(activeSessionId);
+          setAssistantStatus("idle");
+          setLiveToolProgress(null);
 
         // If an artifact was delivered or plan completed, mark active approved plan as completed
         if (visualType === "document_viewer" || visualType === "code" || planData?.planStatus === "completed") {
@@ -402,6 +411,7 @@ export default function HomePageClient({
           );
         }
       }
+    }
 
       if (avatarRef.current) {
         if (speaker === "output") {
@@ -420,12 +430,13 @@ export default function HomePageClient({
 
   const handleInterrupted = useCallback(() => {
     if (danceActiveRef.current) return; // don't reset during dance
+    clearInFlightSnapshot(activeSessionId);
     stopAudio();
     accumulatedAiTextRef.current = "";
     avatarRef.current?.resetLipSync();
     setAssistantStatus("idle");
     setAudioIntensity(0);
-  }, [stopAudio]);
+  }, [stopAudio, activeSessionId]);
 
   const assistantStatusRef = useRef<AssistantStatus>("idle");
   useEffect(() => {
@@ -434,6 +445,7 @@ export default function HomePageClient({
 
   const handleTurnComplete = useCallback(() => {
     if (danceActiveRef.current) return; // don't reset emotion during dance
+    clearInFlightSnapshot(activeSessionId);
     accumulatedAiTextRef.current = "";
     setActiveThinkingText(null);
     // Brief 300ms buffer after speech ends before unpausing microphone
@@ -441,7 +453,7 @@ export default function HomePageClient({
       setAssistantStatus("idle");
       avatarRef.current?.setEmotion("neutral");
     }, 300);
-  }, []);
+  }, [activeSessionId]);
 
   const [latestTokenUsage, setLatestTokenUsage] = useState<any>(null);
 
@@ -461,7 +473,11 @@ export default function HomePageClient({
 
   const handleToolProgress = useCallback((payload: ToolProgressPayload) => {
     setLiveToolProgress(payload);
-  }, []);
+    saveInFlightSnapshot(activeSessionId, {
+      liveToolProgress: payload,
+      status: "thinking",
+    });
+  }, [activeSessionId]);
 
   // ── Backend Emotion & Acoustic Tone (Speech Emotion Recognition) ───────────
   const handleEmotionUpdate = useCallback((state: EmotionState) => {
@@ -489,7 +505,9 @@ export default function HomePageClient({
     if (typeof window !== "undefined") {
       localStorage.setItem("anara_active_session_id", String(payload.sessionId));
     }
-    const restored = restoreTranscriptFromMessages(payload.messages);
+    const baseRestored = restoreTranscriptFromMessages(payload.messages);
+    const inFlightSnapshot = getInFlightSnapshot(payload.sessionId);
+    const restored = mergeInFlightWithTranscript(baseRestored, inFlightSnapshot);
 
     setTranscript((prev) => {
       // Race-condition guard: ONLY protect if the user is actively waiting for an AI response to finish
@@ -503,10 +521,11 @@ export default function HomePageClient({
     });
 
     setSessionRefreshKey((k) => k + 1);
-    if (payload.inFlight) {
+    if (payload.inFlight || (inFlightSnapshot && inFlightSnapshot.status === "thinking")) {
       setAssistantStatus("thinking");
-      if (payload.liveTool) {
-        setLiveToolProgress(payload.liveTool);
+      const activeTool = payload.liveTool || inFlightSnapshot?.liveToolProgress;
+      if (activeTool) {
+        setLiveToolProgress(activeTool);
       }
     } else {
       setAssistantStatus("idle");
@@ -830,6 +849,11 @@ export default function HomePageClient({
       });
 
       avatarRef.current?.triggerTextMotion(trimmed);
+      saveInFlightSnapshot(activeSessionId, {
+        userPrompt: trimmed,
+        status: "thinking",
+        streamingText: "",
+      });
       sendJSON({
         type: "text_input",
         text: trimmed,

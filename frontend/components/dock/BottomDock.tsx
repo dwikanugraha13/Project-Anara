@@ -174,6 +174,31 @@ export default function BottomDock({
     return () => observer.disconnect();
   }, [onHeightChange]);
 
+  // ── Session Draft Stashing (Anara Standard) ──
+  const prevSessionIdRef = useRef<number | null>(activeSessionId);
+  useEffect(() => {
+    if (prevSessionIdRef.current !== activeSessionId) {
+      if (prevSessionIdRef.current) {
+        try {
+          if (inputMessage.trim()) {
+            sessionStorage.setItem(`anara_composer_draft_${prevSessionIdRef.current}`, inputMessage);
+          } else {
+            sessionStorage.removeItem(`anara_composer_draft_${prevSessionIdRef.current}`);
+          }
+        } catch {}
+      }
+      if (activeSessionId) {
+        try {
+          const stashed = sessionStorage.getItem(`anara_composer_draft_${activeSessionId}`);
+          if (stashed !== null) {
+            setInputMessage(stashed);
+          }
+        } catch {}
+      }
+      prevSessionIdRef.current = activeSessionId;
+    }
+  }, [activeSessionId, inputMessage, setInputMessage]);
+
   const handleFormSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!inputMessage.trim() && attachedFiles.length === 0) return;
@@ -183,6 +208,12 @@ export default function BottomDock({
       pushHistory(textToSend);
     }
     resetHistoryIndex();
+
+    if (activeSessionId) {
+      try {
+        sessionStorage.removeItem(`anara_composer_draft_${activeSessionId}`);
+      } catch {}
+    }
 
     onSend(inputMessage, agentMode);
     setInputMessage("");

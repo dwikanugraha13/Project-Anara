@@ -4,3 +4,9 @@
 - [2026-09-15] Mode percakapan santai di Anara AI (/) berjalan bebas friksi (conversational), dengan proteksi plan mode otomatis jika memicu aksi mutating/berisiko.
 - [2026-09-27] Persona dan gaya komunikasi Anara dikunci ke Bahasa Gaul santai (lu-gue, asik, ekspresif, anti-kaku).
 - [2026-10-03] On Windows, always run tests using the Python executable from `backend/venv` (`backend/venv/Scripts/python.exe run_tests.py`) instead of the global Python interpreter, as global Python lacks required dependencies.
+- [2026-10-03] Anara Frontend Orchestrator Architecture:
+  - Transport: WebSocket-based with exponential backoff reconnect, heartbeat ping/pong.
+  - In-flight turn journal: localStorage/sessionStorage backed with active turn folding and cross-channel sync.
+  - Message dispatch covers: audio chunks, transcript streaming, emotion, HUD visuals, media, session sync, tool progress, interactive questions.
+  - Session management: Dual-identity SQLite id and canonical session_key with optimistic CRUD and brain-sync event bus.
+  - Composer: Scoped draft stashing, automatic blob URL lifecycle revocation, and status stack coordination.
