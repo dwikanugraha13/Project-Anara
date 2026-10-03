@@ -73,25 +73,72 @@ If nothing is worth saving or patching, return:
 """
 
 
+def _repair_truncated_json(s: str) -> str:
+    """Auto-repairs truncated JSON output (unclosed quotes, dangling colons, unclosed arrays/objects)."""
+    in_string = False
+    escape = False
+    for ch in s:
+        if ch == "\\" and not escape:
+            escape = True
+            continue
+        if ch == '"' and not escape:
+            in_string = not in_string
+        escape = False
+    if in_string:
+        s += '"'
+
+    s = s.rstrip(" \t\r\n,")
+    if s.endswith(":"):
+        s += " []"
+
+    stack = []
+    escape = False
+    in_string = False
+    for ch in s:
+        if ch == "\\" and not escape:
+            escape = True
+            continue
+        if ch == '"' and not escape:
+            in_string = not in_string
+        if not in_string:
+            if ch in ("{", "["):
+                stack.append(ch)
+            elif ch == "}":
+                if stack and stack[-1] == "{":
+                    stack.pop()
+            elif ch == "]":
+                if stack and stack[-1] == "[":
+                    stack.pop()
+        escape = False
+
+    s = s.rstrip(" \t\r\n,")
+    for opener in reversed(stack):
+        if opener == "{":
+            s += "}"
+        elif opener == "[":
+            s += "]"
+    return s
+
+
 def _extract_review_json(text: str) -> Optional[Dict[str, Any]]:
     if not text:
         return None
     cleaned = text.strip()
+    if cleaned.lower().startswith("```json"):
+        cleaned = cleaned[7:].strip()
+    elif cleaned.lower().startswith("```"):
+        cleaned = cleaned[3:].strip()
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3].strip()
     if cleaned.lower().startswith("json"):
         cleaned = cleaned[4:].strip()
-
-    # If outer object braces were stripped, re-wrap before looking for braces
-    if not cleaned.startswith("{") and ("memory_actions" in cleaned or "skill_actions" in cleaned):
-        cleaned = "{" + cleaned.rstrip(" ,;}") + "}"
-        if cleaned.endswith('"skill_actions":}'):
-            cleaned = cleaned[:-1] + " []}"
 
     start = cleaned.find("{")
     if start == -1:
         return None
     candidate = cleaned[start:].strip()
 
-    # Try standard json parse first
+    # 1. Try standard parse first
     try:
         data = json.loads(candidate)
         if isinstance(data, dict):
@@ -99,19 +146,16 @@ def _extract_review_json(text: str) -> Optional[Dict[str, Any]]:
     except Exception:
         pass
 
-    # Try candidate auto-closing
-    if candidate.endswith('"skill_actions":'):
-        candidate += " []}"
-    elif candidate.count("{") > candidate.count("}"):
-        candidate = candidate.rstrip(" ,;") + ("}" * (candidate.count("{") - candidate.count("}")))
-
+    # 2. Try robust repair of truncated JSON (unclosed strings, lists, objects)
     try:
-        data = json.loads(candidate)
+        repaired = _repair_truncated_json(candidate)
+        data = json.loads(repaired)
         if isinstance(data, dict):
             return data
     except Exception:
         pass
 
+    # 3. Fallback to balanced extractor
     from providers.caller import _robust_parse_json, _extract_json_balanced
     for cand, _, _ in _extract_json_balanced(candidate):
         p = _robust_parse_json(cand)

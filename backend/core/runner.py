@@ -505,10 +505,22 @@ class AnaraExecutionRunner:
         # Lifelong Learning & Background Self-Improvement Review (Anara Standard)
         try:
             from core.self_improvement import self_improvement_reviewer
+            from shared_state import broadcast_agent_event
+            async def _web_receipt_cb(receipt_text: str):
+                try:
+                    broadcast_agent_event({
+                        "type": "self_improvement_receipt",
+                        "receipt": receipt_text,
+                        "sessionId": effective_sid,
+                    })
+                except Exception:
+                    pass
+
             asyncio.create_task(self_improvement_reviewer.run_review_async(
                 user_prompt=clean_text,
                 ai_response=final_reply,
                 tools_used=tools_used,
+                summary_callback=_web_receipt_cb,
             ))
         except Exception:
             pass
