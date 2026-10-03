@@ -17,12 +17,12 @@ export interface CodeStudioHeaderProps {
   sessionDropdownRef: React.RefObject<HTMLDivElement | null>;
   handleSelectSession: (id: number) => void;
   handleNewSession: () => void;
-  isLeftOpen: boolean;
-  setIsLeftOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  isTerminalOpen: boolean;
-  setIsTerminalOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  isRightOpen: boolean;
-  setIsRightOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  isLeftOpen?: boolean;
+  setIsLeftOpen?: React.Dispatch<React.SetStateAction<boolean>>;
+  isTerminalOpen?: boolean;
+  setIsTerminalOpen?: React.Dispatch<React.SetStateAction<boolean>>;
+  isRightOpen?: boolean;
+  setIsRightOpen?: React.Dispatch<React.SetStateAction<boolean>>;
   setIsBrainDrawerOpen: (v: boolean) => void;
 }
 
@@ -165,60 +165,6 @@ export function CodeStudioHeader({
           </svg>
           <span>New</span>
         </button>
-      </div>
-
-      {/* Right Side: View Toggles, 3D Companion Link, and Brain */}
-      <div className="flex items-center gap-2 shrink-0">
-        {/* View Toggles: Explorer, Terminal & Agent */}
-        <div className="flex items-center p-0.5 rounded-md bg-white/[0.03] border border-white/[0.08] text-xs font-mono">
-          <button
-            type="button"
-            onClick={() => setIsLeftOpen((v) => !v)}
-            className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-all cursor-pointer ${
-              isLeftOpen ? "bg-white/10 text-white font-medium shadow-sm" : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
-            }`}
-            title="Toggle File Explorer (Sidebar)"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
-            <span className="hidden md:inline text-[11px]">Explorer</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setIsTerminalOpen((v) => {
-                try {
-                  localStorage.setItem("anara_studio_term_open", String(!v));
-                  document.cookie = `anara_studio_term_open=${!v}; path=/; max-age=31536000; SameSite=Lax`;
-                } catch {}
-                return !v;
-              });
-            }}
-            className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-all cursor-pointer ${
-              isTerminalOpen ? "bg-white/10 text-white font-medium shadow-sm" : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
-            }`}
-            title="Toggle Integrated Terminal"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <span className="hidden md:inline text-[11px]">Terminal</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsRightOpen((v) => !v)}
-            className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-all cursor-pointer ${
-              isRightOpen ? "bg-cyan-500/20 text-cyan-200 font-semibold border border-cyan-400/30 shadow-sm" : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
-            }`}
-            title="Toggle Anara Agent Console"
-          >
-            <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-            <span className="hidden md:inline text-[11px]">Agent</span>
-          </button>
-        </div>
       </div>
     </header>
   );
