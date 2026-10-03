@@ -177,7 +177,9 @@ async def _telegram_api_post(
     url = f"{TELEGRAM_API_BASE}/bot{token}/{endpoint}"
     for attempt in range(max_retries):
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            from integrations.telegram.network import get_telegram_transport
+            transport = await get_telegram_transport()
+            async with httpx.AsyncClient(transport=transport, timeout=timeout) as client:
                 res = await client.post(url, json=payload)
                 status_code = res.status_code
                 try:
