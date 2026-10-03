@@ -456,3 +456,16 @@ async def connect_mcp_servers_endpoint():
         logger.error(f"[BrainRouter] MCP connect error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/api/brain/learning-graph")
+async def get_learning_graph_endpoint():
+    """Returns the unified learning topology graph (skills + fingerprinted memory nodes + lexical edges)."""
+    try:
+        from core.learning_graph import assemble_learning_graph
+        graph = assemble_learning_graph()
+        return {"status": "success", "graph": graph}
+    except Exception as e:
+        logger.error(f"[BrainRouter] Learning graph assembly error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+

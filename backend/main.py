@@ -136,6 +136,29 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[Startup] Autonomous engine init error: {e}")
 
+    # Initialize Persistent Delivery Ledger and Recover Orphaned Outbox Messages
+    try:
+        from core.delivery_ledger import init_delivery_ledger_table, sweep_recoverable
+        init_delivery_ledger_table()
+        recovered = sweep_recoverable()
+        if recovered:
+            logger.info(f"[Startup] Found {len(recovered)} unacknowledged delivery obligation(s) from prior session.")
+            for item in recovered:
+                if item.get("channel") == "telegram" and item.get("target_id"):
+                    try:
+                        from integrations.telegram.client import send_telegram_message
+                        t_id = str(item["target_id"])
+                        t_content = str(item.get("display_content") or item.get("content") or "")
+                        if t_content:
+                            t_rec = asyncio.create_task(send_telegram_message(text=t_content, chat_id=t_id))
+                            _background_tasks.add(t_rec)
+                            t_rec.add_done_callback(_background_tasks.discard)
+                            logger.info(f"[Startup] Replaying recovered delivery obligation to Telegram chat {t_id}")
+                    except Exception as replay_err:
+                        logger.warning(f"[Startup] Replay error: {replay_err}")
+    except Exception as e:
+        logger.warning(f"[Startup] Delivery ledger init error: {e}")
+
     # Start WhatsApp local bridge daemon
     try:
         from integrations.whatsapp import start_whatsapp_bridge, stop_whatsapp_bridge

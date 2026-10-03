@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 _telegram_daemon_task: Optional[asyncio.Task] = None
 _telegram_daemon_running: bool = False
 _last_update_id: int = 0
+_active_polling_tasks: set[asyncio.Task] = set()
 
 
 async def _telegram_polling_worker():
@@ -71,7 +72,9 @@ async def _telegram_polling_worker():
                             up_id = u.get("update_id", 0)
                             if up_id > _last_update_id:
                                 _last_update_id = up_id
-                            asyncio.create_task(process_incoming_telegram_update(u))
+                            t = asyncio.create_task(process_incoming_telegram_update(u))
+                            _active_polling_tasks.add(t)
+                            t.add_done_callback(_active_polling_tasks.discard)
                 elif res.status_code == 409:
                     logger.warning("[TelegramDaemon] Conflict: another bot instance is polling. Waiting 20s.")
                     await asyncio.sleep(20.0)

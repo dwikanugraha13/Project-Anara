@@ -653,7 +653,20 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                 else:
                     await send_telegram_message(text=res.text, chat_id=chat_id, reply_markup=markup)
             elif res.text and should_send_text:
-                await send_telegram_message(text=res.text, chat_id=chat_id, reply_markup=res.reply_markup)
+                from core.delivery_ledger import record_obligation, mark_attempting, mark_delivered, mark_failed
+                obl_id = record_obligation(
+                    session_key=f"telegram_{chat_id}",
+                    channel="telegram",
+                    target_id=str(chat_id),
+                    content=res.text,
+                )
+                mark_attempting(obl_id)
+                try:
+                    await send_telegram_message(text=res.text, chat_id=chat_id, reply_markup=res.reply_markup)
+                    mark_delivered(obl_id)
+                except Exception as s_err:
+                    mark_failed(obl_id, str(s_err))
+                    raise s_err
         except asyncio.CancelledError:
             await status_tracker.cleanup()
             logger.info(f"[TelegramDaemon] Chat {chat_id} task was cancelled or superseded.")
