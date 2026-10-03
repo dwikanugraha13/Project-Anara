@@ -127,7 +127,7 @@ export default function AnaraBrain({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 lg:p-6 bg-black/75 backdrop-blur-xl pointer-events-auto animate-fade-in select-none"
+      className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-5 lg:p-6 bg-black/75 backdrop-blur-xl pointer-events-auto animate-fade-in select-none"
       onClick={onClose}
     >
       {/* Restrained Ambient Radial Sheen (Zero GPU Thrashing, Pure Obsidian) */}

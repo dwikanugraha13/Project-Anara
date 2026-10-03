@@ -16,15 +16,11 @@ import { getSavedReasoningEffortForModel, resolveSiblingTierModelId } from "@/li
 import type { AnaraCodeIDEProps } from "../ide/AnaraCodeIDE";
 import CommandPalette, { CommandItem } from "../command/CommandPalette";
 import { useLayoutSplitter } from "@/hooks/useLayoutSplitter";
+import ArtifactsGalleryModal from "../artifacts/ArtifactsGalleryModal";
 
 const AnaraCodeIDE = dynamic<AnaraCodeIDEProps>(() => import("../ide/AnaraCodeIDE"), {
   ssr: false,
 });
-
-const ArtifactsGalleryModal = dynamic(
-  () => import("../artifacts/ArtifactsGalleryModal"),
-  { ssr: false }
-);
 
 const WorkbenchTerminal = dynamic(() => import("../ide/WorkbenchTerminal"), {
   ssr: false,
