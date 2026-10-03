@@ -242,7 +242,21 @@ def _parse_openai_compatible_native_payload(
                     if ch0.get("finish_reason"):
                         finish_reason = ch0["finish_reason"]
                     delta = ch0.get("delta") or ch0.get("message") or {}
-                    c_txt = delta.get("content") or delta.get("reasoning_content") or delta.get("thought") or ""
+                    r_txt = delta.get("reasoning_content") or delta.get("thought") or ""
+                    c_txt = delta.get("content") or ""
+                    if r_txt:
+                        wrapped_r = f"<thought>{r_txt}</thought>"
+                        text_parts.append(wrapped_r)
+                        if token_cb:
+                            r = token_cb(wrapped_r)
+                            if asyncio.iscoroutine(r):
+                                try:
+                                    loop = asyncio.get_running_loop()
+                                    t = loop.create_task(r)
+                                    _BG_TASKS.add(t)
+                                    t.add_done_callback(_BG_TASKS.discard)
+                                except RuntimeError:
+                                    pass
                     if c_txt:
                         text_parts.append(c_txt)
                         if token_cb:
@@ -334,9 +348,11 @@ def _parse_openai_compatible_native_payload(
         msg = choice.get("message", {})
         text = msg.get("content") or ""
         reasoning = msg.get("reasoning_content") or msg.get("thought") or msg.get("reasoning") or ""
-        if not text.strip() and reasoning.strip():
-            logger.info(f"[OpenAICompatibleProfile] Promoting reasoning ({len(reasoning)} chars) to final text response.")
-            text = reasoning.strip()
+        if reasoning.strip():
+            if text.strip():
+                text = f"<thought>{reasoning.strip()}</thought>\n\n{text}"
+            else:
+                text = f"<thought>{reasoning.strip()}</thought>"
         if token_cb and text:
             r = token_cb(text)
             if asyncio.iscoroutine(r):
