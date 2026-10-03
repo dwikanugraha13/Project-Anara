@@ -884,7 +884,22 @@ async def _execute_json_agent_loop(
                     pass
             final_text = cleaned_text or (last_response.strip() if '"action": "tool_call"' not in last_response else "")
             if not final_text:
-                final_text = _format_empty_model_notice(user_prompt)
+                # Anara Turn Recovery: Extract recent tool observations to construct honest, informative report
+                recent_obs = []
+                for m in reversed(messages):
+                    if isinstance(m, dict) and m.get("role") in ("tool", "user"):
+                        c = str(m.get("content", "")).strip()
+                        if "[OBSERVATION]" in c or "[TOOL RESULT]" in c or "success" in c.lower() or "exit_code" in c.lower():
+                            lines = [ln.strip() for ln in c.splitlines() if ln.strip() and not ln.startswith(("[OBSERVATION]", "[TOOL RESULT]"))]
+                            if lines:
+                                recent_obs.append(lines[0][:150])
+                        if len(recent_obs) >= 2:
+                            break
+                if recent_obs:
+                    obs_detail = "\n".join(f"• {obs}" for obs in reversed(recent_obs))
+                    final_text = f"Tugas selesai dijalankan. Observasi:\n{obs_detail}"
+                else:
+                    final_text = _format_empty_model_notice(user_prompt)
             if token_cb and not accumulated_narrative and final_text:
                 res = token_cb(final_text)
                 if asyncio.iscoroutine(res):
