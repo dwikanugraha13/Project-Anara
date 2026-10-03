@@ -243,7 +243,7 @@ async def send_telegram_message(
     # ── 1. SEMANTIC CHUNKING (Threshold: 2000 chars for safe HTML expansion & zero message truncation) ──
     CHUNK_LIMIT = 2000
     if len(text) > CHUNK_LIMIT:
-        parts = split_message_chunks(text, max_chars=CHUNK_LIMIT, add_part_headers=True)
+        parts = split_message_chunks(text, max_chars=CHUNK_LIMIT, add_part_headers=False)
         if len(parts) > 1:
             logger.info(f"[TelegramClient] Splitting message ({len(text)} chars) into {len(parts)} parts for chat {target_chat}")
             last_res: Dict[str, Any] = {"status": "ok", "chunks_sent": len(parts)}

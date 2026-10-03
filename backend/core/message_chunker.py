@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional, List
 
 PLATFORM_MESSAGE_LIMITS: Dict[str, int] = {
     "discord": 1950,
-    "telegram": 2000,
+    "telegram": 3900,
     "whatsapp": 3500,
     "slack": 3500,
     "cli": 32000,
@@ -154,7 +154,7 @@ def _format_tool_progress_message(evt: Dict[str, Any]) -> str:
 def split_message_chunks(
     text: str,
     max_chars: Optional[int] = None,
-    add_part_headers: bool = True,
+    add_part_headers: bool = False,
     platform: Optional[str] = None
 ) -> List[str]:
     """
