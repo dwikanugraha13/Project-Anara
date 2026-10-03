@@ -333,32 +333,18 @@ class ConvergenceDetector:
 
         # 3. Information Saturation (repeated inspection of already-inspected entities)
         if self.redundant_inspections >= 4:
-            if not self.read_only:
-                # In build mode, give a firm transition nudge without stripping tools prematurely
-                default_sat = (
-                    "[SATURATION NOTICE]: You have gathered all necessary context. "
-                    "Stop calling read/inspection tools and invoke editing tools (edit_file, write_local_file) now."
-                )
-                return ConvergenceStatus(
-                    is_converged=False,
-                    should_nudge=True,
-                    guidance=g_cfg.get("saturation_notice", default_sat),
-                    reason="diminishing_returns",
-                    phase=self.phase
-                )
-            else:
-                logger.info(f"[Convergence] Information saturation detected ({self.redundant_inspections} redundant inspections). Triggering convergence.")
-                default_sat = (
-                    "[INFORMATION SATURATION]: You have repeatedly examined the same workspace targets without uncovering new data. "
-                    "Conclude your turn now and deliver your complete findings or solution to the user."
-                )
-                return ConvergenceStatus(
-                    is_converged=True,
-                    should_nudge=True,
-                    guidance=g_cfg.get("information_saturation", default_sat),
-                    reason="information_saturated",
-                    phase=self.phase
-                )
+            logger.info(f"[Convergence] Information saturation detected ({self.redundant_inspections} redundant inspections). Triggering convergence.")
+            default_sat = (
+                "[INFORMATION SATURATION]: You have repeatedly examined the same workspace targets without uncovering new data. "
+                "Conclude your turn now and deliver your complete findings or solution to the user."
+            )
+            return ConvergenceStatus(
+                is_converged=True,
+                should_nudge=True,
+                guidance=g_cfg.get("information_saturation", default_sat),
+                reason="information_saturated",
+                phase=self.phase
+            )
         elif self.redundant_inspections >= 2:
             default_sat_n = (
                 "[SATURATION NOTICE]: You are inspecting files or targets you have already reviewed. "
