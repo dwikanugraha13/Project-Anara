@@ -623,13 +623,14 @@ async def _process_channel_request_core(
                     pass
         if progress_callback:
             msg = _format_tool_progress_message(evt)
-            try:
-                if asyncio.iscoroutinefunction(progress_callback):
-                    asyncio.create_task(progress_callback(msg))
-                else:
-                    progress_callback(msg)
-            except Exception:
-                pass
+            if msg:
+                try:
+                    if asyncio.iscoroutinefunction(progress_callback):
+                        asyncio.create_task(progress_callback(msg))
+                    else:
+                        progress_callback(msg)
+                except Exception:
+                    pass
         try:
             from telemetry.event_bus import telemetry_bus, EventType, ActivityProvenance
             asyncio.create_task(

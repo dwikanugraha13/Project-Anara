@@ -69,13 +69,22 @@ class TelegramStatusTracker:
         if not line:
             return
 
+        import re
         # Filter out generic initial placeholder text from bubble lines
         if any(ph in line.lower() for ph in ("analyzing request", "reasoning & planning", "formulating steps")):
             return
 
-        # Avoid immediate duplicate lines
-        if self.progress_lines and self.progress_lines[-1] == line:
-            return
+        # Deduplicate consecutive repeat lines matching reference gateway: e.g. append (×2), (×3)
+        if self.progress_lines:
+            last = self.progress_lines[-1]
+            base_last = re.sub(r"\s+\(×\d+\)$", "", last)
+            if base_last == line:
+                match = re.search(r"\(×(\d+)\)$", last)
+                count = int(match.group(1)) + 1 if match else 2
+                self.progress_lines[-1] = f"{base_last} (×{count})"
+                async with self._lock:
+                    await self._sync_bubble_locked()
+                return
 
         self.progress_lines.append(line)
 
