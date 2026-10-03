@@ -222,7 +222,7 @@ export function CodeStudioHeader({
           </button>
         </div>
 
-        {/* Connected Segmented Tab Control [SESSIONS | BOTS | CODE] with CODE active */}
+        {/* Connected Segmented Tab Control [SESSIONS | CODE | BOTS] with CODE active */}
         <div className="relative flex items-center p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.08] backdrop-blur-md font-mono text-xs">
           <Link
             href={activeSessionId ? `/?session_id=${activeSessionId}` : "/"}
@@ -231,15 +231,6 @@ export function CodeStudioHeader({
           >
             SESSIONS
           </Link>
-
-          <button
-            type="button"
-            onClick={() => setIsBrainDrawerOpen(true)}
-            className="relative z-10 px-2.5 py-1 text-[11px] font-semibold tracking-wider text-slate-400 hover:text-white transition-colors cursor-pointer"
-            title="Open Brain & Model Settings"
-          >
-            BOTS
-          </button>
 
           <div
             className="relative z-10 px-2.5 py-1 text-[11px] font-bold tracking-wider text-cyan-300 rounded-[6px] bg-gradient-to-r from-cyan-500/20 via-blue-500/15 to-cyan-500/20 border border-cyan-400/35 shadow-[0_0_12px_rgba(34,211,238,0.2)] flex items-center gap-1.5"
@@ -250,6 +241,15 @@ export function CodeStudioHeader({
             </svg>
             <span>CODE</span>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setIsBrainDrawerOpen(true)}
+            className="relative z-10 px-2.5 py-1 text-[11px] font-semibold tracking-wider text-slate-400 hover:text-white transition-colors cursor-pointer"
+            title="Open Brain & Model Settings"
+          >
+            BOTS
+          </button>
         </div>
       </div>
     </header>

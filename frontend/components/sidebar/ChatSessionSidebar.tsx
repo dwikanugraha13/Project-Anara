@@ -606,22 +606,7 @@ export default function ChatSessionSidebar({
             <span>SESSIONS</span>
           </button>
 
-          {/* Tab 2: BOTS */}
-          <button
-            ref={botsTabRef}
-            type="button"
-            onClick={() => {
-              updateTabIndicator("bots");
-              if (onOpenBrain) onOpenBrain();
-              setTimeout(() => updateTabIndicator("sessions"), 250);
-            }}
-            className="relative z-10 px-2.5 py-1 text-[11px] font-semibold tracking-wider text-slate-400 hover:text-slate-200 transition-colors duration-200 cursor-pointer flex items-center gap-1.5"
-            title="Bot Profiles & Models"
-          >
-            <span>BOTS</span>
-          </button>
-
-          {/* Tab 3: CODE */}
+          {/* Tab 2: CODE */}
           <button
             ref={codeTabRef}
             type="button"
@@ -637,6 +622,21 @@ export default function ChatSessionSidebar({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
             </svg>
             <span>CODE</span>
+          </button>
+
+          {/* Tab 3: BOTS */}
+          <button
+            ref={botsTabRef}
+            type="button"
+            onClick={() => {
+              updateTabIndicator("bots");
+              if (onOpenBrain) onOpenBrain();
+              setTimeout(() => updateTabIndicator("sessions"), 250);
+            }}
+            className="relative z-10 px-2.5 py-1 text-[11px] font-semibold tracking-wider text-slate-400 hover:text-slate-200 transition-colors duration-200 cursor-pointer flex items-center gap-1.5"
+            title="Bot Profiles & Models"
+          >
+            <span>BOTS</span>
           </button>
         </div>
 
