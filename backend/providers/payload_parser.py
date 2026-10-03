@@ -111,6 +111,21 @@ def _strip_think_blocks(text: str) -> str:
     return text.strip()
 
 
+def _extract_think_blocks(text: str) -> Tuple[str, str]:
+    """
+    Extracts thoughts/reasoning blocks and clean response text from raw model output.
+    Returns: (clean_text, reasoning_text)
+    """
+    if not text:
+        return ("", "")
+    tag_pattern = "|".join(re.escape(name) for name in THINK_TAG_NAMES)
+    pattern = rf"(?is)<(?:{tag_pattern})\b[^>]*>([\s\S]*?)</(?:{tag_pattern})>"
+    thoughts = re.findall(pattern, text)
+    reasoning_text = "\n\n".join(t.strip() for t in thoughts if t.strip())
+    clean = _strip_think_blocks(text)
+    return (clean, reasoning_text)
+
+
 def _clean_model_chat_text(raw_text: str) -> str:
     """
     Cleans model chat responses by removing markdown tool-call fences,

@@ -272,6 +272,44 @@ async def _enrich_message_with_vision(user_text: str, attachments: List[Dict[str
     return f"{prefix}\n\n{user_text}" if user_text else prefix
 
 
+def prepend_reasoning_block(response: str, reasoning: str, channel: str = "telegram") -> str:
+    """
+    Prepends the formatted reasoning block to the final response matching the reference gateway standard:
+    e.g.
+    💭 **Reasoning:**
+    ```
+    The user wants a repo check...
+    ```
+
+    {response}
+    """
+    from config import cfg_get
+    show_reasoning = cfg_get("display.show_reasoning", True)
+    if not show_reasoning or not reasoning or not reasoning.strip():
+        return response
+
+    cleaned = reasoning.strip()
+    lines = cleaned.splitlines()
+    if len(lines) > 20:
+        display_reasoning = "\n".join(lines[:20]) + f"\n... ({len(lines) - 20} more lines)"
+    else:
+        display_reasoning = cleaned
+
+    # Escape fences inside reasoning so they don't break the outer code block
+    display_reasoning = display_reasoning.replace("```", "'''")
+
+    reasoning_style = cfg_get("display.reasoning_style", "code")
+    if reasoning_style == "blockquote" or channel == "whatsapp":
+        quoted = "\n".join(f"> {ln}" if ln.strip() else ">" for ln in display_reasoning.splitlines())
+        return f"💭 *Reasoning:*\n{quoted}\n\n{response}"
+    elif reasoning_style == "subtext" or channel == "discord":
+        quoted = "\n".join(f"-# {ln}" if ln.strip() else "-#" for ln in display_reasoning.splitlines())
+        return f"-# 💭 **Reasoning:**\n{quoted}\n\n{response}"
+    else:
+        # Default: Telegram / standard markdown code fence
+        return f"💭 **Reasoning:**\n```\n{display_reasoning}\n```\n\n{response}"
+
+
 async def _process_channel_request_core(
     req: ChannelRequest,
     progress_callback: Optional[Callable[[str], Any]] = None,
@@ -604,8 +642,15 @@ async def _process_channel_request_core(
         sys_prompt += f"\n\n{nudge_instruction}"
 
     tools_used: List[str] = []
+    last_reasoning_chunks: List[str] = []
 
     def _track_tool(evt: Dict[str, Any]):
+        if evt.get("type") == "thought":
+            t_thought = evt.get("thought") or evt.get("content") or ""
+            if t_thought:
+                last_reasoning_chunks.append(t_thought)
+            return
+
         t_name = evt.get("tool_name")
         if t_name and t_name not in tools_used:
             tools_used.append(t_name)
@@ -839,6 +884,10 @@ async def _process_channel_request_core(
                         cleaned = ""
                 final_reply = (cleaned or _format_empty_model_notice(clean_text)).strip()
         else:
+            from providers.payload_parser import _extract_think_blocks
+            _, think_part = _extract_think_blocks(reply)
+            if think_part:
+                last_reasoning_chunks.append(think_part)
             final_reply = _clean_model_chat_text(reply) or reply.strip()
     else:
         # Dynamic model fallback instead of static canned apology
@@ -855,6 +904,11 @@ async def _process_channel_request_core(
             final_reply = ""
         if not final_reply or not final_reply.strip():
             final_reply = _format_empty_model_notice(clean_text)
+
+    # Prepend Reasoning block if reasoning was produced
+    accumulated_reasoning = "\n\n".join(c for c in last_reasoning_chunks if c.strip()).strip()
+    if accumulated_reasoning:
+        final_reply = prepend_reasoning_block(final_reply, accumulated_reasoning, channel=req.channel)
 
     # Extract native MEDIA: and [[audio_as_voice]] directives (Anara Omnichannel Standard)
     final_reply = await _extract_and_dispatch_media_tags(req.channel, req.channel_id, final_reply)

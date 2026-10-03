@@ -112,8 +112,15 @@ async def execute_build_mode_core(
     )
 
     tools_used: List[str] = []
+    last_reasoning_chunks: List[str] = []
 
     def _track_tool(evt: Dict[str, Any]):
+        if evt.get("type") == "thought":
+            t_thought = evt.get("thought") or evt.get("content") or ""
+            if t_thought:
+                last_reasoning_chunks.append(t_thought)
+            return
+
         t_name = evt.get("tool_name")
         if t_name and t_name not in tools_used:
             tools_used.append(t_name)
@@ -234,7 +241,10 @@ async def execute_build_mode_core(
     )
 
     if isinstance(reply, str):
-        from providers.caller import _clean_model_chat_text
+        from providers.payload_parser import _clean_model_chat_text, _extract_think_blocks
+        _, think_part = _extract_think_blocks(reply)
+        if think_part:
+            last_reasoning_chunks.append(think_part)
         cleaned = _clean_model_chat_text(reply)
         if not cleaned or '"action": "tool_call"' in cleaned or '<tool_call>' in cleaned:
             try:
@@ -253,6 +263,12 @@ async def execute_build_mode_core(
             final_reply = cleaned
     else:
         final_reply = str(reply) if reply else f"Completed action '{resolved_task}'."
+
+    # Prepend Reasoning block if reasoning was produced
+    accumulated_reasoning = "\n\n".join(c for c in last_reasoning_chunks if c.strip()).strip()
+    if accumulated_reasoning:
+        from core.channel_adapter import prepend_reasoning_block
+        final_reply = prepend_reasoning_block(final_reply, accumulated_reasoning, channel=req.channel)
 
     # Extract native MEDIA: and [[audio_as_voice]] directives (Anara Omnichannel Standard)
     final_reply = await _extract_and_dispatch_media_tags(req.channel, req.channel_id, final_reply)
