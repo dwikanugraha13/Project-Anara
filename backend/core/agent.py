@@ -120,7 +120,8 @@ class AnaraAgent:
                 sess = memory_engine.get_session(effective_sid)
                 if sess and sess.get("workspace_info"):
                     stored_path = sess["workspace_info"].get("root_path")
-                    if stored_path and os.path.isdir(stored_path):
+                    is_ext = sess["workspace_info"].get("is_external", False)
+                    if stored_path and is_ext and os.path.isdir(stored_path):
                         return True
             except Exception:
                 pass
@@ -142,7 +143,8 @@ class AnaraAgent:
                 sess = memory_engine.get_session(effective_sid)
                 if sess and sess.get("workspace_info"):
                     stored_path = sess["workspace_info"].get("root_path")
-                    if stored_path and os.path.isdir(stored_path):
+                    is_ext = sess["workspace_info"].get("is_external", False)
+                    if stored_path and is_ext and os.path.isdir(stored_path):
                         self._session_active_paths[effective_sid] = stored_path
                         name = sess["workspace_info"].get("name")
                         if name:
