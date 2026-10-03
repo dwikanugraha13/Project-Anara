@@ -560,6 +560,82 @@ async def _handle_cmd_plan(ctx: UniversalCommandContext) -> UniversalCommandResp
     )
 
 
+@command_hub.register(
+    name="reset",
+    description="Resets the current conversation memory in-place without changing session ID.",
+    usage="/reset",
+    aliases=["restart"]
+)
+async def _handle_cmd_reset(ctx: UniversalCommandContext) -> UniversalCommandResponse:
+    if ctx.session_id:
+        memory_engine.clear_session_messages(ctx.session_id)
+        return UniversalCommandResponse(text="🔄 <b>Session Reset</b>: Riwayat percakapan sesi ini telah dibersihkan kembali ke status awal.")
+    return UniversalCommandResponse(text="⚠️ <b>Reset</b>: Tidak ada sesi aktif yang terikat.")
+
+
+@command_hub.register(
+    name="compress",
+    description="Manually triggers context window compaction on the active session history.",
+    usage="/compress",
+    aliases=["compact"]
+)
+async def _handle_cmd_compress(ctx: UniversalCommandContext) -> UniversalCommandResponse:
+    if not ctx.session_id:
+        return UniversalCommandResponse(text="⚠️ <b>Compress</b>: Tidak ada sesi aktif.")
+    from core.context_compactor import ContextCompactor, estimate_tokens
+    msgs = memory_engine.get_session_messages(ctx.session_id)
+    if len(msgs) <= 4:
+        return UniversalCommandResponse(text=f"ℹ️ <b>Compress</b>: Sesi ini baru memiliki {len(msgs)} pesan, belum memerlukan pemangkasan konteks.")
+    compacted_str = ContextCompactor.compact_history(msgs, verbatim_turns=4)
+    orig_chars = sum(len(str(m.get("content", ""))) for m in msgs)
+    orig_tokens = estimate_tokens(" ".join(str(m.get("content", "")) for m in msgs))
+    comp_tokens = estimate_tokens(compacted_str)
+    reduction = max(0.0, (1.0 - (comp_tokens / max(orig_tokens, 1))) * 100.0)
+    return UniversalCommandResponse(
+        text=f"🗜️ <b>Context Compaction Complete</b>\n\n• <b>Turn History:</b> {len(msgs)} messages processed\n• <b>Original Tokens:</b> ~{orig_tokens:,}\n• <b>Compacted Tokens:</b> ~{comp_tokens:,}\n• <b>Efficiency Gain:</b> {reduction:.1f}% reduction"
+    )
+
+
+@command_hub.register(
+    name="diff",
+    description="Inspects uncommitted git modifications in the active workspace.",
+    usage="/diff"
+)
+async def _handle_cmd_diff(ctx: UniversalCommandContext) -> UniversalCommandResponse:
+    import subprocess
+    try:
+        proc = subprocess.run(
+            ["git", "diff", "--stat"],
+            capture_output=True,
+            text=True,
+            timeout=5.0
+        )
+        out = (proc.stdout or "").strip()
+        if not out:
+            return UniversalCommandResponse(text="🌿 <b>Working Tree Clean</b>: Tidak ada perubahan berkas yang belum di-commit.")
+        return UniversalCommandResponse(text=f"📝 <b>Workspace Git Diff</b>:\n<pre><code>{html.escape(out[:1500])}</code></pre>")
+    except Exception as e:
+        return UniversalCommandResponse(text=f"⚠️ <b>Git Diff Error</b>: {html.escape(str(e))}")
+
+
+@command_hub.register(
+    name="branch",
+    description="Forks the active session into a new independent conversation branch.",
+    usage="/branch",
+    aliases=["fork"]
+)
+async def _handle_cmd_branch(ctx: UniversalCommandContext) -> UniversalCommandResponse:
+    if not ctx.session_id:
+        return UniversalCommandResponse(text="⚠️ <b>Branch</b>: Tidak ada sesi aktif.")
+    new_sess = memory_engine.fork_session(ctx.session_id)
+    if new_sess:
+        return UniversalCommandResponse(
+            text=f"🌿 <b>Session Forked</b>: Sesi berhasil dicabangkan ke sesi baru [ID: {new_sess['id']} - <i>{html.escape(new_sess.get('title', ''))}</i>]."
+        )
+    return UniversalCommandResponse(text="⚠️ <b>Branch Failed</b>: Gagal mencabangkan sesi aktif.")
+
+
+
 # ── VOICE HELPERS & PERSISTENCE ──
 
 VOICE_MODE_LABELS = {

@@ -173,6 +173,32 @@ async def call_universal_chat_model(
             reasoning_effort=reasoning_effort,
         )
     except Exception as e_prim:
+        from core.error_classifier import classify_api_error
+        classified = classify_api_error(e_prim, attempt=1, provider=model_id)
+
+        # Smart Retry Ladder: If error is transient (e.g. 429 rate limit or 503 overload), perform quick jittered backoff retry
+        if classified.retryable and not classified.should_fallback and classified.backoff_seconds <= 6.0:
+            logger.info(f"[ModelCaller] Primary model error is transient ({classified.reason.value}). Retrying after {classified.backoff_seconds:.1f}s backoff...")
+            await asyncio.sleep(classified.backoff_seconds)
+            try:
+                profile = resolve_provider_profile(model_id)
+                return await profile.generate_chat(
+                    model_id=model_id,
+                    user_prompt=user_prompt,
+                    system_instruction=system_instruction,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    read_only=read_only,
+                    progress_cb=progress_cb,
+                    token_cb=token_cb,
+                    intercept_mutating_tools=intercept_mutating_tools,
+                    platform=platform,
+                    reasoning_effort=reasoning_effort,
+                )
+            except Exception as e_retry:
+                logger.warning(f"[ModelCaller] Primary retry after backoff also failed: {e_retry}")
+                e_prim = e_retry
+
         fallback_model = get_fallback_model_id()
         if fallback_model and fallback_model != model_id:
             logger.warning(

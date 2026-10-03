@@ -26,6 +26,7 @@ from .catalog import (
     generate_text_response_with_tools,
     _normalize_tool_args,
 )
+from .dispatch import dispatch_batch_tool_calls
 
 __all__ = [
     "register_agent_event_listener",

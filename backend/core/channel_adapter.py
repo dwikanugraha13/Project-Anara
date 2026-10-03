@@ -139,23 +139,37 @@ def get_or_create_channel_session(req: ChannelRequest) -> int:
         return req.session_id
     speaker = req.sender_name or "User"
     cid = str(req.channel_id or "default").strip()
+    canonical_key = f"channel_{req.channel}_{cid}"
+
+    # 1. Direct indexed resolution via canonical session_key (immune to title renames)
+    sess = memory_engine.get_session(canonical_key)
+    if sess and not sess.get("is_archived"):
+        return sess["id"]
+
+    # 2. Fallback: Check existing session by channel & channel_id title tag (backward compatibility)
     session_tag = f"[{req.channel}:{cid}]"
     clean_title = f"{req.channel.title()} Chat ({speaker}) {session_tag}" if cid != "default" else f"{req.channel.title()} Chat ({speaker})"
 
-    # Find existing open session for this specific channel & channel_id
     sessions = memory_engine.get_sessions(speaker_name=speaker, session_type="chat", limit=50)
     for s in sessions:
         if s.get("channel") == req.channel and not s.get("is_archived"):
             s_title = s.get("title") or ""
-            if cid != "default":
-                if session_tag in s_title:
-                    return s["id"]
-            else:
-                if f"[{req.channel}:" not in s_title:
-                    return s["id"]
+            if (cid != "default" and session_tag in s_title) or (cid == "default" and f"[{req.channel}:" not in s_title):
+                # Backfill canonical session_key if missing
+                try:
+                    with memory_engine._get_connection() as conn:
+                        conn.cursor().execute(
+                            "UPDATE chat_sessions SET session_key = ? WHERE id = ? AND (session_key IS NULL OR session_key NOT LIKE 'channel_%')",
+                            (canonical_key, s["id"])
+                        )
+                        conn.commit()
+                except Exception:
+                    pass
+                return s["id"]
 
-    # If none found, create a new isolated session
+    # 3. If none found, create a new isolated session bound to canonical_key
     new_sess = memory_engine.create_session(
+        session_key=canonical_key,
         speaker_name=speaker,
         title=clean_title,
         session_type="chat",
