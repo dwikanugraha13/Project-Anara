@@ -43,8 +43,8 @@ export default function HomePageClient({
   const [speakerRoster, setSpeakerRoster] = useState<string[]>([]);
   const [mediaSession, setMediaSession] = useState<MediaPlayPayload | null>(null);
   const [mediaControl, setMediaControl] = useState<{ action: MediaControlAction; nonce: number } | null>(null);
-  const [interactionMode, setInteractionMode] = useState<"voice" | "chat">("chat");
-  const interactionModeRef = useRef<"voice" | "chat">("chat");
+  const [interactionMode, setInteractionMode] = useState<"voice" | "chat">("voice");
+  const interactionModeRef = useRef<"voice" | "chat">("voice");
 
   useEffect(() => {
     interactionModeRef.current = interactionMode;
@@ -88,10 +88,9 @@ export default function HomePageClient({
       }
 
       const savedMode = localStorage.getItem("anara_interaction_mode");
-      if (savedMode === "voice" || savedMode === "chat") {
-        setInteractionMode(savedMode);
-        interactionModeRef.current = savedMode;
-      }
+      const activeMode = savedMode === "voice" || savedMode === "chat" ? savedMode : "voice";
+      setInteractionMode(activeMode);
+      interactionModeRef.current = activeMode;
 
       // Release the transition freeze once hydration and initial layout settle
       setTimeout(() => {

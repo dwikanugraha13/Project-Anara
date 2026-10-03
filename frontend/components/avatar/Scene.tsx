@@ -369,8 +369,11 @@ export default function Scene({
           shadows={SHADOWS_CONFIG}
           gl={GL_CONFIG}
           dpr={[1, 1.5]}
-          onCreated={({ gl }) => {
+          onCreated={({ gl, scene, camera }) => {
             gl.debug.checkShaderErrors = false;
+            if (typeof window !== "undefined") {
+              (window as any).__ANARA_CANVAS__ = { gl, scene, camera };
+            }
             const domEl = gl.domElement;
             if (domEl) {
               domEl.addEventListener("webglcontextlost", (e) => {

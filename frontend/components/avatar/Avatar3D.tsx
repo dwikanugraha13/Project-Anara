@@ -694,6 +694,15 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
         }
       });
 
+      if (typeof window !== "undefined") {
+        (window as any).__ANARA_DEBUG__ = {
+          scene,
+          group: group.current,
+          bones,
+          morphMeshes,
+        };
+      }
+
       bonesRef.current = bones;
       morphMeshesRef.current = morphMeshes;
       cachedMorphMeshesRef.current = cachedMorphs;
@@ -937,7 +946,7 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
 
       // ── [8] PHONETIC SPEECH LIP-SYNC ───────────────────────────────────────
       updateMorphTargets(safeDelta);
-    }, 1);
+    });
 
     return (
       <group ref={group} position={[0, -1.46, 0]} scale={[0.91, 1.0, 0.93]}>
