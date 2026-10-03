@@ -19,10 +19,24 @@ import Avatar3D, { type Avatar3DHandle } from "./Avatar3D";
 
 // ── Outer Canvas Error Boundary (Catches WebGL Disabled / Driver Loss) ──────
 class CanvasErrorBoundary extends Component<
-  { children: React.ReactNode; onWebGLFailure?: () => void },
+  {
+    children: React.ReactNode;
+    onWebGLFailure?: () => void;
+    isSpeaking?: boolean;
+    audioIntensity?: number;
+    avatarRef?: React.RefObject<Avatar3DHandle | null>;
+  },
   { hasError: boolean; errorMessage: string }
 > {
-  constructor(props: { children: React.ReactNode; onWebGLFailure?: () => void }) {
+  private rejectionHandler: ((event: PromiseRejectionEvent) => void) | null = null;
+
+  constructor(props: {
+    children: React.ReactNode;
+    onWebGLFailure?: () => void;
+    isSpeaking?: boolean;
+    audioIntensity?: number;
+    avatarRef?: React.RefObject<Avatar3DHandle | null>;
+  }) {
     super(props);
     this.state = { hasError: false, errorMessage: "" };
   }
@@ -36,44 +50,190 @@ class CanvasErrorBoundary extends Component<
     this.props.onWebGLFailure?.();
   }
 
+  componentDidMount() {
+    this.rejectionHandler = (event: PromiseRejectionEvent) => {
+      const reason = event?.reason?.message || String(event?.reason || "");
+      if (
+        reason.toLowerCase().includes("webgl") ||
+        reason.toLowerCase().includes("context") ||
+        reason.toLowerCase().includes("three.webglrenderer")
+      ) {
+        event.preventDefault();
+        this.setState({ hasError: true, errorMessage: reason });
+        this.props.onWebGLFailure?.();
+      }
+    };
+    window.addEventListener("unhandledrejection", this.rejectionHandler);
+  }
+
+  componentWillUnmount() {
+    if (this.rejectionHandler) {
+      window.removeEventListener("unhandledrejection", this.rejectionHandler);
+      this.rejectionHandler = null;
+    }
+  }
+
   render() {
     if (this.state.hasError) {
       return (
-        <div className="absolute inset-0 flex items-center justify-center p-6 select-none pointer-events-auto z-20">
-          <div className="max-w-md w-full p-6 rounded-3xl bg-[#060913]/95 border border-amber-500/30 text-center shadow-2xl backdrop-blur-2xl relative overflow-hidden">
-            <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-amber-400/40 to-transparent pointer-events-none" />
-            <div className="w-12 h-12 mx-auto mb-3 rounded-2xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-amber-400 text-xl font-bold">
-              <svg className="w-6 h-6 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-            </div>
-            <h3 className="text-sm font-bold text-white mb-1.5 font-mono">
-              3D GPU Acceleration Disabled in Browser
-            </h3>
-            <p className="text-xs text-slate-300 mb-4 leading-relaxed font-sans">
-              Browser WebGL context is currently unavailable (<code className="text-amber-300 font-mono text-[11px]">GL_VENDOR = Disabled</code>). You can still interact fully via voice or text, or restart your browser to re-enable the 3D avatar.
-            </p>
-            <div className="flex items-center justify-center gap-2 font-mono">
-              <a
-                href="/code"
-                className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-colors"
-              >
-                Open Code Studio (/code)
-              </a>
-              <button
-                type="button"
-                onClick={() => this.setState({ hasError: false, errorMessage: "" })}
-                className="px-3.5 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-semibold transition-colors cursor-pointer"
-              >
-                Retry
-              </button>
-            </div>
-          </div>
-        </div>
+        <HolographicAvatarFallback
+          isSpeaking={this.props.isSpeaking ?? false}
+          audioIntensity={this.props.audioIntensity ?? 0}
+          avatarRef={this.props.avatarRef}
+          errorMessage={this.state.errorMessage}
+          onRetry={() => this.setState({ hasError: false, errorMessage: "" })}
+        />
       );
     }
     return this.props.children;
   }
+}
+
+// ── Holographic Audio-Reactive Fallback Avatar (Zero Black Screen) ────────────
+function HolographicAvatarFallback({
+  isSpeaking,
+  audioIntensity,
+  avatarRef,
+  errorMessage,
+  onRetry,
+}: {
+  isSpeaking: boolean;
+  audioIntensity: number;
+  avatarRef?: React.RefObject<Avatar3DHandle | null>;
+  errorMessage?: string;
+  onRetry: () => void;
+}) {
+  const [showSettingsHelp, setShowSettingsHelp] = React.useState(false);
+
+  React.useImperativeHandle(avatarRef, () => ({
+    setAudioIntensity: () => {},
+    resetLipSync: () => {},
+    queueTranscriptVisemes: () => {},
+    triggerTextMotion: () => {},
+    setEmotion: () => {},
+    triggerGesture: () => {},
+    applyBackendEmotion: (emotion: string, gesture: string) => {
+      console.log(`[HolographicAvatar] Received backend emotion: ${emotion}, gesture: ${gesture}`);
+    },
+    stopDance: () => {},
+    playAnimation: () => {},
+    registerClips: () => {},
+  }), [avatarRef]);
+
+  const pulseScale = 1 + Math.min(0.45, audioIntensity * 0.5);
+  const ringOpacity = 0.35 + Math.min(0.55, audioIntensity * 0.65);
+
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center p-6 select-none pointer-events-auto z-10 overflow-hidden">
+      {/* ── Background Subtle Cosmic Radial Glow ── */}
+      <div
+        className="absolute w-[600px] h-[600px] rounded-full pointer-events-none transition-all duration-300"
+        style={{
+          background: "radial-gradient(circle, rgba(34, 211, 238, 0.12) 0%, rgba(99, 102, 241, 0.06) 45%, transparent 70%)",
+          transform: `scale(${pulseScale})`,
+          opacity: ringOpacity,
+        }}
+      />
+
+      {/* ── Center Holographic Voice Orb ── */}
+      <div className="relative flex items-center justify-center mb-8">
+        {/* Outer Pulsing Aura Ring */}
+        <div
+          className="absolute w-64 h-64 rounded-full border border-cyan-500/20 transition-all duration-300 animate-pulse pointer-events-none"
+          style={{ transform: `scale(${pulseScale * 1.15})` }}
+        />
+        {/* Intermediate Specular Kinetic Ring */}
+        <div
+          className="absolute w-48 h-48 rounded-full border border-dashed border-cyan-400/30 transition-transform duration-500 pointer-events-none"
+          style={{
+            transform: `scale(${pulseScale}) rotate(${isSpeaking ? 45 : 0}deg)`,
+            borderColor: isSpeaking ? "rgba(34, 211, 238, 0.6)" : "rgba(34, 211, 238, 0.25)",
+          }}
+        />
+        {/* Core Glowing Hologram Sphere */}
+        <div
+          className="relative w-36 h-36 rounded-full flex flex-col items-center justify-center shadow-2xl backdrop-blur-3xl transition-all duration-200"
+          style={{
+            background: isSpeaking
+              ? "radial-gradient(circle at 35% 35%, rgba(34, 211, 238, 0.55) 0%, rgba(99, 102, 241, 0.4) 60%, rgba(6, 9, 19, 0.95) 100%)"
+              : "radial-gradient(circle at 35% 35%, rgba(34, 211, 238, 0.28) 0%, rgba(99, 102, 241, 0.2) 60%, rgba(6, 9, 19, 0.95) 100%)",
+            boxShadow: isSpeaking
+              ? "0 0 50px rgba(34, 211, 238, 0.45), inset 0 0 25px rgba(255, 255, 255, 0.3)"
+              : "0 0 30px rgba(34, 211, 238, 0.2), inset 0 0 15px rgba(255, 255, 255, 0.15)",
+            border: "1px solid rgba(255, 255, 255, 0.18)",
+          }}
+        >
+          {/* Animated Waveform Visualizer inside Core */}
+          <div className="flex items-center gap-1.5 h-8">
+            {[0.4, 0.8, 1.2, 0.9, 0.5].map((factor, idx) => {
+              const barHeight = isSpeaking
+                ? Math.max(8, 28 * factor * (0.4 + audioIntensity * 0.8))
+                : 6 + Math.sin(Date.now() / 300 + idx) * 2;
+              return (
+                <div
+                  key={idx}
+                  className="w-1.5 rounded-full bg-gradient-to-t from-cyan-400 to-indigo-300 transition-all duration-75"
+                  style={{ height: `${barHeight}px` }}
+                />
+              );
+            })}
+          </div>
+          <span className="text-[10px] font-mono tracking-widest text-cyan-300/80 uppercase mt-1">
+            {isSpeaking ? "Speaking" : "Anara Core"}
+          </span>
+        </div>
+      </div>
+
+      {/* ── Status Pill Badge & Helper Controls ── */}
+      <div className="max-w-md w-full px-5 py-4 rounded-2xl bg-[#060913]/90 border border-white/10 shadow-2xl backdrop-blur-xl text-center">
+        <div className="flex items-center justify-center gap-2 mb-1.5">
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+          <h4 className="text-xs font-semibold text-white tracking-wide font-sans">
+            Mode Hologram Suara Aktif
+          </h4>
+        </div>
+        <p className="text-[11px] text-slate-400 leading-relaxed mb-3 font-sans">
+          Akselerasi grafis 3D WebGL dinonaktifkan di browser. Interaksi suara dan teks berjalan 100% normal.
+        </p>
+
+        <div className="flex items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowSettingsHelp(!showSettingsHelp)}
+            className="px-3 py-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] text-slate-300 font-medium transition-colors cursor-pointer"
+          >
+            {showSettingsHelp ? "Tutup Panduan" : "Cara Aktifkan 3D"}
+          </button>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="px-3 py-1 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-[11px] text-cyan-300 font-medium transition-colors cursor-pointer"
+          >
+            Coba 3D Lagi
+          </button>
+          <a
+            href="/code"
+            className="px-3 py-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] text-slate-300 font-medium transition-colors"
+          >
+            Code Studio
+          </a>
+        </div>
+
+        {/* Expandable Step-by-Step Guide */}
+        {showSettingsHelp && (
+          <div className="mt-3.5 pt-3 border-t border-white/10 text-left text-[11px] text-slate-300 space-y-1.5 font-sans leading-normal animate-fade-in">
+            <p className="font-semibold text-white">Langkah mengaktifkan 3D di Brave / Chrome:</p>
+            <ol className="list-decimal list-inside space-y-1 text-slate-400 pl-1">
+              <li>Buka <code className="text-cyan-300 bg-white/5 px-1 py-0.5 rounded font-mono text-[10px]">brave://settings/system</code> (atau Chrome).</li>
+              <li>Aktifkan opsi <span className="text-slate-200">"Gunakan akselerasi grafis jika tersedia"</span> (Hardware Acceleration).</li>
+              <li>Jika pakai Brave Shields, pastikan Proteksi Sidik Jari tidak diset ke "Agresif".</li>
+              <li>Klik <span className="text-cyan-300">Relaunch / Restart</span> browser.</li>
+            </ol>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ── Inner Avatar Error Boundary (Catches Mesh / Rigging Runtime Errors) ──────
@@ -137,9 +297,26 @@ const CAMERA_CONFIG = {
   far: 100,
 };
 
+function checkWebGLSupport(): { supported: boolean; reason?: string } {
+  if (typeof window === "undefined") return { supported: true };
+  try {
+    const canvas = document.createElement("canvas");
+    const gl =
+      canvas.getContext("webgl2", { powerPreference: "default" }) ||
+      canvas.getContext("webgl", { powerPreference: "default" }) ||
+      canvas.getContext("experimental-webgl");
+    if (!gl) {
+      return { supported: false, reason: "WebGL context creation failed (hardware acceleration disabled in browser)." };
+    }
+    return { supported: true };
+  } catch (e: any) {
+    return { supported: false, reason: e?.message || "WebGL initialization error" };
+  }
+}
+
 const GL_CONFIG = {
   antialias: true,
-  powerPreference: "high-performance" as const,
+  powerPreference: "default" as const,
   toneMapping: THREE.ACESFilmicToneMapping,
   toneMappingExposure: 1.05,
   outputColorSpace: THREE.SRGBColorSpace,
@@ -158,9 +335,43 @@ export default function Scene({
   onDanceEnd,
   isVoiceMode = true,
 }: SceneProps) {
+  const [webglSupported, setWebglSupported] = React.useState<boolean | null>(null);
+
+  React.useEffect(() => {
+    const res = checkWebGLSupport();
+    if (!res.supported) {
+      setWebglSupported(false);
+      onAvatarLoad?.();
+    } else {
+      setWebglSupported(true);
+    }
+  }, [onAvatarLoad]);
+
+  if (webglSupported === false) {
+    return (
+      <div style={CONTAINER_STYLE}>
+        <HolographicAvatarFallback
+          isSpeaking={isSpeaking}
+          audioIntensity={audioIntensity}
+          avatarRef={avatarRef}
+          errorMessage="Browser WebGL context is currently unavailable."
+          onRetry={() => {
+            const res = checkWebGLSupport();
+            setWebglSupported(res.supported);
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div style={CONTAINER_STYLE}>
-      <CanvasErrorBoundary onWebGLFailure={onAvatarLoad}>
+      <CanvasErrorBoundary
+        onWebGLFailure={onAvatarLoad}
+        isSpeaking={isSpeaking}
+        audioIntensity={audioIntensity}
+        avatarRef={avatarRef}
+      >
         <Canvas
           id="avatar-canvas"
           camera={CAMERA_CONFIG}
