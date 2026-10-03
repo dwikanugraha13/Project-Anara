@@ -185,8 +185,7 @@ class PromptAssembler:
             or anara_agent.has_attached_workspace(session_id)
             or bool((workspace_tree or {}).get("root_path"))
         )
-        is_build_mode = mode in ("build", "code")
-        has_attached = has_custom or is_build_mode
+        has_attached = has_custom
         
         slot7_project = ""
         slot_git_status = ""
@@ -234,7 +233,8 @@ class PromptAssembler:
             recent_line = f"\n- Recent Project Workspaces: {', '.join(recent_projects)}" if recent_projects else ""
             switch_prompt = f"Ask if they would like to switch to one of their project workspaces ({recent_projects[0]}) or another directory." if recent_projects else "Inform them they can attach or pick a project folder anytime."
             slot7_project = (
-                "[ENVIRONMENT & WORKSPACE CONTEXT (ANARA STANDARD)]:\n"
+                "[LIVE WORKSPACE & REPOSITORY SNAPSHOT (ANARA GROUND-TRUTH)]:\n"
+                "[ENVIRONMENT & WORKSPACE CONTEXT]:\n"
                 f"- Host OS: Windows (11)\n"
                 f"- User Home Directory: {home_dir}\n"
                 f"- Current Working Directory: {home_dir}\n"

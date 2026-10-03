@@ -1415,6 +1415,7 @@ def test_subsystem_4_workspace_ground_truth_snapshot():
     assert "Project Verification Commands:" in snapshot
 
     # Test Prompt Assembly with Ground Truth Injected
+    anara_agent.attach_local_folder(repo_root, session_id=9999)
     prompt = PromptAssembler.assemble(
         mode="build",
         speaker_name="Tester",
