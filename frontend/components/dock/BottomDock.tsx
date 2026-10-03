@@ -8,6 +8,7 @@ import { DockAudioWaveform } from "./DockAudioWaveform";
 import { TriggerItem } from "./DockTriggerPopover";
 import type { ToolProgressPayload } from "@/hooks/useWebSocket";
 import { usePromptHistory } from "./usePromptHistory";
+import { useComposerQueue } from "@/hooks/useComposerQueue";
 import { DockStatusStack } from "./DockStatusStack";
 import { DockControlsCluster } from "./DockControlsCluster";
 import { DockComposerInput } from "./DockComposerInput";
@@ -149,6 +150,25 @@ export default function BottomDock({
   // Modular prompt history ring hook
   const { pushHistory, navigateHistory, resetHistoryIndex } = usePromptHistory();
 
+  const isBusy =
+    status === "thinking" ||
+    status === "speaking" ||
+    Boolean(liveToolProgress && liveToolProgress.status === "running");
+
+  // ── Sequential Turn Queue & Auto-Drain (Anara Composer Queue) ──
+  const {
+    queuedItems,
+    queuedCount,
+    enqueue,
+    removeQueued,
+    clearQueue,
+  } = useComposerQueue({
+    activeSessionId,
+    isBusy,
+    onSend,
+    onSteer,
+  });
+
   // Cleanup blob preview URLs strictly on unmount
   const attachedFilesRef = useRef(attachedFiles);
   attachedFilesRef.current = attachedFiles;
@@ -213,6 +233,20 @@ export default function BottomDock({
       try {
         sessionStorage.removeItem(`anara_composer_draft_${activeSessionId}`);
       } catch {}
+    }
+
+    if (isBusy) {
+      if (textToSend.startsWith("/steer ")) {
+        const steerPayload = textToSend.replace(/^\/steer\s+/, "").trim();
+        onSteer?.(steerPayload);
+        setInputMessage("");
+        return;
+      }
+      enqueue(textToSend, agentMode);
+      setInputMessage("");
+      revokeAttachmentPreviews(attachedFiles);
+      setAttachedFiles([]);
+      return;
     }
 
     onSend(inputMessage, agentMode);
@@ -489,11 +523,6 @@ export default function BottomDock({
     [handleAttachFiles]
   );
 
-  const isBusy =
-    status === "thinking" ||
-    status === "speaking" ||
-    Boolean(liveToolProgress && liveToolProgress.status === "running");
-
   const canSend = Boolean(inputMessage.trim() || attachedFiles.length > 0);
 
   return (
@@ -622,6 +651,27 @@ export default function BottomDock({
               )}
             </div>
           </div>
+
+          {/* Active Sequential Queue Banner */}
+          {queuedCount > 0 && (
+            <div className="flex items-center justify-between px-3 py-1 mb-1.5 rounded-lg bg-cyan-950/40 border border-cyan-500/20 text-[10.5px] font-mono text-cyan-300 backdrop-blur-md">
+              <div className="flex items-center gap-2 truncate">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shrink-0" />
+                <span className="font-semibold uppercase tracking-wider text-cyan-400 shrink-0">
+                  Antrean Turn ({queuedCount}):
+                </span>
+                <span className="truncate text-slate-300 font-sans">{queuedItems[0]?.text}</span>
+              </div>
+              <button
+                type="button"
+                onClick={clearQueue}
+                className="text-slate-400 hover:text-white px-1.5 py-0.5 rounded text-[10px] bg-white/[0.04] hover:bg-white/[0.08] transition-colors cursor-pointer shrink-0 ml-2"
+                title="Batal antrean"
+              >
+                Batal
+              </button>
+            </div>
+          )}
 
           {/* Input Area / Voice Waveform */}
           <div className={`w-full flex items-center gap-2 ${isInputExpanded ? "flex-1 min-h-0 overflow-hidden" : "min-h-[36px]"}`}>
