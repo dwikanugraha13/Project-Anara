@@ -10,6 +10,7 @@ export interface CodeStudioHeaderProps {
   activeSession: any;
   activeSessionId: number | null;
   sessions: any[];
+  sessionsLoading?: boolean;
   isSessionDropdownOpen: boolean;
   setIsSessionDropdownOpen: React.Dispatch<React.SetStateAction<boolean>>;
   sessionDropdownRef: React.RefObject<HTMLDivElement | null>;
@@ -34,6 +35,7 @@ export function CodeStudioHeader({
   activeSession,
   activeSessionId,
   sessions,
+  sessionsLoading = false,
   isSessionDropdownOpen,
   setIsSessionDropdownOpen,
   sessionDropdownRef,
@@ -79,22 +81,28 @@ export function CodeStudioHeader({
 
         {/* Session Selector Popover */}
         <div className="relative" ref={sessionDropdownRef as any}>
-          <button
-            type="button"
-            onClick={() => setIsSessionDropdownOpen((v) => !v)}
-            className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] hover:border-cyan-400/30 text-xs font-mono text-slate-200 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
-            title="Select or switch coding workspace session"
-          >
-            <svg className="w-3.5 h-3.5 text-cyan-400/80 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-            </svg>
-            <span className="font-medium text-white truncate max-w-[150px]">
-              {activeSession?.title || `Session #${activeSessionId || 1}`}
-            </span>
-            <svg className={`w-3 h-3 text-slate-400 transition-transform duration-150 ${isSessionDropdownOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
+          {(() => {
+            const cachedTitle = typeof window !== "undefined" ? localStorage.getItem("anara_active_session_title") || "" : "";
+            const displayTitle = activeSession?.title || (activeSessionId ? cachedTitle || `Session #${activeSessionId}` : (sessionsLoading ? "Loading..." : "New Session"));
+            return (
+              <button
+                type="button"
+                onClick={() => setIsSessionDropdownOpen((v) => !v)}
+                className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] hover:border-cyan-400/30 text-xs font-mono text-slate-200 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
+                title="Select or switch coding workspace session"
+              >
+                <svg className="w-3.5 h-3.5 text-cyan-400/80 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                <span className="font-medium text-white truncate max-w-[150px]">
+                  {displayTitle}
+                </span>
+                <svg className={`w-3 h-3 text-slate-400 transition-transform duration-150 ${isSessionDropdownOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            );
+          })()}
 
           {isSessionDropdownOpen && (
             <div className="absolute left-0 top-full mt-1.5 w-64 max-h-80 overflow-y-auto custom-scrollbar rounded-xl bg-[#060913]/95 backdrop-blur-2xl border border-white/15 shadow-2xl z-50 p-1.5 select-none font-mono animate-fade-in">

@@ -944,6 +944,15 @@ export default function CodePageClient({
     return sessions.find((s) => s.id === activeSessionId) || null;
   }, [sessions, activeSessionId]);
 
+  // Sync active session title to local cache for instant zero-flicker hydration on refresh
+  useEffect(() => {
+    if (activeSession?.title) {
+      localStorage.setItem("anara_active_session_title", activeSession.title);
+    } else if (activeSessionId === null) {
+      localStorage.removeItem("anara_active_session_title");
+    }
+  }, [activeSession, activeSessionId]);
+
   return (
     <main className="relative w-screen h-screen overflow-hidden flex flex-col font-sans select-none bg-[#030712] text-slate-100">
       {/* ══════════════════════════════════════════════════════════════════════
@@ -955,6 +964,7 @@ export default function CodePageClient({
         activeSession={activeSession}
         activeSessionId={activeSessionId}
         sessions={sessions}
+        sessionsLoading={sessionsLoading}
         isSessionDropdownOpen={isSessionDropdownOpen}
         setIsSessionDropdownOpen={setIsSessionDropdownOpen}
         sessionDropdownRef={sessionDropdownRef}
