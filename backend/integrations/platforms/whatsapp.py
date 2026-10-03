@@ -93,7 +93,7 @@ class WhatsAppPlatformAdapter(BasePlatformAdapter):
         from ..whatsapp import send_whatsapp_message
         from core.channel_adapter import split_message_chunks
         formatted = self.format_message(text)
-        chunks = split_message_chunks(formatted, max_chars=3500, add_part_headers=True, platform="whatsapp") or [""]
+        chunks = split_message_chunks(formatted, max_chars=3500, add_part_headers=False, platform="whatsapp") or [""]
         last_res = {}
         for idx, chunk in enumerate(chunks):
             res = await send_whatsapp_message(to=target_id, message=chunk)

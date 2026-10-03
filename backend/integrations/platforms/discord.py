@@ -132,7 +132,7 @@ class DiscordPlatformAdapter(BasePlatformAdapter):
                     "User-Agent": "AnaraAgent/1.0",
                 }
                 from core.channel_adapter import split_message_chunks
-                chunks = split_message_chunks(text, max_chars=1950, add_part_headers=True, platform="discord") or [""]
+                chunks = split_message_chunks(text, max_chars=1950, add_part_headers=False, platform="discord") or [""]
                 if len(chunks) > MAX_SPLIT_MESSAGES:
                     chunks = chunks[:MAX_SPLIT_MESSAGES]
                     chunks.append("⚠️ *[Output truncated: Exceeded Discord maximum 8-message burst limit]*")
@@ -161,7 +161,7 @@ class DiscordPlatformAdapter(BasePlatformAdapter):
         if webhook:
             try:
                 from core.channel_adapter import split_message_chunks
-                chunks = split_message_chunks(text, max_chars=1950, add_part_headers=True, platform="discord") or [""]
+                chunks = split_message_chunks(text, max_chars=1950, add_part_headers=False, platform="discord") or [""]
                 if len(chunks) > MAX_SPLIT_MESSAGES:
                     chunks = chunks[:MAX_SPLIT_MESSAGES]
                     chunks.append("⚠️ *[Output truncated: Exceeded Discord maximum 8-message burst limit]*")

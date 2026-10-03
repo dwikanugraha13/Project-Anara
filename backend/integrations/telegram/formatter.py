@@ -187,8 +187,6 @@ def split_message_chunks(text: str, max_chars: int = 3900, add_part_headers: boo
 
     while len(current_text) > effective_limit:
         candidate = current_text[:effective_limit]
-        code_fence_count = candidate.count("```")
-        ends_inside_code = (code_fence_count % 2 == 1)
 
         split_idx = -1
         p_idx = candidate.rfind("\n\n")
@@ -207,6 +205,7 @@ def split_message_chunks(text: str, max_chars: int = 3900, add_part_headers: boo
 
         chunk_part = current_text[:split_idx]
         current_text = current_text[split_idx:]
+        ends_inside_code = (chunk_part.count("```") % 2 == 1)
 
         if ends_inside_code:
             m_lang = re.search(r"```([a-zA-Z0-9_-]*)\n", chunk_part)

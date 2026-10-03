@@ -4,6 +4,7 @@ import React, { useRef, useEffect, useState, useMemo, useCallback } from "react"
 import AgentMarkdown from "./AgentMarkdown";
 import AgentToolCard, { ToolRunGroupCard, ExplorationGroupCard, ThinkingCard } from "./AgentToolCard";
 import InteractiveQuestionCard from "./InteractiveQuestionCard";
+import { ToolRunTicker } from "./ToolRunTicker";
 import FindBar from "./FindBar";
 import type { TranscriptItem, AssistantStatus } from "../workbench/AnaraWorkbench";
 import type { ToolProgressPayload } from "@/hooks/useWebSocket";
@@ -560,23 +561,34 @@ export default function ChatTimeline({
 
                         {/* 2. In-flight Tool or Initial Wait Indicator (only when NO text and NO thinking card) */}
                         {!item.text && !currentThinking ? (
-                          <div className="space-y-2 w-full max-w-xl">
-                            <div className="py-1.5 text-xs text-slate-400 font-mono select-none flex items-center gap-2">
-                              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-                              <span>
-                                {isLatestAi && liveToolProgress
-                                  ? `Executing ${liveToolProgress.toolName}...`
-                                  : "Thinking..."}
-                              </span>
-                            </div>
+                          <div className="w-full max-w-xl">
+                            {isLatestAi && liveToolProgress ? (
+                              <ToolRunTicker
+                                activeItemText={`Executing ${liveToolProgress.toolName}...`}
+                                totalCount={1}
+                                isRunning={true}
+                              >
+                                <span>{liveToolProgress.toolName}</span>
+                              </ToolRunTicker>
+                            ) : (
+                              <div className="py-1.5 text-xs text-slate-400 font-mono select-none flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                                <span>Thinking...</span>
+                              </div>
+                            )}
                           </div>
                         ) : null}
 
                         {/* 3. In-flight tool progress when thinking is already showing */}
                         {!item.text && currentThinking && isLatestAi && liveToolProgress ? (
-                          <div className="py-1 text-xs text-slate-400 font-mono select-none flex items-center gap-2 mb-2">
-                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-                            <span>Executing ${liveToolProgress.toolName}...</span>
+                          <div className="w-full max-w-xl mb-2">
+                            <ToolRunTicker
+                              activeItemText={`Executing ${liveToolProgress.toolName}...`}
+                              totalCount={1}
+                              isRunning={true}
+                            >
+                              <span>{liveToolProgress.toolName}</span>
+                            </ToolRunTicker>
                           </div>
                         ) : null}
 
@@ -592,6 +604,36 @@ export default function ChatTimeline({
                             {footerElement}
                           </>
                         ) : null}
+
+                        {/* 5. Interrupted Status Pill */}
+                        {item.interrupted && (
+                          <div className="mt-1.5 flex items-center gap-1.5 text-[10.5px] font-mono text-amber-300 select-none">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                            <span>Interrupted</span>
+                          </div>
+                        )}
+
+                        {/* 6. Explicit Error Card with 1-Click Retry */}
+                        {item.isError && (
+                          <div className="mt-2.5 flex items-center justify-between rounded-xl border border-rose-500/20 bg-rose-950/20 px-3 py-2 text-xs font-mono text-rose-300 select-none">
+                            <div className="flex items-center gap-2 truncate">
+                              <span className="w-2 h-2 rounded-full bg-rose-400 shrink-0" />
+                              <span className="truncate">{item.errorDetails || "Permintaan tidak dapat diselesaikan."}</span>
+                            </div>
+                            {item.retryable && onSelectPrompt && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const lastUser = [...transcript].reverse().find((t) => t.speaker === "input");
+                                  if (lastUser?.text) onSelectPrompt(lastUser.text);
+                                }}
+                                className="ml-3 shrink-0 rounded-lg border border-rose-400/30 bg-rose-500/15 px-2.5 py-1 text-[11px] font-medium text-rose-200 hover:bg-rose-500/25 hover:text-white transition-all cursor-pointer"
+                              >
+                                Retry ↺
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );

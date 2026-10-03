@@ -436,6 +436,20 @@ export default function HomePageClient({
     avatarRef.current?.resetLipSync();
     setAssistantStatus("idle");
     setAudioIntensity(0);
+
+    // Interrupted State: Stamp interrupted: true and halt streaming state on last output turn
+    setTranscript((prev) => {
+      const lastIdx = prev.length - 1;
+      if (lastIdx < 0) return prev;
+      const last = prev[lastIdx];
+      if (last.speaker === "output") {
+        return [
+          ...prev.slice(0, lastIdx),
+          { ...last, isStreaming: false, interrupted: true },
+        ];
+      }
+      return prev;
+    });
   }, [stopAudio, activeSessionId]);
 
   const assistantStatusRef = useRef<AssistantStatus>("idle");
@@ -577,16 +591,40 @@ export default function HomePageClient({
       console.warn("[Provider/WS Notice]", msg);
       setAssistantStatus("idle");
       setTranscript((prev) => {
-        if (prev.length === 0) return [{ speaker: "output", text: `${msg}` }];
+        if (prev.length === 0) {
+          return [{
+            speaker: "output",
+            text: "Permintaan tidak dapat diselesaikan.",
+            isError: true,
+            errorDetails: String(msg),
+            retryable: true,
+          }];
+        }
         const lastIdx = prev.length - 1;
         const last = prev[lastIdx];
-        if (last && last.speaker === "output" && !last.text) {
+        if (last && last.speaker === "output") {
           return [
             ...prev.slice(0, lastIdx),
-            { ...last, text: `${msg}` },
+            {
+              ...last,
+              isStreaming: false,
+              isError: true,
+              errorDetails: String(msg),
+              retryable: true,
+              text: last.text || "Permintaan tidak dapat diselesaikan.",
+            },
           ];
         }
-        return prev;
+        return [
+          ...prev,
+          {
+            speaker: "output",
+            text: "Permintaan tidak dapat diselesaikan.",
+            isError: true,
+            errorDetails: String(msg),
+            retryable: true,
+          },
+        ];
       });
     },
     onEmotionUpdate: handleEmotionUpdate,

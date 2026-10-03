@@ -110,7 +110,7 @@ class SlackPlatformAdapter(BasePlatformAdapter):
                     "Content-Type": "application/json",
                 }
                 from core.channel_adapter import split_message_chunks
-                chunks = split_message_chunks(text, max_chars=3500, add_part_headers=True, platform="slack") or [""]
+                chunks = split_message_chunks(text, max_chars=3500, add_part_headers=False, platform="slack") or [""]
                 last_data = {}
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     for idx, chunk in enumerate(chunks):
@@ -142,7 +142,7 @@ class SlackPlatformAdapter(BasePlatformAdapter):
         if webhook:
             try:
                 from core.channel_adapter import split_message_chunks
-                chunks = split_message_chunks(text, max_chars=3500, add_part_headers=True, platform="slack") or [""]
+                chunks = split_message_chunks(text, max_chars=3500, add_part_headers=False, platform="slack") or [""]
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     for idx, chunk in enumerate(chunks):
                         resp = await client.post(webhook, json={"text": chunk})

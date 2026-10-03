@@ -96,6 +96,10 @@ export interface TranscriptItem {
   toolsUsed?: string[];
   toolRecordsCount?: number;
   isStreaming?: boolean;
+  interrupted?: boolean;
+  isError?: boolean;
+  errorDetails?: string;
+  retryable?: boolean;
   startTime?: number;
 }
 

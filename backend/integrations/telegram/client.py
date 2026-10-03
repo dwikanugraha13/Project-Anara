@@ -386,12 +386,41 @@ async def send_telegram_document(
         return {"status": "error", "error_code": "SEND_DOCUMENT_EXCEPTION", "message": redact_sensitive_text(str(e))}
 
 
+def _probe_voice_duration_seconds(path: str) -> Optional[int]:
+    """Best-effort audio length probing in seconds (wave -> ffprobe)."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".wav":
+        try:
+            import wave
+            with wave.open(path, "rb") as wf:
+                rate = wf.getframerate() or 0
+                if rate > 0:
+                    return max(1, int(round(wf.getnframes() / float(rate))))
+        except Exception:
+            pass
+    try:
+        import shutil
+        import subprocess
+        ffprobe_bin = shutil.which("ffprobe")
+        if ffprobe_bin:
+            proc = subprocess.run(
+                [ffprobe_bin, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", path],
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5
+            )
+            if proc.returncode == 0 and proc.stdout.strip():
+                val = float(proc.stdout.strip())
+                return max(1, int(round(val)))
+    except Exception:
+        pass
+    return None
+
+
 async def send_telegram_voice(
     file_path: str,
     chat_id: Optional[str] = None,
     caption: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Sends a native voice note bubble (.ogg Opus) to Telegram chat."""
+    """Sends a native voice note bubble (.ogg Opus) to Telegram chat with probed duration."""
     token = get_stored_telegram_token()
     if not token:
         return {"status": "error", "error_code": "MISSING_BOT_TOKEN", "message": "Telegram Bot token not configured."}
@@ -407,11 +436,36 @@ async def send_telegram_voice(
     url = f"{TELEGRAM_API_BASE}/bot{token}/sendVoice"
     filename = os.path.basename(clean_path)
 
+    # Optional transcode to Ogg Opus if ffmpeg is present and input is not .ogg
+    send_path = clean_path
+    transcoded_temp: Optional[str] = None
     try:
+        import shutil
+        import subprocess
+        ffmpeg_bin = shutil.which("ffmpeg")
+        if ffmpeg_bin and not clean_path.lower().endswith(".ogg"):
+            import tempfile
+            fd, temp_ogg = tempfile.mkstemp(suffix=".ogg")
+            os.close(fd)
+            proc = subprocess.run(
+                [ffmpeg_bin, "-y", "-i", clean_path, "-c:a", "libopus", "-b:a", "32k", temp_ogg],
+                capture_output=True, timeout=10
+            )
+            if proc.returncode == 0 and os.path.getsize(temp_ogg) > 0:
+                send_path = temp_ogg
+                transcoded_temp = temp_ogg
+                filename = os.path.basename(temp_ogg)
+    except Exception:
+        pass
+
+    try:
+        duration_secs = await asyncio.to_thread(_probe_voice_duration_seconds, send_path)
         async with httpx.AsyncClient(timeout=60.0) as client:
-            file_bytes = await asyncio.to_thread(lambda: open(clean_path, "rb").read())
+            file_bytes = await asyncio.to_thread(lambda: open(send_path, "rb").read())
             files = {"voice": (filename, file_bytes)}
-            data = {"chat_id": target_chat}
+            data: Dict[str, Any] = {"chat_id": target_chat}
+            if duration_secs:
+                data["duration"] = int(duration_secs)
             if caption:
                 data["caption"] = caption[:1000]
 
@@ -421,6 +475,12 @@ async def send_telegram_voice(
             return {"status": "error", "error_code": "SEND_VOICE_FAILED", "message": redact_sensitive_text(res.text[:120])}
     except Exception as e:
         return {"status": "error", "error_code": "SEND_VOICE_EXCEPTION", "message": redact_sensitive_text(str(e))}
+    finally:
+        if transcoded_temp and os.path.isfile(transcoded_temp):
+            try:
+                os.remove(transcoded_temp)
+            except Exception:
+                pass
 
 
 async def send_telegram_photo(

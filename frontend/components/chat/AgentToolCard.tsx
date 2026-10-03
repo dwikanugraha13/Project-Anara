@@ -62,16 +62,24 @@ export function ThinkingCard({
   durationSec?: number;
   isLive?: boolean;
 }) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const sawLivePreviewRef = useRef(isLive);
+  const [isExpanded, setIsExpanded] = useState(isLive);
   const [liveElapsed, setLiveElapsed] = useState<number>(0);
   const liveStartTimeRef = useRef<number>(Date.now());
+
+  useEffect(() => {
+    if (isLive) {
+      sawLivePreviewRef.current = true;
+      setIsExpanded(true);
+    }
+  }, [isLive]);
 
   useEffect(() => {
     if (!isLive) return;
     liveStartTimeRef.current = Date.now();
     const interval = setInterval(() => {
-      setLiveElapsed((Date.now() - liveStartTimeRef.current) / 1000);
-    }, 100);
+      setLiveElapsed(Math.round((Date.now() - liveStartTimeRef.current) / 1000));
+    }, 1000);
     return () => clearInterval(interval);
   }, [isLive]);
 
