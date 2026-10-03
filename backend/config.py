@@ -60,6 +60,16 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "auxiliary": os.getenv("AUXILIARY_AI_MODEL", ""),
         "vision": os.getenv("VISION_AI_MODEL", ""),
         "fast_subagent": os.getenv("FAST_SUBAGENT_MODEL", ""),
+        "custom_providers": [
+            {
+                "name": "9Router Proxy",
+                "prefix": "9router",
+                "base_url": os.getenv("NINEROUTER_BASE_URL", "http://localhost:20128/v1"),
+                "api_key": os.getenv("NINEROUTER_API_KEY", "sk-d31a608914dfd556-1pi93o-fefbf4f3"),
+                "default_model": "ag/gemini-3.8-flash-high",
+                "is_active": True,
+            }
+        ],
     },
     "terminal": {
         "timeout": _safe_env_int("TERMINAL_TIMEOUT", 180),
