@@ -20,8 +20,92 @@ PLATFORM_MESSAGE_LIMITS: Dict[str, int] = {
 }
 
 
+def format_omnichannel_tool_progress(evt: Dict[str, Any]) -> Optional[str]:
+    """
+    Formats live tool execution lines matching Hermes gateway parity:
+    e.g. 'search_files: <pattern> in <path>', 'read_file: <path>:<offset>-<limit>', 'terminal: <cmd>'.
+    """
+    if not isinstance(evt, dict):
+        return str(evt).strip() if evt else None
+
+    t_name = (evt.get("tool_name") or "").strip().lower()
+    if not t_name:
+        return None
+
+    status = evt.get("status", "running")
+    # Only render when tool starts (or on completed if start was skipped)
+    if status not in ("running", "started"):
+        return None
+
+    args = evt.get("args") or evt.get("tool_args") or {}
+    detail = evt.get("detail") or ""
+    summary = evt.get("summary") or ""
+
+    if t_name in ("read_local_file", "read_file"):
+        fp = args.get("file_path") or args.get("path") or detail or ""
+        fp = str(fp).replace("\\", "/").strip()
+        offset = args.get("offset")
+        limit = args.get("limit")
+        if offset and limit:
+            line_range = f":{offset}-{int(offset) + int(limit) - 1}"
+        elif offset:
+            line_range = f":{offset}"
+        else:
+            line_range = ""
+        return f"read_file: {fp}{line_range}"
+
+    if t_name in ("execute_cli_command", "terminal", "run_terminal_command"):
+        cmd = args.get("command") or detail or summary or ""
+        cmd_clean = str(cmd).strip().replace("\r\n", " ").replace("\n", " ")
+        if len(cmd_clean) > 85:
+            cmd_clean = cmd_clean[:82] + "..."
+        return f"terminal: {cmd_clean}"
+
+    if t_name in ("grep_search_code", "search_files"):
+        pat = args.get("pattern") or args.get("query") or ""
+        p = args.get("path") or detail or ""
+        p_clean = str(p).replace("\\", "/").strip()
+        p_str = f" in {p_clean}" if p_clean and p_clean != "." else ""
+        return f"search_files: {pat}{p_str}".strip()
+
+    if t_name in ("glob_find_files", "list_directory"):
+        pat = args.get("pattern") or ""
+        p = args.get("path") or args.get("directory_path") or detail or ""
+        p_clean = str(p).replace("\\", "/").strip()
+        if pat:
+            p_str = f" in {p_clean}" if p_clean and p_clean != "." else ""
+            return f"glob_find_files: {pat}{p_str}".strip()
+        return f"list_directory: {p_clean}".strip()
+
+    if t_name in ("edit_file", "patch", "write_local_file", "write_file"):
+        fp = args.get("file_path") or args.get("path") or detail or ""
+        fp = str(fp).replace("\\", "/").strip()
+        return f"edit: {fp}"
+
+    if t_name == "web_search":
+        q = args.get("query") or detail or ""
+        return f"web_search: {q}"
+
+    if t_name == "fetch_webpage":
+        u = args.get("url") or detail or ""
+        return f"fetch_webpage: {u}"
+
+    # Default fallback
+    target = detail or summary or ""
+    if isinstance(target, str) and target.strip():
+        clean_target = target.strip().replace("\r\n", " ").replace("\n", " ")
+        if len(clean_target) > 75:
+            clean_target = clean_target[:72] + "..."
+        return f"{t_name}: {clean_target}"
+    return t_name
+
+
 def _format_tool_progress_message(evt: Dict[str, Any]) -> str:
     """Formats an informative, user-friendly live status message for tool execution via dynamic introspection."""
+    hermes_line = format_omnichannel_tool_progress(evt)
+    if hermes_line:
+        return hermes_line
+
     t_name = evt.get("tool_name", "")
     status = evt.get("status", "running")
     detail = evt.get("detail", "")

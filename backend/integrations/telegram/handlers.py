@@ -36,15 +36,16 @@ _ACTIVE_CHAT_TASKS: Dict[str, asyncio.Task] = {}
 
 
 class TelegramStatusTracker:
-    """Continuous typing heartbeat and status manager for Telegram turns (Anara Standard)."""
+    """Live in-place tool progress accumulator and continuous typing heartbeat for Telegram (Hermes Parity)."""
     def __init__(self, chat_id: str):
-        self.chat_id = chat_id
+        self.chat_id = str(chat_id)
         self.status_msg_id: Optional[int] = None
-        self.last_text: str = ""
+        self.progress_lines: List[str] = []
         self._lock = asyncio.Lock()
         self._last_edit_time: float = 0.0
         self._running: bool = True
         self._heartbeat_task: Optional[asyncio.Task] = None
+        self._pending_edit_task: Optional[asyncio.Task] = None
         self._start_heartbeat()
 
     def _start_heartbeat(self):
@@ -58,30 +59,82 @@ class TelegramStatusTracker:
 
         self._heartbeat_task = asyncio.create_task(_keep_typing())
 
-    async def update(self, text: str):
-        """Maintains native chat typing indicator without polluting the user's transcript."""
-        clean = (text or "").strip()
-        if not clean or clean == self.last_text:
+    async def update(self, item: Any):
+        """Processes tool execution event and updates the live accumulated progress bubble."""
+        if not self._running:
             return
-        self.last_text = clean
-        try:
-            await send_telegram_chat_action(chat_id=self.chat_id, action="typing")
-        except Exception:
-            pass
+
+        from core.message_chunker import format_omnichannel_tool_progress
+        line = format_omnichannel_tool_progress(item) if isinstance(item, dict) else (str(item).strip() if item else None)
+        if not line:
+            return
+
+        # Filter out generic initial placeholder text from bubble lines
+        if any(ph in line.lower() for ph in ("analyzing request", "reasoning & planning", "formulating steps")):
+            return
+
+        # Avoid immediate duplicate lines
+        if self.progress_lines and self.progress_lines[-1] == line:
+            return
+
+        self.progress_lines.append(line)
+
+        async with self._lock:
+            await self._sync_bubble_locked()
+
+    async def _sync_bubble_locked(self):
+        bubble_text = "\n\n".join(self.progress_lines)
+        if len(bubble_text) > 3800:
+            while len(bubble_text) > 3800 and len(self.progress_lines) > 1:
+                self.progress_lines.pop(0)
+            bubble_text = "...\n\n" + "\n\n".join(self.progress_lines)
+
+        now = time.time()
+        if self.status_msg_id is None:
+            res = await send_telegram_message(text=bubble_text, chat_id=self.chat_id)
+            if isinstance(res, dict) and res.get("status") == "ok":
+                self.status_msg_id = res.get("message_id") or (res.get("result") or {}).get("message_id")
+                self._last_edit_time = now
+        else:
+            # Debounce edits (0.8s gap to avoid Telegram rate limits)
+            if (now - self._last_edit_time) >= 0.8:
+                try:
+                    await edit_telegram_message(chat_id=self.chat_id, message_id=self.status_msg_id, text=bubble_text)
+                    self._last_edit_time = now
+                except Exception as e:
+                    logger.debug(f"[TelegramStatusTracker] Edit error: {e}")
+            else:
+                if self._pending_edit_task is None or self._pending_edit_task.done():
+                    self._pending_edit_task = asyncio.create_task(self._delayed_edit(bubble_text, 0.9))
+
+    async def _delayed_edit(self, text: str, delay: float):
+        await asyncio.sleep(delay)
+        async with self._lock:
+            if self.status_msg_id and self._running:
+                try:
+                    await edit_telegram_message(chat_id=self.chat_id, message_id=self.status_msg_id, text=text)
+                    self._last_edit_time = time.time()
+                except Exception:
+                    pass
 
     async def cleanup(self):
         self._running = False
         if self._heartbeat_task:
             self._heartbeat_task.cancel()
             self._heartbeat_task = None
+        if self._pending_edit_task and not self._pending_edit_task.done():
+            self._pending_edit_task.cancel()
+            self._pending_edit_task = None
 
+        # Final flush to ensure all executed tools are reflected
         async with self._lock:
-            if self.status_msg_id:
+            if self.status_msg_id and self.progress_lines:
                 try:
-                    await delete_telegram_message(chat_id=self.chat_id, message_id=self.status_msg_id)
+                    final_bubble = "\n\n".join(self.progress_lines)
+                    await edit_telegram_message(chat_id=self.chat_id, message_id=self.status_msg_id, text=final_bubble)
                 except Exception:
                     pass
-                self.status_msg_id = None
+        # NOTE: Do NOT delete self.status_msg_id! It remains in chat as the audit trail of tool runs, matching Hermes exactly!
 
 
 async def process_incoming_telegram_update(u: Dict[str, Any]):
