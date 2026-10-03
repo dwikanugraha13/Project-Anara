@@ -42,6 +42,10 @@ export default function CodePageClient({
   const [isMounted, setIsMounted] = useState(false);
   const [footerDockHeight, setFooterDockHeight] = useState(120);
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
+  const activeSessionIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
 
   useEffect(() => {
     setIsMounted(true);
@@ -473,6 +477,13 @@ export default function CodePageClient({
   } = useWebSocket({
     url: getWebSocketUrl(),
     onTranscript: (payload: TranscriptPayload | string, rawSpeaker?: "input" | "output") => {
+      // Session Isolation Guard: Prevent foreign session messages from polluting current timeline
+      const msgSessionId = typeof payload === "string" ? undefined : payload.sessionId;
+      const currentSid = activeSessionIdRef.current;
+      if (msgSessionId && currentSid && msgSessionId !== currentSid) {
+        return;
+      }
+
       const text = typeof payload === "string" ? payload : payload.text;
       const speaker = typeof payload === "string" ? (rawSpeaker ?? "output") : payload.speaker;
       const isPartial = typeof payload === "string" ? false : (payload.isPartial ?? false);

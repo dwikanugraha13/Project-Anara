@@ -59,6 +59,10 @@ export default function HomePageClient({
   }, []);
 
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
+  const activeSessionIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
   const [sessionRefreshKey, setSessionRefreshKey] = useState(0);
   const [sidebarWidth, setSidebarWidth] = useState<number>(initialSidebarWidth);
 
@@ -187,6 +191,13 @@ export default function HomePageClient({
 
   const handleTranscript = useCallback(
     (payload: TranscriptPayload | string, rawSpeaker?: "input" | "output") => {
+      // Session Isolation Guard: Prevent foreign session messages from polluting current timeline
+      const msgSessionId = typeof payload === "string" ? undefined : payload.sessionId;
+      const currentSid = activeSessionIdRef.current;
+      if (msgSessionId && currentSid && msgSessionId !== currentSid) {
+        return;
+      }
+
       const text = typeof payload === "string" ? payload : payload.text;
       const speaker = typeof payload === "string" ? (rawSpeaker ?? "output") : payload.speaker;
       const visualType = typeof payload === "string" ? undefined : payload.visualType;

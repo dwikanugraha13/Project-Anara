@@ -164,6 +164,7 @@ export interface TranscriptPayload {
   tokenUsage?: TokenUsagePayload;
   toolsUsed?: string[];
   isStreaming?: boolean;
+  sessionId?: number;
 }
 
 export interface HudVisualPayload {

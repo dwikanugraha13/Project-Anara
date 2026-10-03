@@ -211,11 +211,15 @@ class AgentRunner:
                             "delta": event.content,
                             "text": accumulated_text,
                             "is_final": False,
+                            "sessionId": sid,
+                            "session_id": sid,
                         })
                     elif event.type == "thought" and (event.thought or event.content):
                         await self.websocket.send_json({
                             "type": "agent_thinking",
                             "text": event.thought or event.content,
+                            "sessionId": sid,
+                            "session_id": sid,
                         })
                     elif event.type == "tool_start":
                         t_name = event.tool_name or "tool"
@@ -227,6 +231,8 @@ class AgentRunner:
                             "status": "running",
                             "summary": f"Executing {t_name}...",
                             "icon": "terminal" if "command" in t_name or "shell" in t_name else "file",
+                            "sessionId": sid,
+                            "session_id": sid,
                         })
                     elif event.type == "tool_result":
                         t_name = event.tool_name or "tool"
@@ -238,6 +244,8 @@ class AgentRunner:
                             "status": "done",
                             "summary": str(event.tool_result)[:160] if event.tool_result else "Done",
                             "icon": "terminal" if "command" in t_name or "shell" in t_name else "file",
+                            "sessionId": sid,
+                            "session_id": sid,
                         })
                     elif event.type == "need_approval":
                         await self.websocket.send_json({
@@ -247,6 +255,8 @@ class AgentRunner:
                             "tool_args": event.tool_args or {},
                             "text": event.content or "Action plan requires confirmation before execution.",
                             "action_metadata": event.metadata,
+                            "sessionId": sid,
+                            "session_id": sid,
                         })
                     elif event.type == "final_text":
                         reply_text = event.content or ""
@@ -255,11 +265,15 @@ class AgentRunner:
                             "data": reply_text,
                             "speaker": "output",
                             "is_final": True,
+                            "sessionId": sid,
+                            "session_id": sid,
                         })
                     elif event.type == "error":
                         await self.websocket.send_json({
                             "type": "error",
                             "data": event.content,
+                            "sessionId": sid,
+                            "session_id": sid,
                         })
 
                 chat_diagnostics["active_requests"] = max(0, chat_diagnostics["active_requests"] - 1)

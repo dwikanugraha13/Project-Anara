@@ -14,14 +14,6 @@ if _backend_dir not in sys.path:
 if _root_dir not in sys.path:
     sys.path.insert(0, _root_dir)
 
-# Windows Event Loop Policy: enforce WindowsSelectorEventLoopPolicy on Windows
-# Prevents ProactorEventLoop WinError 10014 accept failure and socket hangs under high concurrency
-if sys.platform == "win32":
-    try:
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    except Exception:
-        pass
-
 # Prevent OpenBLAS / OMP multithreading memory errors on Windows
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["OMP_NUM_THREADS"] = "1"

@@ -242,6 +242,8 @@ export function useWebSocket({
                     ? msg.data
                     : "";
                 const delta = msg.delta !== undefined ? msg.delta : typeof msg.data === "string" ? msg.data : undefined;
+                const rawSid = msg.sessionId ?? msg.session_id;
+                const turnSid = rawSid !== undefined && rawSid !== null && !isNaN(Number(rawSid)) ? Number(rawSid) : undefined;
                 if (cb.onTranscript && (chunkText !== undefined || delta !== undefined)) {
                   cb.onTranscript({
                     text: chunkText,
@@ -250,6 +252,7 @@ export function useWebSocket({
                     visualType: msg.visualType,
                     isPartial: true,
                     isStreaming: true,
+                    sessionId: turnSid,
                   });
                 }
                 break;
@@ -257,11 +260,14 @@ export function useWebSocket({
 
               case "transcript": {
                 const finalData = msg.data !== undefined ? msg.data : msg.text !== undefined ? msg.text : "";
+                const rawSid = msg.sessionId ?? msg.session_id;
+                const turnSid = rawSid !== undefined && rawSid !== null && !isNaN(Number(rawSid)) ? Number(rawSid) : undefined;
                 if (cb.onTranscript) {
                   cb.onTranscript({
                     text: typeof finalData === "string" ? finalData : JSON.stringify(finalData),
                     speaker: msg.speaker ?? "output",
                     visualType: msg.visualType,
+                    sessionId: turnSid,
                     imageUrl: msg.imageUrl,
                     imagePrompt: msg.imagePrompt,
                     imageTitle: msg.imageTitle,
@@ -300,10 +306,13 @@ export function useWebSocket({
               case "agent_action_start":
               case "agent_action_complete":
                 if (cb.onTranscript && msg.action_title) {
+                  const rawActionSid = msg.sessionId ?? msg.session_id;
+                  const actionSid = rawActionSid !== undefined && rawActionSid !== null && !isNaN(Number(rawActionSid)) ? Number(rawActionSid) : undefined;
                   cb.onTranscript({
                     text: "",
                     speaker: "output",
                     visualType: "agent_action",
+                    sessionId: actionSid,
                     agentActionData: {
                       eventType: msg.type,
                       toolName: msg.tool_name,
