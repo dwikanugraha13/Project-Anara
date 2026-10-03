@@ -13,6 +13,15 @@ export interface AgentToolCardProps {
 }
 
 // ── CANONICAL TOOL TAXONOMY ─────────────────────────────────────────────────
+export const MAX_TOOL_RENDER_CHARS = 20_000;
+
+export function clampForDisplay(value?: string, max = MAX_TOOL_RENDER_CHARS): string {
+  if (!value) return "";
+  if (value.length <= max) return value;
+  const omitted = value.length - max;
+  return `${value.slice(0, max)}\n\n… [${omitted.toLocaleString()} characters truncated for render performance — use Copy button for complete output]`;
+}
+
 export const FILE_EDIT_TOOLS = new Set([
   "patch",
   "write_file",
@@ -143,7 +152,17 @@ export function TerminalTranscript({
   exitCode?: number;
   rawResult?: string;
 }) {
+  const [copied, setCopied] = useState(false);
   if (!command && exitCode === undefined && !rawResult) return null;
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const payload = rawResult || command || "";
+    if (!payload) return;
+    navigator.clipboard.writeText(payload);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <div className="flex flex-col gap-1.5 w-full my-1 font-mono text-[11px] select-text">
@@ -155,22 +174,38 @@ export function TerminalTranscript({
               {command}
             </code>
           )}
-          {exitCode !== undefined && (
-            <span
-              className={`shrink-0 rounded px-1.5 py-px text-[10px] font-bold tabular-nums border ${
-                exitCode === 0
-                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                  : "bg-amber-500/10 text-amber-400 border-amber-500/20"
-              }`}
+          <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+            {exitCode !== undefined && (
+              <span
+                className={`shrink-0 rounded px-1.5 py-px text-[10px] font-bold tabular-nums border ${
+                  exitCode === 0
+                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                    : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                }`}
+              >
+                exit {exitCode}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="text-slate-500 hover:text-slate-300 p-0.5 rounded transition-colors cursor-pointer"
+              title="Copy output"
             >
-              exit {exitCode}
-            </span>
-          )}
+              {copied ? (
+                <span className="text-[10px] text-emerald-400">Copied</span>
+              ) : (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              )}
+            </button>
+          </div>
         </div>
       )}
       {rawResult && (
         <pre className="p-2.5 rounded border border-white/[0.06] bg-black/50 text-slate-300 text-[10.5px] leading-relaxed max-h-[220px] overflow-auto custom-scrollbar whitespace-pre-wrap break-all shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
-          {rawResult}
+          {clampForDisplay(rawResult)}
         </pre>
       )}
     </div>
