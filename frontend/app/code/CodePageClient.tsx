@@ -201,13 +201,6 @@ export default function CodePageClient({
         }
       }
 
-      // Pre-warm active session id from localStorage for instant workspace tree loading
-      const urlSid = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("session_id") : null;
-      const savedSess = urlSid || localStorage.getItem("anara_active_session_id") || localStorage.getItem("anara_active_code_session_id");
-      if (savedSess && !isNaN(Number(savedSess))) {
-        setActiveSessionId(Number(savedSess));
-      }
-
       // Release transition freeze once layout settles
       setTimeout(() => {
         document.documentElement.classList.remove("preload");
@@ -252,20 +245,6 @@ export default function CodePageClient({
       isDir: typeof f === "object" && Boolean(f.is_dir),
     }));
   }, [workspaceTree]);
-
-  // ── Check URL search params for session_id on initial mount ──
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const params = new URLSearchParams(window.location.search);
-        const sid = params.get("session_id");
-        if (sid && !isNaN(Number(sid))) {
-          localStorage.setItem("anara_active_session_id", sid);
-          setActiveSessionId(Number(sid));
-        }
-      } catch {}
-    }
-  }, []);
 
   // ── Close session dropdown when clicking outside ──
   useEffect(() => {
@@ -334,9 +313,16 @@ export default function CodePageClient({
         return;
       }
       setWorkspaceTree(null);
+      // Clean up ghost editor tabs if no workspace is attached to this session
+      setIdeTabs([]);
+      setActiveIdeFile({ isOpen: false, fileName: "", filePath: "", fileExt: "", fileSizeKb: 0, content: "" });
+      localStorage.removeItem("anara_code_ide_tabs");
+      localStorage.removeItem("anara_code_ide_active_file");
     } catch (e) {
       console.warn("[CodeStudio] loadWorkspaceTree error:", e);
       setWorkspaceTree(null);
+      setIdeTabs([]);
+      setActiveIdeFile({ isOpen: false, fileName: "", filePath: "", fileExt: "", fileSizeKb: 0, content: "" });
     }
   }, []);
 
@@ -701,25 +687,61 @@ export default function CodePageClient({
     const initCodeSession = async () => {
       try {
         const list = await anaraApi.sessions.list();
+        const urlSid = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("session_id") : null;
+        const savedSess = urlSid || localStorage.getItem("anara_active_session_id") || localStorage.getItem("anara_active_code_session_id");
+
         if (Array.isArray(list) && list.length > 0) {
-          const urlSid = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("session_id") : null;
-          const savedSess = urlSid || localStorage.getItem("anara_active_session_id") || localStorage.getItem("anara_active_code_session_id");
           const match = savedSess ? list.find((s) => s.id === Number(savedSess)) : null;
           const targetId = match ? match.id : list[0].id;
           setActiveSessionId(targetId);
           localStorage.setItem("anara_active_session_id", String(targetId));
+          if (typeof window !== "undefined") {
+            const url = new URL(window.location.href);
+            url.searchParams.set("session_id", String(targetId));
+            window.history.replaceState({}, "", url.toString());
+          }
           if (wsStatus === "connected") {
             sendJSON({ type: "switch_session", sessionId: targetId });
           }
+        } else {
+          setActiveSessionId(null);
+          localStorage.removeItem("anara_active_session_id");
+          localStorage.removeItem("anara_active_code_session_id");
+          localStorage.removeItem("anara_code_ide_tabs");
+          localStorage.removeItem("anara_code_ide_active_file");
+          setIdeTabs([]);
+          setActiveIdeFile({ isOpen: false, fileName: "", filePath: "", fileExt: "", fileSizeKb: 0, content: "" });
+          if (typeof window !== "undefined") {
+            const url = new URL(window.location.href);
+            url.searchParams.delete("session_id");
+            window.history.replaceState({}, "", url.toString());
+          }
         }
-        // Session Pattern: if no sessions exist, leave activeSessionId null.
-        // A session will be created lazily on first message send via ensure_session().
       } catch (err) {
         console.warn("[CodeStudio] init session error:", err);
       }
     };
     initCodeSession();
   }, [wsStatus, sendJSON]);
+
+  // ── Sync activeSessionId with browser URL query param ──
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const url = new URL(window.location.href);
+      if (activeSessionId) {
+        if (url.searchParams.get("session_id") !== String(activeSessionId)) {
+          url.searchParams.set("session_id", String(activeSessionId));
+          window.history.replaceState({}, "", url.toString());
+        }
+      } else {
+        if (url.searchParams.has("session_id")) {
+          url.searchParams.delete("session_id");
+          window.history.replaceState({}, "", url.toString());
+        }
+      }
+    } catch {}
+  }, [activeSessionId]);
 
   const handleSelectSession = (id: number) => {
     // Eager-clear stale workspace state BEFORE switching session (Anara Parity)
@@ -728,6 +750,11 @@ export default function CodePageClient({
     setTranscript([]);
     setActiveSessionId(id);
     localStorage.setItem("anara_active_session_id", String(id));
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("session_id", String(id));
+      window.history.replaceState({}, "", url.toString());
+    }
     sendJSON({ type: "switch_session", sessionId: id });
   };
 
@@ -739,7 +766,16 @@ export default function CodePageClient({
     setActiveSessionId(null);
     localStorage.removeItem("anara_active_session_id");
     localStorage.removeItem("anara_active_code_session_id");
+    localStorage.removeItem("anara_code_ide_tabs");
+    localStorage.removeItem("anara_code_ide_active_file");
+    setIdeTabs([]);
+    setActiveIdeFile({ isOpen: false, fileName: "", filePath: "", fileExt: "", fileSizeKb: 0, content: "" });
     setTranscript([]);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("session_id");
+      window.history.replaceState({}, "", url.toString());
+    }
   };
 
   const handlePatchSession = async (id: number, body: Record<string, unknown>) => {
