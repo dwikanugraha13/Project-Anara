@@ -6,8 +6,21 @@ import socket
 import sys
 from typing import Optional
 
-# Ensure backend directory is in sys.path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Ensure backend directory and project root are in sys.path
+_backend_dir = os.path.dirname(os.path.abspath(__file__))
+_root_dir = os.path.dirname(_backend_dir)
+if _backend_dir not in sys.path:
+    sys.path.insert(0, _backend_dir)
+if _root_dir not in sys.path:
+    sys.path.insert(0, _root_dir)
+
+# Windows Event Loop Policy: enforce WindowsSelectorEventLoopPolicy on Windows
+# Prevents ProactorEventLoop WinError 10014 accept failure and socket hangs under high concurrency
+if sys.platform == "win32":
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except Exception:
+        pass
 
 # Prevent OpenBLAS / OMP multithreading memory errors on Windows
 os.environ["OPENBLAS_NUM_THREADS"] = "1"

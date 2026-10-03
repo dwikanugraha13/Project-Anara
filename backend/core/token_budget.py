@@ -1,5 +1,5 @@
 """
-token_budget.py — Token Budget Tracker for Project Anara (Hermes/Anara Standard).
+token_budget.py — Token Budget Tracker for Project Anara.
 
 Provides model-aware token counting and budget enforcement for:
 1. ReAct loop iteration budget (caller.py) — stops before context overflow
@@ -14,6 +14,7 @@ for Gemini and unknown models.
 import json
 import logging
 import os
+from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -124,23 +125,64 @@ def _clean_model_key(model: str, base_url: str = "") -> str:
     return f"{m}@{b}" if b else m
 
 
+def _get_context_cache_path() -> Path:
+    """Returns persistent runtime context length cache path under ANARA_HOME/cache."""
+    try:
+        from constants import get_anara_cache_dir
+        return get_anara_cache_dir() / "context_length_cache.yaml"
+    except Exception:
+        local_app = os.environ.get("LOCALAPPDATA") or str(Path.home())
+        p = Path(local_app) / "anara" / "cache"
+        p.mkdir(parents=True, exist_ok=True)
+        return p / "context_length_cache.yaml"
+
+
+def _load_persisted_context_cache_doc() -> Dict[str, Any]:
+    """Loads context length cache from runtime cache folder, falling back to bundled defaults."""
+    cache_file = _get_context_cache_path()
+    if cache_file.is_file():
+        try:
+            import yaml
+            with open(cache_file, "r", encoding="utf-8") as f:
+                doc = yaml.safe_load(f)
+                if isinstance(doc, dict):
+                    return doc
+        except Exception:
+            pass
+
+    # Bundled fallback
+    try:
+        from core.prompt_loader import load_config_yaml
+        bundled = load_config_yaml("config/context_length_cache.yaml", default={}) or {}
+        if isinstance(bundled, dict):
+            return bundled
+    except Exception:
+        pass
+    return {}
+
+
 def save_context_length(model: str, length: int, max_output: Optional[int] = None, base_url: str = "") -> None:
     """
     Persists a dynamically discovered or error-learned context window limit (Anara Standard).
-    Zero manual configuration required: model limits are saved across server runs.
+    Saves to runtime cache under ANARA_HOME/cache to avoid polluting codebase or triggering dev file reloaders.
     """
     if not model or length <= 0:
         return
     out_cap = max_output or min(65536, max(4096, int(length * _OUTPUT_RESERVE_RATIO)))
     key = _clean_model_key(model, base_url)
+    
+    # Check if already present with identical limit in memory
+    existing = _DYNAMIC_CONTEXT_CACHE.get(key)
+    if existing and existing[0] == length:
+        return
+
     _DYNAMIC_CONTEXT_CACHE[key] = (length, out_cap)
     _DYNAMIC_CONTEXT_CACHE[model.strip().lower()] = (length, out_cap)
 
-    # Persist to backend/prompts/config/context_length_cache.yaml
+    # Persist to persistent ANARA_HOME/cache/context_length_cache.yaml
     try:
-        from core.prompt_loader import load_config_yaml, _get_prompts_dir
-        cfg_path = _get_prompts_dir() / "config" / "context_length_cache.yaml"
-        current_cfg = load_config_yaml("config/context_length_cache.yaml", default={}) or {}
+        cfg_path = _get_context_cache_path()
+        current_cfg = _load_persisted_context_cache_doc()
         lengths_dict = current_cfg.get("context_lengths") or {}
         if lengths_dict.get(key) != length:
             lengths_dict[key] = length
@@ -174,10 +216,9 @@ def get_cached_context_length(model: str, base_url: str = "") -> Optional[Tuple[
     if m_clean in _DYNAMIC_CONTEXT_CACHE:
         return _DYNAMIC_CONTEXT_CACHE[m_clean]
 
-    # Check YAML cache
+    # Check YAML cache from runtime cache or bundled config
     try:
-        from core.prompt_loader import load_config_yaml
-        cfg = load_config_yaml("config/context_length_cache.yaml", default={}) or {}
+        cfg = _load_persisted_context_cache_doc()
         lengths = cfg.get("context_lengths") or {}
         for probe in (key, m_clean, f"{m_clean}/"):
             if probe in lengths:

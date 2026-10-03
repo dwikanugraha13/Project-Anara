@@ -17,8 +17,24 @@ logger = logging.getLogger("anara.shared_state")
 
 # Active WebSocket connections & session registries
 active_websockets: Set[WebSocket] = set()
+websocket_session_map: Dict[WebSocket, Optional[int]] = {}
 active_sessions: Dict[str, Any] = {}
 last_active_visual_payload: Optional[Dict[str, Any]] = None
+
+def register_websocket(ws: WebSocket, session_id: Optional[int] = None):
+    """Registers an active WebSocket and binds it to a specific session ID for strict cross-talk isolation."""
+    active_websockets.add(ws)
+    websocket_session_map[ws] = session_id
+
+def update_websocket_session(ws: WebSocket, session_id: Optional[int]):
+    """Updates the active session ID that a connected WebSocket is currently viewing."""
+    if ws in active_websockets:
+        websocket_session_map[ws] = session_id
+
+def unregister_websocket(ws: WebSocket):
+    """Safely removes a WebSocket from the active broadcast pool."""
+    active_websockets.discard(ws)
+    websocket_session_map.pop(ws, None)
 
 chat_diagnostics: Dict[str, Any] = {
     "active_requests": 0,
@@ -171,7 +187,14 @@ def broadcast_agent_event(event_data: Dict[str, Any]):
         except RuntimeError:
             pass
 
+        event_sid = event_data.get("session_id") or event_data.get("sessionId")
         for ws in list(active_websockets):
+            ws_sid = websocket_session_map.get(ws)
+            # Session Isolation Guard: If this event is scoped to a session,
+            # only deliver to WebSockets currently tuned to that session.
+            if event_sid is not None and ws_sid is not None and ws_sid != event_sid:
+                continue
+
             if cur_loop and cur_loop == loop:
                 loop.create_task(_safe_ws_send(ws, event_data))
             else:

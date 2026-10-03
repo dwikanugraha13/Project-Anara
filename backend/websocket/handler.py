@@ -37,6 +37,9 @@ from shared_state import (
     active_websockets,
     active_sessions,
     chat_diagnostics,
+    register_websocket,
+    update_websocket_session,
+    unregister_websocket,
 )
 
 from websocket.media_controller import MediaController
@@ -59,7 +62,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
     initial_primary_speaker = await asyncio.to_thread(memory_engine.get_last_active_speaker_name) or "User"
     current_speaker_name = initial_primary_speaker
-    await websocket.send_json({"type": "speaker_identified", "name": initial_primary_speaker})
+    try:
+        await websocket.send_json({"type": "speaker_identified", "name": initial_primary_speaker})
+    except (WebSocketDisconnect, ConnectionResetError, Exception) as e_initial:
+        logger.debug(f"[WebSocket] Client disconnected during initial handshake: {e_initial}")
+        active_websockets.discard(websocket)
+        return
 
     active_m = get_active_model_id()
     live_model = active_m if ModelCapabilityRegistry.supports_voice(active_m) else "gemini-3.1-flash-live-preview"
@@ -89,13 +97,18 @@ async def websocket_endpoint(websocket: WebSocket):
         return t
 
     active_session_id: Optional[int] = None
+    register_websocket(websocket, active_session_id)
     try:
-        last_sid = await asyncio.to_thread(memory_engine.get_last_active_session_id, initial_primary_speaker)
+        # Strictly look up the last active web/studio session — NEVER steal an external messaging/telegram session!
+        last_sid = await asyncio.to_thread(memory_engine.get_last_active_session_id, initial_primary_speaker, None, "web")
+        if not last_sid:
+            last_sid = await asyncio.to_thread(memory_engine.get_last_active_session_id, initial_primary_speaker, None, "code")
         if last_sid:
             active_session_id = last_sid
+            update_websocket_session(websocket, active_session_id)
             if gemini_service:
                 gemini_service.bridge_context = memory_engine.get_conversational_bridge_context(session_id=last_sid, speaker_name=initial_primary_speaker)
-            logger.info(f"[ChatSessions] Initialized with recent thread #{last_sid} for unified voice-chat context")
+            logger.info(f"[ChatSessions] Initialized with web thread #{last_sid} for unified voice-chat context")
     except Exception as e_init_sess:
         logger.debug(f"[ChatSessions] Initial thread seed: {e_init_sess}")
 
@@ -123,16 +136,19 @@ async def websocket_endpoint(websocket: WebSocket):
         nonlocal active_session_id
         if active_session_id is not None:
             existing = memory_engine.get_session(active_session_id)
-            if existing:
+            if existing and existing.get("channel") in ("web", "code", "desktop", None):
                 anara_agent.set_active_session_id(active_session_id)
+                update_websocket_session(websocket, active_session_id)
                 return active_session_id
         created = memory_engine.create_session(
             speaker_name=current_speaker_name,
             session_type=session_type,
             workspace_path=workspace_path or None,
+            channel="code" if session_type == "code" else "web",
         )
         active_session_id = created["id"]
         anara_agent.set_active_session_id(active_session_id)
+        update_websocket_session(websocket, active_session_id)
         logger.info(f"[ChatSessions] Active session -> #{active_session_id} (type={session_type})")
         return active_session_id
 
@@ -566,6 +582,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         if target:
                             active_session_id = int(target)
                             anara_agent.set_active_session_id(active_session_id)
+                            update_websocket_session(websocket, active_session_id)
                             sess = await asyncio.to_thread(memory_engine.get_session, active_session_id) or {}
                             msgs = await asyncio.to_thread(memory_engine.get_session_messages, active_session_id)
 
@@ -594,10 +611,12 @@ async def websocket_endpoint(websocket: WebSocket):
                         created = await asyncio.to_thread(memory_engine.create_session,
                             speaker_name=current_speaker_name,
                             title=req_title,
-                            session_type="code" if str(req_type).lower() == "code" else "chat"
+                            session_type="code" if str(req_type).lower() == "code" else "chat",
+                            channel="code" if str(req_type).lower() == "code" else "web",
                         )
                         active_session_id = created["id"]
                         anara_agent.set_active_session_id(active_session_id)
+                        update_websocket_session(websocket, active_session_id)
                         if gemini_service:
                             gemini_service.bridge_context = ""
                         await websocket.send_json({
@@ -694,6 +713,7 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.error(f"WebSocket error for {session_id}: {e}")
     finally:
         active_websockets.discard(websocket)
+        unregister_websocket(websocket)
         watchdog_task.cancel()
         if active_text_task and not active_text_task.done():
             active_text_task.cancel()

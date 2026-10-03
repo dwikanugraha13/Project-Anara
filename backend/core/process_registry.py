@@ -209,7 +209,13 @@ class ProcessRegistry:
 
             entry = dict(meta)
             entry["is_alive"] = alive
-            entry["uptime_seconds"] = round(time.time() - meta["started_at"], 1) if alive else 0
+            started_ts = meta.get("started_at", 0)
+            if isinstance(started_ts, str):
+                try:
+                    started_ts = float(started_ts)
+                except (ValueError, TypeError):
+                    started_ts = time.time()
+            entry["uptime_seconds"] = round(time.time() - started_ts, 1) if (alive and started_ts) else 0
             active.append(entry)
         return active
 

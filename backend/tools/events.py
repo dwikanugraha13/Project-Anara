@@ -18,6 +18,17 @@ def register_agent_event_listener(listener: Callable[[Dict[str, Any]], Any]):
 
 
 def _emit_agent_event(event_type: str, data: Dict[str, Any]):
+    # Session Isolation Guard: ensure events are explicitly stamped with active session ID
+    if "session_id" not in data and "sessionId" not in data:
+        try:
+            from core import anara_agent
+            sid = anara_agent.get_active_session_id()
+            if sid is not None:
+                data["session_id"] = sid
+                data["sessionId"] = sid
+        except Exception:
+            pass
+
     for listener in _AGENT_EVENT_LISTENERS:
         try:
             res = listener({"type": event_type, **data})

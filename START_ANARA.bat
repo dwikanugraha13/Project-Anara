@@ -25,8 +25,14 @@ if errorlevel 1 (
 exit /b
 
 :admin_ok
+setlocal EnableExtensions
+set "ROOT_DIR=%~dp0"
+if "%ROOT_DIR:~-1%"=="\" set "ROOT_DIR=%ROOT_DIR:~0,-1%"
+set "BACKEND_DIR=%ROOT_DIR%\backend"
+set "FRONTEND_DIR=%ROOT_DIR%\frontend"
+
 :: Ensure working directory is the script folder
-cd /d "%~dp0"
+cd /d "%ROOT_DIR%"
 
 echo ======================================================================
 echo            ANARA 3D AI ASSISTANT - LAUNCHER (ADMIN MODE)
@@ -34,7 +40,7 @@ echo ======================================================================
 echo.
 
 :: ── [0/4] Validate project structure ───────────────────────────────────
-if not exist "%~dp0backend\main.py" (
+if not exist "%BACKEND_DIR%\main.py" (
     color 0C
     echo.
     echo  [ERROR] backend\main.py not found! Ensure launcher is in root 'Project Anara'.
@@ -42,7 +48,7 @@ if not exist "%~dp0backend\main.py" (
     pause
     exit /b 1
 )
-if not exist "%~dp0frontend\package.json" (
+if not exist "%FRONTEND_DIR%\package.json" (
     color 0C
     echo.
     echo  [ERROR] frontend\package.json not found!
@@ -56,8 +62,8 @@ echo.
 
 :: ── [1/4] Resolve path python.exe & npm.cmd (resilient in Administrator context) ──
 set "PYTHON_CMD="
-if exist "%~dp0backend\venv\Scripts\python.exe" set "PYTHON_CMD=%~dp0backend\venv\Scripts\python.exe"
-if not defined PYTHON_CMD if exist "%~dp0backend\.venv\Scripts\python.exe" set "PYTHON_CMD=%~dp0backend\.venv\Scripts\python.exe"
+if exist "%BACKEND_DIR%\venv\Scripts\python.exe" set "PYTHON_CMD=%BACKEND_DIR%\venv\Scripts\python.exe"
+if not defined PYTHON_CMD if exist "%BACKEND_DIR%\.venv\Scripts\python.exe" set "PYTHON_CMD=%BACKEND_DIR%\.venv\Scripts\python.exe"
 if not defined PYTHON_CMD for /f "delims=" %%i in ('where python.exe 2^>nul') do (
     if not defined PYTHON_CMD set "PYTHON_CMD=%%i"
 )
@@ -84,9 +90,9 @@ if defined NPM_CMD (
 echo.
 
 :: ── [2/4] Install frontend dependencies if not present ──────────────
-if not exist "%~dp0frontend\node_modules\" (
+if not exist "%FRONTEND_DIR%\node_modules\" (
     echo  [2/4] node_modules not found — running "npm install" once...
-    pushd "%~dp0frontend"
+    pushd "%FRONTEND_DIR%"
     call "%NPM_CMD%" install
     popd
 ) else (
@@ -112,17 +118,16 @@ echo.
 echo  [4/4] Starting servers...
 echo.
 
-:: Set PYTHONPATH so backend modules resolve correctly
-set "PYTHONPATH=%~dp0backend"
+set "PYTHONPATH=%BACKEND_DIR%"
 
 echo   ^> Backend FastAPI  ^(http://localhost:8000^)
-start "Anara - Backend Server" cmd /k "cd /d ""%~dp0"" && set PYTHONPATH=""%~dp0backend"" && ""%PYTHON_CMD%"" -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload"
+start "Anara - Backend Server" cmd /k "cd /d "%ROOT_DIR%" && set "PYTHONPATH=%BACKEND_DIR%" && "%PYTHON_CMD%" -m uvicorn backend.main:app --host 0.0.0.0 --port 8000"
 
 echo   ^> Frontend Next.js ^(http://localhost:3000^)
-start "Anara - Frontend Web" cmd /k "cd /d ""%~dp0frontend"" && ""%NPM_CMD%"" run dev"
+start "Anara - Frontend Web" cmd /k "cd /d "%FRONTEND_DIR%" && "%NPM_CMD%" run dev"
 
 echo   ^> Cloudflare Tunnel ^(https://anara.my.id^)
-start "Anara - Remote Tunnel" cmd /c "cd /d ""%~dp0"" && ""%PYTHON_CMD%"" cli.py gateway tunnel"
+start "Anara - Remote Tunnel" cmd /c "cd /d "%ROOT_DIR%" && "%PYTHON_CMD%" cli.py gateway tunnel"
 
 echo.
 echo ======================================================================

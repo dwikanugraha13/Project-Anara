@@ -81,8 +81,9 @@ class ChatSessionsMixin:
 
     def get_sessions(self, speaker_name: Optional[str] = None,
                      session_type: Optional[str] = None,
+                     channel: Optional[str] = None,
                      include_archived: bool = False, limit: int = 200) -> List[Dict[str, Any]]:
-        """Lists conversation threads, pinned first then most recently used, optionally filtered by session_type."""
+        """Lists conversation threads, pinned first then most recently used, optionally filtered by session_type and channel."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             query = """
@@ -106,6 +107,9 @@ class ChatSessionsMixin:
             if session_type:
                 where.append("COALESCE(s.session_type, 'chat') = ?")
                 params.append(session_type.strip().lower())
+            if channel:
+                where.append("COALESCE(s.channel, 'web') = ?")
+                params.append(channel.strip().lower())
             if speaker_name:
                 where.append("(s.speaker_name = ? OR s.speaker_name IS NULL)")
                 params.append(speaker_name.strip().title())
@@ -146,9 +150,20 @@ class ChatSessionsMixin:
                 return row["id"] if row else None
         return None
 
-    def get_last_active_session_id(self, speaker_name: Optional[str] = None, session_type: Optional[str] = None) -> Optional[int]:
-        """Returns the ID of the most recently updated active chat thread."""
-        sessions = self.get_sessions(speaker_name=speaker_name, session_type=session_type, include_archived=False, limit=1)
+    def get_last_active_session_id(
+        self,
+        speaker_name: Optional[str] = None,
+        session_type: Optional[str] = None,
+        channel: Optional[str] = None
+    ) -> Optional[int]:
+        """Returns the ID of the most recently updated active chat thread, optionally scoped to channel."""
+        sessions = self.get_sessions(
+            speaker_name=speaker_name,
+            session_type=session_type,
+            channel=channel,
+            include_archived=False,
+            limit=1
+        )
         if sessions:
             return sessions[0]["id"]
         return None
