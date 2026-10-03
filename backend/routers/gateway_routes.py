@@ -212,11 +212,15 @@ class ApprovalModeRequest(BaseModel):
 
 @router.get("/api/approvals/mode")
 async def get_approval_mode_endpoint():
-    """Returns the persistent approval mode (manual, smart, off)."""
+    """Returns the persistent approval mode (plan, auto, off)."""
     from config import cfg_get
-    mode = str(cfg_get("approvals.mode", "smart")).strip().lower()
-    if mode not in ("manual", "smart", "off"):
-        mode = "smart"
+    mode = str(cfg_get("approvals.mode", "auto")).strip().lower()
+    if mode in ("smart", "auto"):
+        mode = "auto"
+    elif mode in ("manual", "plan"):
+        mode = "plan"
+    elif mode != "off":
+        mode = "auto"
     return {"status": "ok", "mode": mode}
 
 
@@ -225,10 +229,16 @@ async def set_approval_mode_endpoint(req: ApprovalModeRequest):
     """Sets and persists the approval mode to config.yaml."""
     from config import save_config
     mode = req.mode.strip().lower()
-    if mode not in ("manual", "smart", "off"):
+    if mode in ("smart", "auto"):
+        normalized = "auto"
+    elif mode in ("manual", "plan"):
+        normalized = "plan"
+    elif mode == "off":
+        normalized = "off"
+    else:
         raise HTTPException(
             status_code=400,
-            detail="Invalid approval mode. Must be 'manual', 'smart', or 'off'."
+            detail="Invalid approval mode. Must be 'plan', 'auto', or 'off'."
         )
-    save_config({"approvals.mode": mode})
-    return {"status": "ok", "mode": mode}
+    save_config({"approvals.mode": normalized})
+    return {"status": "ok", "mode": normalized}

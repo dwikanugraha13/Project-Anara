@@ -2,7 +2,7 @@
 
 import React from "react";
 
-export type ApprovalMode = "manual" | "smart" | "off";
+export type ApprovalMode = "plan" | "auto" | "off" | "manual" | "smart";
 
 export interface ApprovalModePopoverProps {
   isOpen: boolean;
@@ -19,13 +19,13 @@ interface ModeOption {
 
 const MODE_OPTIONS: ModeOption[] = [
   {
-    id: "manual",
-    title: "Manual",
-    description: "Ask before actions that require approval",
+    id: "plan",
+    title: "Plan",
+    description: "Analyze codebase and plan before executing actions",
   },
   {
-    id: "smart",
-    title: "Smart",
+    id: "auto",
+    title: "Auto",
     description: "Automatically assess actions and ask when needed",
   },
   {
@@ -55,14 +55,14 @@ export default function ApprovalModePopover({
             Approval mode
           </span>
           <span className="text-[9.5px] font-mono px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/[0.08] text-cyan-400 capitalize">
-            {mode}
+            {mode === "manual" ? "plan" : mode === "smart" ? "auto" : mode}
           </span>
         </div>
 
         {/* Options List */}
         <div className="mt-1 flex flex-col gap-0.5">
           {MODE_OPTIONS.map((opt) => {
-            const isSelected = mode === opt.id;
+            const isSelected = mode === opt.id || (opt.id === "plan" && mode === "manual") || (opt.id === "auto" && mode === "smart");
             return (
               <button
                 key={opt.id}

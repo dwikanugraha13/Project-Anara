@@ -646,29 +646,38 @@ async def _handle_cmd_approvals(ctx: UniversalCommandContext) -> UniversalComman
     arg = ctx.args.strip().lower()
     if ctx.command == "yolo":
         arg = "off"
+    elif arg == "manual":
+        arg = "plan"
+    elif arg == "smart":
+        arg = "auto"
 
-    current_mode = str(cfg_get("approvals.mode", "smart")).strip().lower()
+    current_mode = str(cfg_get("approvals.mode", "auto")).strip().lower()
+    if current_mode == "manual":
+        current_mode = "plan"
+    elif current_mode == "smart":
+        current_mode = "auto"
+
     if not arg:
         desc = {
-            "manual": "Ask before actions that require approval (intercept all mutating and ask actions)",
-            "smart": "Automatically assess actions and ask when needed (default: auto-approves safe commands, pauses for fatal destructive actions)",
+            "plan": "Analyze and plan before executing actions (intercept mutating tools for plan approval)",
+            "auto": "Automatically assess actions and ask when needed (autonomous execution with smart safety gates)",
             "off": "Run without approval prompts (full autonomous execution)"
         }.get(current_mode, "")
         return UniversalCommandResponse(
-            text=f"⚙️ <b>Approval Mode:</b> <code>{current_mode}</code>\n<i>{desc}</i>\n\nUsage: <code>/approvals [manual|smart|off]</code>"
+            text=f"⚙️ <b>Approval Mode:</b> <code>{current_mode}</code>\n<i>{desc}</i>\n\nUsage: <code>/approvals [plan|auto|off]</code>"
         )
 
-    if arg not in ("manual", "smart", "off"):
+    if arg not in ("plan", "auto", "off"):
         return UniversalCommandResponse(
-            text="⚠️ <b>Invalid approval mode.</b>\nValid values: <code>manual</code>, <code>smart</code>, <code>off</code>\nExample: <code>/approvals smart</code>"
+            text="⚠️ <b>Invalid approval mode.</b>\nValid values: <code>plan</code>, <code>auto</code>, <code>off</code>\nExample: <code>/approvals auto</code>"
         )
 
     save_config({"approvals.mode": arg})
     return UniversalCommandResponse(
         text=f"✅ <b>Approval Mode updated:</b> <code>{arg}</code>\n" + (
             "🚀 <i>Autonomous execution active — agent will run tools without confirmation prompts.</i>" if arg == "off" else
-            "🛡️ <i>Smart AI safety evaluation active — safe commands run directly, destructive actions pause for approval.</i>" if arg == "smart" else
-            "🔒 <i>Manual approval active — agent will ask before any file edits or mutating commands.</i>"
+            "🛡️ <i>Auto mode active — safe commands run directly, risky destructive actions pause for approval.</i>" if arg == "auto" else
+            "📋 <i>Plan mode active — agent will research, formulate a plan, and ask before making changes.</i>"
         )
     )
 

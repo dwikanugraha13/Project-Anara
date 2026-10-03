@@ -285,18 +285,18 @@ async def _execute_native_agent_loop(
                 from core.plan_detector import smart_evaluate_command_safety
                 t_risk = await smart_evaluate_command_safety(t_args.get("command", ""), description=user_prompt[:80])
 
-            # Safety Interception based on approvals.mode (manual, smart, off):
+            # Safety Interception based on approvals.mode (plan, auto, off):
             from config import cfg_get
-            approval_mode = str(cfg_get("approvals.mode", "smart")).strip().lower()
+            approval_mode = str(cfg_get("approvals.mode", "auto")).strip().lower()
 
-            if approval_mode == "off":
+            if approval_mode in ("off", "yolo"):
                 # 'off': Run without approval prompts (only fatal sandbox hard violations are blocked by sandbox.py)
                 should_intercept = False
-            elif approval_mode == "manual":
-                # 'manual': Ask before actions that require approval (intercept all mutating and ask actions)
+            elif approval_mode in ("plan", "manual"):
+                # 'plan': Ask before actions that require approval (intercept all mutating and ask actions)
                 should_intercept = t_risk in ("mutating", "ask")
             else:
-                # 'smart' (default): Automatically assess actions and ask when needed
+                # 'auto' / 'smart' (default): Automatically assess actions and ask when needed
                 should_intercept = (t_risk == "ask") or (intercept_mutating_tools and t_risk in ("mutating", "ask"))
 
             if should_intercept:
@@ -959,18 +959,18 @@ async def _execute_json_agent_loop(
                 from core.plan_detector import smart_evaluate_command_safety
                 t_risk = await smart_evaluate_command_safety(t_args.get("command", ""), description=user_prompt[:80])
 
-            # Safety Interception based on approvals.mode (manual, smart, off):
+            # Safety Interception based on approvals.mode (plan, auto, off):
             from config import cfg_get
-            approval_mode = str(cfg_get("approvals.mode", "smart")).strip().lower()
+            approval_mode = str(cfg_get("approvals.mode", "auto")).strip().lower()
 
-            if approval_mode == "off":
+            if approval_mode in ("off", "yolo"):
                 # 'off': Run without approval prompts (only fatal sandbox hard violations are blocked by sandbox.py)
                 should_intercept = False
-            elif approval_mode == "manual":
-                # 'manual': Ask before actions that require approval (intercept all mutating and ask actions)
+            elif approval_mode in ("plan", "manual"):
+                # 'plan': Ask before actions that require approval (intercept all mutating and ask actions)
                 should_intercept = t_risk in ("mutating", "ask")
             else:
-                # 'smart' (default): Automatically assess actions and ask when needed
+                # 'auto' / 'smart' (default): Automatically assess actions and ask when needed
                 should_intercept = (t_risk == "ask") or (intercept_mutating_tools and t_risk in ("mutating", "ask"))
 
             if should_intercept:

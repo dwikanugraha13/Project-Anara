@@ -236,18 +236,18 @@ export default function AgentStatusBar({
             className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-all cursor-pointer text-[10.5px] ${
               approvalMode === "off"
                 ? "bg-rose-500/15 text-rose-300 border border-rose-400/25 hover:bg-rose-500/25"
-                : approvalMode === "manual"
+                : approvalMode === "plan" || approvalMode === "manual"
                 ? "bg-amber-500/15 text-amber-300 border border-amber-400/25 hover:bg-amber-500/25"
                 : "text-slate-300 hover:text-white hover:bg-white/10"
             }`}
-            title={`Approval mode: ${approvalMode} (Click to change)`}
+            title={`Approval mode: ${approvalMode === "manual" ? "plan" : approvalMode === "smart" ? "auto" : approvalMode} (Click to change)`}
           >
             {/* SVG Zap Icon (Liquid Glass styling, zero raw emoji) */}
             <svg
               className={`w-3 h-3 ${
                 approvalMode === "off"
                   ? "text-rose-400"
-                  : approvalMode === "manual"
+                  : approvalMode === "plan" || approvalMode === "manual"
                   ? "text-amber-400"
                   : "text-cyan-400"
               }`}
@@ -262,7 +262,9 @@ export default function AgentStatusBar({
                 d="M13 10V3L4 14h7v7l9-11h-7z"
               />
             </svg>
-            <span className="font-semibold capitalize text-slate-200">{approvalMode}</span>
+            <span className="font-semibold capitalize text-slate-200">
+              {approvalMode === "manual" ? "Plan" : approvalMode === "smart" ? "Auto" : approvalMode}
+            </span>
           </button>
 
           <span className="text-slate-700">|</span>
