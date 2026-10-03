@@ -21,6 +21,11 @@ const AnaraCodeIDE = dynamic<AnaraCodeIDEProps>(() => import("../ide/AnaraCodeID
   ssr: false,
 });
 
+const ArtifactsGalleryModal = dynamic(
+  () => import("../artifacts/ArtifactsGalleryModal"),
+  { ssr: false }
+);
+
 const WorkbenchTerminal = dynamic(() => import("../ide/WorkbenchTerminal"), {
   ssr: false,
 });
@@ -185,6 +190,7 @@ export default function AnaraWorkbench({
 }: AnaraWorkbenchProps) {
   const [inputMessage, setInputMessage] = useState("");
   const [isBrainDrawerOpen, setIsBrainDrawerOpen] = useState(false);
+  const [isArtifactsModalOpen, setIsArtifactsModalOpen] = useState(false);
   const [agentMode, setAgentMode] = useState<"plan" | "build">("plan");
   const [voiceModelId, setVoiceModelId] = useState<string>("gemini-3.1-flash-live-preview");
   const [chatModelId, setChatModelId] = useState<string>("9router/ag/gemini-3.8-flash-high");
@@ -696,6 +702,7 @@ export default function AnaraWorkbench({
             onSelectSession={handleSelectSession}
             onNewSession={handleNewSession}
             onOpenBrain={() => setIsBrainDrawerOpen(true)}
+            onOpenArtifacts={() => setIsArtifactsModalOpen(true)}
             onOpenFileIDE={handleOpenFileIDE}
             onOpenFolder={handleFolderUpload}
             refreshKey={sessionRefreshKey}
@@ -745,6 +752,7 @@ export default function AnaraWorkbench({
               onSelectSession={handleSelectSession}
               onNewSession={handleNewSession}
               onOpenBrain={() => setIsBrainDrawerOpen(true)}
+              onOpenArtifacts={() => setIsArtifactsModalOpen(true)}
               onOpenFileIDE={handleOpenFileIDE}
               onOpenFolder={handleFolderUpload}
               refreshKey={sessionRefreshKey}
@@ -1008,6 +1016,16 @@ export default function AnaraWorkbench({
             activeSpeaker={activeSpeaker}
           />
         </Suspense>
+      )}
+
+      {/* ── Artifacts Gallery Modal (/artifacts Parity) ── */}
+      {isArtifactsModalOpen && (
+        <ArtifactsGalleryModal
+          isOpen={isArtifactsModalOpen}
+          onClose={() => setIsArtifactsModalOpen(false)}
+          onOpenFileInEditor={(p, name) => handleOpenFileIDE(p, name || "file")}
+          onOpenSession={(sId) => handleSelectSession(sId)}
+        />
       )}
 
       {/* ── Quick Command Palette Overlay (Ctrl+K / Ctrl+P) ── */}

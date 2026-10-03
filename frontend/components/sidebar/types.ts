@@ -94,6 +94,7 @@ export interface ChatSessionSidebarProps {
   onSelectSession: (id: number) => void;
   onNewSession: () => void;
   onOpenBrain?: () => void;
+  onOpenArtifacts?: () => void;
   onOpenFileIDE?: (filePath: string, fileName: string) => void;
   onOpenFolder?: () => void;
   refreshKey?: number;
