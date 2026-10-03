@@ -115,6 +115,9 @@ export interface SessionSwitchedPayload {
   session_type?: "chat" | "code";
   title?: string | null;
   messages: SessionMessage[];
+  inFlight?: boolean;
+  status?: string;
+  liveTool?: any;
 }
 
 export interface AgentActionPayload {

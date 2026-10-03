@@ -529,10 +529,11 @@ async def _execute_native_agent_loop(
             try:
                 from core.capabilities import get_fast_auxiliary_model
                 aux_model = get_fast_auxiliary_model() or model_id
+                highlights = "\n".join([f"- {item.get('tool_name', 'action')}: {str(item.get('summary', ''))[:140]}" for item in executed_items_for_convergence[-10:]])
                 synthesis_prompt = (
                     f"User asked: \"{user_prompt}\"\n\n"
-                    "The agent completed workspace actions and observations. Provide a direct, helpful, and natural response "
-                    "to the user in their active language, summarizing what was checked or asking for clarification if needed."
+                    f"The agent executed the following workspace actions and checks:\n{highlights}\n\n"
+                    "Provide a direct, helpful, and natural response to the user in their active language (Indonesian gaul santai, lu-gue), summarizing what was checked and the final conclusion."
                 )
                 fallback_res = await call_universal_chat_model(
                     model_id=aux_model,

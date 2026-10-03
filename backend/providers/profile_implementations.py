@@ -242,8 +242,8 @@ def _parse_openai_compatible_native_payload(
                     if ch0.get("finish_reason"):
                         finish_reason = ch0["finish_reason"]
                     delta = ch0.get("delta") or ch0.get("message") or {}
-                    if delta.get("content"):
-                        c_txt = delta["content"]
+                    c_txt = delta.get("content") or delta.get("reasoning_content") or delta.get("thought") or ""
+                    if c_txt:
                         text_parts.append(c_txt)
                         if token_cb:
                             r = token_cb(c_txt)
@@ -333,6 +333,10 @@ def _parse_openai_compatible_native_payload(
         choice = choices[0]
         msg = choice.get("message", {})
         text = msg.get("content") or ""
+        reasoning = msg.get("reasoning_content") or msg.get("thought") or msg.get("reasoning") or ""
+        if not text.strip() and reasoning.strip():
+            logger.info(f"[OpenAICompatibleProfile] Promoting reasoning ({len(reasoning)} chars) to final text response.")
+            text = reasoning.strip()
         if token_cb and text:
             r = token_cb(text)
             if asyncio.iscoroutine(r):
@@ -560,8 +564,10 @@ class CodexOpenAIProviderProfile(BaseProviderProfile):
                     is_reasoning_model = bool(re.match(r'^o[1-9]', target_model))
                     if not is_reasoning_model:
                         payload["temperature"] = temperature
-                    if openai_tools and allow_tools:
+                    if openai_tools:
                         payload["tools"] = openai_tools
+                        if not allow_tools:
+                            payload["tool_choice"] = "none"
                     if max_tokens is not None and max_tokens > 0:
                         if is_reasoning_model:
                             payload["max_completion_tokens"] = max_tokens
@@ -1217,8 +1223,10 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                 "messages": history,
                 "temperature": temperature,
             }
-            if openai_tools and allow_tools:
+            if openai_tools:
                 payload["tools"] = openai_tools
+                if not allow_tools:
+                    payload["tool_choice"] = "none"
             if max_tokens is not None and max_tokens > 0:
                 payload["max_tokens"] = max_tokens
             if reasoning_effort:

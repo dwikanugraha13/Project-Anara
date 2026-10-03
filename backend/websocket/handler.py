@@ -596,7 +596,9 @@ async def websocket_endpoint(websocket: WebSocket):
                                 if bridge_ctx and gemini_service._is_running:
                                     asyncio.create_task(gemini_service.inject_context(bridge_ctx))
 
-                            await websocket.send_json({
+                            from shared_state import get_session_run
+                            run_info = get_session_run(active_session_id)
+                            switch_payload = {
                                 "type": "session_switched",
                                 "sessionId": target,
                                 "session_key": sess.get("session_key"),
@@ -604,7 +606,13 @@ async def websocket_endpoint(websocket: WebSocket):
                                 "title": sess.get("title"),
                                 "session_type": sess.get("session_type", "chat"),
                                 "messages": msgs,
-                            })
+                            }
+                            if run_info:
+                                switch_payload["inFlight"] = True
+                                switch_payload["status"] = run_info.get("status", "thinking")
+                                switch_payload["liveTool"] = run_info.get("live_tool")
+
+                            await websocket.send_json(switch_payload)
                     elif msg_type == "new_session":
                         req_type = data.get("session_type") or data.get("sessionType") or "chat"
                         req_title = data.get("title")

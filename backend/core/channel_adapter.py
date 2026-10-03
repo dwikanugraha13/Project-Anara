@@ -632,6 +632,11 @@ async def _process_channel_request_core(
                 except Exception:
                     pass
         try:
+            from shared_state import register_session_run
+            register_session_run(session_id, status="thinking", live_tool=evt)
+        except Exception:
+            pass
+        try:
             from telemetry.event_bus import telemetry_bus, EventType, ActivityProvenance
             asyncio.create_task(
                 telemetry_bus.emit(
@@ -873,6 +878,12 @@ async def _process_channel_request_core(
         )
     except Exception as e_si:
         logger.debug(f"[ChannelGateway] Self-improvement trigger error: {e_si}")
+
+    try:
+        from shared_state import unregister_session_run
+        unregister_session_run(session_id)
+    except Exception:
+        pass
 
     return ChannelResponse(
         text=final_reply,

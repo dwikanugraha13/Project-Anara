@@ -544,6 +544,9 @@ export function useWebSocket({
                   session_type: stype,
                   title: msg.title ?? null,
                   messages: msg.messages ?? [],
+                  inFlight: Boolean((msg as any).inFlight),
+                  status: (msg as any).status,
+                  liveTool: (msg as any).liveTool,
                 };
 
                 cb.onSessionSwitched?.(switchedPayload);

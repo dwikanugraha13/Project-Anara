@@ -503,7 +503,15 @@ export default function HomePageClient({
     });
 
     setSessionRefreshKey((k) => k + 1);
-    setAssistantStatus("idle");
+    if (payload.inFlight) {
+      setAssistantStatus("thinking");
+      if (payload.liveTool) {
+        setLiveToolProgress(payload.liveTool);
+      }
+    } else {
+      setAssistantStatus("idle");
+      setLiveToolProgress(null);
+    }
     console.log(`[Sessions] Restored ${restored.length} bubble(s) with full HUD artifacts from session #${payload.sessionId}`);
   }, []);
 

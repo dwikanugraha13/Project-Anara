@@ -151,6 +151,35 @@ def broadcast_brain_sync(event_type: str, data: Optional[Dict[str, Any]] = None)
             pass
 
 
+active_session_runs: Dict[str, Dict[str, Any]] = {}
+
+
+def register_session_run(session_id: Any, status: str = "thinking", live_tool: Optional[Dict[str, Any]] = None):
+    """Registers an in-flight turn for a session so connecting clients know it's actively working."""
+    sid = str(session_id).strip()
+    active_session_runs[sid] = {
+        "status": status,
+        "live_tool": live_tool,
+        "updated_at": time.time(),
+    }
+
+
+def unregister_session_run(session_id: Any):
+    """Removes in-flight turn tracking for a session when the turn completes."""
+    sid = str(session_id).strip()
+    active_session_runs.pop(sid, None)
+
+
+def get_session_run(session_id: Any) -> Optional[Dict[str, Any]]:
+    """Returns active in-flight run metadata if currently executing (expires after 10m)."""
+    sid = str(session_id).strip()
+    run = active_session_runs.get(sid)
+    if run and (time.time() - run.get("updated_at", 0)) > 600:
+        active_session_runs.pop(sid, None)
+        return None
+    return run
+
+
 def broadcast_agent_event(event_data: Dict[str, Any]):
     """Broadcasts live agent tool executions and proactive HUD projections to frontend."""
     global last_active_visual_payload
@@ -191,9 +220,14 @@ def broadcast_agent_event(event_data: Dict[str, Any]):
         for ws in list(active_websockets):
             ws_sid = websocket_session_map.get(ws)
             # Session Isolation Guard: If this event is scoped to a session,
-            # only deliver to WebSockets currently tuned to that session.
-            if event_sid is not None and ws_sid is not None and ws_sid != event_sid:
-                continue
+            # only deliver to WebSockets currently tuned to that session (canonical str comparison).
+            if event_sid is not None and ws_sid is not None:
+                try:
+                    if str(ws_sid).strip() != str(event_sid).strip():
+                        continue
+                except Exception:
+                    if ws_sid != event_sid:
+                        continue
 
             if cur_loop and cur_loop == loop:
                 loop.create_task(_safe_ws_send(ws, event_data))
