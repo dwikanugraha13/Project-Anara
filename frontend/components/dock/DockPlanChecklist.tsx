@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 
 export interface ChecklistStep {
   title: string;
@@ -33,6 +33,8 @@ export function DockPlanChecklist({
 }: DockPlanChecklistProps) {
   // Optimistic local toggling for instant micro-interaction
   const [localOverrides, setLocalOverrides] = useState<Record<number, boolean>>({});
+  const [isLingerComplete, setIsLingerComplete] = useState(false);
+  const lingerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   if (!checklistData || !checklistData.items || checklistData.items.length === 0) {
     return null;
@@ -45,6 +47,27 @@ export function DockPlanChecklist({
 
   const effectiveCompletedCount = effectiveItems.filter((i) => i.isCompleted).length;
   const isAllDone = effectiveCompletedCount === checklistData.total;
+
+  // Anara Standard: Linger for 3.5s upon completion so checkmark lands, then auto-dismiss
+  useEffect(() => {
+    if (isAllDone && !isLingerComplete) {
+      if (lingerTimeoutRef.current) clearTimeout(lingerTimeoutRef.current);
+      lingerTimeoutRef.current = setTimeout(() => {
+        setIsLingerComplete(true);
+      }, 3500);
+    } else if (!isAllDone) {
+      setIsLingerComplete(false);
+      if (lingerTimeoutRef.current) {
+        clearTimeout(lingerTimeoutRef.current);
+        lingerTimeoutRef.current = null;
+      }
+    }
+    return () => {
+      if (lingerTimeoutRef.current) clearTimeout(lingerTimeoutRef.current);
+    };
+  }, [isAllDone, isLingerComplete]);
+
+  if (isLingerComplete) return null;
 
   const handleToggleStep = (index: number) => {
     const currentVal = effectiveItems[index]?.isCompleted ?? false;
