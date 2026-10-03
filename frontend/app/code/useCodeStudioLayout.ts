@@ -43,7 +43,7 @@ export interface UseCodeStudioLayoutReturn {
 
 /**
  * useCodeStudioLayout — Layout state, pane widths/heights, and mouse drag resizing
- * for Antigravity Code Studio with persistent storage and SSR cookie synchronization.
+ * for Anara Code Studio with persistent storage and SSR cookie synchronization.
  */
 export function useCodeStudioLayout(
   options: UseCodeStudioLayoutOptions = {}

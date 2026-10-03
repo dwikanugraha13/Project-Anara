@@ -7,9 +7,13 @@ export default function BrainToolsTab() {
   const [toolsCatalog, setToolsCatalog] = useState<ToolItem[]>([]);
   const [subagentTasks, setSubagentTasks] = useState<SubagentTask[]>([]);
   const [autoTasks, setAutoTasks] = useState<AutonomousTaskInfo[]>([]);
-  const [toolsSubTab, setToolsSubTab] = useState<"tools" | "subagents" | "autonomous">("tools");
+  const [toolsSubTab, setToolsSubTab] = useState<"tools" | "mcp" | "subagents" | "autonomous">("tools");
   const [selectedToolCategory, setSelectedToolCategory] = useState<string>("all");
   const [expandedToolSchema, setExpandedToolSchema] = useState<string | null>(null);
+
+  // Model Context Protocol (MCP) Connectors State
+  const [mcpServers, setMcpServers] = useState<Record<string, any>>({});
+  const [isConnectingMcp, setIsConnectingMcp] = useState(false);
 
   // New Autonomous Task Form State
   const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
@@ -20,6 +24,30 @@ export default function BrainToolsTab() {
   const [taskChannel, setTaskChannel] = useState("telegram");
   const [isTriggering, setIsTriggering] = useState<string | null>(null);
   const [deleteTaskConfirm, setDeleteTaskConfirm] = useState<{ id: string; name: string } | null>(null);
+
+  const fetchMcpServers = useCallback(async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/brain/mcp/servers`).then((r) => (r.ok ? r.json() : null));
+      if (res && res.servers) {
+        setMcpServers(res.servers);
+      }
+    } catch (err) {
+      console.warn("[BrainToolsTab] MCP fetch error:", err);
+    }
+  }, []);
+
+  const handleConnectMcp = async () => {
+    setIsConnectingMcp(true);
+    try {
+      await fetch(`${BACKEND_URL}/api/brain/mcp/servers/connect`, { method: "POST" });
+      await fetchMcpServers();
+      await fetchToolsAndTasks();
+    } catch (err) {
+      console.warn("[BrainToolsTab] MCP connect error:", err);
+    } finally {
+      setIsConnectingMcp(false);
+    }
+  };
 
   const fetchToolsAndTasks = useCallback(async () => {
     try {
@@ -44,7 +72,8 @@ export default function BrainToolsTab() {
 
   useEffect(() => {
     fetchToolsAndTasks();
-  }, [fetchToolsAndTasks]);
+    fetchMcpServers();
+  }, [fetchToolsAndTasks, fetchMcpServers]);
 
   const handleCreateAutoTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,6 +168,23 @@ export default function BrainToolsTab() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
             <span>Tools Catalog ({toolsCatalog.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setToolsSubTab("mcp");
+              fetchMcpServers();
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all cursor-pointer select-none shrink-0 ${
+              toolsSubTab === "mcp"
+                ? "bg-white/[0.08] text-white border-white/[0.14] shadow-sm"
+                : "border-transparent text-slate-400 hover:text-white hover:bg-white/[0.03]"
+            }`}
+          >
+            <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <span>MCP Connectors ({Object.keys(mcpServers).length})</span>
           </button>
           <button
             type="button"
@@ -254,6 +300,90 @@ export default function BrainToolsTab() {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* ── Sub-tab: MCP Connectors (Model Context Protocol) ── */}
+      {toolsSubTab === "mcp" && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-white/[0.025] border border-white/[0.08]">
+            <div className="flex items-center gap-2.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse shrink-0" />
+              <div>
+                <h4 className="text-xs sm:text-sm font-semibold text-white font-mono">
+                  Model Context Protocol (MCP) Stdio &amp; HTTP Client
+                </h4>
+                <p className="text-xs text-slate-400">
+                  Subprocess sandboxing with env-var whitelist, stderr drain &amp; regex secret scrubbing.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleConnectMcp}
+              disabled={isConnectingMcp}
+              className="px-3 py-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/30 text-cyan-200 text-xs font-mono font-medium transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <svg className={`w-3.5 h-3.5 ${isConnectingMcp ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span>{isConnectingMcp ? "Connecting..." : "Reconnect Servers"}</span>
+            </button>
+          </div>
+
+          {Object.keys(mcpServers).length === 0 ? (
+            <div className="p-8 rounded-xl border border-white/[0.08] bg-black/30 text-center flex flex-col items-center gap-2">
+              <span className="text-xs font-medium text-slate-300">No MCP servers currently configured in config.yaml or .anara/mcp.json</span>
+              <p className="text-[11px] text-slate-500 max-w-md">
+                Configure your MCP servers under `mcp_servers` in config.yaml or `.anara/mcp.json` to automatically expose external tools with native sandboxing.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {Object.entries(mcpServers).map(([name, s]) => (
+                <div key={name} className="p-3.5 rounded-xl border border-white/[0.08] bg-black/40 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 truncate">
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${s.connected ? "bg-emerald-400 shadow-[0_0_6px_#34d399]" : "bg-slate-500"}`} />
+                        <h4 className="text-xs font-bold text-white font-mono truncate">{name}</h4>
+                      </div>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-white/[0.05] border border-white/[0.08] text-slate-300 shrink-0 ml-2">
+                        {s.transport || "stdio"}
+                      </span>
+                    </div>
+
+                    <p className="mt-2 text-[11px] font-mono text-slate-400 truncate">
+                      {s.command ? `$ ${s.command} ${(s.args || []).join(" ")}` : s.url}
+                    </p>
+
+                    {s.tools && s.tools.length > 0 && (
+                      <div className="mt-2.5 flex flex-wrap gap-1">
+                        {s.tools.slice(0, 6).map((t: string) => (
+                          <span key={t} className="px-1.5 py-0.5 rounded text-[9.5px] font-mono bg-cyan-950/40 border border-cyan-500/20 text-cyan-300">
+                            {t}
+                          </span>
+                        ))}
+                        {s.tools.length > 6 && (
+                          <span className="text-[9.5px] font-mono text-slate-500">
+                            +{s.tools.length - 6} more
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-3 pt-2 flex items-center justify-between border-t border-white/[0.05] text-[10px] font-mono text-slate-500">
+                    <span>{s.tools_count || 0} tools exposed</span>
+                    <span className={s.connected ? "text-emerald-400 font-medium" : "text-slate-500"}>
+                      {s.connected ? "Connected" : "Disconnected"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

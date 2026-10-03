@@ -18,7 +18,7 @@ export interface ActivityBarProps {
 }
 
 /**
- * ActivityBar — Antigravity Studio primary vertical icon rail.
+ * ActivityBar — Anara Code Studio primary vertical icon rail.
  * Provides quick 1-click toggling for File Explorer, Git Review, Terminal, Agent Console, and Brain.
  */
 export function ActivityBar({

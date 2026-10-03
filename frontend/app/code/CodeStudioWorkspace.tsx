@@ -143,7 +143,7 @@ export function CodeStudioWorkspace({
 }: CodeStudioWorkspaceProps) {
   return (
     <div className="flex-1 flex min-h-0 items-stretch overflow-hidden relative">
-      {/* ── ACTIVITY BAR (Antigravity Studio Primary Icon Rail) ── */}
+      {/* ── ACTIVITY BAR (Anara Code Studio Primary Icon Rail) ── */}
       <ActivityBar
         isLeftOpen={isLeftOpen}
         setIsLeftOpen={setIsLeftOpen}
@@ -254,7 +254,7 @@ export function CodeStudioWorkspace({
               />
             </Suspense>
           ) : (
-            /* Studio Welcome Empty State: Liquid Glass Antigravity Hub */
+            /* Studio Welcome Empty State: Liquid Glass Anara Hub */
             <div className="flex-1 flex flex-col items-center justify-center p-8 select-none bg-gradient-to-b from-[#060a16]/60 via-[#040813]/80 to-[#02050e] text-slate-300 font-sans relative overflow-hidden">
               <div className="absolute w-[450px] h-[450px] rounded-full bg-cyan-500/[0.04] blur-[120px] pointer-events-none" />
               <div className="absolute w-[300px] h-[300px] rounded-full bg-purple-500/[0.03] blur-[100px] pointer-events-none" />
@@ -374,7 +374,7 @@ export function CodeStudioWorkspace({
           style={{ width: `var(--studio-right-width, ${rightWidth}px)`, transition: "none" }}
           className="h-full shrink-0 flex flex-col overflow-hidden bg-[#060913]/90 backdrop-blur-xl relative select-none studio-pane border-l border-white/[0.08]"
         >
-          {/* Antigravity Agent Console Header */}
+          {/* Anara Agent Console Header */}
           <div className="h-9 shrink-0 px-3 border-b border-white/[0.08] flex items-center justify-between bg-[#060913]/95 font-mono text-xs select-none">
             <div className="flex items-center gap-2">
               <span className={`w-2 h-2 rounded-full ${assistantStatus === "thinking" ? "bg-cyan-400 animate-pulse shadow-[0_0_8px_#22d3ee]" : "bg-emerald-400 shadow-[0_0_8px_#34d399]"}`} />

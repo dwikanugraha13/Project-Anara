@@ -106,21 +106,25 @@ async def _tool_cronjob_manage(
                 "message": "Parameter 'prompt' (task instruction) is required to schedule a background task."
             }
         task_name = (name or prompt[:30]).strip()
-        interval = _parse_schedule_to_seconds(schedule or "1h")
+        sched_clean = (schedule or "1h").strip()
+        is_cron = len(sched_clean.split()) == 5
+        interval = _parse_schedule_to_seconds(sched_clean)
 
         res = autonomous_engine.register_task(
             name=task_name,
             prompt=prompt.strip(),
-            trigger_type="interval",
+            trigger_type="cron" if is_cron else "interval",
             interval_seconds=interval,
             trust_level=trust_level or "semi_autonomous",
             target_channel=target_channel or "telegram",
             target_channel_id=target_channel_id,
-            task_id=task_id
+            task_id=task_id,
+            cron_expr=sched_clean if is_cron else None
         )
+        msg_suffix = f"Cron schedule '{sched_clean}'" if is_cron else f"Runs every {interval}s"
         return {
             "status": "success",
-            "message": f"Scheduled task '{task_name}' created successfully [ID: {res['id']}]. Runs every {interval}s to channel {target_channel}.",
+            "message": f"Scheduled task '{task_name}' created successfully [ID: {res['id']}]. {msg_suffix} to channel {target_channel}.",
             "task": res
         }
 

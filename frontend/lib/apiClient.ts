@@ -714,6 +714,12 @@ export const anaraApi = {
         method: "POST",
         body: JSON.stringify(payload),
       }),
+    getMcpServers: () =>
+      apiRequest<{ status: string; servers: Record<string, any>; total_servers: number }>("/api/brain/mcp/servers"),
+    connectMcpServers: () =>
+      apiRequest<{ status: string; connected_servers: number; servers: any }>("/api/brain/mcp/servers/connect", {
+        method: "POST",
+      }),
     getTools: () => apiRequest<any[]>("/api/agent/tools"),
     getToolsets: () => apiRequest<any[]>("/api/agent/toolsets"),
     semanticSearch: (query: string, speakerName?: string) => {

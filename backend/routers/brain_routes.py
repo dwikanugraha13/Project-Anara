@@ -417,3 +417,42 @@ async def install_skill_hub_endpoint(req: SkillHubInstallRequest):
     except Exception as e:
         logger.error(f"[SkillsHub] Install error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/brain/mcp/servers")
+async def get_mcp_servers_endpoint():
+    """Returns diagnostic status and tools for all configured and active Model Context Protocol (MCP) servers."""
+    try:
+        from integrations.mcp.manager import mcp_manager
+        status = mcp_manager.get_status()
+        configs = mcp_manager.load_mcp_server_configs()
+        merged = {}
+        for s_name, cfg in configs.items():
+            st = status.get(s_name, {})
+            merged[s_name] = {
+                "name": s_name,
+                "command": cfg.get("command", ""),
+                "args": cfg.get("args", []),
+                "url": cfg.get("url", ""),
+                "transport": "http" if cfg.get("url") else "stdio",
+                "connected": st.get("connected", False),
+                "tools_count": st.get("tools_count", 0),
+                "tools": st.get("tools", []),
+            }
+        return {"status": "success", "servers": merged, "total_servers": len(merged)}
+    except Exception as e:
+        logger.error(f"[BrainRouter] MCP status error: {e}")
+        return {"status": "success", "servers": {}, "total_servers": 0}
+
+
+@router.post("/api/brain/mcp/servers/connect")
+async def connect_mcp_servers_endpoint():
+    """Triggers connection handshake for all configured Model Context Protocol (MCP) servers."""
+    try:
+        from integrations.mcp.manager import mcp_manager
+        count = await mcp_manager.connect_all_servers()
+        return {"status": "success", "connected_servers": count, "servers": mcp_manager.get_status()}
+    except Exception as e:
+        logger.error(f"[BrainRouter] MCP connect error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+

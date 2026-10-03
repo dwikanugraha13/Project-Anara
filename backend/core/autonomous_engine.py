@@ -157,6 +157,10 @@ class AutonomousEngine:
                 cursor.execute("ALTER TABLE autonomous_tasks ADD COLUMN failure_count INTEGER DEFAULT 0;")
             except Exception:
                 pass
+            try:
+                cursor.execute("ALTER TABLE autonomous_tasks ADD COLUMN cron_expr TEXT;")
+            except Exception:
+                pass
 
             # Recover zombie tasks from prior ungraceful shutdowns (Anara Standard)
             try:
@@ -237,10 +241,11 @@ class AutonomousEngine:
         target_channel: str = "telegram",
         target_channel_id: Optional[str] = None,
         task_id: Optional[str] = None,
+        cron_expr: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Registers a scheduled or event-driven autonomous task."""
         t_id = task_id or f"task_{uuid.uuid4().hex[:8]}"
-        next_run = compute_next_run(trigger_type, interval_seconds, prompt if trigger_type == "cron" else None)
+        next_run = compute_next_run(trigger_type, interval_seconds, cron_expr)
 
         with self._get_conn() as conn:
             cursor = conn.cursor()
@@ -248,8 +253,8 @@ class AutonomousEngine:
                 INSERT INTO autonomous_tasks (
                     id, name, prompt, trigger_type, interval_seconds,
                     trust_level, target_channel, target_channel_id,
-                    is_active, status, next_run, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'idle', ?, CURRENT_TIMESTAMP)
+                    cron_expr, is_active, status, next_run, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'idle', ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name,
                     prompt=excluded.prompt,
@@ -257,21 +262,23 @@ class AutonomousEngine:
                     trust_level=excluded.trust_level,
                     target_channel=excluded.target_channel,
                     target_channel_id=excluded.target_channel_id,
+                    cron_expr=excluded.cron_expr,
                     is_active=excluded.is_active,
                     updated_at=CURRENT_TIMESTAMP
             """, (
                 t_id, name, prompt, trigger_type, interval_seconds,
                 trust_level, target_channel, target_channel_id,
-                next_run.isoformat()
+                cron_expr, next_run.isoformat()
             ))
             conn.commit()
 
-        logger.info(f"[AutonomousEngine] Registered task '{name}' [{t_id}] (trust={trust_level}, interval={interval_seconds}s)")
+        logger.info(f"[AutonomousEngine] Registered task '{name}' [{t_id}] (trust={trust_level}, trigger={trigger_type}, cron={cron_expr})")
         return {
             "id": t_id,
             "name": name,
             "prompt": prompt,
             "trust_level": trust_level,
+            "cron_expr": cron_expr,
             "next_run": next_run.isoformat()
         }
 
@@ -478,12 +485,13 @@ class AutonomousEngine:
             now = datetime.now(get_scheduler_timezone())
             if last_run:
                 # Calculate next run or finalize one-shot tasks
-                cursor.execute("SELECT interval_seconds, trigger_type, failure_count, prompt FROM autonomous_tasks WHERE id = ?", (task_id,))
+                cursor.execute("SELECT interval_seconds, trigger_type, failure_count, prompt, cron_expr FROM autonomous_tasks WHERE id = ?", (task_id,))
                 row = cursor.fetchone()
                 interval = row[0] if row else 3600
                 trigger_t = row[1] if row and len(row) > 1 else "interval"
                 fail_cnt = row[2] if row and len(row) > 2 and row[2] is not None else 0
                 task_prompt = row[3] if row and len(row) > 3 else ""
+                task_cron = row[4] if row and len(row) > 4 else None
 
                 if status == "idle":
                     fail_cnt = 0
@@ -512,7 +520,7 @@ class AutonomousEngine:
                         WHERE id = ?
                     """, (fail_cnt, now.isoformat(), task_id))
                 elif trigger_t == "cron":
-                    next_r = compute_next_run("cron", effective_interval, task_prompt)
+                    next_r = compute_next_run("cron", effective_interval, task_cron)
                     cursor.execute("""
                         UPDATE autonomous_tasks SET
                             status = ?,
