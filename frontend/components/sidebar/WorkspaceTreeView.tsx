@@ -837,7 +837,7 @@ export default function WorkspaceTreeView({
       {!fullWidth && (
         <div
           onMouseDown={startResizingTree}
-          className="relative w-px h-full cursor-col-resize shrink-0 select-none bg-white/[0.08] hover:bg-cyan-400/40 active:bg-cyan-400 transition-colors z-20"
+          className="relative w-px h-full cursor-col-resize shrink-0 select-none bg-white/[0.08] hover:bg-white/[0.16] active:bg-white/[0.22] transition-colors z-20"
           title="Drag to resize file tree width"
         >
           <div className="absolute inset-y-0 -left-1.5 w-3 cursor-col-resize bg-transparent hover:bg-transparent active:bg-transparent" />

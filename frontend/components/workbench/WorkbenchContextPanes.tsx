@@ -79,7 +79,7 @@ export function WorkbenchContextPanes({
   return (
     <div
       ref={contextPaneRef as any}
-      style={{ width: `${contextPaneWidth}px` }}
+      style={{ width: `${contextPaneWidth}px`, transition: "none" }}
       className="flex flex-col min-w-[320px] h-full bg-[#060913]/95 backdrop-blur-xl border-l border-white/[0.08] relative z-10"
     >
       {/* Context Pane Zone Header */}

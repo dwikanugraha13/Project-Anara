@@ -746,9 +746,9 @@ export default function AnaraWorkbench({
             {/* LEFT PANEL: SIDEBAR CHAT SESSION & EDITOR (Default Left Pane) */}
             <div
               className="hidden md:flex flex-col min-w-0 h-full shrink-0 border-r border-white/10"
-            style={{ width: sidebarWidth ? `${sidebarWidth}px` : "var(--sidebar-width, 260px)", transition: "none" }}
-            suppressHydrationWarning
-          >
+              style={{ width: `var(--sidebar-width, ${sidebarWidth || 260}px)`, transition: "none" }}
+              suppressHydrationWarning
+            >
             <ChatSessionSidebar
               isOpen={true}
               onClose={() => {}}
@@ -846,7 +846,7 @@ export default function AnaraWorkbench({
             {isContextPaneOpen && (
               <div
                 onMouseDown={startResizingContextPane}
-                className="relative w-px h-full cursor-col-resize shrink-0 select-none bg-white/[0.08] hover:bg-cyan-400/50 active:bg-cyan-400 transition-colors z-20"
+                className="relative w-px h-full cursor-col-resize shrink-0 select-none bg-white/[0.08] hover:bg-white/[0.16] active:bg-white/[0.22] transition-colors z-20"
                 title="Drag to resize Context Pane"
               >
                 <div className="absolute inset-y-0 -left-1.5 w-3 cursor-col-resize bg-transparent" />

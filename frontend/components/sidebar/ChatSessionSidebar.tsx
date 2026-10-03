@@ -377,7 +377,9 @@ export default function ChatSessionSidebar({
     };
   }, [activeSessionId, loadSessions, loadWorkspaceTree]);
 
-  // Drag to resize sidebar width
+  const latestWidthRef = useRef<number>(sidebarWidth || DEFAULT_SIDEBAR_WIDTH);
+
+  // Drag to resize sidebar width with ultra-smooth 60fps CSS variable updates
   const startResizing = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setIsResizing(true);
@@ -385,27 +387,39 @@ export default function ChatSessionSidebar({
     const computed = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-width"), 10);
     const minW = sessionType === "code" ? 480 : MIN_SIDEBAR_WIDTH;
     const defaultW = sessionType === "code" ? 950 : DEFAULT_SIDEBAR_WIDTH;
-    startWidthRef.current = sidebarWidth || (!isNaN(computed) && computed >= minW ? computed : defaultW);
+    const initialW = sidebarWidth || (!isNaN(computed) && computed >= minW ? computed : defaultW);
+    startWidthRef.current = initialW;
+    latestWidthRef.current = initialW;
   }, [sidebarWidth, sessionType]);
 
   useEffect(() => {
     if (!isResizing) return;
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
 
     const handleMouseMove = (e: MouseEvent) => {
       const delta = e.clientX - startXRef.current;
       const minW = sessionType === "code" ? 480 : MIN_SIDEBAR_WIDTH;
       const maxW = sessionType === "code" ? Math.max(1200, window.innerWidth - 360) : MAX_SIDEBAR_WIDTH;
       const newWidth = Math.min(maxW, Math.max(minW, startWidthRef.current + delta));
-      onWidthChange?.(newWidth);
+      latestWidthRef.current = newWidth;
+      document.documentElement.style.setProperty("--sidebar-width", `${newWidth}px`);
     };
 
     const handleMouseUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      const finalW = latestWidthRef.current;
+      onWidthChange?.(finalW);
       setIsResizing(false);
     };
 
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
     return () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
@@ -848,13 +862,18 @@ export default function ChatSessionSidebar({
         </div>
       </div>
 
-      {/* ── Resizable Drag Handle on Right Border (1px clean white divider, 100% transparent hit area) ── */}
+      {/* ── Resizable Drag Handle on Right Border with Full Selection Shield ── */}
       {isOpen && (
-        <div
-          onMouseDown={startResizing}
-          className="absolute top-0 -right-1.5 w-3 h-full cursor-col-resize z-50 select-none bg-transparent hover:bg-transparent active:bg-transparent"
-          title="Drag to resize panel width"
-        />
+        <>
+          {isResizing && (
+            <div className="fixed inset-0 z-[99999] cursor-col-resize select-none bg-transparent" />
+          )}
+          <div
+            onMouseDown={startResizing}
+            className="absolute top-0 -right-1.5 w-3 h-full cursor-col-resize z-50 select-none bg-transparent hover:bg-transparent active:bg-transparent"
+            title="Drag to resize panel width"
+          />
+        </>
       )}
     </aside>
   );

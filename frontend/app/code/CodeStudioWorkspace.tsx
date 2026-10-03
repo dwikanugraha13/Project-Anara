@@ -215,7 +215,7 @@ export function CodeStudioWorkspace({
           {/* Resizer Splitter 1: Left Explorer ↔ Center Editor (1px Razor-Thin White Hairline) */}
           <div
             onMouseDown={startResizingLeft}
-            className="relative w-px h-full cursor-col-resize shrink-0 select-none bg-white/[0.08] hover:bg-cyan-400/50 active:bg-cyan-400 transition-colors z-20"
+            className="relative w-px h-full cursor-col-resize shrink-0 select-none bg-white/[0.08] hover:bg-white/[0.16] active:bg-white/[0.22] transition-colors z-20"
             title="Drag to resize file panel width"
           >
             <div className="absolute inset-y-0 -left-1.5 w-3 cursor-col-resize bg-transparent" />
@@ -327,7 +327,7 @@ export function CodeStudioWorkspace({
         {isTerminalOpen && (
           <div
             onMouseDown={startResizingTerminal}
-            className="relative h-px w-full cursor-row-resize shrink-0 select-none bg-white/[0.08] hover:bg-cyan-400/50 active:bg-cyan-400 transition-colors z-10"
+            className="relative h-px w-full cursor-row-resize shrink-0 select-none bg-white/[0.08] hover:bg-white/[0.16] active:bg-white/[0.22] transition-colors z-10"
             title="Drag to resize terminal height"
           >
             <div className="absolute inset-x-0 -top-1.5 h-3 cursor-row-resize bg-transparent" />
@@ -361,7 +361,7 @@ export function CodeStudioWorkspace({
       {isRightOpen && (
         <div
           onMouseDown={startResizingRight}
-          className="relative w-px h-full cursor-col-resize shrink-0 select-none bg-white/[0.08] hover:bg-cyan-400/50 active:bg-cyan-400 transition-colors z-20"
+          className="relative w-px h-full cursor-col-resize shrink-0 select-none bg-white/[0.08] hover:bg-white/[0.16] active:bg-white/[0.22] transition-colors z-20"
           title="Drag to resize AI Agent panel width"
         >
           <div className="absolute inset-y-0 -left-1.5 w-3 cursor-col-resize bg-transparent" />
