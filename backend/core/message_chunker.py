@@ -151,6 +151,29 @@ def _format_tool_progress_message(evt: Dict[str, Any]) -> str:
     return f"{prefix}: {status}...{step_str}"
 
 
+def ensure_closed_code_fences(text: str) -> str:
+    """
+    Append a closing ``` and/or ` if the text has orphaned code markers.
+    Output truncated mid-code-block (finish_reason="length") would otherwise render
+    everything after the orphan as one code block / inline span; a spurious close is
+    far less harmful. Odd ``` count -> fence on its own line; then, with complete
+    ```...``` regions stripped, odd ` count -> a backtick.
+    """
+    if not isinstance(text, str) or not text:
+        return text
+
+    if text.count("```") % 2 == 1:
+        text = text.rstrip("\n") + "\n```"
+
+    without_fences = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+    without_fences = re.sub(r"```[^`]*$", "", without_fences)
+
+    if without_fences.count("`") % 2 == 1:
+        text = text + "`"
+
+    return text
+
+
 def split_message_chunks(
     text: str,
     max_chars: Optional[int] = None,
@@ -170,11 +193,12 @@ def split_message_chunks(
         p_norm = (platform or "telegram").strip().lower()
         limit = PLATFORM_MESSAGE_LIMITS.get(p_norm, 2200)
 
-    if len(text) <= limit:
-        return [text]
+    safe_text = ensure_closed_code_fences(text)
+    if len(safe_text) <= limit:
+        return [safe_text]
 
     raw_chunks: List[str] = []
-    current_text = text
+    current_text = safe_text
     effective_limit = limit - 40 if add_part_headers else limit
 
     while len(current_text) > effective_limit:
