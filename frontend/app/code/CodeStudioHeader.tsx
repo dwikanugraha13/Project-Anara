@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import SegmentedStudioTabs from "@/components/sidebar/SegmentedStudioTabs";
 import type { WorkspaceTreeData, GitStatusData } from "@/components/sidebar/types";
 
 export interface CodeStudioHeaderProps {
@@ -50,40 +51,16 @@ export function CodeStudioHeader({
   setIsBrainDrawerOpen,
 }: CodeStudioHeaderProps) {
   return (
-    <header className="h-[34px] shrink-0 px-3 border-b border-white/[0.08] flex items-center justify-between bg-[#060913]/95 backdrop-blur-2xl z-30 select-none shadow-[0_4px_24px_rgba(0,0,0,0.5)] relative">
+    <header className="h-[38px] shrink-0 px-3 border-b border-white/[0.08] flex items-center justify-between bg-[#060913]/95 backdrop-blur-2xl z-30 select-none shadow-[0_4px_24px_rgba(0,0,0,0.5)] relative">
       <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-cyan-400/25 to-transparent pointer-events-none" />
 
       {/* Left Side: Segmented Switcher [SESSIONS | CODE | BOTS] & Session Popover */}
       <div className="flex items-center gap-2.5 min-w-0">
-        {/* Connected Segmented Tab Control [SESSIONS | CODE | BOTS] with CODE active */}
-        <div className="relative flex items-center p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.08] backdrop-blur-md font-mono text-xs shrink-0">
-          <Link
-            href={activeSessionId ? `/?session_id=${activeSessionId}` : "/"}
-            className="relative z-10 px-2.5 py-1 text-[11px] font-semibold tracking-wider text-slate-400 hover:text-white transition-colors cursor-pointer"
-            title="Switch to Chat & 3D Companion Studio"
-          >
-            SESSIONS
-          </Link>
-
-          <div
-            className="relative z-10 px-2.5 py-1 text-[11px] font-bold tracking-wider text-cyan-300 rounded-[6px] bg-gradient-to-r from-cyan-500/20 via-blue-500/15 to-cyan-500/20 border border-cyan-400/35 shadow-[0_0_12px_rgba(34,211,238,0.2)] flex items-center gap-1.5"
-            title="Active Coding Studio"
-          >
-            <svg className="w-3 h-3 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-            </svg>
-            <span>CODE</span>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setIsBrainDrawerOpen(true)}
-            className="relative z-10 px-2.5 py-1 text-[11px] font-semibold tracking-wider text-slate-400 hover:text-white transition-colors cursor-pointer"
-            title="Open Brain & Model Settings"
-          >
-            BOTS
-          </button>
-        </div>
+        <SegmentedStudioTabs
+          activeTab="code"
+          activeSessionId={activeSessionId}
+          onOpenBrain={() => setIsBrainDrawerOpen(true)}
+        />
 
         {/* Optional Workspace / Git Branch Badge (if workspace is attached) */}
         {workspaceTree?.is_custom_folder && workspaceTree?.workspace_name && (

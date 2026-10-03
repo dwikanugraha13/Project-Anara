@@ -25,6 +25,7 @@ import { renderFileSvgIcon } from "./FileIcons";
 import { anaraApi } from "@/lib/apiClient";
 import WorkspaceTreeView, { nodeHasMatch, RecursiveTreeNode } from "./WorkspaceTreeView";
 import SessionHistoryList from "./SessionHistoryList";
+import SegmentedStudioTabs from "./SegmentedStudioTabs";
 import type { AnaraCodeIDEProps, WorkbenchTerminalProps } from "../ide";
 
 const AnaraCodeIDE = lazy(() => import("../ide/AnaraCodeIDE"));
@@ -95,30 +96,6 @@ export default function ChatSessionSidebar({
   const [workspaceTree, setWorkspaceTree] = useState<WorkspaceTreeData | null>(null);
   const [activeSidebarTab, setActiveSidebarTab] = useState<"history" | "editor">(initialSidebarTab);
   const isSidebarHydratedRef = useRef(false);
-
-  const router = useRouter();
-  const [activeTabIndicator, setActiveTabIndicator] = useState({ left: 2, width: 78 });
-  const sessionsTabRef = useRef<HTMLButtonElement | null>(null);
-  const botsTabRef = useRef<HTMLButtonElement | null>(null);
-  const codeTabRef = useRef<HTMLButtonElement | null>(null);
-
-  const updateTabIndicator = useCallback((tab: "sessions" | "bots" | "code") => {
-    let targetEl: HTMLButtonElement | null = null;
-    if (tab === "sessions") targetEl = sessionsTabRef.current;
-    else if (tab === "bots") targetEl = botsTabRef.current;
-    else if (tab === "code") targetEl = codeTabRef.current;
-
-    if (targetEl) {
-      setActiveTabIndicator({
-        left: targetEl.offsetLeft,
-        width: targetEl.offsetWidth,
-      });
-    }
-  }, []);
-
-  useEffect(() => {
-    updateTabIndicator("sessions");
-  }, [updateTabIndicator]);
 
   // Hydration-safe initial local storage loader
   useEffect(() => {
@@ -576,69 +553,14 @@ export default function ChatSessionSidebar({
           </div>
         </div>
       )}
-      {/* ── Top Header: Sidebar Tabs [SESSIONS | BOTS | CODE] ── */}
-      <div className="h-[42px] px-2.5 bg-[#060913] border-b border-white/[0.08] flex items-center justify-between shrink-0 select-none font-mono">
-        {/* Connected Segmented Tab Control with Smooth Sliding Pill */}
-        <div className="relative flex items-center p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.08] backdrop-blur-md">
-          {/* Sliding Pill Indicator */}
-          <div
-            className="absolute top-0.5 bottom-0.5 rounded-[6px] bg-gradient-to-r from-cyan-500/20 via-blue-500/15 to-cyan-500/20 border border-cyan-400/35 shadow-[0_0_12px_rgba(34,211,238,0.2)] transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-none"
-            style={{
-              left: `${activeTabIndicator.left}px`,
-              width: `${activeTabIndicator.width}px`,
-            }}
-          />
-
-          {/* Tab 1: SESSIONS */}
-          <button
-            ref={sessionsTabRef}
-            type="button"
-            onClick={() => {
-              setActiveSidebarTab("history");
-              updateTabIndicator("sessions");
-            }}
-            className={`relative z-10 px-2.5 py-1 text-[11px] font-semibold tracking-wider transition-colors duration-200 cursor-pointer flex items-center gap-1.5 ${
-              activeSidebarTab === "history"
-                ? "text-white font-bold"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <span>SESSIONS</span>
-          </button>
-
-          {/* Tab 2: CODE */}
-          <button
-            ref={codeTabRef}
-            type="button"
-            onClick={() => {
-              updateTabIndicator("code");
-              const target = activeSessionId ? `/code?session_id=${activeSessionId}` : "/code";
-              router.push(target);
-            }}
-            className="relative z-10 px-2.5 py-1 text-[11px] font-semibold tracking-wider text-slate-400 hover:text-cyan-300 transition-colors duration-200 cursor-pointer flex items-center gap-1.5"
-            title="Switch to Anara Code Studio"
-          >
-            <svg className="w-3 h-3 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-            </svg>
-            <span>CODE</span>
-          </button>
-
-          {/* Tab 3: BOTS */}
-          <button
-            ref={botsTabRef}
-            type="button"
-            onClick={() => {
-              updateTabIndicator("bots");
-              if (onOpenBrain) onOpenBrain();
-              setTimeout(() => updateTabIndicator("sessions"), 250);
-            }}
-            className="relative z-10 px-2.5 py-1 text-[11px] font-semibold tracking-wider text-slate-400 hover:text-slate-200 transition-colors duration-200 cursor-pointer flex items-center gap-1.5"
-            title="Bot Profiles & Models"
-          >
-            <span>BOTS</span>
-          </button>
-        </div>
+      {/* ── Top Header: Sidebar Tabs [SESSIONS | CODE | BOTS] ── */}
+      <div className="h-[38px] px-2.5 bg-[#060913] border-b border-white/[0.08] flex items-center justify-between shrink-0 select-none font-mono">
+        <SegmentedStudioTabs
+          activeTab="sessions"
+          activeSessionId={activeSessionId}
+          onOpenBrain={onOpenBrain}
+          onSelectSessions={() => setActiveSidebarTab("history")}
+        />
 
         {/* Gateway Online Status Pill */}
         <div className="flex items-center gap-1.5 shrink-0 pl-2">
