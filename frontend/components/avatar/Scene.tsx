@@ -280,18 +280,13 @@ export interface SceneProps {
   isVoiceMode?: boolean;
 }
 
-// ── In-Canvas Loading Indicator (3D sphere visible while GLTF suspended) ─────
+// ── In-Canvas Loading Indicator (visible while GLTF suspended) ───────────────
 function AvatarLoadingIndicator() {
   React.useEffect(() => {
     console.log("[Scene] Avatar3D Suspense: GLTF loading in progress...");
     return () => console.log("[Scene] Avatar3D Suspense: resolved, GLTF loaded");
   }, []);
-  return (
-    <mesh position={[0, 0, 0]}>
-      <sphereGeometry args={[0.3, 16, 16]} />
-      <meshStandardMaterial color="#22d3ee" wireframe transparent opacity={0.4} />
-    </mesh>
-  );
+  return null;
 }
 
 // ── Stable constants (outside component to avoid re-render loops) ────────────

@@ -67,9 +67,9 @@ const Avatar3D = forwardRef<Avatar3DHandle, Avatar3DProps>(
     const cachedMorphMeshesRef = useRef<CachedMorphMesh[]>([]);
     const frameThrottleRef = useRef(0);
 
-    // Load avatar model and lightweight GLTF animations (false = no external Draco CDN download needed)
-    const { scene, animations: gltfAnimations } = useGLTF(url, false);
-    const { animations: externalAnimations } = useGLTF('/animations.glb', false);
+    // Load avatar model and lightweight GLTF animations (no Draco, no Meshopt — plain GLB)
+    const { scene, animations: gltfAnimations } = useGLTF(url, false, false);
+    const { animations: externalAnimations } = useGLTF('/animations.glb', false, false);
     const dancePhaseRef = useRef<"idle" | "awaiting_intro" | "speaking_intro" | "dancing">("idle");
     const isDancingRef = useRef(false);
     const danceSafetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
