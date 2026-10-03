@@ -31,6 +31,17 @@ export function InteractiveApprovalCard({
 }: InteractiveApprovalCardProps) {
   const [decided, setDecided] = useState<"once" | "session" | "deny" | null>(null);
 
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyPreview = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!commandPreview) return;
+    navigator.clipboard.writeText(commandPreview).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   const riskBadgeClass =
     riskLevel === "critical" || riskLevel === "high"
       ? "bg-rose-500/15 text-rose-300 border-rose-400/30"
@@ -39,7 +50,7 @@ export function InteractiveApprovalCard({
       : "bg-cyan-500/15 text-cyan-300 border-cyan-400/30";
 
   return (
-    <div className="my-2.5 w-full max-w-xl select-none font-sans text-xs">
+    <div className="my-2.5 w-full max-w-3xl select-none font-sans text-xs">
       <div className="rounded-xl border border-white/[0.08] bg-[#060913]/90 p-3.5 shadow-2xl backdrop-blur-2xl transition-all">
         {/* Header */}
         <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
@@ -54,19 +65,31 @@ export function InteractiveApprovalCard({
 
         {/* Rationale / Explanation */}
         {rationale && (
-          <p className="mt-2.5 text-[11px] leading-relaxed text-slate-300 font-sans">
+          <p className="mt-2.5 text-[11.5px] leading-relaxed text-slate-300 font-sans">
             {rationale}
           </p>
         )}
 
         {/* Command or Target Payload Preview */}
         {commandPreview && (
-          <div className="mt-2.5 rounded-lg border border-white/[0.06] bg-black/60 p-2 font-mono text-[11px] text-cyan-300 select-text overflow-x-auto custom-scrollbar">
-            <div className="flex items-center gap-1.5 text-slate-500 text-[10px] select-none pb-1 border-b border-white/[0.04]">
-              <span>$</span>
-              <span>{toolName}</span>
+          <div className="mt-2.5 rounded-lg border border-white/[0.06] bg-black/60 p-2 font-mono text-[11px] text-cyan-300 select-text">
+            <div className="flex items-center justify-between pb-1 mb-1 border-b border-white/[0.04] text-slate-500 text-[10px] select-none">
+              <div className="flex items-center gap-1.5">
+                <span>$</span>
+                <span>{toolName}</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleCopyPreview}
+                className="text-slate-400 hover:text-white px-1.5 py-0.5 rounded hover:bg-white/[0.05] transition-colors cursor-pointer"
+                title="Copy command"
+              >
+                {copied ? <span className="text-emerald-400">Copied</span> : "Copy"}
+              </button>
             </div>
-            <pre className="mt-1 whitespace-pre-wrap">{commandPreview}</pre>
+            <pre className="max-h-60 overflow-x-auto overflow-y-auto custom-scrollbar whitespace-pre font-mono text-[11px] text-slate-200">
+              {commandPreview}
+            </pre>
           </div>
         )}
 

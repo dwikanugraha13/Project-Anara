@@ -188,6 +188,9 @@ class AgentRunner:
             accumulated_text = ""
             accumulated_chunks: List[str] = []
 
+            from providers.think_scrubber import StreamingThinkScrubber
+            ws_scrubber = StreamingThinkScrubber()
+
             try:
                 async for event in runner.execute_turn_stream(
                     user_message=text,
@@ -197,17 +200,26 @@ class AgentRunner:
                     reasoning_effort=req_reasoning_effort,
                 ):
                     if event.type == "chunk" and event.content:
-                        accumulated_text += event.content
-                        accumulated_chunks.append(event.content)
-                        await self.websocket.send_json({
-                            "type": "transcript_partial",
-                            "speaker": "output",
-                            "delta": event.content,
-                            "text": accumulated_text,
-                            "is_final": False,
-                            "sessionId": sid,
-                            "session_id": sid,
-                        })
+                        clean_delta = ws_scrubber.feed(event.content)
+                        if ws_scrubber.last_hidden:
+                            await self.websocket.send_json({
+                                "type": "agent_thinking",
+                                "text": ws_scrubber.last_hidden,
+                                "sessionId": sid,
+                                "session_id": sid,
+                            })
+                        if clean_delta:
+                            accumulated_text += clean_delta
+                            accumulated_chunks.append(clean_delta)
+                            await self.websocket.send_json({
+                                "type": "transcript_partial",
+                                "speaker": "output",
+                                "delta": clean_delta,
+                                "text": accumulated_text,
+                                "is_final": False,
+                                "sessionId": sid,
+                                "session_id": sid,
+                            })
                     elif event.type == "thought" and (event.thought or event.content):
                         await self.websocket.send_json({
                             "type": "agent_thinking",
@@ -253,7 +265,8 @@ class AgentRunner:
                             "session_id": sid,
                         })
                     elif event.type == "final_text":
-                        reply_text = event.content or ""
+                        from providers.payload_parser import _clean_model_chat_text
+                        reply_text = _clean_model_chat_text(event.content or "") or (event.content or "")
                         await self.websocket.send_json({
                             "type": "transcript",
                             "data": reply_text,

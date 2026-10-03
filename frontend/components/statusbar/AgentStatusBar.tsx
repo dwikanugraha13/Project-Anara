@@ -56,7 +56,7 @@ export default function AgentStatusBar({
   useEffect(() => {
     try {
       const saved = localStorage.getItem("anara_approval_mode") as ApprovalMode | null;
-      if (saved && (saved === "manual" || saved === "smart" || saved === "off")) {
+      if (saved && (saved === "plan" || saved === "auto" || saved === "off" || saved === "manual" || saved === "smart")) {
         setApprovalMode(saved);
       }
     } catch {}
@@ -64,7 +64,7 @@ export default function AgentStatusBar({
     fetch("/api/approvals/mode")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data?.mode && (data.mode === "manual" || data.mode === "smart" || data.mode === "off")) {
+        if (data?.mode && (data.mode === "plan" || data.mode === "auto" || data.mode === "off" || data.mode === "manual" || data.mode === "smart")) {
           setApprovalMode(data.mode);
           try {
             localStorage.setItem("anara_approval_mode", data.mode);

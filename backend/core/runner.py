@@ -166,10 +166,11 @@ class AnaraExecutionRunner:
             logger.info(f"[ExecutionRunner] Pending action #{pending.plan_id} APPROVED -> switching to BUILD MODE")
             if pending.original_prompt:
                 clean_text = f"Approved plan execution for original request: '{pending.original_prompt}'."
+        elif approval_mode in ("plan", "manual") or requested_mode == "plan" or session_mode == "plan":
+            agent_mode = "plan"
+            logger.info(f"[ExecutionRunner] PLAN MODE enforced (approval_mode={approval_mode}, requested_mode={requested_mode})")
         elif requested_mode and requested_mode in ("plan", "build", "conversational"):
             agent_mode = requested_mode
-        elif session_mode == "plan":
-            agent_mode = "plan"
         else:
             # Full Autonomous Standard: Default to build mode with full tool capabilities.
             # Safety and confirmation gates are governed dynamically by approvals.mode (plan, auto, off).
@@ -323,12 +324,23 @@ class AnaraExecutionRunner:
                     metadata=evt,
                 ))
 
+        from providers.think_scrubber import StreamingThinkScrubber
+        stream_scrubber = StreamingThinkScrubber()
+
         def _token_cb(token: str):
             if token:
-                event_queue.put_nowait(TurnEvent(
-                    type="chunk",
-                    content=token,
-                ))
+                scrubbed = stream_scrubber.feed(token)
+                if stream_scrubber.last_hidden:
+                    event_queue.put_nowait(TurnEvent(
+                        type="thought",
+                        content=stream_scrubber.last_hidden,
+                        thought=stream_scrubber.last_hidden,
+                    ))
+                if scrubbed:
+                    event_queue.put_nowait(TurnEvent(
+                        type="chunk",
+                        content=scrubbed,
+                    ))
 
         # Run model execution task in background to allow event queue streaming
         intercept_mutating = (agent_mode == "plan" or approval_mode in ("plan", "manual"))
@@ -449,7 +461,9 @@ class AnaraExecutionRunner:
             )
             return
 
-        final_reply = model_res if isinstance(model_res, str) else str(model_res or "")
+        from providers.payload_parser import _clean_model_chat_text
+        raw_final = model_res if isinstance(model_res, str) else str(model_res or "")
+        final_reply = _clean_model_chat_text(raw_final) or raw_final
         duration = round(time.time() - start_time, 2)
 
         # 8. Negative Verification Stop-Gate (Claude Code stopHooks & Anara Standard)

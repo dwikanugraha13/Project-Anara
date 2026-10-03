@@ -624,7 +624,7 @@ export default function ChatTimeline({
 
                         {/* 2. In-flight Tool or Initial Wait Indicator (only when NO text and NO thinking card) */}
                         {!item.text && !currentThinking ? (
-                          <div className="w-full max-w-xl">
+                          <div className="w-full max-w-full">
                             {isLatestAi && liveToolProgress ? (
                               <ToolRunTicker
                                 activeItemText={`Executing ${liveToolProgress.toolName}...`}
@@ -644,7 +644,7 @@ export default function ChatTimeline({
 
                         {/* 3. In-flight tool progress when thinking is already showing */}
                         {!item.text && currentThinking && isLatestAi && liveToolProgress ? (
-                          <div className="w-full max-w-xl mb-2">
+                          <div className="w-full max-w-full mb-2">
                             <ToolRunTicker
                               activeItemText={`Executing ${liveToolProgress.toolName}...`}
                               totalCount={1}
@@ -655,18 +655,42 @@ export default function ChatTimeline({
                           </div>
                         ) : null}
 
-                        {/* 4. Streaming or Final Markdown Content */}
-                        {item.text ? (
-                          <>
-                            <div className="relative text-slate-200 leading-relaxed font-sans text-[13.5px]">
-                              <AgentMarkdown
-                                content={item.text}
-                                isStreaming={Boolean(item.isStreaming)}
-                              />
-                            </div>
-                            {footerElement}
-                          </>
-                        ) : null}
+                        {/* 4. Streaming or Final Markdown Content (with zero thought tag leak) */}
+                        {(() => {
+                          if (!item.text) return null;
+                          const rawText = item.text;
+                          const hasThoughtTag = /<(?:\/?)(?:thought|think|reasoning)[^>]*>/i.test(rawText);
+                          let displayMarkdown = rawText;
+                          let inlineThought: string | null = null;
+                          if (hasThoughtTag) {
+                            const thoughtMatches = rawText.match(/<(?:thought|think|reasoning)[^>]*>([\s\S]*?)<\/(?:thought|think|reasoning)>/gi);
+                            if (thoughtMatches) {
+                              inlineThought = thoughtMatches.map((m) => m.replace(/<[^>]+>/g, "").trim()).filter(Boolean).join("\n\n");
+                            }
+                            displayMarkdown = rawText
+                              .replace(/<(?:thought|think|reasoning)[^>]*>[\s\S]*?<\/(?:thought|think|reasoning)>/gi, "")
+                              .replace(/<(?:\/?)(?:thought|think|reasoning)[^>]*>/gi, "")
+                              .trim();
+                          }
+                          return (
+                            <>
+                              {inlineThought && !currentThinking && (
+                                <div className="mb-2 w-full max-w-full">
+                                  <ThinkingCard text={inlineThought} isLive={false} />
+                                </div>
+                              )}
+                              {displayMarkdown ? (
+                                <div className="relative text-slate-200 leading-relaxed font-sans text-[13.5px]">
+                                  <AgentMarkdown
+                                    content={displayMarkdown}
+                                    isStreaming={Boolean(item.isStreaming)}
+                                  />
+                                </div>
+                              ) : null}
+                              {footerElement}
+                            </>
+                          );
+                        })()}
 
                         {/* 5. Interrupted Status Pill */}
                         {item.interrupted && (

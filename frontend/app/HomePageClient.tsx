@@ -331,58 +331,50 @@ export default function HomePageClient({
         }
 
         // 3. Incoming is narrative AI output (no visual card).
-        // If last bubble was a visual card (agent_action, plan_card, etc.), this narrative response
-        // MUST NEVER merge into it — append as a new narrative output bubble!
-        const isLastPlainOutput = Boolean(last && last.speaker === "output" && (!last.visualType || last.visualType === "none"));
+        // Find if there is an in-flight output bubble in the current turn (bounded by the latest user prompt)
+        let targetOutputIdx = -1;
+        for (let i = prev.length - 1; i >= 0; i--) {
+          if (prev[i].speaker === "input") break;
+          if (prev[i].speaker === "output" && (!prev[i].visualType || prev[i].visualType === "none")) {
+            targetOutputIdx = i;
+            break;
+          }
+        }
 
-        if (!isLastPlainOutput) {
+        // If an output bubble already exists in the current turn, update it in-place to prevent bubble stacking
+        if (targetOutputIdx !== -1) {
+          const target = prev[targetOutputIdx];
+          const updated: TranscriptEntry = {
+            ...target,
+            text: text,
+            agentMode: payloadAgentMode || target.agentMode,
+            modelId: payloadModelId || target.modelId,
+            durationText: computedDuration,
+            tokenUsage: resolvedTokenUsage || target.tokenUsage,
+            toolsUsed: resolvedToolsUsed || target.toolsUsed,
+            isStreaming: isPartial || payloadIsStreaming,
+          };
           return [
-            ...prev,
-            {
-              ...newEntry,
-              speaker: "output",
-              text: text,
-              isStreaming: payloadIsStreaming,
-              agentMode: payloadAgentMode || last?.agentMode,
-              modelId: payloadModelId || last?.modelId,
-              durationText: computedDuration,
-              tokenUsage: resolvedTokenUsage,
-              toolsUsed: resolvedToolsUsed,
-              startTime: last?.startTime || Date.now(),
-            },
+            ...prev.slice(0, targetOutputIdx),
+            updated,
+            ...prev.slice(targetOutputIdx + 1),
           ];
         }
 
-        // 4. If streaming partial chunk and last is a plain output bubble, update text in-place at 60 FPS
-        if (isPartial) {
-          return [
-            ...prev.slice(0, lastIdx),
-            {
-              ...last,
-              text: text,
-              agentMode: payloadAgentMode || last.agentMode,
-              modelId: payloadModelId || last.modelId,
-              durationText: computedDuration,
-              tokenUsage: resolvedTokenUsage || last.tokenUsage,
-              toolsUsed: resolvedToolsUsed,
-              isStreaming: true,
-            },
-          ];
-        }
-
-        // 5. Final canonical AI response (isPartial === false): replace streaming text with complete canonical text
+        // Otherwise (first narrative chunk in this turn), append as a fresh single output bubble
         return [
-          ...prev.slice(0, lastIdx),
+          ...prev,
           {
-            ...last,
+            ...newEntry,
             speaker: "output",
             text: text,
-            agentMode: payloadAgentMode || last.agentMode,
-            modelId: payloadModelId || last.modelId,
+            isStreaming: payloadIsStreaming,
+            agentMode: payloadAgentMode || last?.agentMode,
+            modelId: payloadModelId || last?.modelId,
             durationText: computedDuration,
-            tokenUsage: resolvedTokenUsage || last.tokenUsage,
+            tokenUsage: resolvedTokenUsage,
             toolsUsed: resolvedToolsUsed,
-            isStreaming: false,
+            startTime: last?.startTime || Date.now(),
           },
         ];
       });
@@ -864,10 +856,19 @@ export default function HomePageClient({
   }, [startListening, forceUnlock]);
 
   const handleSendText = useCallback(
-    (text: string, agentMode: "plan" | "build" = "build") => {
+    (text: string, explicitMode?: "plan" | "build") => {
       if (!text.trim()) return;
       const trimmed = text.trim();
       forceUnlock();
+
+      // Enforce active approval mode ('plan' vs 'auto'/'off') if mode not explicitly forced
+      let activeApproval = "auto";
+      if (typeof window !== "undefined") {
+        try {
+          activeApproval = (localStorage.getItem("anara_approval_mode") || "auto").toLowerCase();
+        } catch {}
+      }
+      const effectiveMode: "plan" | "build" = explicitMode || (activeApproval === "plan" || activeApproval === "manual" ? "plan" : "build");
 
       if (danceActiveRef.current) {
         console.log("[Dance] User chatted during dance — smoothly stopping dance and switching focus to conversation");
@@ -883,7 +884,7 @@ export default function HomePageClient({
         const finalBase = (cleaned.length > 0 && cleaned[cleaned.length - 1].speaker === "output" && !cleaned[cleaned.length - 1].text)
           ? cleaned.slice(0, -1)
           : cleaned;
-        return [...finalBase, { speaker: "input", text: trimmed }, { speaker: "output", text: "", agentMode: agentMode, startTime: nowMs }];
+        return [...finalBase, { speaker: "input", text: trimmed }, { speaker: "output", text: "", agentMode: effectiveMode, startTime: nowMs }];
       });
 
       avatarRef.current?.triggerTextMotion(trimmed);
@@ -897,7 +898,7 @@ export default function HomePageClient({
         text: trimmed,
         channel: "web",
         platform: "web",
-        agent_mode: agentMode,
+        agent_mode: effectiveMode,
         reasoning_effort: reasoningEffort,
         sessionId: activeSessionId,
         session_id: activeSessionId,
