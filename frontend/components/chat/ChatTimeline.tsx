@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useRef, useEffect, useState, useMemo } from "react";
+import React, { useRef, useEffect, useState, useMemo, useCallback } from "react";
 import AgentMarkdown from "./AgentMarkdown";
 import AgentToolCard, { ToolRunGroupCard, ExplorationGroupCard, ThinkingCard } from "./AgentToolCard";
 import InteractiveQuestionCard from "./InteractiveQuestionCard";
+import FindBar from "./FindBar";
 import type { TranscriptItem, AssistantStatus } from "../workbench/AnaraWorkbench";
 import type { ToolProgressPayload } from "@/hooks/useWebSocket";
 
@@ -51,6 +52,62 @@ export default function ChatTimeline({
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editText, setEditText] = useState<string>("");
+
+  // In-Conversation Find Bar State (Ctrl+F)
+  const [isFindOpen, setIsFindOpen] = useState(false);
+  const [findMatches, setFindMatches] = useState<number[]>([]);
+  const [activeMatchIdx, setActiveMatchIdx] = useState<number>(0);
+  const messageItemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+
+  // Global Ctrl+F / Cmd+F shortcut to open FindBar
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setIsFindOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const handleFindSearch = useCallback((query: string) => {
+    if (!query.trim()) {
+      setFindMatches([]);
+      setActiveMatchIdx(0);
+      return 0;
+    }
+    const qLower = query.toLowerCase();
+    const matches: number[] = [];
+    transcript.forEach((item, idx) => {
+      if (item.text && item.text.toLowerCase().includes(qLower)) {
+        matches.push(idx);
+      }
+    });
+    setFindMatches(matches);
+    setActiveMatchIdx(0);
+    if (matches.length > 0) {
+      const targetEl = messageItemRefs.current.get(matches[0]);
+      targetEl?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    return matches.length;
+  }, [transcript]);
+
+  const handleFindNext = useCallback(() => {
+    if (findMatches.length === 0) return;
+    const nextIdx = (activeMatchIdx + 1) % findMatches.length;
+    setActiveMatchIdx(nextIdx);
+    const targetEl = messageItemRefs.current.get(findMatches[nextIdx]);
+    targetEl?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [findMatches, activeMatchIdx]);
+
+  const handleFindPrevious = useCallback(() => {
+    if (findMatches.length === 0) return;
+    const prevIdx = (activeMatchIdx - 1 + findMatches.length) % findMatches.length;
+    setActiveMatchIdx(prevIdx);
+    const targetEl = messageItemRefs.current.get(findMatches[prevIdx]);
+    targetEl?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [findMatches, activeMatchIdx]);
 
   const handleScroll = () => {
     const el = scrollContainerRef.current;
@@ -309,11 +366,27 @@ export default function ChatTimeline({
                     </div>
                   ) : null;
 
+                  const isFindMatched = findMatches.includes(idx);
+                  const isActiveFindMatch = findMatches[activeMatchIdx] === idx;
+
                   if (item.speaker === "input") {
                     const isEditing = editingIndex === idx;
 
                     return (
-                      <div key={idx} className="flex flex-col items-end my-3 animate-fade-in group/user">
+                      <div
+                        key={idx}
+                        ref={(el) => {
+                          if (el) messageItemRefs.current.set(idx, el);
+                          else messageItemRefs.current.delete(idx);
+                        }}
+                        className={`flex flex-col items-end my-3 animate-fade-in group/user ${
+                          isActiveFindMatch
+                            ? "ring-2 ring-cyan-400/80 rounded-2xl p-1 bg-cyan-950/20"
+                            : isFindMatched
+                            ? "ring-1 ring-cyan-500/30 rounded-2xl"
+                            : ""
+                        }`}
+                      >
                         {isEditing ? (
                           <div className="w-full max-w-[85%] sm:max-w-[75%] rounded-2xl bg-[#060913]/90 border border-cyan-500/30 p-3 shadow-2xl backdrop-blur-2xl">
                             <textarea
@@ -436,7 +509,20 @@ export default function ChatTimeline({
                   const currentThinking = item.thinkingText || (isLatestAi ? activeThinkingText : null);
 
                   return (
-                    <div key={idx} className="flex flex-col items-start w-full my-2 px-1 animate-fade-in select-text group/turn relative">
+                    <div
+                      key={idx}
+                      ref={(el) => {
+                        if (el) messageItemRefs.current.set(idx, el);
+                        else messageItemRefs.current.delete(idx);
+                      }}
+                      className={`flex flex-col items-start w-full my-2 px-1 animate-fade-in select-text group/turn relative ${
+                        isActiveFindMatch
+                          ? "ring-2 ring-cyan-400/80 rounded-2xl p-1.5 bg-cyan-950/20"
+                          : isFindMatched
+                          ? "ring-1 ring-cyan-500/30 rounded-2xl p-1"
+                          : ""
+                      }`}
+                    >
                       <div className="w-full text-slate-200">
                         {/* 1. Reasoning / Thought Process Disclosure (if present) */}
                         {currentThinking && (
@@ -548,6 +634,17 @@ export default function ChatTimeline({
           </svg>
         </button>
       )}
+
+      {/* In-Conversation Find Bar (Ctrl+F) */}
+      <FindBar
+        isOpen={isFindOpen}
+        onClose={() => setIsFindOpen(false)}
+        onSearch={handleFindSearch}
+        onNext={handleFindNext}
+        onPrevious={handleFindPrevious}
+        activeMatchIndex={activeMatchIdx}
+        totalMatches={findMatches.length}
+      />
     </div>
   );
 }
