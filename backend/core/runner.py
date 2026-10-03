@@ -157,6 +157,9 @@ class AnaraExecutionRunner:
             semantic_intent = await classify_approval_intent(clean_text, f"Session mode {session_mode} plan proposal")
             is_approved = (semantic_intent == "approve")
 
+        from config import cfg_get
+        approval_mode = str(cfg_get("approvals.mode", "smart")).strip().lower()
+
         if pending and is_approved:
             session_state_manager.clear_pending(self.platform, str(effective_sid), final_state=ActionState.APPROVED)
             agent_mode = "build"
@@ -165,12 +168,12 @@ class AnaraExecutionRunner:
                 clean_text = f"Approved plan execution for original request: '{pending.original_prompt}'."
         elif requested_mode and requested_mode in ("plan", "build", "conversational"):
             agent_mode = requested_mode
-        elif session_mode == "explicit_plan_build":
-            agent_mode = "build" if is_approved else "plan"
-        elif needs_plan(clean_text, session_mode=session_mode):
+        elif session_mode == "plan":
             agent_mode = "plan"
         else:
-            agent_mode = "conversational" if session_mode == "conversational" else "build"
+            # Full Autonomous Standard: Default to build mode with full tool capabilities.
+            # Safety and confirmation gates are governed dynamically by approvals.mode (manual, smart, off).
+            agent_mode = "build"
 
         # 3. Memory Snapshot is injected into system prompt context; autonomous memory tool handles updates (Anara Standard)
 
@@ -328,7 +331,7 @@ class AnaraExecutionRunner:
                 ))
 
         # Run model execution task in background to allow event queue streaming
-        intercept_mutating = (agent_mode == "plan")
+        intercept_mutating = (agent_mode == "plan" or approval_mode == "manual")
         model_task = asyncio.create_task(
             call_universal_chat_model(
                 model_id=selected_model,

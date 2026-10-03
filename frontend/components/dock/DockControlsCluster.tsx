@@ -16,9 +16,9 @@ export interface DockControlsClusterProps {
   interactionMode: "voice" | "chat";
   onSetInteractionMode?: (mode: "voice" | "chat") => void;
   isInteractionModeVisible: boolean;
-  agentMode: "plan" | "build";
-  setAgentMode: (mode: "plan" | "build") => void;
-  isAgentToggleVisible: boolean;
+  agentMode?: "plan" | "build";
+  setAgentMode?: (mode: "plan" | "build") => void;
+  isAgentToggleVisible?: boolean;
   status: AssistantStatus;
   isMicActive: boolean;
   isMuted: boolean;
@@ -256,82 +256,7 @@ export function DockControlsCluster({
           </div>
         )}
 
-        {/* Plan / Build Mode Toggle */}
-        {isAgentToggleVisible && (
-          <div className="relative shrink-0" data-dropdown-root="true">
-            <button
-              type="button"
-              onClick={(e) => toggleDropdown("agentMode", e)}
-              className={`flex items-center gap-1.5 py-1 px-2.5 rounded-lg border text-[11px] font-medium font-mono transition-all cursor-pointer ${
-                agentMode === "plan" ? "pill-plan-mode font-bold" : "pill-build-mode font-bold"
-              }`}
-              title="Select Agent Mode: Plan Mode or Build Mode"
-            >
-              {agentMode === "plan" ? (
-                <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-                </svg>
-              ) : (
-                <svg className="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-              )}
-              <span className="font-semibold tracking-wide">{agentMode === "plan" ? "Plan" : "Build"}</span>
-              <svg className="w-3 h-3 opacity-60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {isAgentModeDropdownOpen && (
-              <div
-                onClick={(e) => e.stopPropagation()}
-                className="absolute bottom-9 left-0 z-50 w-64 p-1.5 rounded-2xl bg-slate-950/95 border border-white/15 backdrop-blur-2xl shadow-2xl animate-scale-up space-y-1 text-xs font-mono"
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAgentMode("plan");
-                    closeDropdown();
-                  }}
-                  className={`w-full flex items-start gap-2.5 p-2 rounded-xl text-left transition-all cursor-pointer ${
-                    agentMode === "plan" ? "bg-cyan-500/20 text-cyan-100 border border-cyan-400/40" : "hover:bg-white/5 text-slate-300"
-                  }`}
-                >
-                  <div className="w-6 h-6 rounded-lg bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center shrink-0 mt-0.5">
-                    <svg className="w-3.5 h-3.5 text-cyan-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="font-bold">Plan Mode</p>
-                    <p className="text-[10px] text-slate-400">Research &amp; compose step-by-step plans without modifying files.</p>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAgentMode("build");
-                    closeDropdown();
-                  }}
-                  className={`w-full flex items-start gap-2.5 p-2 rounded-xl text-left transition-all cursor-pointer ${
-                    agentMode === "build" ? "bg-amber-500/20 text-amber-100 border border-amber-400/40" : "hover:bg-white/5 text-slate-300"
-                  }`}
-                >
-                  <div className="w-6 h-6 rounded-lg bg-amber-500/15 border border-amber-400/30 flex items-center justify-center shrink-0 mt-0.5">
-                    <svg className="w-3.5 h-3.5 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="font-bold">Build Mode</p>
-                    <p className="text-[10px] text-slate-400">Autonomous execution, write files, and complete tasks.</p>
-                  </div>
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+        {/* Mode Dropdown (Interaction Mode) */}
 
         {/* AI Model Selector Button & Popover */}
         <div className="relative shrink-0" data-dropdown-root="true">

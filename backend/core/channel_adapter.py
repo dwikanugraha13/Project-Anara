@@ -499,8 +499,8 @@ async def _process_channel_request_core(
     # In conversational mode, user turns execute directly with runtime tool interception.
     # Plan proposal gate is triggered only when the session is explicitly configured for Plan Mode.
     session_obj = memory_engine.get_session(session_id)
-    actual_session_mode = (session_obj.get("session_mode") or "conversational") if session_obj else "conversational"
-    requires_plan = (actual_session_mode in ("explicit_plan_build", "plan"))
+    actual_session_mode = (session_obj.get("session_mode") or "build") if session_obj else "build"
+    requires_plan = (actual_session_mode == "plan")
 
     # ── CASE B: Request entails high-risk/mutating action -> Auto PLAN MODE ──
     if requires_plan:

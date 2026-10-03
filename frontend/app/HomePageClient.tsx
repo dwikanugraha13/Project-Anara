@@ -864,7 +864,7 @@ export default function HomePageClient({
   }, [startListening, forceUnlock]);
 
   const handleSendText = useCallback(
-    (text: string, agentMode: "plan" | "build" = "plan") => {
+    (text: string, agentMode: "plan" | "build" = "build") => {
       if (!text.trim()) return;
       const trimmed = text.trim();
       forceUnlock();

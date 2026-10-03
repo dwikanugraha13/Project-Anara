@@ -39,7 +39,7 @@ export function restoreTranscriptFromMessages(messages: SessionMessage[]): Trans
         workspaceFolderData: vis.workspaceFolderData,
         planData: vis.planData,
         mediaType: m.media_type as any,
-        agentMode: (vis.agent_mode || vis.agentMode || "plan") as "plan" | "build",
+        agentMode: (vis.agent_mode || vis.agentMode || "build") as "plan" | "build",
         modelId: vis.model || vis.model_id || vis.modelId,
         durationText: vis.duration_text || vis.durationText || (vis.duration ? `${Math.round(vis.duration)}s` : undefined),
         tokenUsage: vis.tokenUsage || vis.token_usage,

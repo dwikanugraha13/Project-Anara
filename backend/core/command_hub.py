@@ -635,6 +635,44 @@ async def _handle_cmd_branch(ctx: UniversalCommandContext) -> UniversalCommandRe
     return UniversalCommandResponse(text="⚠️ <b>Branch Failed</b>: Gagal mencabangkan sesi aktif.")
 
 
+@command_hub.register(
+    name="approvals",
+    description="Inspect or set persistent tool execution approval mode (manual, smart, off)",
+    usage="/approvals [manual|smart|off]",
+    aliases=["approval", "yolo"]
+)
+async def _handle_cmd_approvals(ctx: UniversalCommandContext) -> UniversalCommandResponse:
+    from config import cfg_get, save_config
+    arg = ctx.args.strip().lower()
+    if ctx.command == "yolo":
+        arg = "off"
+
+    current_mode = str(cfg_get("approvals.mode", "smart")).strip().lower()
+    if not arg:
+        desc = {
+            "manual": "Ask before actions that require approval (intercept all mutating and ask actions)",
+            "smart": "Automatically assess actions and ask when needed (default: auto-approves safe commands, pauses for fatal destructive actions)",
+            "off": "Run without approval prompts (full autonomous execution)"
+        }.get(current_mode, "")
+        return UniversalCommandResponse(
+            text=f"⚙️ <b>Approval Mode:</b> <code>{current_mode}</code>\n<i>{desc}</i>\n\nUsage: <code>/approvals [manual|smart|off]</code>"
+        )
+
+    if arg not in ("manual", "smart", "off"):
+        return UniversalCommandResponse(
+            text="⚠️ <b>Invalid approval mode.</b>\nValid values: <code>manual</code>, <code>smart</code>, <code>off</code>\nExample: <code>/approvals smart</code>"
+        )
+
+    save_config({"approvals.mode": arg})
+    return UniversalCommandResponse(
+        text=f"✅ <b>Approval Mode updated:</b> <code>{arg}</code>\n" + (
+            "🚀 <i>Autonomous execution active — agent will run tools without confirmation prompts.</i>" if arg == "off" else
+            "🛡️ <i>Smart AI safety evaluation active — safe commands run directly, destructive actions pause for approval.</i>" if arg == "smart" else
+            "🔒 <i>Manual approval active — agent will ask before any file edits or mutating commands.</i>"
+        )
+    )
+
+
 
 # ── VOICE HELPERS & PERSISTENCE ──
 

@@ -191,7 +191,7 @@ export default function AnaraWorkbench({
   const [inputMessage, setInputMessage] = useState("");
   const [isBrainDrawerOpen, setIsBrainDrawerOpen] = useState(false);
   const [isArtifactsModalOpen, setIsArtifactsModalOpen] = useState(false);
-  const [agentMode, setAgentMode] = useState<"plan" | "build">("plan");
+  const [agentMode, setAgentMode] = useState<"plan" | "build">("build");
   const [voiceModelId, setVoiceModelId] = useState<string>("gemini-3.1-flash-live-preview");
   const [chatModelId, setChatModelId] = useState<string>("9router/ag/gemini-3.8-flash-high");
   const [models, setModels] = useState<AIModelInfo[]>([]);
@@ -943,7 +943,7 @@ export default function AnaraWorkbench({
           showInteractionModeToggle={true}
           inputMessage={inputMessage}
           setInputMessage={setInputMessage}
-          onSend={(text: string, mode: "plan" | "build") => onSendText?.(text, mode)}
+          onSend={(text: string, mode?: "plan" | "build") => onSendText?.(text, mode || "build")}
           onSteer={onSteer}
           agentMode={agentMode}
           setAgentMode={setAgentMode}

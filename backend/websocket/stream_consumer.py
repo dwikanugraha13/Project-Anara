@@ -128,7 +128,7 @@ class AgentRunner:
 
             # 2. Resolve session context & mode (Anara Model-Driven Parity: Zero Pre-Turn Keyword Guessing)
             session_type = (session_obj.get("session_type") or "chat") if session_obj else "chat"
-            session_mode = (session_obj.get("session_mode") or ("explicit_plan_build" if session_type == "code" else "conversational")) if session_obj else "conversational"
+            session_mode = (session_obj.get("session_mode") or ("build" if session_type == "code" else "conversational")) if session_obj else "conversational"
             req_channel = str(data.get("channel") or data.get("platform") or ("code" if session_type == "code" else "web")).strip().lower()
 
             # Check if there is an active pending action awaiting approval
@@ -152,21 +152,15 @@ class AgentRunner:
                     )
                     logger.info(f"[Agent Mode] Action #{active_pending.action_id} rejected by user.")
 
-            if session_mode == "explicit_plan_build":
-                if is_approved:
-                    agent_mode = "build"
-                    logger.info("[Agent Mode] Pending plan approved in Code Studio -> Switch to BUILD MODE")
-                else:
-                    agent_mode = req_agent_mode if req_agent_mode in ("plan", "build") else "plan"
+            if is_approved:
+                agent_mode = "build"
+                logger.info("[Agent Mode] Pending action approved -> Switch to BUILD MODE")
+            elif req_agent_mode == "plan" or session_mode == "plan":
+                agent_mode = "plan"
             else:
-                if is_approved:
-                    agent_mode = "build"
-                    logger.info("[Agent Mode] Pending action approved in Conversational Mode -> Switch to BUILD MODE")
-                elif needs_plan(text, session_mode="conversational"):
-                    agent_mode = "plan"
-                    logger.info("[Agent Mode] Complex/mutating request in Conversational Mode -> Switch to PLAN MODE")
-                else:
-                    agent_mode = "build"
+                # Full Autonomous Standard: Default to build mode with full tool capabilities.
+                # Safety and confirmation gates are governed dynamically by approvals.mode (manual, smart, off).
+                agent_mode = "build"
 
             # 4. Core ReAct Turn Execution via AnaraExecutionRunner (Anara Standard)
             reply_text = ""

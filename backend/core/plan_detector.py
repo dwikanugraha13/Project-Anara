@@ -657,7 +657,7 @@ def _strip_shell_comments(cmd: str) -> str:
 
 async def smart_evaluate_command_safety(command: str, description: str = "") -> str:
     """
-    Hermes Smart Approval Guardian (approval_smart.py Parity).
+    Anara Smart Approval Guardian.
     Evaluates shell command risk using auxiliary LLM security reviewer.
     Guarantees pure model reasoning over raw AST heuristics for complex or ambiguous commands.
     """
@@ -726,13 +726,13 @@ def needs_plan(
     session_mode: str = "conversational",
 ) -> bool:
     """
-    Hermes Model-Driven Parity: Zero text-based regex guessing.
-    In explicit plan mode ('explicit_plan_build' or 'plan'), returns True.
+    Anara Model-Driven Standard: Zero text-based regex guessing.
+    In explicit plan mode ('plan'), returns True.
     In conversational mode with specific runtime tools provided, checks their risk.
     In conversational mode without tools, returns False to delegate directly
     to the LLM ReAct loop with dynamic runtime tool interception.
     """
-    if session_mode in ("explicit_plan_build", "plan"):
+    if session_mode == "plan":
         if detected_tools:
             return get_highest_risk(detected_tools) != "read_only"
         return True

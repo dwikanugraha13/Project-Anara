@@ -379,18 +379,6 @@ export function CodeStudioWorkspace({
             <div className="flex items-center gap-2">
               <span className={`w-2 h-2 rounded-full ${assistantStatus === "thinking" ? "bg-cyan-400 animate-pulse shadow-[0_0_8px_#22d3ee]" : "bg-emerald-400 shadow-[0_0_8px_#34d399]"}`} />
               <span className="font-bold text-white tracking-wider text-[11px] uppercase">Agent Console</span>
-              <button
-                type="button"
-                onClick={() => setAgentMode((m) => (m === "plan" ? "build" : "plan"))}
-                className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase cursor-pointer transition-all active:scale-95 ${
-                  agentMode === "build"
-                    ? "bg-purple-500/15 border border-purple-400/30 text-purple-300 hover:bg-purple-500/25"
-                    : "bg-cyan-500/15 border border-cyan-400/30 text-cyan-300 hover:bg-cyan-500/25"
-                }`}
-                title="Click to toggle Plan / Build mode"
-              >
-                {agentMode}
-              </button>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-slate-300 font-mono flex items-center gap-1.5" title={activeModelId}>
@@ -422,11 +410,11 @@ export function CodeStudioWorkspace({
           {/* Dedicated Agent Command & Prompt Input Dock */}
           <BottomDock
             embedded={true}
-            showAgentModeToggle={true}
+            showAgentModeToggle={false}
             showInteractionModeToggle={false}
             inputMessage={inputMessage}
             setInputMessage={setInputMessage}
-            onSend={(text: string, mode: "plan" | "build") => handleSendText(text, mode)}
+            onSend={(text: string, mode?: "plan" | "build") => handleSendText(text, mode || "build")}
             agentMode={agentMode}
             setAgentMode={setAgentMode}
             models={models}

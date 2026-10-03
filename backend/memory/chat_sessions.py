@@ -50,7 +50,7 @@ class ChatSessionsMixin:
         clean_type = "code" if str(session_type).lower() == "code" else "chat"
         clean_channel = (channel or "web").strip().lower()
         if not session_mode:
-            clean_mode = "explicit_plan_build" if clean_type == "code" else "conversational"
+            clean_mode = "build" if clean_type == "code" else "conversational"
         else:
             clean_mode = session_mode.strip().lower()
 
@@ -92,7 +92,7 @@ class ChatSessionsMixin:
                        s.is_archived, s.is_pinned,
                        COALESCE(s.session_type, 'chat') AS session_type,
                        COALESCE(s.channel, 'web') AS channel,
-                       COALESCE(s.session_mode, CASE WHEN s.session_type = 'code' THEN 'explicit_plan_build' ELSE 'conversational' END) AS session_mode,
+                       COALESCE(s.session_mode, CASE WHEN s.session_type = 'code' THEN 'build' ELSE 'conversational' END) AS session_mode,
                        COALESCE(s.run_type, 'interactive') AS run_type,
                        COALESCE(s.trust_level, 'supervised') AS trust_level,
                        s.workspace_info_json,
@@ -448,7 +448,7 @@ class ChatSessionsMixin:
                 return None
             res = dict(r)
             res["channel"] = res.get("channel") or "web"
-            res["session_mode"] = res.get("session_mode") or ("explicit_plan_build" if res.get("session_type") == "code" else "conversational")
+            res["session_mode"] = res.get("session_mode") or ("build" if res.get("session_type") == "code" else "conversational")
             if res.get("workspace_info_json"):
                 try:
                     res["workspace_info"] = json.loads(res["workspace_info_json"])

@@ -58,7 +58,7 @@ export default function CodePageClient({
   const [liveToolProgress, setLiveToolProgress] = useState<ToolProgressPayload | null>(null);
   const [activeThinkingText, setActiveThinkingText] = useState<string | null>(null);
   const [inputMessage, setInputMessage] = useState("");
-  const [agentMode, setAgentMode] = useState<"plan" | "build">("plan");
+  const [agentMode, setAgentMode] = useState<"plan" | "build">("build");
   const [activeModelId, setActiveModelId] = useState<string>("9router/ag/gemini-3.8-flash-high");
   const [models, setModels] = useState<AIModelInfo[]>([]);
   const [sessions, setSessions] = useState<ChatSession[]>([]);

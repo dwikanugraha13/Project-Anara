@@ -39,7 +39,7 @@ export function useComposerQueue({
   const currentQueue = queueBySession[currentSessionKey] || [];
 
   const enqueue = useCallback(
-    (text: string, agentMode: "plan" | "build" = "plan") => {
+    (text: string, agentMode: "plan" | "build" = "build") => {
       const item: QueuedPromptItem = {
         id: `q_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         text: text.trim(),

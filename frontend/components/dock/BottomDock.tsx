@@ -38,9 +38,9 @@ export function revokeAttachmentPreviews(items: AttachedItem[]) {
 export interface BottomDockProps {
   inputMessage: string;
   setInputMessage: (val: string) => void;
-  onSend: (text: string, agentMode: "plan" | "build") => void;
-  agentMode: "plan" | "build";
-  setAgentMode: (mode: "plan" | "build") => void;
+  onSend: (text: string, agentMode?: "plan" | "build") => void;
+  agentMode?: "plan" | "build";
+  setAgentMode?: (mode: "plan" | "build") => void;
   models: AIModelInfo[];
   activeModelId: string;
   onSelectModel: (id: string) => void;
@@ -310,8 +310,8 @@ export default function BottomDock({
       setTriggerKind(null);
       setTriggerQuery("");
 
-      if (item.id === "cmd-plan") setAgentMode("plan");
-      else if (item.id === "cmd-build") setAgentMode("build");
+      if (item.id === "cmd-plan") setAgentMode?.("plan");
+      else if (item.id === "cmd-build") setAgentMode?.("build");
       else if (item.id === "cmd-voice") onSetInteractionMode?.("voice");
       else if (item.id === "cmd-chat") onSetInteractionMode?.("chat");
       else if (item.id === "cmd-clear") {
@@ -367,8 +367,8 @@ export default function BottomDock({
       const val = inputMessage.trim();
       if (val.startsWith("/")) {
         const commands = [
-          { cmd: "/plan", action: () => setAgentMode("plan") },
-          { cmd: "/build", action: () => setAgentMode("build") },
+          { cmd: "/plan", action: () => setAgentMode?.("plan") },
+          { cmd: "/build", action: () => setAgentMode?.("build") },
           { cmd: "/voice", action: () => onSetInteractionMode?.("voice") },
           { cmd: "/chat", action: () => onSetInteractionMode?.("chat") },
           {
