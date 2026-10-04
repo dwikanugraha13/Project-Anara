@@ -285,18 +285,59 @@ async def _execute_native_agent_loop(
                 from core.plan_detector import smart_evaluate_command_safety
                 t_risk = await smart_evaluate_command_safety(t_args.get("command", ""), description=user_prompt[:80])
 
-            # Safety Interception based on approvals.mode (plan, auto, off):
+            # ── Anara Approval Engine (Native Loop) ────────────────────────
             from config import cfg_get
             approval_mode = str(cfg_get("approvals.mode", "auto")).strip().lower()
 
-            if approval_mode in ("off", "yolo"):
-                # 'off': Run without approval prompts (only fatal sandbox hard violations are blocked by sandbox.py)
+            # Hardline safety floor: blocks catastrophic commands even in Off/YOLO mode
+            if t_name in ("execute_cli_command", "terminal", "run_terminal_command"):
+                from core.approval_guard import check_command_safety
+                cmd_text = t_args.get("command", "")
+                safety_result = check_command_safety(cmd_text, approval_mode)
+                if safety_result and safety_result.get("hardline"):
+                    logger.warning(f"[HARDLINE FLOOR] Blocked '{t_name}': {safety_result['reason']}")
+                    is_intercepted = True
+                    interception_result = {
+                        "intercepted": True,
+                        "hardline_blocked": True,
+                        "tool_name": t_name,
+                        "tool_args": t_args,
+                        "tool_risk": "hardline",
+                        "reason": safety_result["reason"],
+                        "cmd_preview": cmd_text[:200],
+                        "lead_text": turn.clean_text,
+                        "raw_call": call.to_dict(),
+                    }
+                    break
+                elif safety_result and safety_result.get("needs_approval"):
+                    t_risk = "ask"
+
+            # Smart approval gate for auto/smart mode
+            if approval_mode in ("auto", "smart") and t_risk in ("mutating", "ask"):
+                if t_name in ("execute_cli_command", "terminal", "run_terminal_command"):
+                    try:
+                        from core.approval_smart import smart_approve
+                        cmd_text = t_args.get("command", "")
+                        verdict = await smart_approve(cmd_text, f"tool={t_name}, risk={t_risk}")
+                        if verdict == "approve":
+                            logger.info(f"[SmartApproval] Auto-approved '{t_name}': guardian verdict=APPROVE")
+                            should_intercept = False
+                        elif verdict == "deny":
+                            logger.info(f"[SmartApproval] Denied '{t_name}': guardian verdict=DENY")
+                            should_intercept = True
+                        else:
+                            logger.info(f"[SmartApproval] Escalating '{t_name}': guardian verdict=ESCALATE")
+                            should_intercept = True
+                    except Exception as e:
+                        logger.warning(f"[SmartApproval] Guardian failed: {e}, escalating to manual")
+                        should_intercept = True
+                else:
+                    should_intercept = (t_risk == "ask")
+            elif approval_mode in ("off", "yolo"):
                 should_intercept = False
             elif approval_mode in ("plan", "manual"):
-                # 'plan': Ask before actions that require approval (intercept all mutating and ask actions)
                 should_intercept = t_risk in ("mutating", "ask")
             else:
-                # 'auto' / 'smart' (default): Automatically assess actions and ask when needed
                 should_intercept = (t_risk == "ask") or (intercept_mutating_tools and t_risk in ("mutating", "ask"))
 
             if should_intercept:
@@ -959,18 +1000,59 @@ async def _execute_json_agent_loop(
                 from core.plan_detector import smart_evaluate_command_safety
                 t_risk = await smart_evaluate_command_safety(t_args.get("command", ""), description=user_prompt[:80])
 
-            # Safety Interception based on approvals.mode (plan, auto, off):
+            # ── Anara Approval Engine (JSON Loop) ──────────────────────────
             from config import cfg_get
             approval_mode = str(cfg_get("approvals.mode", "auto")).strip().lower()
 
-            if approval_mode in ("off", "yolo"):
-                # 'off': Run without approval prompts (only fatal sandbox hard violations are blocked by sandbox.py)
+            # Hardline safety floor: blocks catastrophic commands even in Off/YOLO mode
+            if t_name in ("execute_cli_command", "terminal", "run_terminal_command"):
+                from core.approval_guard import check_command_safety
+                cmd_text = t_args.get("command", "")
+                safety_result = check_command_safety(cmd_text, approval_mode)
+                if safety_result and safety_result.get("hardline"):
+                    logger.warning(f"[HARDLINE FLOOR] Blocked '{t_name}': {safety_result['reason']}")
+                    is_intercepted = True
+                    interception_result = {
+                        "intercepted": True,
+                        "hardline_blocked": True,
+                        "tool_name": t_name,
+                        "tool_args": t_args,
+                        "tool_risk": "hardline",
+                        "reason": safety_result["reason"],
+                        "cmd_preview": cmd_text[:200],
+                        "lead_text": lead_text,
+                        "raw_call": call,
+                    }
+                    break
+                elif safety_result and safety_result.get("needs_approval"):
+                    t_risk = "ask"
+
+            # Smart approval gate for auto/smart mode
+            if approval_mode in ("auto", "smart") and t_risk in ("mutating", "ask"):
+                if t_name in ("execute_cli_command", "terminal", "run_terminal_command"):
+                    try:
+                        from core.approval_smart import smart_approve
+                        cmd_text = t_args.get("command", "")
+                        verdict = await smart_approve(cmd_text, f"tool={t_name}, risk={t_risk}")
+                        if verdict == "approve":
+                            logger.info(f"[SmartApproval] Auto-approved '{t_name}': guardian verdict=APPROVE")
+                            should_intercept = False
+                        elif verdict == "deny":
+                            logger.info(f"[SmartApproval] Denied '{t_name}': guardian verdict=DENY")
+                            should_intercept = True
+                        else:
+                            logger.info(f"[SmartApproval] Escalating '{t_name}': guardian verdict=ESCALATE")
+                            should_intercept = True
+                    except Exception as e:
+                        logger.warning(f"[SmartApproval] Guardian failed: {e}, escalating to manual")
+                        should_intercept = True
+                else:
+                    should_intercept = (t_risk == "ask")
+            elif approval_mode in ("off", "yolo"):
                 should_intercept = False
             elif approval_mode in ("plan", "manual"):
-                # 'plan': Ask before actions that require approval (intercept all mutating and ask actions)
                 should_intercept = t_risk in ("mutating", "ask")
             else:
-                # 'auto' / 'smart' (default): Automatically assess actions and ask when needed
                 should_intercept = (t_risk == "ask") or (intercept_mutating_tools and t_risk in ("mutating", "ask"))
 
             if should_intercept:

@@ -659,25 +659,25 @@ async def _handle_cmd_approvals(ctx: UniversalCommandContext) -> UniversalComman
 
     if not arg:
         desc = {
-            "plan": "Analyze and plan before executing actions (intercept mutating tools for plan approval)",
-            "auto": "Automatically assess actions and ask when needed (autonomous execution with smart safety gates)",
+            "manual": "Ask before actions that require approval (intercept mutating tools for approval)",
+            "smart": "Automatically assess actions and ask when needed (autonomous execution with smart safety gates)",
             "off": "Run without approval prompts (full autonomous execution)"
         }.get(current_mode, "")
         return UniversalCommandResponse(
-            text=f"⚙️ <b>Approval Mode:</b> <code>{current_mode}</code>\n<i>{desc}</i>\n\nUsage: <code>/approvals [plan|auto|off]</code>"
+            text=f"⚙️ <b>Approval Mode:</b> <code>{current_mode}</code>\n<i>{desc}</i>\n\nUsage: <code>/approvals [manual|smart|off]</code>"
         )
 
-    if arg not in ("plan", "auto", "off"):
+    if arg not in ("manual", "smart", "off"):
         return UniversalCommandResponse(
-            text="⚠️ <b>Invalid approval mode.</b>\nValid values: <code>plan</code>, <code>auto</code>, <code>off</code>\nExample: <code>/approvals auto</code>"
+            text="⚠️ <b>Invalid approval mode.</b>\nValid values: <code>manual</code>, <code>smart</code>, <code>off</code>\nExample: <code>/approvals smart</code>"
         )
 
     save_config({"approvals.mode": arg})
     return UniversalCommandResponse(
         text=f"✅ <b>Approval Mode updated:</b> <code>{arg}</code>\n" + (
-            "🚀 <i>Autonomous execution active — agent will run tools without confirmation prompts.</i>" if arg == "off" else
-            "🛡️ <i>Auto mode active — safe commands run directly, risky destructive actions pause for approval.</i>" if arg == "auto" else
-            "📋 <i>Plan mode active — agent will research, formulate a plan, and ask before making changes.</i>"
+            "🚀 <i>Off mode active — autonomous execution, catastrophic commands still blocked by hardline floor.</i>" if arg == "off" else
+            "✨ <i>Smart mode active — guardian LLM assesses risk, safe commands run directly, risky actions pause for approval.</i>" if arg == "smart" else
+            "🛡️ <i>Manual mode active — all mutating actions pause for explicit approval before execution.</i>"
         )
     )
 

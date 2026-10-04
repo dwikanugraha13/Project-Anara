@@ -590,6 +590,136 @@ button:not([role="tab"]):not([data-no-scale]):active,
   background: rgba(34, 211, 238, 0.45) !important;
 }
 
+/* ── Streaming Text Gradient Flow Animation ─────────────────────────────── */
+@keyframes streaming-gradient-flow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+.streaming-text-gradient {
+  background: linear-gradient(
+    90deg,
+    #e2e8f0 0%,
+    #67e8f9 15%,
+    #a5f3fc 30%,
+    #e2e8f0 45%,
+    #c4b5fd 60%,
+    #a78bfa 75%,
+    #e2e8f0 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: streaming-gradient-flow 3s linear infinite;
+}
+
+/* Nested elements inherit text gradient during streaming */
+.streaming-text-gradient strong,
+.streaming-text-gradient em,
+.streaming-text-gradient a,
+.streaming-text-gradient del,
+.streaming-text-gradient span:not(.streaming-caret):not([class*="code"]):not([class*="bg-"]):not([class*="rounded"]) {
+  -webkit-text-fill-color: transparent;
+  background: inherit;
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+/* Exclude inline code, caret, and badges from gradient inheritance */
+.streaming-text-gradient code,
+.streaming-text-gradient .streaming-caret {
+  -webkit-text-fill-color: initial;
+  background: initial;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+}
+
+/* Code block streaming entrance */
+@keyframes code-stream-enter {
+  from { opacity: 0.74; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes code-stream-glow {
+  from { box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.06), 0 8px 24px rgba(34, 211, 238, 0.05); }
+  to { box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.12), 0 12px 32px rgba(34, 211, 238, 0.10); }
+}
+
+.streaming-code-block {
+  animation:
+    code-stream-enter 180ms cubic-bezier(0.16, 1, 0.3, 1) both,
+    code-stream-glow 1.8s ease-in-out 180ms infinite alternate;
+}
+
+/* Streaming code block bottom fade (content still arriving) */
+.streaming-code-fade {
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 1.5rem), rgba(0,0,0,0.64) 100%);
+  mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 1.5rem), rgba(0,0,0,0.64) 100%);
+}
+
+/* Arc-style animated border for active streaming message */
+@keyframes anara-stream-arc {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+.streaming-arc-border {
+  position: relative;
+}
+
+.streaming-arc-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  overflow: hidden;
+  background: linear-gradient(
+    160deg,
+    transparent 0%,
+    transparent 18.75%,
+    rgba(34, 211, 238, 0.35) 25%,
+    rgba(139, 92, 246, 0.25) 31.25%,
+    transparent 43.75%,
+    transparent 50%,
+    transparent 68.75%,
+    rgba(34, 211, 238, 0.2) 75%,
+    rgba(139, 92, 246, 0.15) 81.25%,
+    transparent 93.75%,
+    transparent 100%
+  );
+  background-size: 200% 200%;
+  animation: anara-stream-arc 2.2s linear infinite;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .streaming-text-gradient {
+    animation: none;
+    -webkit-text-fill-color: unset;
+    background: none;
+  }
+  .streaming-text-gradient strong,
+  .streaming-text-gradient em,
+  .streaming-text-gradient a,
+  .streaming-text-gradient del,
+  .streaming-text-gradient span:not(.streaming-caret) {
+    -webkit-text-fill-color: unset;
+    background: initial;
+  }
+  .streaming-code-block {
+    animation: none;
+  }
+  .streaming-arc-border::before {
+    animation: none;
+  }
+}
+
 /* Hide CodeMirror Default Full-Width Search Panel (Replaced by Floating Pro Widget) */
 .cm-panels {
   display: none !important;

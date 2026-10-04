@@ -309,7 +309,9 @@ function CodeBlock({
     }[cleanLang] || cleanLang.toUpperCase();
 
   return (
-    <div className="my-3 rounded-xl overflow-hidden border border-white/10 bg-[#060913]/90 backdrop-blur-xl shadow-2xl transition-all">
+    <div className={`my-3 rounded-xl overflow-hidden border border-white/10 bg-[#060913]/90 backdrop-blur-xl shadow-2xl transition-all ${
+      isStreamingLeaf ? 'streaming-code-block' : ''
+    }`}>
       {/* Chrome Header */}
       <div className="flex items-center justify-between px-3.5 py-1.5 bg-white/[0.03] border-b border-white/5 text-[11px]">
         <div className="flex items-center gap-2">
@@ -405,7 +407,7 @@ function CodeBlock({
       <pre
         className={`p-3.5 custom-scrollbar text-[12px] font-mono leading-relaxed overflow-x-auto ${
           wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre"
-        }`}
+        } ${isStreamingLeaf ? 'streaming-code-fade' : ''}`}
       >
         <code>
           {tokenizedLines.map((lineTokens, lineIdx) => {

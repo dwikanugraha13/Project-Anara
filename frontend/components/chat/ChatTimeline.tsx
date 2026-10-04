@@ -680,7 +680,9 @@ export default function ChatTimeline({
                                 </div>
                               )}
                               {displayMarkdown ? (
-                                <div className="relative text-slate-200 leading-relaxed font-sans text-[13.5px]">
+                                <div className={`relative leading-relaxed font-sans text-[13.5px] ${
+                                  item.isStreaming ? 'streaming-text-gradient streaming-arc-border rounded-lg' : 'text-slate-200'
+                                }`}>
                                   <AgentMarkdown
                                     content={displayMarkdown}
                                     isStreaming={Boolean(item.isStreaming)}
