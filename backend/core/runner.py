@@ -408,7 +408,8 @@ class AnaraExecutionRunner:
 
             # Model-Driven Contextual Rationale (Zero Canned Templates)
             from core.channel_adapter import synthesize_action_rationale, UniversalChannelAdapter
-            lead_narration = lead
+            from providers.payload_parser import _clean_model_chat_text
+            lead_narration = _clean_model_chat_text(lead) if lead else ""
             if not lead_narration:
                 lead_narration = await synthesize_action_rationale(
                     tool_name=t_name,

@@ -288,6 +288,7 @@ async def _execute_native_agent_loop(
             # ── Anara Approval Engine (Native Loop) ────────────────────────
             from config import cfg_get
             approval_mode = str(cfg_get("approvals.mode", "auto")).strip().lower()
+            _danger_desc = ""
 
             # Hardline safety floor: blocks catastrophic commands even in Off/YOLO mode
             if t_name in ("execute_cli_command", "terminal", "run_terminal_command"):
@@ -311,6 +312,7 @@ async def _execute_native_agent_loop(
                     break
                 elif safety_result and safety_result.get("needs_approval"):
                     t_risk = "ask"
+                    _danger_desc = safety_result.get("description", "")
 
             # Smart approval gate for auto/smart mode
             if approval_mode in ("auto", "smart") and t_risk in ("mutating", "ask"):
@@ -318,7 +320,10 @@ async def _execute_native_agent_loop(
                     try:
                         from core.approval_smart import smart_approve
                         cmd_text = t_args.get("command", "")
-                        verdict = await smart_approve(cmd_text, f"tool={t_name}, risk={t_risk}")
+                        danger_ctx = f"tool={t_name}, risk={t_risk}"
+                        if _danger_desc:
+                            danger_ctx += f", pattern_match={_danger_desc}"
+                        verdict = await smart_approve(cmd_text, danger_ctx)
                         if verdict == "approve":
                             logger.info(f"[SmartApproval] Auto-approved '{t_name}': guardian verdict=APPROVE")
                             should_intercept = False
@@ -1003,6 +1008,7 @@ async def _execute_json_agent_loop(
             # ── Anara Approval Engine (JSON Loop) ──────────────────────────
             from config import cfg_get
             approval_mode = str(cfg_get("approvals.mode", "auto")).strip().lower()
+            _danger_desc = ""
 
             # Hardline safety floor: blocks catastrophic commands even in Off/YOLO mode
             if t_name in ("execute_cli_command", "terminal", "run_terminal_command"):
@@ -1026,6 +1032,7 @@ async def _execute_json_agent_loop(
                     break
                 elif safety_result and safety_result.get("needs_approval"):
                     t_risk = "ask"
+                    _danger_desc = safety_result.get("description", "")
 
             # Smart approval gate for auto/smart mode
             if approval_mode in ("auto", "smart") and t_risk in ("mutating", "ask"):
@@ -1033,7 +1040,10 @@ async def _execute_json_agent_loop(
                     try:
                         from core.approval_smart import smart_approve
                         cmd_text = t_args.get("command", "")
-                        verdict = await smart_approve(cmd_text, f"tool={t_name}, risk={t_risk}")
+                        danger_ctx = f"tool={t_name}, risk={t_risk}"
+                        if _danger_desc:
+                            danger_ctx += f", pattern_match={_danger_desc}"
+                        verdict = await smart_approve(cmd_text, danger_ctx)
                         if verdict == "approve":
                             logger.info(f"[SmartApproval] Auto-approved '{t_name}': guardian verdict=APPROVE")
                             should_intercept = False
