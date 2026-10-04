@@ -254,13 +254,33 @@ class AgentRunner:
                             "session_id": sid,
                         })
                     elif event.type == "need_approval":
+                        from providers.payload_parser import _strip_think_blocks
+                        approval_text = _strip_think_blocks(event.content or "").strip() or "Action requires confirmation before execution."
+                        approval_meta = event.metadata or {}
+                        # Scrub think tags from nested narration too
+                        if isinstance(approval_meta.get("narration"), str):
+                            approval_meta = {**approval_meta, "narration": _strip_think_blocks(approval_meta["narration"]).strip()}
+                        if isinstance(approval_meta.get("text"), str):
+                            approval_meta = {**approval_meta, "text": _strip_think_blocks(approval_meta["text"]).strip()}
+                        # Extract risk_level for frontend
+                        risk_level = "medium"
+                        inner_meta = approval_meta.get("action_metadata", {})
+                        if isinstance(inner_meta, dict):
+                            risk_raw = inner_meta.get("risk", "")
+                            if risk_raw in ("hardline", "critical"):
+                                risk_level = "critical"
+                            elif risk_raw == "ask":
+                                risk_level = "high"
+                            elif risk_raw == "mutating":
+                                risk_level = "medium"
+                        approval_meta["risk_level"] = risk_level
                         await self.websocket.send_json({
                             "type": "plan_pending",
                             "plan_id": event.plan_id or "plan_pending",
                             "tool_name": event.tool_name,
                             "tool_args": event.tool_args or {},
-                            "text": event.content or "Action plan requires confirmation before execution.",
-                            "action_metadata": event.metadata,
+                            "text": approval_text,
+                            "action_metadata": approval_meta,
                             "sessionId": sid,
                             "session_id": sid,
                         })
