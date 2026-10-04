@@ -53,10 +53,10 @@ def get_stored_telegram_admin_ids() -> Optional[str]:
     return os.environ.get("TELEGRAM_ADMIN_IDS", "").strip() or None
 
 
-def save_telegram_config(token: str, default_chat_id: Optional[str] = None, admin_ids: Optional[str] = None) -> bool:
+def save_telegram_config(token: Optional[str] = None, default_chat_id: Optional[str] = None, admin_ids: Optional[str] = None) -> bool:
     """Saves telegram configuration to database settings."""
     from memory import memory_engine
-    if token:
+    if token and token.strip():
         memory_engine.set_app_setting("telegram_bot_token", token.strip())
     if default_chat_id is not None:
         memory_engine.set_app_setting("telegram_chat_id", default_chat_id.strip())

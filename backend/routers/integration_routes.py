@@ -308,9 +308,12 @@ async def telegram_config_endpoint(req: TelegramConfigRequest):
     Saves Telegram bot token, default chat ID & admin user IDs.
     Validates token format against SSRF/path-traversal and starts polling daemon non-blockingly.
     """
-    token = (req.token or req.bot_token or "").strip()
-    chat_id = (req.default_chat_id or req.chat_id or "").strip() or None
-    admin_ids = (req.admin_ids or req.telegram_admin_ids or "").strip() or None
+    raw_token = req.token if req.token is not None else req.bot_token
+    token = raw_token.strip() if raw_token else ""
+    raw_chat = req.default_chat_id if req.default_chat_id is not None else req.chat_id
+    chat_id = raw_chat.strip() if raw_chat is not None else None
+    raw_admin = req.admin_ids if req.admin_ids is not None else req.telegram_admin_ids
+    admin_ids = raw_admin.strip() if raw_admin is not None else None
 
     if token and not re.match(r"^[0-9]{8,15}:[A-Za-z0-9_\-]{30,60}$", token):
         raise HTTPException(status_code=400, detail="Invalid Telegram bot token format.")

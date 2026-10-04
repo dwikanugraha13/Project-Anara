@@ -716,11 +716,23 @@ async def _handle_cmd_sessions(ctx: UniversalCommandContext) -> UniversalCommand
     bound_sid = get_channel_active_session(ctx.channel, ctx.channel_id)
     cur_sid = bound_sid if bound_sid is not None else (ctx.session_id or 0)
 
+    from core.security import get_authorized_admins
+    admins = get_authorized_admins(channel=ctx.channel)
+    uid_str = str(ctx.user_id or "").strip()
+    is_admin = bool(admins and uid_str and uid_str in admins)
+
     header = "📋 <b>Sessions</b>" if (is_all or is_full) else "📋 <b>Named Sessions</b>"
     lines = [header, ""]
 
-    if is_all:
+    if is_all and not is_admin:
         lines.append("<i>Note: all (cross-chat listing) requires a configured admin; showing this chat's sessions only.</i>\n")
+        # Scope sessions to this chat origin only
+        chat_tag = f"[{ctx.channel}:{ctx.channel_id}]"
+        chat_key = f"channel_{ctx.channel}_{ctx.channel_id}"
+        sessions = [
+            s for s in sessions
+            if (s.get("channel") == ctx.channel and (chat_tag in (s.get("title") or "") or (s.get("session_key") or "") == chat_key or s.get("id") == cur_sid))
+        ]
 
     import hashlib
     buttons = []

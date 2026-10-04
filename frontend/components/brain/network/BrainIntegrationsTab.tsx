@@ -20,6 +20,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
   const [tgTokenInput, setTgTokenInput] = useState("");
   const [tgChatIdInput, setTgChatIdInput] = useState("");
   const [tgAdminIdsInput, setTgAdminIdsInput] = useState("");
+  const [isTgConfigSaved, setIsTgConfigSaved] = useState(false);
   const [isTgModalOpen, setIsTgModalOpen] = useState(false);
   const [isTgLoading, setIsTgLoading] = useState(false);
   const [tgErrorMsg, setTgErrorMsg] = useState<string | null>(null);
@@ -222,6 +223,33 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
     } catch (err: any) {
       console.error("Save telegram error:", err);
       setTgErrorMsg(err.message || String(err));
+    } finally {
+      setIsTgLoading(false);
+    }
+  };
+
+  const handleSaveTelegramAdminQuick = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsTgLoading(true);
+    try {
+      const cleanAdminIds = tgAdminIdsInput.trim();
+      const cleanChatId = tgChatIdInput.trim();
+      const res = await fetch(`${BACKEND_URL}/api/integrations/telegram/config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          admin_ids: cleanAdminIds,
+          telegram_admin_ids: cleanAdminIds,
+          chat_id: cleanChatId || undefined,
+          default_chat_id: cleanChatId || undefined,
+        }),
+      });
+      if (res.ok) {
+        setIsTgConfigSaved(true);
+        setTimeout(() => setIsTgConfigSaved(false), 3000);
+      }
+    } catch (err) {
+      console.error("Save telegram admin error:", err);
     } finally {
       setIsTgLoading(false);
     }
@@ -438,12 +466,46 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
                 onClick={() => setIsTgModalOpen(true)}
                 className="px-3 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 hover:text-white border border-sky-400/30 text-xs font-medium transition-all cursor-pointer"
               >
-                {tgStatus === "connected" ? "Change Settings" : "Connect Telegram"}
+                {tgStatus === "connected" ? "Bot Token & Chat ID" : "Connect Telegram"}
               </button>
               {tgStatus === "connected" && (
                 <span className="text-sky-300 text-xs font-mono">Ready to Use</span>
               )}
             </div>
+
+            {/* Quick Admin Tier & Whitelist Config */}
+            <form onSubmit={handleSaveTelegramAdminQuick} className="mt-3 pt-3 border-t border-white/10 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-mono text-slate-300 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+                  Admin Tier User IDs (allow_admin_from)
+                </label>
+                {isTgConfigSaved && (
+                  <span className="text-[10px] font-mono text-sky-300 animate-fade-in">
+                    ✓ Saved
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g. 7024711852 (comma separated)"
+                  value={tgAdminIdsInput}
+                  onChange={(e) => setTgAdminIdsInput(e.target.value)}
+                  className="flex-1 px-3 py-1.5 rounded-lg bg-black/40 border border-white/15 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-400 font-mono"
+                />
+                <button
+                  type="submit"
+                  disabled={isTgLoading}
+                  className="px-3 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 border border-sky-400/40 text-xs font-mono font-semibold transition-all cursor-pointer shrink-0"
+                >
+                  Save
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-400 leading-relaxed">
+                Registered user IDs gain <b>Admin Tier</b>: full cross-chat session access (<code>/sessions all</code>) and execution approval authority.
+              </p>
+            </form>
           </div>
     
           {/* 3. KARTU GOOGLE WORKSPACE */}
@@ -632,11 +694,12 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
 
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="text-[11px] font-mono text-slate-300">
-                Admin User IDs (Approval Authorization)
+              <label className="text-[11px] font-mono text-slate-300 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+                Admin Tier User IDs (allow_admin_from)
               </label>
               <span className="text-[9.5px] font-mono text-sky-300">
-                Send /status in bot to check ID
+                Send /status in bot to check your ID
               </span>
             </div>
             <input
@@ -647,7 +710,7 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
               className="w-full px-3 py-2 rounded-xl bg-black/50 border border-white/20 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-400 font-mono"
             />
             <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
-              Only user IDs registered here are authorized to press the <b>[Approve Plan]</b> button to execute terminal/file commands on PC.
+              Users registered here gain <b>Admin Tier</b>: full cross-chat session access (<code>/sessions all</code>) and authority to click <b>[Approve Plan]</b> to execute actions on PC.
             </p>
           </div>
 
