@@ -161,6 +161,10 @@ export function WorkbenchChatColumn({
           activeThinkingText={activeThinkingText}
           onAnswerQuestion={onAnswerQuestion}
           onOpenFile={(p: string) => handleOpenFileIDE(p, p.split("/").pop() || "file")}
+          onOpenReviewTab={() => {
+            setContextTab("review");
+            setIsContextPaneOpen(true);
+          }}
           onOpenLightbox={handleOpenLightbox}
           onSelectPrompt={(text: string) => {
             setInputMessage(text);

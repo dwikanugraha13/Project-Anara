@@ -6,6 +6,7 @@ import AgentToolCard, { ToolRunGroupCard, ExplorationGroupCard, ThinkingCard, Su
 import InteractiveQuestionCard from "./InteractiveQuestionCard";
 import { InteractiveApprovalCard } from "./InteractiveApprovalCard";
 import { ToolRunTicker } from "./ToolRunTicker";
+import { SettledChangedFilesCard } from "./SettledChangedFilesCard";
 import FindBar from "./FindBar";
 import type { TranscriptItem, AssistantStatus } from "../workbench/AnaraWorkbench";
 import type { ToolProgressPayload } from "@/hooks/useWebSocket";
@@ -24,6 +25,7 @@ export interface ChatTimelineProps {
   onApproveAction?: (planId: string, scope: "once" | "session") => void;
   onRejectAction?: (planId: string) => void;
   onOpenFile?: (path: string, fileName?: string) => void;
+  onOpenReviewTab?: () => void;
   onOpenLightbox?: (data: { url: string; title: string; sourceDomain?: string; sourceUrl?: string; prompt?: string }) => void;
   onDismissVisual?: () => void;
   onSelectPrompt?: (prompt: string) => void;
@@ -44,6 +46,7 @@ export default function ChatTimeline({
   onApproveAction,
   onRejectAction,
   onOpenFile,
+  onOpenReviewTab,
   onOpenLightbox,
   onDismissVisual,
   onSelectPrompt,
@@ -51,10 +54,12 @@ export default function ChatTimeline({
 }: ChatTimelineProps) {
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const isFollowingRef = useRef(true);
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [hasUnread, setHasUnread] = useState(false);
   const [unreadCount, setUnreadCount] = useState<number>(0);
+  const prevTranscriptLenRef = useRef(transcript.length);
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editText, setEditText] = useState<string>("");
@@ -174,18 +179,52 @@ export default function ChatTimeline({
       isFollowingRef.current = true;
       setIsNearBottom(true);
       setHasUnread(false);
+      setUnreadCount(0);
     }
   }, [activeSessionId]);
 
-  // Smart auto-scroll: Follow active stream without trapping user scroll
+  // Observer-driven auto-tailing: Automatically sync scroll position when content expands (tool cards open, streaming chunks grow)
+  useEffect(() => {
+    const contentEl = contentRef.current;
+    const scrollEl = scrollContainerRef.current;
+    if (!contentEl || !scrollEl) return;
+
+    const observer = new ResizeObserver(() => {
+      // Guard: do not auto-scroll if user has active text selection
+      const hasSelection = Boolean(typeof window !== "undefined" && window.getSelection()?.toString()?.trim());
+      if (hasSelection) return;
+
+      if (isFollowingRef.current && isNearBottom) {
+        scrollEl.scrollTop = scrollEl.scrollHeight;
+      }
+    });
+
+    observer.observe(contentEl);
+    return () => observer.disconnect();
+  }, [isNearBottom]);
+
+  // Track new transcript items to increment unread counter (only on new message arrival, NOT on streaming token deltas)
+  useEffect(() => {
+    if (transcript.length > prevTranscriptLenRef.current) {
+      if (!isNearBottom) {
+        setHasUnread(true);
+        setUnreadCount((c) => c + (transcript.length - prevTranscriptLenRef.current));
+      }
+      prevTranscriptLenRef.current = transcript.length;
+    } else {
+      prevTranscriptLenRef.current = transcript.length;
+    }
+  }, [transcript.length, isNearBottom]);
+
+  // Streaming follow: Follow active stream without trapping user scroll or interrupting text selection
   const lastItemText = transcript[transcript.length - 1]?.text || "";
   const lastItemLen = lastItemText.length;
   useEffect(() => {
+    const hasSelection = Boolean(typeof window !== "undefined" && window.getSelection()?.toString()?.trim());
+    if (hasSelection) return;
+
     if (isFollowingRef.current && isNearBottom && scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
-    } else if (!isNearBottom) {
-      setHasUnread(true);
-      setUnreadCount((c) => c + 1);
     }
   }, [transcript.length, lastItemLen, isNearBottom]);
 
@@ -264,8 +303,8 @@ export default function ChatTimeline({
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full relative pt-4 pb-4">
       {/* Scrollable Chat Message Stream */}
-      <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto custom-scrollbar px-2 sm:px-4">
-        <div className="max-w-3xl xl:max-w-4xl mx-auto w-full flex flex-col gap-3 py-3">
+      <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto overscroll-contain custom-scrollbar px-2 sm:px-4">
+        <div ref={contentRef} className="max-w-3xl xl:max-w-4xl mx-auto w-full flex flex-col gap-3 py-3">
           {transcript.length === 0 ? (
             <div className="flex flex-col items-center justify-center min-h-[45vh] text-center px-4 animate-fade-in select-none my-auto">
               <div className="w-10 h-10 rounded-xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-center mb-3 text-slate-300">
@@ -763,6 +802,14 @@ export default function ChatTimeline({
               </>
             );
           })()}
+
+          {/* Settled Changed Files Card at the end of the settled turn (Desktop Reference Standard) */}
+          <SettledChangedFilesCard
+            transcript={transcript}
+            isStreaming={status === "thinking" || Boolean(transcript[transcript.length - 1]?.isStreaming)}
+            onOpenFile={onOpenFile}
+            onOpenReviewTab={onOpenReviewTab}
+          />
           {/* Dynamic bottom spacer taking footerDockHeight into account */}
           <div
             style={{ height: `${Math.max(28, (footerDockHeight || 0) + 12)}px` }}
