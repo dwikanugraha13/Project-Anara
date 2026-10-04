@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense, laz
 import Link from "next/link";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import type { TranscriptPayload, ToolProgressPayload } from "@/hooks/useWebSocket";
+import { useStreamingQueue } from "@/hooks/useStreamingQueue";
 import type { TranscriptItem, AssistantStatus } from "@/components/workbench";
 import { AIModelInfo } from "@/components/dock/ModelSelectorDropdown";
 import { formatModelDisplayName } from "@/lib/modelFormat";
@@ -57,6 +58,19 @@ export default function CodePageClient({
   const [assistantStatus, setAssistantStatus] = useState<AssistantStatus>("idle");
   const [liveToolProgress, setLiveToolProgress] = useState<ToolProgressPayload | null>(null);
   const [activeThinkingText, setActiveThinkingText] = useState<string | null>(null);
+
+  // Streaming queue: coalesces deltas and flushes to React state at ~30fps
+  const codeStreamingFlush = useCallback((accumulatedText: string) => {
+    setTranscript((prev) => {
+      const lastIdx = prev.length - 1;
+      const last = prev[lastIdx];
+      if (last && last.speaker === "output") {
+        return [...prev.slice(0, lastIdx), { ...last, text: accumulatedText, isStreaming: true }];
+      }
+      return [...prev, { speaker: "output" as const, text: accumulatedText, isStreaming: true, startTime: Date.now() }];
+    });
+  }, []);
+  const { appendDelta: cStreamAppendDelta, setAccumulated: cStreamSetAccumulated, reset: cStreamReset, flushNow: cStreamFlushNow } = useStreamingQueue(codeStreamingFlush);
   const [inputMessage, setInputMessage] = useState("");
   const [agentMode, setAgentMode] = useState<"plan" | "build">("build");
   const [activeModelId, setActiveModelId] = useState<string>("9router/ag/gemini-3.8-flash-high");
@@ -495,8 +509,25 @@ export default function CodePageClient({
       const payloadModelId = typeof payload === "string" ? undefined : payload.modelId;
       const payloadDurationText = typeof payload === "string" ? undefined : payload.durationText;
       const payloadIsStreaming = typeof payload === "string" ? false : (payload.isStreaming ?? payload.isPartial ?? false);
+      const delta = typeof payload === "string" ? undefined : payload.delta;
       const payloadTokenUsage = typeof payload === "string" ? undefined : payload.tokenUsage;
       const payloadToolsUsed = typeof payload === "string" ? undefined : (payload.toolsUsed || payload.tokenUsage?.toolsUsed);
+
+      // ── Streaming fast-path: route through adaptive delta queue (~30fps) ──
+      if (isPartial && payloadIsStreaming && speaker === "output" && (!visualType || visualType === "none")) {
+        if (delta) {
+          cStreamAppendDelta(delta);
+        } else {
+          cStreamSetAccumulated(text);
+        }
+        return;
+      }
+
+      // ── Final message: flush any pending queue first ──
+      if (!isPartial && !payloadIsStreaming) {
+        cStreamFlushNow();
+        cStreamReset();
+      }
 
       // Capture thinking snapshot before clearing
       const thinkingSnapshot = activeThinkingText;

@@ -173,6 +173,8 @@ export default function ChatTimeline({
   }, [activeSessionId]);
 
   // Smart auto-scroll: Follow active stream without trapping user scroll
+  const lastItemText = transcript[transcript.length - 1]?.text || "";
+  const lastItemLen = lastItemText.length;
   useEffect(() => {
     if (isFollowingRef.current && isNearBottom && scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
@@ -180,7 +182,7 @@ export default function ChatTimeline({
       setHasUnread(true);
       setUnreadCount((c) => c + 1);
     }
-  }, [transcript.length, isNearBottom]);
+  }, [transcript.length, lastItemLen, isNearBottom]);
 
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

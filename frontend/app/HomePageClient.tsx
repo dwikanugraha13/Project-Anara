@@ -6,6 +6,7 @@ import AnaraWorkbench, { type AssistantStatus, type TranscriptItem } from "@/com
 
 const Scene = lazy(() => import("@/components/avatar/Scene"));
 import { useWebSocket, type EmotionState, type TranscriptPayload, type TokenUsagePayload, type ToolProgressPayload, type MediaPlayPayload, type MediaControlAction, type SessionSwitchedPayload } from "@/hooks/useWebSocket";
+import { useStreamingQueue } from "@/hooks/useStreamingQueue";
 import { useMicrophone } from "@/hooks/useMicrophone";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { playDanceMusic, type ActiveDanceMusic } from "@/lib/danceMusic";
@@ -125,6 +126,29 @@ export default function HomePageClient({
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffortLevel>("medium");
   const intensityIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Streaming queue: coalesces deltas and flushes to React state at ~30fps
+  const streamingFlush = useCallback((accumulatedText: string) => {
+    setTranscript((prev) => {
+      // Find the last output item in the current turn to update in-place
+      let targetIdx = -1;
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (prev[i].speaker === "input") break;
+        if (prev[i].speaker === "output" && (!prev[i].visualType || prev[i].visualType === "none")) {
+          targetIdx = i;
+          break;
+        }
+      }
+      if (targetIdx !== -1) {
+        const target = prev[targetIdx];
+        const updated: TranscriptEntry = { ...target, text: accumulatedText, isStreaming: true };
+        return [...prev.slice(0, targetIdx), updated, ...prev.slice(targetIdx + 1)];
+      }
+      // No existing output item — create one
+      return [...prev, { speaker: "output", text: accumulatedText, isStreaming: true, startTime: Date.now() }];
+    });
+  }, []);
+  const { appendDelta: streamAppendDelta, setAccumulated: streamSetAccumulated, reset: streamReset, flushNow: streamFlushNow } = useStreamingQueue(streamingFlush);
+
   useEffect(() => {
     setIsMounted(true);
     try {
@@ -229,10 +253,29 @@ export default function HomePageClient({
       const payloadModelId = typeof payload === "string" ? undefined : payload.modelId;
       const payloadDurationText = typeof payload === "string" ? undefined : payload.durationText;
       const payloadIsStreaming = typeof payload === "string" ? false : (payload.isStreaming ?? payload.isPartial ?? false);
+      const delta = typeof payload === "string" ? undefined : payload.delta;
       const payloadTokenUsage = typeof payload === "string" ? undefined : payload.tokenUsage;
       const payloadToolsUsed = typeof payload === "string" ? undefined : (payload.toolsUsed || payload.tokenUsage?.toolsUsed);
       const resolvedTokenUsage = payloadTokenUsage || (speaker === "output" ? pendingTokenUsageRef.current || undefined : undefined);
       if (speaker === "output" && resolvedTokenUsage) pendingTokenUsageRef.current = null;
+
+      // ── Streaming fast-path: route through adaptive delta queue (~30fps) ──
+      // Plain text streaming partials bypass the full setTranscript machinery
+      // and coalesce in the ref-based queue, flushing to React at throttled rate.
+      if (isPartial && payloadIsStreaming && speaker === "output" && (!visualType || visualType === "none")) {
+        if (delta) {
+          streamAppendDelta(delta);
+        } else {
+          streamSetAccumulated(text);
+        }
+        return; // skip the full setTranscript below
+      }
+
+      // ── Final message or non-streaming: flush any pending queue first ──
+      if (!isPartial && !payloadIsStreaming) {
+        streamFlushNow();
+        streamReset();
+      }
 
       // Capture thinking snapshot before clearing
       const thinkingSnapshot = activeThinkingText;

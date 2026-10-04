@@ -534,7 +534,82 @@ function renderInlineText(text: string, isLast?: boolean, isStreaming?: boolean)
 }
 
 // ── GFM Block Parser ──────────────────────────────────────────────────────────
-function parseMarkdownBlocks(rawMarkdown: string): BlockToken[] {
+// ── Incremental Block Cache (Streaming Performance) ───────────────────────────
+// Two-layer cache adapted from reference desktop agent pattern:
+// Layer 1: Exact-string cache — same text returns same array by identity
+// Layer 2: Streaming-append cache — reuses settled blocks, only re-parses suffix
+const _exactBlockCache = new Map<string, BlockToken[]>();
+const _EXACT_CACHE_MAX = 128;
+const _appendBlockCache: { blocks: BlockToken[]; text: string }[] = [];
+const _APPEND_CACHE_MAX = 4;
+const _APPEND_MIN_LEN = 512;
+
+function _blockContentLength(blocks: BlockToken[]): number {
+  let len = 0;
+  for (const b of blocks) {
+    if (b.type === "hr") { len += 3; continue; }
+    if (b.type === "codeblock") { len += b.language.length + b.content.length + 8; continue; }
+    if (b.type === "table") { len += b.headers.join("").length + b.rows.reduce((s, r) => s + r.join("").length, 0); continue; }
+    if (b.type === "list") { len += b.items.reduce((s, it) => s + it.text.length, 0); continue; }
+    if ("content" in b) { len += b.content.length; }
+  }
+  return len;
+}
+
+function _lexBlocksIncrementally(text: string): BlockToken[] | null {
+  const entry = _appendBlockCache.find(
+    (c) => text.length > c.text.length && text.startsWith(c.text)
+  );
+  if (!entry) return null;
+
+  // Drop last 2 content blocks (boundary merging safety)
+  let keep = entry.blocks.length;
+  for (let dropped = 0; dropped < 2 && keep > 0; dropped++) {
+    if (keep > 0) keep--;
+  }
+  if (keep === 0) return null;
+
+  const settled = entry.blocks.slice(0, keep);
+  const settledLen = _blockContentLength(settled);
+  // Approximate: re-parse from where settled blocks end
+  // For safety, back up a bit in the raw text
+  const backupChars = Math.min(200, settledLen);
+  const reparseFrom = Math.max(0, text.lastIndexOf("\n", text.length - (text.length - entry.text.length) - backupChars));
+  const suffixBlocks = _parseMarkdownBlocksRaw(text.slice(reparseFrom));
+  return [...settled, ...suffixBlocks];
+}
+
+function parseMarkdownBlocksCached(rawMarkdown: string): BlockToken[] {
+  // Layer 1: exact match
+  const hit = _exactBlockCache.get(rawMarkdown);
+  if (hit) {
+    _exactBlockCache.delete(rawMarkdown);
+    _exactBlockCache.set(rawMarkdown, hit);
+    return hit;
+  }
+
+  // Layer 2: incremental lex (streaming append)
+  const incremental = _lexBlocksIncrementally(rawMarkdown);
+  const blocks = incremental ?? _parseMarkdownBlocksRaw(rawMarkdown);
+
+  // Update append cache
+  if (rawMarkdown.length >= _APPEND_MIN_LEN) {
+    const idx = _appendBlockCache.findIndex((e) => rawMarkdown.startsWith(e.text));
+    if (idx !== -1) _appendBlockCache.splice(idx, 1);
+    _appendBlockCache.push({ blocks, text: rawMarkdown });
+    if (_appendBlockCache.length > _APPEND_CACHE_MAX) _appendBlockCache.shift();
+  }
+
+  // Update exact cache
+  _exactBlockCache.set(rawMarkdown, blocks);
+  if (_exactBlockCache.size > _EXACT_CACHE_MAX) {
+    _exactBlockCache.delete(_exactBlockCache.keys().next().value as string);
+  }
+
+  return blocks;
+}
+
+function _parseMarkdownBlocksRaw(rawMarkdown: string): BlockToken[] {
   const blocks: BlockToken[] = [];
   const lines = rawMarkdown.split("\n");
   let i = 0;
@@ -727,7 +802,7 @@ function AgentMarkdown({
     [safeContent, isStreaming]
   );
 
-  const blocks = useMemo(() => parseMarkdownBlocks(activeContent), [activeContent]);
+  const blocks = useMemo(() => parseMarkdownBlocksCached(activeContent), [activeContent]);
 
   if (!safeContent) return null;
 
