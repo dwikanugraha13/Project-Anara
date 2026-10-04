@@ -118,7 +118,7 @@ export function ToolRunGroupCard({
       <button
         type="button"
         onClick={() => setIsExpanded((v) => !v)}
-        className="flex items-center gap-2 text-left text-slate-400 hover:text-slate-200 transition-colors cursor-pointer py-1 group"
+        className="flex items-center gap-1.5 text-left text-slate-400 hover:text-slate-200 transition-colors cursor-pointer py-0.5 max-w-fit group select-none"
       >
         <span className="relative flex h-2 w-2 shrink-0">
           {isRunning ? (
@@ -127,15 +127,17 @@ export function ToolRunGroupCard({
               <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
             </>
           ) : (
-            <span className="inline-flex rounded-full h-1.5 w-1.5 bg-slate-500 group-hover:bg-cyan-400 transition-colors" />
+            <span className="grid size-3.5 shrink-0 place-items-center text-slate-500 group-hover:text-slate-300 text-[11px] font-mono">
+              »
+            </span>
           )}
         </span>
-        <span className={`text-[12px] font-medium tracking-tight ${isRunning ? "text-cyan-300 animate-pulse" : "text-slate-400 group-hover:text-slate-200"}`}>
+        <span className={`text-[11.5px] font-mono tracking-tight ${isRunning ? "text-cyan-300 animate-pulse" : "text-slate-400 group-hover:text-slate-200"}`}>
           {summary}
         </span>
         <svg
-          className={`w-3.5 h-3.5 text-slate-500 group-hover:text-slate-300 transition-transform duration-150 shrink-0 ml-0.5 ${
-            isExpanded ? "rotate-90" : ""
+          className={`w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-80 transition-all duration-150 shrink-0 ml-0.5 ${
+            isExpanded ? "rotate-90 opacity-80" : ""
           }`}
           fill="none"
           stroke="currentColor"
@@ -185,17 +187,17 @@ export function ToolRunGroupCard({
               if (isShell) {
                 return (
                   <div key={sIdx} className="flex flex-col group/row">
-                    <div className="flex items-center gap-2 py-0.5 px-1.5 rounded hover:bg-white/[0.04] transition-colors cursor-pointer">
-                      <svg className="w-3.5 h-3.5 text-slate-500 group-hover/row:text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
+                    <div className="flex items-center gap-1.5 py-0.5 px-1 rounded hover:bg-white/[0.04] transition-colors cursor-pointer text-slate-400">
+                      <span className="grid size-3.5 shrink-0 place-items-center text-slate-500 group-hover/row:text-slate-300">
+                        »
+                      </span>
                       
                       <button
                         type="button"
                         onClick={() => setExpandedRowIdx(isRowExpanded ? null : sIdx)}
-                        className="flex-1 min-w-0 text-left truncate text-slate-300 group-hover/row:text-white font-mono text-[11px]"
+                        className="flex-1 min-w-0 text-left truncate text-slate-400 group-hover/row:text-slate-200 font-mono text-[11px]"
                       >
-                        {cmdText}
+                        Ran {cmdText}
                       </button>
 
                       {duration && (

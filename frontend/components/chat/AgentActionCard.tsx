@@ -177,38 +177,37 @@ export function AgentActionCard({
     const delCount = action.deleted !== undefined ? action.deleted : (parsedDiff.isRealDiff ? parsedDiff.deleted : 0);
 
     return (
-      <div className="my-1.5 font-mono text-xs select-none">
-        {/* Header Action Row */}
-        <div className="w-full flex items-center justify-between py-1 transition-colors text-left">
+      <div className="my-1 font-mono text-xs select-none">
+        {/* Header Action Row (Desktop Standard Parity) */}
+        <div className="w-full flex items-center justify-between py-0.5 transition-colors text-left group/filerow">
           <button
             type="button"
             onClick={() => setIsExpanded((v) => !v)}
-            className="flex items-center gap-2 min-w-0 flex-1 text-left cursor-pointer font-mono group py-0.5"
+            className="flex items-center gap-1.5 max-w-fit text-left cursor-pointer font-mono group/btn py-0.5"
           >
-            <span className="relative flex h-2 w-2 shrink-0">
+            <span className="grid size-3.5 shrink-0 place-items-center text-slate-400 group-hover/btn:text-cyan-400 transition-colors">
               {isStart ? (
-                <>
+                <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
-                </>
+                </span>
               ) : (
-                <span className="inline-flex rounded-full h-1.5 w-1.5 bg-slate-500 group-hover:bg-cyan-400 transition-colors" />
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                </svg>
               )}
             </span>
-            <span className="text-cyan-400 font-bold text-[11px] tracking-tight">
-              {isNewCreate ? "Create" : "Edit"}
-            </span>
-            <span className="text-slate-200 font-semibold truncate text-[11.5px] group-hover:text-white transition-colors">
+            <span className="text-slate-200 font-semibold truncate text-[11.5px] group-hover/btn:text-white transition-colors">
               {filename}
             </span>
             {dirPath && <span className="text-slate-500 truncate text-[10.5px] hidden sm:inline">{dirPath}</span>}
-            <div className="flex items-center gap-1.5 text-[10px] shrink-0 ml-1 font-bold">
-              <span className="text-emerald-400">+{addCount}</span>
+            <div className="flex items-center gap-1 font-mono text-[10.5px] tabular-nums font-bold shrink-0 ml-0.5">
+              {addCount > 0 && <span className="text-emerald-400">+{addCount}</span>}
               {delCount > 0 && <span className="text-rose-400">−{delCount}</span>}
             </div>
             <svg
-              className={`w-3 h-3 text-slate-500 group-hover:text-slate-300 transition-transform duration-150 shrink-0 ml-1 ${
-                isExpanded ? "rotate-90" : ""
+              className={`w-3 h-3 text-slate-500 opacity-0 group-hover/btn:opacity-80 transition-all duration-150 shrink-0 ml-0.5 ${
+                isExpanded ? "rotate-90 opacity-80" : ""
               }`}
               fill="none"
               stroke="currentColor"
@@ -218,20 +217,20 @@ export function AgentActionCard({
             </svg>
           </button>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0 ml-auto">
             {action.checkpointId && (
               <button
                 type="button"
                 onClick={handleRollback}
                 disabled={isReverting || isReverted}
-                className={`px-2 py-0.5 rounded text-[10px] font-mono transition-all cursor-pointer border ${
+                className={`px-1.5 py-px rounded text-[9.5px] font-mono transition-all cursor-pointer border ${
                   isReverted
                     ? "bg-emerald-500/15 text-emerald-300 border-emerald-400/30"
                     : confirmRollback
                     ? "bg-amber-500/20 text-amber-200 border-amber-400/40"
                     : rollbackError
                     ? "bg-rose-500/20 text-rose-300 border-rose-400/40"
-                    : "bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 hover:text-white border-white/[0.08]"
+                    : "bg-white/[0.03] hover:bg-white/[0.08] text-slate-400 hover:text-white border-white/[0.06]"
                 }`}
                 title={confirmRollback ? "Click again to confirm revert" : rollbackError || "Revert this edit"}
               >
@@ -246,20 +245,32 @@ export function AgentActionCard({
                   e.stopPropagation();
                   onOpenFile(action.filePath || filename, filename);
                 }}
-                className="px-2 py-0.5 rounded text-[10px] font-mono text-cyan-300 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/25 transition-all cursor-pointer"
+                className="text-slate-400 hover:text-cyan-300 px-1 py-0.5 rounded text-[10px] transition-colors cursor-pointer"
+                title="View in Editor"
               >
-                View
+                ↗
               </button>
             )}
 
             <button
               type="button"
               onClick={handleCopyDiff}
-              className="text-slate-500 hover:text-slate-300 p-1 rounded hover:bg-white/[0.05] transition-colors cursor-pointer text-[10px]"
+              className="text-slate-500 hover:text-slate-300 p-0.5 rounded hover:bg-white/[0.05] transition-colors cursor-pointer text-[10px]"
               title="Copy diff"
             >
               {copied ? <span className="text-emerald-400 font-medium">Copied</span> : "Copy"}
             </button>
+
+            {onDismiss && (
+              <button
+                type="button"
+                onClick={onDismiss}
+                className="opacity-0 group-hover/filerow:opacity-70 hover:!opacity-100 text-slate-500 hover:text-slate-200 p-0.5 transition-opacity"
+                title="Dismiss"
+              >
+                ✕
+              </button>
+            )}
           </div>
         </div>
 
@@ -351,29 +362,29 @@ export function AgentActionCard({
     const duration = action.durationText;
 
     return (
-      <div className="my-1.5 font-mono text-xs select-none">
-        <div className="flex items-center justify-between py-1 group/cmd">
+      <div className="my-0.5 font-mono text-xs select-none">
+        <div className="flex items-center justify-between py-0.5 group/cmd">
           <button
+            type="button"
             onClick={() => setIsExpanded((v) => !v)}
-            className="flex items-center gap-2 text-left text-slate-300 hover:text-white transition-colors cursor-pointer flex-1 min-w-0"
+            className="flex items-center gap-1.5 text-left text-slate-400 hover:text-slate-200 transition-colors cursor-pointer max-w-fit group/btn"
           >
-            <span className="relative flex h-2 w-2 shrink-0">
+            <span className="grid size-3.5 shrink-0 place-items-center">
               {isStart ? (
-                <>
+                <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
-                </>
+                </span>
               ) : (
-                <span className="inline-flex rounded-full h-1.5 w-1.5 bg-slate-500 group-hover:bg-cyan-400 transition-colors" />
+                <span className="text-[11px] font-mono text-slate-500 group-hover/btn:text-slate-300">»</span>
               )}
             </span>
-            <span className="text-emerald-400 font-bold text-[11px] tracking-tight">Run</span>
-            <span className="text-slate-300 group-hover:text-white truncate font-mono text-[11px] font-medium transition-colors">
-              {cmd}
+            <span className="truncate font-mono text-[11.5px] text-slate-400 group-hover/btn:text-slate-200 transition-colors">
+              {isStart ? `Running ${cmd}` : `Ran ${cmd}`}
             </span>
             <svg
-              className={`w-3 h-3 text-slate-500 group-hover:text-slate-300 transition-transform duration-150 shrink-0 ml-1 ${
-                isExpanded ? "rotate-90" : ""
+              className={`w-3 h-3 text-slate-500 opacity-0 group-hover/btn:opacity-80 transition-all duration-150 shrink-0 ml-0.5 ${
+                isExpanded ? "rotate-90 opacity-80" : ""
               }`}
               fill="none"
               stroke="currentColor"
@@ -383,11 +394,23 @@ export function AgentActionCard({
             </svg>
           </button>
 
-          {duration && (
-            <span className="text-[10px] text-slate-500 font-mono tabular-nums shrink-0 ml-2">
-              {duration}
-            </span>
-          )}
+          <div className="flex items-center gap-2 shrink-0 ml-auto">
+            {duration && (
+              <span className="text-[10px] text-slate-500 font-mono tabular-nums">
+                {duration}
+              </span>
+            )}
+            {onDismiss && (
+              <button
+                type="button"
+                onClick={onDismiss}
+                className="opacity-0 group-hover/cmd:opacity-70 hover:!opacity-100 text-slate-500 hover:text-slate-200 p-0.5 transition-opacity"
+                title="Dismiss"
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </div>
 
         {isExpanded && (
