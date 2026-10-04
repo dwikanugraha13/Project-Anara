@@ -68,17 +68,18 @@ def save_telegram_config(token: Optional[str] = None, default_chat_id: Optional[
 async def get_telegram_status() -> Dict[str, Any]:
     """Validates Telegram token by querying getMe."""
     token = get_stored_telegram_token()
+    chat_id = get_stored_telegram_chat_id()
+    admin_ids = get_stored_telegram_admin_ids()
+
     if not token:
         return {
             "status": "disconnected",
             "is_configured": False,
             "bot": None,
-            "default_chat_id": None,
+            "default_chat_id": chat_id,
+            "admin_ids": admin_ids,
             "message": "Telegram Bot token not configured.",
         }
-
-    chat_id = get_stored_telegram_chat_id()
-    admin_ids = get_stored_telegram_admin_ids()
     url = f"{TELEGRAM_API_BASE}/bot{token}/getMe"
 
     try:

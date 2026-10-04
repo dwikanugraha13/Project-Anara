@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { BACKEND_URL, BrandIcon } from "../types";
+import { anaraApi } from "@/lib/apiClient";
 
 interface BrainIntegrationsTabProps {
   onRefreshAll?: () => void;
@@ -173,9 +174,8 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
 
   const fetchTelegramStatus = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/integrations/telegram/status`);
-      if (res.ok) {
-        const data = await res.json();
+      const data = await anaraApi.integrations.getTelegramStatus();
+      if (data) {
         setTgStatus(data.status || "disconnected");
         setTgBot(data.bot || null);
         if (data.default_chat_id) setTgChatIdInput(data.default_chat_id);
@@ -193,20 +193,15 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
       const cleanToken = tgTokenInput.trim();
       const cleanChatId = tgChatIdInput.trim();
       const cleanAdminIds = tgAdminIdsInput.trim();
-      const res = await fetch(`${BACKEND_URL}/api/integrations/telegram/config`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          token: cleanToken,
-          bot_token: cleanToken,
-          chat_id: cleanChatId || undefined,
-          default_chat_id: cleanChatId || undefined,
-          admin_ids: cleanAdminIds || undefined,
-          telegram_admin_ids: cleanAdminIds || undefined,
-        }),
+      const data = await anaraApi.integrations.saveTelegramConfig({
+        token: cleanToken,
+        bot_token: cleanToken,
+        chat_id: cleanChatId || undefined,
+        default_chat_id: cleanChatId || undefined,
+        admin_ids: cleanAdminIds || undefined,
+        telegram_admin_ids: cleanAdminIds || undefined,
       });
-      if (res.ok) {
-        const data = await res.json();
+      if (data) {
         setTgStatus(data.status || "disconnected");
         setTgBot(data.bot || null);
         if (data.admin_ids) setTgAdminIdsInput(data.admin_ids);
@@ -216,9 +211,6 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
         } else {
           setTgErrorMsg(data.message || "Token is not valid according to Telegram Bot API.");
         }
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        setTgErrorMsg(errData.detail || "Failed to connect to backend server.");
       }
     } catch (err: any) {
       console.error("Save telegram error:", err);
@@ -234,17 +226,13 @@ export default function BrainIntegrationsTab({ onRefreshAll }: BrainIntegrations
     try {
       const cleanAdminIds = tgAdminIdsInput.trim();
       const cleanChatId = tgChatIdInput.trim();
-      const res = await fetch(`${BACKEND_URL}/api/integrations/telegram/config`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          admin_ids: cleanAdminIds,
-          telegram_admin_ids: cleanAdminIds,
-          chat_id: cleanChatId || undefined,
-          default_chat_id: cleanChatId || undefined,
-        }),
+      const data = await anaraApi.integrations.saveTelegramConfig({
+        admin_ids: cleanAdminIds,
+        telegram_admin_ids: cleanAdminIds,
+        chat_id: cleanChatId || undefined,
+        default_chat_id: cleanChatId || undefined,
       });
-      if (res.ok) {
+      if (data) {
         setIsTgConfigSaved(true);
         setTimeout(() => setIsTgConfigSaved(false), 3000);
       }
