@@ -64,6 +64,8 @@ export interface CodeStudioWorkspaceProps {
   activeThinkingText: string | null;
   handleApprovePlan: (data: any) => void;
   handleRejectPlan: () => void;
+  handleApproveAction?: (planId: string, scope: "once" | "session") => void;
+  handleRejectAction?: (planId: string) => void;
   handleAnswerQuestion: (qid: string, answers: any) => void;
   handleOpenFileIDE: (path: string, name: string) => void;
   handlePickLocalFolder: (initialPath?: string) => void;
@@ -124,6 +126,8 @@ export function CodeStudioWorkspace({
   activeThinkingText,
   handleApprovePlan,
   handleRejectPlan,
+  handleApproveAction,
+  handleRejectAction,
   handleAnswerQuestion,
   handleOpenFileIDE,
   handlePickLocalFolder,
@@ -401,6 +405,8 @@ export function CodeStudioWorkspace({
               activeThinkingText={activeThinkingText}
               onApprovePlan={handleApprovePlan}
               onRejectPlan={handleRejectPlan}
+              onApproveAction={handleApproveAction}
+              onRejectAction={handleRejectAction}
               onAnswerQuestion={handleAnswerQuestion}
               onOpenFile={(p: string) => handleOpenFileIDE(p, p.split("/").pop() || "file")}
               onSelectPrompt={(text: string) => setInputMessage(text)}

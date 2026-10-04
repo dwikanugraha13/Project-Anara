@@ -668,6 +668,29 @@ export default function CodePageClient({
       setAssistantStatus("idle");
       setActiveThinkingText(null);
     },
+    onPlanPending: (msg) => {
+      const planId = msg.plan_id || msg.planId || `plan_${Date.now()}`;
+      const toolName = msg.tool_name || msg.toolName || "";
+      const toolArgs = msg.tool_args || msg.toolArgs || {};
+      const commandPreview = toolArgs.command || toolArgs.file_path || toolArgs.title || "";
+      const rationale = msg.text || msg.rationale || "";
+      const actionMeta = msg.action_metadata || {};
+      const riskLevel = (actionMeta.risk_level || actionMeta.riskLevel || "medium") as "low" | "medium" | "high" | "critical";
+
+      cStreamFlushNow();
+      cStreamReset();
+
+      setTranscript((prev) => [
+        ...prev,
+        {
+          speaker: "output",
+          text: rationale,
+          visualType: "approval" as const,
+          approvalData: { planId, toolName, commandPreview, rationale, riskLevel },
+        },
+      ]);
+      setAssistantStatus("idle");
+    },
     onSpeakerIdentified: (name, roster) => {
       if (name) setActiveSpeaker(name);
       if (roster && Array.isArray(roster)) setSpeakerRoster(roster);
@@ -930,6 +953,54 @@ export default function CodePageClient({
     [transcript, sendJSON, activeSessionId]
   );
 
+  const handleApproveAction = useCallback(
+    (planId: string, scope: "once" | "session") => {
+      sendJSON({
+        type: "text_input",
+        text: "Yes, approve and execute.",
+        channel: "code",
+        platform: "code",
+        agent_mode: "build",
+        sessionId: activeSessionId,
+        session_type: "code",
+        workspace_path: workspaceTree?.root_path || "",
+      });
+      setTranscript((prev) =>
+        prev.map((item) => {
+          if (item.visualType === "approval" && item.approvalData?.planId === planId) {
+            return { ...item, text: `${item.text}\n\n✓ Approved (${scope})` };
+          }
+          return item;
+        })
+      );
+    },
+    [sendJSON, activeSessionId]
+  );
+
+  const handleRejectAction = useCallback(
+    (planId: string) => {
+      sendJSON({
+        type: "text_input",
+        text: "No, reject this action.",
+        channel: "code",
+        platform: "code",
+        agent_mode: "build",
+        sessionId: activeSessionId,
+        session_type: "code",
+        workspace_path: workspaceTree?.root_path || "",
+      });
+      setTranscript((prev) =>
+        prev.map((item) => {
+          if (item.visualType === "approval" && item.approvalData?.planId === planId) {
+            return { ...item, text: `${item.text}\n\n✗ Rejected` };
+          }
+          return item;
+        })
+      );
+    },
+    [sendJSON, activeSessionId]
+  );
+
   // Synchronize speaker selection with AnaraBrain
   useEffect(() => {
     const handleBrainSpeakerSync = (e: Event) => {
@@ -1055,6 +1126,8 @@ export default function CodePageClient({
         activeThinkingText={activeThinkingText}
         handleApprovePlan={handleApprovePlan}
         handleRejectPlan={handleRejectPlan}
+        handleApproveAction={handleApproveAction}
+        handleRejectAction={handleRejectAction}
         handleAnswerQuestion={handleAnswerQuestion}
         handleOpenFileIDE={handleOpenFileIDE}
         handlePickLocalFolder={handlePickLocalFolder}
