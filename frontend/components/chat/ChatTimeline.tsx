@@ -29,6 +29,7 @@ export interface ChatTimelineProps {
   onOpenLightbox?: (data: { url: string; title: string; sourceDomain?: string; sourceUrl?: string; prompt?: string }) => void;
   onDismissVisual?: () => void;
   onSelectPrompt?: (prompt: string) => void;
+  onEditPrompt?: (index: number, newText: string) => void;
   onAnswerQuestion?: (questionId: string, answers: any, dismissed?: boolean) => void;
 }
 
@@ -50,6 +51,7 @@ export default function ChatTimeline({
   onOpenLightbox,
   onDismissVisual,
   onSelectPrompt,
+  onEditPrompt,
   onAnswerQuestion,
 }: ChatTimelineProps) {
   const transcriptEndRef = useRef<HTMLDivElement>(null);
@@ -506,8 +508,14 @@ export default function ChatTimeline({
                                 if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                                   e.preventDefault();
                                   if (editText.trim()) {
+                                    const targetIdx = idx;
+                                    const text = editText.trim();
                                     setEditingIndex(null);
-                                    onSelectPrompt?.(editText.trim());
+                                    if (onEditPrompt) {
+                                      onEditPrompt(targetIdx, text);
+                                    } else {
+                                      onSelectPrompt?.(text);
+                                    }
                                   }
                                 } else if (e.key === "Escape") {
                                   setEditingIndex(null);
@@ -530,8 +538,14 @@ export default function ChatTimeline({
                                 type="button"
                                 onClick={() => {
                                   if (editText.trim()) {
+                                    const targetIdx = idx;
+                                    const text = editText.trim();
                                     setEditingIndex(null);
-                                    onSelectPrompt?.(editText.trim());
+                                    if (onEditPrompt) {
+                                      onEditPrompt(targetIdx, text);
+                                    } else {
+                                      onSelectPrompt?.(text);
+                                    }
                                   }
                                 }}
                                 className="rounded bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 px-3 py-1 font-medium text-cyan-200 hover:text-white transition-all cursor-pointer"

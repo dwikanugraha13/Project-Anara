@@ -47,6 +47,7 @@ export interface WorkbenchChatColumnProps {
   inputMessage: string;
   setInputMessage: (msg: string) => void;
   onSendText?: (text: string, mode?: "plan" | "build") => void;
+  onEditPrompt?: (index: number, newText: string) => void;
   onSteer?: (text: string) => void;
   agentMode: "plan" | "build";
   setAgentMode: React.Dispatch<React.SetStateAction<"plan" | "build">>;
@@ -100,6 +101,7 @@ export function WorkbenchChatColumn({
   inputMessage,
   setInputMessage,
   onSendText,
+  onEditPrompt,
   onSteer,
   agentMode,
   setAgentMode,
@@ -171,6 +173,7 @@ export function WorkbenchChatColumn({
             const inputEl = document.querySelector("textarea") as HTMLTextAreaElement;
             inputEl?.focus();
           }}
+          onEditPrompt={onEditPrompt}
         />
       </div>
 

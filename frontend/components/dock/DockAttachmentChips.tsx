@@ -70,10 +70,10 @@ export function DockAttachmentChips({ attachedFiles, onRemove }: DockAttachmentC
               <img
                 src={file.previewUrl}
                 alt={file.name}
-                className="w-4 h-4 rounded object-cover border border-white/20 shrink-0"
+                className="w-7 h-7 rounded-md object-cover border border-white/20 shrink-0 shadow-sm"
               />
             ) : (
-              <span className="px-1 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[9px] uppercase font-bold shrink-0">
+              <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[9px] uppercase font-bold shrink-0">
                 {file.ext || "FILE"}
               </span>
             )}

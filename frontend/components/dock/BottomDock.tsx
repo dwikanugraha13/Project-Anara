@@ -223,9 +223,14 @@ export default function BottomDock({
     e?.preventDefault();
     if (!inputMessage.trim() && attachedFiles.length === 0) return;
 
-    const textToSend = inputMessage.trim();
-    if (textToSend) {
-      pushHistory(textToSend);
+    const textToSend =
+      inputMessage.trim() ||
+      (attachedFiles.some((f) => f.previewUrl)
+        ? "Tolong analisa dan periksa screenshot gambar terlampir ini."
+        : "Tolong proses file terlampir ini.");
+
+    if (inputMessage.trim()) {
+      pushHistory(inputMessage.trim());
     }
     resetHistoryIndex();
 
@@ -249,7 +254,7 @@ export default function BottomDock({
       return;
     }
 
-    onSend(inputMessage, agentMode);
+    onSend(textToSend, agentMode);
     setInputMessage("");
     revokeAttachmentPreviews(attachedFiles);
     setAttachedFiles([]);

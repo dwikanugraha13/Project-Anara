@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense } from "react";
+import React, { Suspense, useState, useEffect, useMemo } from "react";
 import { ActivityBar } from "./ActivityBar";
 import ReviewGitPane from "@/components/sidebar/ReviewGitPane";
 import WorkspaceTreeView from "@/components/sidebar/WorkspaceTreeView";
@@ -8,6 +8,7 @@ import AnaraCodeIDE from "@/components/ide/AnaraCodeIDE";
 import WorkbenchTerminal from "@/components/ide/WorkbenchTerminal";
 import ChatTimeline from "@/components/chat/ChatTimeline";
 import BottomDock from "@/components/dock/BottomDock";
+import CommandPalette, { CommandItem } from "@/components/command/CommandPalette";
 import { formatModelDisplayName } from "@/lib/modelFormat";
 import type { IdeTabFile } from "@/components/ide";
 import type { GitStatusData } from "@/components/sidebar/types";
@@ -145,6 +146,83 @@ export function CodeStudioWorkspace({
   workspaceFilesList,
   activeUnansweredQuestion,
 }: CodeStudioWorkspaceProps) {
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "p")) {
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const commandItems = useMemo<CommandItem[]>(() => {
+    const list: CommandItem[] = [
+      {
+        id: "toggle-explorer",
+        label: "Toggle File Explorer",
+        category: "Commands",
+        shortcut: "Ctrl+B",
+        onSelect: () => setIsLeftOpen((prev) => !prev),
+      },
+      {
+        id: "toggle-terminal",
+        label: "Toggle Integrated Terminal",
+        category: "Commands",
+        shortcut: "Ctrl+`",
+        onSelect: () => setIsTerminalOpen((prev) => !prev),
+      },
+      {
+        id: "toggle-timeline",
+        label: "Toggle Agent Chat Timeline",
+        category: "Commands",
+        onSelect: () => setIsRightOpen((prev) => !prev),
+      },
+      {
+        id: "new-session",
+        label: "Start New Chat Session",
+        category: "Commands",
+        shortcut: "Ctrl+N",
+        onSelect: handleNewSession,
+      },
+      {
+        id: "switch-to-git",
+        label: "Open Git Review & Diff Inspector",
+        category: "Commands",
+        onSelect: () => {
+          setIsLeftOpen(true);
+          setExplorerMode("git");
+        },
+      },
+    ];
+
+    // Add model choices
+    if (models && models.length > 0) {
+      models.forEach((m) => {
+        list.push({
+          id: `model-${m.id}`,
+          label: `Switch Model: ${formatModelDisplayName(m.id)}`,
+          sublabel: m.provider,
+          category: "AI Models",
+          onSelect: () => handleSelectModel(m.id),
+        });
+      });
+    }
+
+    return list;
+  }, [
+    models,
+    handleSelectModel,
+    handleNewSession,
+    setIsLeftOpen,
+    setIsTerminalOpen,
+    setIsRightOpen,
+    setExplorerMode,
+  ]);
+
   return (
     <div className="flex-1 flex min-h-0 items-stretch overflow-hidden relative">
       {/* ── ACTIVITY BAR (Anara Code Studio Primary Icon Rail) ── */}
@@ -455,6 +533,13 @@ export function CodeStudioWorkspace({
           />
         </div>
       )}
+
+      {/* Global Command Palette (Ctrl+K / Cmd+K) */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        commands={commandItems}
+      />
     </div>
   );
 }

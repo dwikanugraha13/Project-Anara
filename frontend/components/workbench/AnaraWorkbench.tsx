@@ -124,6 +124,7 @@ export interface AnaraWorkbenchProps {
   onSetInteractionMode?: (mode: "voice" | "chat") => void;
   onStartSession: () => void;
   onSendText?: (text: string, agentMode?: "plan" | "build") => void;
+  onEditPrompt?: (idx: number, newText: string) => void;
   onSteer?: (text: string) => void;
   onToggleMute: () => void;
   onInterrupt: () => void;
@@ -174,6 +175,7 @@ export default function AnaraWorkbench({
   onSetInteractionMode,
   onStartSession,
   onSendText,
+  onEditPrompt,
   onSteer,
   onToggleMute,
   onInterrupt,
@@ -834,6 +836,7 @@ export default function AnaraWorkbench({
               inputMessage={inputMessage}
               setInputMessage={setInputMessage}
               onSendText={onSendText}
+              onEditPrompt={onEditPrompt}
               onSteer={onSteer}
               agentMode={agentMode}
               setAgentMode={setAgentMode}

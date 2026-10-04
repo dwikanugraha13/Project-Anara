@@ -1082,6 +1082,14 @@ export default function HomePageClient({
     [sendJSON, forceUnlock, activeSessionId, reasoningEffort]
   );
 
+  const handleEditPrompt = useCallback(
+    (idx: number, newText: string) => {
+      setTranscript((prev) => [...prev.slice(0, idx), { ...prev[idx], text: newText }]);
+      handleSendText(newText, "build");
+    },
+    [handleSendText]
+  );
+
   const handleApprovePlan = useCallback(
     (plan?: any) => {
       const targetPlan = plan || transcript.slice().reverse().find((t) => t.planData)?.planData || {};
@@ -1341,6 +1349,7 @@ export default function HomePageClient({
           onSetInteractionMode={handleSetInteractionMode}
           onStartSession={handleStartSession}
           onSendText={handleSendText}
+          onEditPrompt={handleEditPrompt}
           onSteer={sendSteer}
           onToggleMute={toggleMute}
           onInterrupt={handleInterrupt}

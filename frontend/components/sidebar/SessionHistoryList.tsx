@@ -270,6 +270,7 @@ export default function SessionHistoryList({
                 {[
                   { label: "Rename", action: () => { setRenameValue(s.title || ""); setRenamingId(s.id); setMenuOpenId(null); } },
                   { label: s.is_pinned === 1 ? "Unpin" : "Pin", action: () => { onPatchSession(s.id, { is_pinned: s.is_pinned !== 1 }); setMenuOpenId(null); } },
+                  { label: s.is_archived === 1 ? "Unarchive" : "Archive", action: () => { onPatchSession(s.id, { is_archived: s.is_archived !== 1 }); setMenuOpenId(null); } },
                   { label: "Branch / Fork", action: () => { onForkSession?.(s); setMenuOpenId(null); } },
                   { label: "Export as Markdown", action: () => { exportSession({ sessionId: s.id, title: s.title, format: "markdown" }); setMenuOpenId(null); } },
                   { label: "Export as JSON", action: () => { exportSession({ sessionId: s.id, title: s.title, format: "json" }); setMenuOpenId(null); } },
