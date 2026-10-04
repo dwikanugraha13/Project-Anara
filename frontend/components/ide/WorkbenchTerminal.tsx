@@ -176,10 +176,13 @@ function TerminalInstance({ tab, isActive, isVisible, logs = [] }: TerminalInsta
         return false;
       }
 
-      // Ctrl+K: Clear terminal buffer
-      if (event.ctrlKey && event.key.toLowerCase() === "k") {
+      // Ctrl+K or Ctrl+L: Clear terminal screen and buffer without triggering browser address bar
+      if (event.ctrlKey && (event.key.toLowerCase() === "k" || event.key.toLowerCase() === "l")) {
         event.preventDefault();
         term.clear();
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "input", data: "\x0c" }));
+        }
         return false;
       }
 

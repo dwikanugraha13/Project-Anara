@@ -7,6 +7,7 @@ import InteractiveQuestionCard from "./InteractiveQuestionCard";
 import { InteractiveApprovalCard } from "./InteractiveApprovalCard";
 import { ToolRunTicker } from "./ToolRunTicker";
 import { SettledChangedFilesCard } from "./SettledChangedFilesCard";
+import { AnaraVoiceBubble } from "./AnaraVoiceBubble";
 import FindBar from "./FindBar";
 import type { TranscriptItem, AssistantStatus } from "../workbench/AnaraWorkbench";
 import type { ToolProgressPayload } from "@/hooks/useWebSocket";
@@ -758,6 +759,12 @@ export default function ChatTimeline({
                               .replace(/<(?:\/?)(?:thought|think|reasoning)[^>]*>/gi, "")
                               .trim();
                           }
+                          const mediaAudioMatch = displayMarkdown.match(/MEDIA:([^\s]+\.(?:mp3|wav|ogg|m4a|aac))/i);
+                          const mediaAudioUrl = mediaAudioMatch ? mediaAudioMatch[1] : (item as any).audioUrl;
+                          const cleanedMarkdown = mediaAudioMatch
+                            ? displayMarkdown.replace(mediaAudioMatch[0], "").trim()
+                            : displayMarkdown;
+
                           return (
                             <>
                               {inlineThought && !currentThinking && (
@@ -765,12 +772,20 @@ export default function ChatTimeline({
                                   <ThinkingCard text={inlineThought} isLive={false} />
                                 </div>
                               )}
-                              {displayMarkdown ? (
+                              {mediaAudioUrl && (
+                                <div className="mb-2 w-full max-w-full">
+                                  <AnaraVoiceBubble
+                                    audioUrl={mediaAudioUrl}
+                                    title={mediaAudioUrl.split(/[/\\]/).pop() || "Voice Note"}
+                                  />
+                                </div>
+                              )}
+                              {cleanedMarkdown ? (
                                 <div className={`relative leading-relaxed font-sans text-[13.5px] ${
                                   item.isStreaming ? 'streaming-text-gradient text-slate-100' : 'text-slate-200'
                                 }`}>
                                   <AgentMarkdown
-                                    content={displayMarkdown}
+                                    content={cleanedMarkdown}
                                     isStreaming={Boolean(item.isStreaming)}
                                   />
                                 </div>

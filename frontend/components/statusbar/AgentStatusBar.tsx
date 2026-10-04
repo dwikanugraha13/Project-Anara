@@ -216,9 +216,24 @@ export default function AgentStatusBar({
           <button
             type="button"
             onClick={() => setIsContextPopoverOpen((v) => !v)}
-            className="flex items-center gap-1.5 px-2 py-0.5 rounded hover:bg-white/10 transition-colors text-[10.5px] text-slate-300 cursor-pointer"
-            title="Click to view Context Window breakdown"
+            className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-colors text-[10.5px] cursor-pointer ${
+              contextPct >= 90
+                ? "border border-rose-500/40 bg-rose-500/10 text-rose-300 shadow-[0_0_8px_rgba(244,63,94,0.25)]"
+                : contextPct >= 80
+                ? "border border-amber-500/30 bg-amber-500/10 text-amber-300"
+                : "text-slate-300 hover:bg-white/10"
+            }`}
+            title={
+              contextPct >= 90
+                ? "Context window critical (>90%) — Auto-compaction will trigger soon"
+                : "Click to view Context Window breakdown"
+            }
           >
+            {contextPct >= 90 && (
+              <svg className="w-3 h-3 text-rose-400 animate-pulse shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            )}
             <span className="w-10 h-1.5 bg-white/10 rounded-full overflow-hidden flex">
               <span
                 style={{ width: `${Math.max(4, contextPct)}%` }}

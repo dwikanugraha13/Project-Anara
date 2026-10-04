@@ -65,10 +65,18 @@ export default function ContextUsagePopover({
         {/* Header */}
         <div className="flex items-center justify-between pb-2 border-b border-white/[0.08]">
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]" />
+            <span
+              className={`w-2 h-2 rounded-full ${
+                percent >= 90
+                  ? "bg-rose-500 shadow-[0_0_8px_#f43f5e]"
+                  : percent >= 80
+                  ? "bg-amber-400 shadow-[0_0_8px_#fbbf24]"
+                  : "bg-cyan-400 shadow-[0_0_8px_#22d3ee]"
+              }`}
+            />
             <span className="font-semibold text-white">Context Window</span>
           </div>
-          <span className="text-[11px] text-slate-400">
+          <span className={`text-[11px] ${percent >= 90 ? "text-rose-400 font-bold" : percent >= 80 ? "text-amber-300" : "text-slate-400"}`}>
             {formatTokens(total)} / {formatTokens(max)} ({percent}%)
           </span>
         </div>
@@ -108,6 +116,16 @@ export default function ContextUsagePopover({
             </div>
           ))}
         </div>
+
+        {/* High Context Threshold Warning Banner */}
+        {percent >= 85 && (
+          <div className="mt-2.5 p-2 rounded-lg bg-rose-500/10 border border-rose-500/25 text-[10px] text-rose-300 flex items-center gap-1.5 animate-fade-in">
+            <svg className="w-3.5 h-3.5 text-rose-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span><strong>Context Near Limit:</strong> Next turns will automatically compact conversation history to preserve memory.</span>
+          </div>
+        )}
 
         {/* Footer Hint */}
         <div className="mt-3 pt-2 border-t border-white/[0.08] text-[9.5px] text-slate-500 text-center">
