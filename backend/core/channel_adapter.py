@@ -772,7 +772,8 @@ async def _process_channel_request_core(
         danger_reason = reply.get("danger_reason")
 
         # Model-Driven Contextual Rationale (Zero Canned Templates)
-        lead_narration = lead_text
+        from providers.payload_parser import _clean_model_chat_text
+        lead_narration = _clean_model_chat_text(lead_text).strip() if lead_text else ""
         # Discard stale lead_text if it is an echo of a prior conversation turn
         if lead_narration and prior_turns:
             is_stale_echo = any(
