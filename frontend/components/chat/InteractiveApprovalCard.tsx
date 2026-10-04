@@ -90,7 +90,7 @@ export function InteractiveApprovalCard({
       ? "bg-rose-500/15 text-rose-300 border-rose-400/30"
       : riskLevel === "medium"
       ? "bg-amber-500/15 text-amber-300 border-amber-400/30"
-      : "bg-cyan-500/15 text-cyan-300 border-cyan-400/30";
+      : "bg-white/[0.06] text-slate-300 border-white/10";
 
   return (
     <div className="my-2.5 w-full max-w-3xl select-none font-sans text-xs">
@@ -115,7 +115,7 @@ export function InteractiveApprovalCard({
 
         {/* Command or Target Payload Preview */}
         {commandPreview && (
-          <div className="mt-2.5 rounded-lg border border-white/[0.06] bg-black/60 p-2 font-mono text-[11px] text-cyan-300 select-text">
+          <div className="mt-2.5 rounded-lg border border-white/[0.06] bg-black/60 p-2 font-mono text-[11px] text-slate-200 select-text">
             <div className="flex items-center justify-between pb-1 mb-1 border-b border-white/[0.04] text-slate-500 text-[10px] select-none">
               <div className="flex items-center gap-1.5">
                 <span>$</span>
@@ -140,7 +140,7 @@ export function InteractiveApprovalCard({
         <div className="mt-3 flex items-center justify-end gap-2 pt-1">
           {decided ? (
             <span className="text-[11px] font-mono text-slate-400 italic">
-              Decision recorded: <strong className="text-cyan-300 capitalize">{decided}</strong>
+              Decision recorded: <strong className="text-white capitalize">{decided}</strong>
             </span>
           ) : (
             <>
@@ -177,11 +177,11 @@ export function InteractiveApprovalCard({
                   onApprove?.(planId, "once");
                   restoreFocus();
                 }}
-                className="rounded-lg border border-cyan-400/40 bg-cyan-500/20 px-3.5 py-1 text-[11px] font-medium text-cyan-200 shadow-[0_0_12px_rgba(34,211,238,0.2)] transition-all hover:bg-cyan-500/30 hover:text-white cursor-pointer flex items-center gap-1.5"
+                className="rounded-lg border border-white/20 bg-white/10 px-3.5 py-1 text-[11px] font-medium text-white shadow-sm transition-all hover:bg-white/20 hover:text-white cursor-pointer flex items-center gap-1.5"
                 title="Approve Once (Enter)"
               >
                 <span>Approve Once</span>
-                <kbd className="px-1 py-px rounded bg-cyan-500/30 text-[9.5px] font-mono text-cyan-200">↵</kbd>
+                <kbd className="px-1 py-px rounded bg-white/10 text-[9.5px] font-mono text-slate-300">↵</kbd>
               </button>
             </>
           )}

@@ -185,7 +185,7 @@ export function AgentActionCard({
             onClick={() => setIsExpanded((v) => !v)}
             className="flex items-center gap-1.5 max-w-fit text-left cursor-pointer font-mono group/btn py-0.5"
           >
-            <span className="grid size-3.5 shrink-0 place-items-center text-slate-400 group-hover/btn:text-cyan-400 transition-colors">
+            <span className="grid size-3.5 shrink-0 place-items-center text-slate-400 group-hover/btn:text-slate-200 transition-colors">
               {isStart ? (
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
@@ -245,7 +245,7 @@ export function AgentActionCard({
                   e.stopPropagation();
                   onOpenFile(action.filePath || filename, filename);
                 }}
-                className="text-slate-400 hover:text-cyan-300 px-1 py-0.5 rounded text-[10px] transition-colors cursor-pointer"
+                className="text-slate-400 hover:text-white px-1 py-0.5 rounded text-[10px] transition-colors cursor-pointer"
                 title="View in Editor"
               >
                 ↗
@@ -288,7 +288,7 @@ export function AgentActionCard({
                     {parsedDiff.lines.map((line: DiffLineItem, idx: number) => {
                       if (line.type === "hunk") {
                         return (
-                          <tr key={idx} className="bg-cyan-950/20 text-cyan-300/80 font-mono text-[10px] border-y border-cyan-800/20">
+                          <tr key={idx} className="bg-white/[0.03] text-slate-400 font-mono text-[10px] border-y border-white/[0.06]">
                             <td colSpan={3} className="px-3 py-0.5 select-none font-medium">
                               {line.text}
                             </td>

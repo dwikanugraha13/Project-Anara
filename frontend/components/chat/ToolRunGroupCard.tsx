@@ -132,7 +132,7 @@ export function ToolRunGroupCard({
             </span>
           )}
         </span>
-        <span className={`text-[11.5px] font-mono tracking-tight ${isRunning ? "text-cyan-300 animate-pulse" : "text-slate-400 group-hover:text-slate-200"}`}>
+        <span className={`text-[11.5px] font-mono tracking-tight ${isRunning ? "text-slate-200 animate-pulse font-medium" : "text-slate-400 group-hover:text-slate-200"}`}>
           {summary}
         </span>
         <svg
@@ -283,7 +283,7 @@ export function ToolRunGroupCard({
                           e.stopPropagation();
                           cleanTarget && onOpenFile(cleanTarget, file);
                         }}
-                        className="text-slate-600 hover:text-cyan-300 text-[10px] shrink-0 opacity-0 group-hover/row:opacity-100 transition-opacity ml-1"
+                        className="text-slate-500 hover:text-white text-[10px] shrink-0 opacity-0 group-hover/row:opacity-100 transition-opacity ml-1 cursor-pointer"
                         title="Open in Code Editor"
                       >
                         ↗

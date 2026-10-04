@@ -105,14 +105,14 @@ export function GlobResultView({
                     </span>
                     <div className="truncate flex items-baseline gap-0.5">
                       {dir && <span className="text-slate-500 text-[10px] truncate">{dir}</span>}
-                      <span className="text-slate-200 font-medium text-[11px] group-hover:text-cyan-300 transition-colors truncate">
+                      <span className="text-slate-200 font-medium text-[11px] group-hover:text-white transition-colors truncate">
                         {filename}
                       </span>
                     </div>
                   </div>
 
                   {onOpenFile && (
-                    <span className="text-slate-500 group-hover:text-cyan-300 text-[10px] shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="text-slate-500 group-hover:text-white text-[10px] shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                       ↗
                     </span>
                   )}

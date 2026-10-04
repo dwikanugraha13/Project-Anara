@@ -221,7 +221,7 @@ export default function InteractiveQuestionCard({ data, onSubmitAnswers }: Inter
               return (
                 <div key={idx} className="space-y-0.5">
                   <p className="text-slate-400 font-sans">{q.question}</p>
-                  <p className={`font-mono text-[11px] ${isNoAnswer ? "text-slate-500 italic" : "text-cyan-300 font-semibold"}`}>
+                  <p className={`font-mono text-[11px] ${isNoAnswer ? "text-slate-500 italic" : "text-white font-medium"}`}>
                     {ansText || "(no answer)"}
                   </p>
                 </div>
@@ -245,7 +245,7 @@ export default function InteractiveQuestionCard({ data, onSubmitAnswers }: Inter
     <div className="w-full my-2 animate-fade-in select-text pointer-events-auto">
       <div className="w-full rounded-xl border border-white/10 bg-[#070b14]/90 p-4 sm:p-5 shadow-[0_8px_32px_rgba(0,0,0,0.5)] space-y-3.5 backdrop-blur-xl transition-all duration-200 relative overflow-hidden">
         {/* Specular Hairline */}
-        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-cyan-400/25 to-transparent pointer-events-none" />
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent pointer-events-none" />
 
         {/* Step Indicator (Only if multi-step) */}
         {totalSteps > 1 && (
@@ -318,9 +318,9 @@ export default function InteractiveQuestionCard({ data, onSubmitAnswers }: Inter
                 {/* Option Label & Description */}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-[12.5px] font-medium ${active ? "text-cyan-200" : "text-slate-200"}`}>{cleanLabel}</span>
+                    <span className={`text-[12.5px] font-medium ${active ? "text-white font-semibold" : "text-slate-200"}`}>{cleanLabel}</span>
                     {isRec && (
-                      <span className="px-1.5 py-0.5 rounded text-[9.5px] font-mono font-semibold bg-cyan-500/10 text-cyan-300 border border-cyan-400/20">
+                      <span className="px-1.5 py-0.5 rounded text-[9.5px] font-mono font-semibold bg-white/[0.08] text-slate-200 border border-white/[0.12]">
                         Recommended
                       </span>
                     )}

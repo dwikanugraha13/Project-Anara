@@ -76,7 +76,7 @@ export function TerminalTranscript({
         <div className="flex min-w-0 items-center justify-between gap-2 rounded-[0.25rem] border border-white/[0.08] bg-black/50 px-2 py-1 leading-relaxed">
           {command && (
             <div className="min-w-0 flex-1 overflow-x-auto custom-scrollbar whitespace-pre font-mono text-slate-200 text-[11px]">
-              <span className="text-cyan-400 select-none font-bold mr-1.5">$</span>
+              <span className="text-slate-400 select-none font-bold mr-1.5">$</span>
               {command}
             </div>
           )}

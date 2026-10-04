@@ -102,7 +102,7 @@ export function ReadFileView({
             <button
               type="button"
               onClick={() => onOpenFile(filePath, filename)}
-              className="text-slate-400 hover:text-cyan-300 px-1 py-0.5 rounded text-[10.5px] transition-colors cursor-pointer"
+              className="text-slate-400 hover:text-white px-1 py-0.5 rounded text-[10.5px] transition-colors cursor-pointer"
               title="Open file in IDE"
             >
               ↗

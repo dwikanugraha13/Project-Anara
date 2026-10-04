@@ -94,7 +94,7 @@ export function SettledChangedFilesCard({
       {/* Header bar */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.06] bg-white/[0.015]">
         <div className="flex items-center gap-2">
-          <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
           <span className="text-[11.5px] font-semibold text-slate-200">
@@ -110,7 +110,7 @@ export function SettledChangedFilesCard({
           <button
             type="button"
             onClick={onOpenReviewTab}
-            className="flex items-center gap-1 text-[11px] text-cyan-300 hover:text-white px-2 py-0.5 rounded bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/20 transition-all cursor-pointer font-sans"
+            className="flex items-center gap-1 text-[11px] text-slate-300 hover:text-white px-2 py-0.5 rounded bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 transition-all cursor-pointer font-sans"
             title="Inspect all changed files in Git Review"
           >
             <span>Review changes</span>
@@ -129,7 +129,7 @@ export function SettledChangedFilesCard({
           >
             <div className="flex items-baseline gap-1.5 min-w-0 truncate">
               <span className="text-slate-500 group-hover:text-slate-400 text-[10px]">»</span>
-              <span className="text-slate-200 font-medium group-hover:text-cyan-300 transition-colors truncate text-[11px]">
+              <span className="text-slate-200 font-medium group-hover:text-white transition-colors truncate text-[11px]">
                 {file.filename}
               </span>
               {file.dirPath && (
@@ -144,7 +144,7 @@ export function SettledChangedFilesCard({
                 {file.added > 0 && <span className="text-emerald-400/90">+{file.added}</span>}
                 {file.deleted > 0 && <span className="text-rose-400/90">−{file.deleted}</span>}
               </div>
-              <span className="text-slate-500 group-hover:text-cyan-300 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="text-slate-500 group-hover:text-white text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
                 ↗
               </span>
             </div>

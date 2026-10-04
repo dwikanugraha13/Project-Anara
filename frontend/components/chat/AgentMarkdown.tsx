@@ -315,8 +315,8 @@ function CodeBlock({
       {/* Chrome Header */}
       <div className="flex items-center justify-between px-3.5 py-1.5 bg-white/[0.03] border-b border-white/5 text-[11px]">
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-cyan-400/60 shadow-[0_0_6px_rgba(34,211,238,0.5)]" />
-          <span className="font-mono font-semibold tracking-wide text-cyan-300/90 text-[10.5px]">
+          <span className="w-2 h-2 rounded-full bg-slate-400/60" />
+          <span className="font-mono font-semibold tracking-wide text-slate-300 text-[10.5px]">
             {langLabel}
           </span>
           <span className="text-[10px] text-slate-500 font-mono">
@@ -485,7 +485,7 @@ function renderInlineText(text: string, isLast?: boolean, isStreaming?: boolean)
       elements.push(
         <code
           key={match.index}
-          className="px-1.5 py-0.5 rounded-[0.25rem] bg-white/[0.05] text-cyan-300/90 border border-white/[0.08] font-mono text-[11.5px] select-all tracking-tight"
+          className="px-1.5 py-0.5 rounded-[0.25rem] bg-white/[0.06] text-slate-100 border border-white/[0.08] font-mono text-[11.5px] select-all tracking-tight"
         >
           {codeText}
         </code>
@@ -838,7 +838,7 @@ function AgentMarkdown({
                         <th
                           key={hIdx}
                           style={{ textAlign: block.aligns[hIdx] || "left" }}
-                          className="px-3.5 py-2 font-semibold text-cyan-200 tracking-wide"
+                          className="px-3.5 py-2 font-semibold text-slate-100 tracking-wide"
                         >
                           {renderInlineText(h)}
                         </th>
@@ -872,7 +872,7 @@ function AgentMarkdown({
             return (
               <blockquote
                 key={`quote-${idx}`}
-                className="my-2 pl-3.5 py-0.5 border-l-2 border-cyan-400/60 text-slate-300/90 italic text-[13px]"
+                className="my-2 pl-3.5 py-0.5 border-l-2 border-white/20 text-slate-300/90 italic text-[13px]"
               >
                 {renderInlineText(block.content, isLastBlock, isStreaming)}
               </blockquote>
@@ -881,9 +881,9 @@ function AgentMarkdown({
           case "heading": {
             const headingClasses = {
               1: "text-lg font-extrabold text-white pt-3 pb-1 border-b border-white/10 tracking-tight",
-              2: "text-base font-bold text-cyan-200 pt-3 pb-0.5 tracking-tight",
+              2: "text-base font-bold text-slate-100 pt-3 pb-0.5 tracking-tight",
               3: "text-sm font-bold text-white pt-2 pb-0.5 tracking-tight",
-              4: "text-xs font-semibold uppercase tracking-wider text-cyan-300/90 pt-1.5",
+              4: "text-xs font-semibold uppercase tracking-wider text-slate-300 pt-1.5",
               5: "text-xs font-semibold text-slate-300 pt-1",
               6: "text-xs font-medium text-slate-400 pt-1",
             }[block.level];
@@ -922,11 +922,11 @@ function AgentMarkdown({
                           )}
                         </span>
                       ) : block.ordered ? (
-                        <span className="text-cyan-400/80 font-mono text-[11px] font-bold select-none pt-0.5">
+                        <span className="text-slate-400 font-mono text-[11px] font-bold select-none pt-0.5">
                           {itemIdx + 1}.
                         </span>
                       ) : (
-                        <span className="text-cyan-400 mt-1 select-none text-[8px]">•</span>
+                        <span className="text-slate-400 mt-1 select-none text-[8px]">•</span>
                       )}
 
                       <span

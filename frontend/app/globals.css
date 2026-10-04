@@ -597,42 +597,7 @@ button:not([role="tab"]):not([data-no-scale]):active,
 }
 
 .streaming-text-gradient {
-  background: linear-gradient(
-    90deg,
-    #e2e8f0 0%,
-    #67e8f9 15%,
-    #a5f3fc 30%,
-    #e2e8f0 45%,
-    #c4b5fd 60%,
-    #a78bfa 75%,
-    #e2e8f0 100%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: streaming-gradient-flow 3s linear infinite;
-}
-
-/* Nested elements inherit text gradient during streaming */
-.streaming-text-gradient strong,
-.streaming-text-gradient em,
-.streaming-text-gradient a,
-.streaming-text-gradient del,
-.streaming-text-gradient span:not(.streaming-caret):not([class*="code"]):not([class*="bg-"]):not([class*="rounded"]) {
-  -webkit-text-fill-color: transparent;
-  background: inherit;
-  -webkit-background-clip: text;
-  background-clip: text;
-}
-
-/* Exclude inline code, caret, and badges from gradient inheritance */
-.streaming-text-gradient code,
-.streaming-text-gradient .streaming-caret {
-  -webkit-text-fill-color: initial;
-  background: initial;
-  -webkit-background-clip: initial;
-  background-clip: initial;
+  color: #f1f5f9;
 }
 
 /* Code block streaming entrance */

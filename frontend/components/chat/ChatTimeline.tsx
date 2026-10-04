@@ -549,7 +549,7 @@ export default function ChatTimeline({
                                     }
                                   }
                                 }}
-                                className="rounded bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 px-3 py-1 font-medium text-cyan-200 hover:text-white transition-all cursor-pointer"
+                                className="rounded bg-white/10 hover:bg-white/15 border border-white/20 px-3 py-1 font-medium text-white transition-all cursor-pointer"
                               >
                                 Save &amp; Re-run
                               </button>
@@ -781,9 +781,7 @@ export default function ChatTimeline({
                                 </div>
                               )}
                               {cleanedMarkdown ? (
-                                <div className={`relative leading-relaxed font-sans text-[13.5px] ${
-                                  item.isStreaming ? 'streaming-text-gradient text-slate-100' : 'text-slate-200'
-                                }`}>
+                                <div className="relative leading-relaxed font-sans text-[13.5px] text-slate-100">
                                   <AgentMarkdown
                                     content={cleanedMarkdown}
                                     isStreaming={Boolean(item.isStreaming)}
@@ -854,11 +852,11 @@ export default function ChatTimeline({
           type="button"
           onClick={() => scrollToBottom(true)}
           style={{ bottom: `${Math.max(12, (footerDockHeight || 0) + 12)}px` }}
-          className="absolute left-1/2 -translate-x-1/2 z-40 px-3 py-1 rounded-full bg-[#060913]/95 hover:bg-[#0c1328] border border-white/20 hover:border-cyan-400/50 text-slate-300 hover:text-white flex items-center gap-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.85)] backdrop-blur-xl cursor-pointer transition-all active:scale-95 animate-fade-in font-mono text-[11px] select-none"
+          className="absolute left-1/2 -translate-x-1/2 z-40 px-3 py-1 rounded-full bg-[#060913]/95 hover:bg-[#0c1328] border border-white/20 hover:border-white/40 text-slate-300 hover:text-white flex items-center gap-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.85)] backdrop-blur-xl cursor-pointer transition-all active:scale-95 animate-fade-in font-mono text-[11px] select-none"
           title="Scroll to latest message"
           aria-label="Scroll to bottom"
         >
-          <span className="text-cyan-400 font-bold">↓</span>
+          <span className="text-slate-300 font-bold">↓</span>
           <span>{unreadCount > 1 ? `${unreadCount} messages` : "Latest"}</span>
         </button>
       )}

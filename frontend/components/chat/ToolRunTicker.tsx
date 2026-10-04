@@ -41,7 +41,7 @@ export function ToolRunTicker({
         >
           {rows.map((row, idx) => (
             <div key={idx} className="h-[20px] flex items-center min-w-0 overflow-hidden">
-              <span className={`truncate ${isRunning && idx === activeIdx ? "text-cyan-300 font-medium" : "text-slate-400"}`}>
+              <span className={`truncate ${isRunning && idx === activeIdx ? "text-slate-200 font-medium" : "text-slate-400"}`}>
                 {row}
               </span>
             </div>
@@ -77,7 +77,7 @@ export function ToolRunTicker({
                 rows.map((row, idx) => (
                   <div key={idx} className="h-[22px] flex items-center min-w-0 overflow-hidden">
                     <span className={`truncate text-[11.5px] font-medium tracking-tight ${
-                      isRunning && idx === activeIdx ? "text-cyan-300" : "text-slate-300"
+                      isRunning && idx === activeIdx ? "text-slate-100" : "text-slate-300"
                     }`}>
                       {row}
                     </span>

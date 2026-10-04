@@ -60,11 +60,11 @@ export function ThinkingCard({
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
               </span>
             ) : (
-              <span className="h-1.5 w-1.5 rounded-full bg-slate-500 group-hover/btn:bg-cyan-400 transition-colors" />
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-500 group-hover/btn:bg-slate-300 transition-colors" />
             )}
           </span>
 
-          <span className={`text-[11.5px] tracking-tight ${isLive ? "text-cyan-300 animate-pulse font-medium" : "text-slate-400 group-hover/btn:text-slate-200"}`}>
+          <span className={`text-[11.5px] tracking-tight ${isLive ? "text-slate-200 animate-pulse font-medium" : "text-slate-400 group-hover/btn:text-slate-200"}`}>
             {thoughtLabel}
           </span>
 

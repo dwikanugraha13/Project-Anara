@@ -60,7 +60,7 @@ function SubagentActivityTicker({
           <div key={idx} className="h-[20px] flex items-center min-w-0 overflow-hidden">
             <span
               className={`truncate transition-colors ${
-                isLive && idx === activeIdx ? "text-cyan-300 font-medium" : "text-slate-500"
+                isLive && idx === activeIdx ? "text-slate-200 font-medium" : "text-slate-500"
               }`}
             >
               {line}
@@ -95,7 +95,7 @@ function SubagentRowView({
   return (
     <div className="relative flex flex-col gap-1 rounded-xl border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] p-2.5 transition-all">
       {/* Top Hairline Accent */}
-      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-cyan-400/20 to-transparent pointer-events-none rounded-t-xl" />
+      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent pointer-events-none rounded-t-xl" />
 
       {/* Row Header: Status Glyph | Goal Text | Model Badge | Live Timer | Inspect */}
       <div className="flex items-center gap-2 min-w-0 font-mono text-xs select-none">
@@ -119,7 +119,7 @@ function SubagentRowView({
         {/* Live Elapsed Stopwatch / Settled Duration */}
         <div className="ml-auto flex items-center gap-2 shrink-0">
           {isLive ? (
-            <span className="text-[10px] font-mono tabular-nums text-cyan-400 animate-pulse">
+            <span className="text-[10px] font-mono tabular-nums text-slate-300 animate-pulse">
               {elapsed}s
             </span>
           ) : task.durationSec !== undefined ? (
@@ -222,7 +222,7 @@ function SubagentDetailModal({
         {/* Executive Summary / Findings */}
         {(task.findings || task.summary) && (
           <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-white/[0.02] border border-white/[0.06]">
-            <span className="text-[10px] uppercase tracking-wider text-cyan-400 font-bold">
+            <span className="text-[10px] uppercase tracking-wider text-slate-300 font-bold">
               Executive Findings
             </span>
             <p className="font-sans text-[12px] leading-relaxed text-slate-200 whitespace-pre-wrap">
@@ -259,7 +259,7 @@ function SubagentDetailModal({
                     key={idx}
                     type="button"
                     onClick={() => onOpenFile?.(file, fname)}
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-cyan-300 hover:text-white transition-colors cursor-pointer text-[10.5px]"
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-slate-200 hover:text-white transition-colors cursor-pointer text-[10.5px]"
                   >
                     <span>{fname}</span>
                     <span className="text-slate-500 text-[9px]">↗</span>
@@ -319,7 +319,7 @@ export function SubagentCard({ data, onOpenFile }: SubagentCardProps) {
       {/* Group Title Bar */}
       <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/[0.06] text-xs">
         <div className="flex items-center gap-2">
-          <span className="p-1 rounded-md bg-cyan-500/10 border border-cyan-400/25 text-cyan-300">
+          <span className="p-1 rounded-md bg-white/[0.05] border border-white/10 text-slate-300">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
             </svg>
@@ -333,7 +333,7 @@ export function SubagentCard({ data, onOpenFile }: SubagentCardProps) {
         </div>
 
         {running > 0 && (
-          <span className="flex items-center gap-1.5 text-[10.5px] text-cyan-400 font-mono">
+          <span className="flex items-center gap-1.5 text-[10.5px] text-slate-400 font-mono">
             <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-ping" />
             <span>Executing...</span>
           </span>

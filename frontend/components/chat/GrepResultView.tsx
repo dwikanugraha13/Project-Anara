@@ -128,7 +128,7 @@ export function GrepResultView({
                       className="flex items-baseline gap-1 truncate cursor-pointer group/title"
                     >
                       {dir && <span className="text-slate-500 text-[10px] truncate">{dir}</span>}
-                      <span className="text-slate-200 font-medium text-[11px] group-hover/title:text-cyan-300 transition-colors truncate">
+                      <span className="text-slate-200 font-medium text-[11px] group-hover/title:text-white transition-colors truncate">
                         {filename}
                       </span>
                       <span className="text-slate-500 text-[9.5px]">({hits.length})</span>
@@ -138,7 +138,7 @@ export function GrepResultView({
                       <button
                         type="button"
                         onClick={() => onOpenFile(file, filename)}
-                        className="text-slate-500 hover:text-cyan-300 text-[10px] ml-2 shrink-0 cursor-pointer"
+                        className="text-slate-500 hover:text-white text-[10px] ml-2 shrink-0 cursor-pointer"
                         title="Open file"
                       >
                         ↗
