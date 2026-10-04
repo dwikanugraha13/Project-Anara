@@ -121,7 +121,7 @@ echo.
 set "PYTHONPATH=%BACKEND_DIR%"
 
 echo   ^> Backend FastAPI  ^(http://localhost:8000^)
-start "Anara - Backend Server" cmd /k "cd /d "%ROOT_DIR%" && set "PYTHONPATH=%BACKEND_DIR%" && "%PYTHON_CMD%" -m uvicorn backend.main:app --host 0.0.0.0 --port 8000"
+start "Anara - Backend Server" cmd /k "cd /d "%ROOT_DIR%" && set "PYTHONPATH=%BACKEND_DIR%" && "%PYTHON_CMD%" -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir "%BACKEND_DIR%""
 
 echo   ^> Frontend Next.js ^(http://localhost:3000^)
 start "Anara - Frontend Web" cmd /k "cd /d "%FRONTEND_DIR%" && "%NPM_CMD%" run dev"
