@@ -66,7 +66,10 @@ class TelegramPlatformAdapter(BasePlatformAdapter):
             return await send_telegram_document(file_path=file_path, caption=caption or "", chat_id=target_id)
 
     def render_approval(self, narration: str, action: Any) -> Dict[str, Any]:
-        text_parts = [narration.strip()]
+        clean_narr = (narration or "").strip()
+        if clean_narr.startswith(("{'intercepted'", '{"intercepted"')):
+            clean_narr = "Tindakan memerlukan persetujuan Anda untuk dieksekusi."
+        text_parts = [clean_narr]
         args = getattr(action, "tool_args", {}) or {}
         if isinstance(args, str):
             try:
@@ -82,11 +85,15 @@ class TelegramPlatformAdapter(BasePlatformAdapter):
                 tc_args = {}
         cmd = (args if isinstance(args, dict) else {}).get("command") or (tc_args if isinstance(tc_args, dict) else {}).get("command")
         file_p = (args if isinstance(args, dict) else {}).get("file_path") or (tc_args if isinstance(tc_args, dict) else {}).get("file_path")
+        code = (args if isinstance(args, dict) else {}).get("code") or (tc_args if isinstance(tc_args, dict) else {}).get("code")
         t_name = getattr(action, "tool_name", "")
         if cmd:
             text_parts.append(f"\n```shell\n{cmd}\n```")
         elif file_p:
             text_parts.append(f"\n`Target: {file_p}`")
+        elif code:
+            snippet = code[:500] + ("\n..." if len(code) > 500 else "")
+            text_parts.append(f"\n```python\n{snippet}\n```")
         elif t_name == "computer_use":
             act = args.get("action", "action")
             target_desc = args.get("text") or args.get("key") or args.get("keys") or args.get("app") or (f"({args.get('x')}, {args.get('y')})" if args.get("x") is not None else "")
