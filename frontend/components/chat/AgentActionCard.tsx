@@ -179,7 +179,7 @@ export function AgentActionCard({
     return (
       <div className="my-1 font-mono text-xs select-none">
         {/* Header Action Row (Desktop Standard Parity) */}
-        <div className="w-full flex items-center justify-between py-0.5 transition-colors text-left group/filerow">
+        <div className="w-full flex items-center justify-between py-0.5 transition-colors text-left group/filerow opacity-[0.67] hover:opacity-100 transition-opacity duration-150">
           <button
             type="button"
             onClick={() => setIsExpanded((v) => !v)}
@@ -288,8 +288,8 @@ export function AgentActionCard({
                     {parsedDiff.lines.map((line: DiffLineItem, idx: number) => {
                       if (line.type === "hunk") {
                         return (
-                          <tr key={idx} className="bg-cyan-950/30 text-cyan-300 font-mono text-[10px] border-y border-cyan-800/20">
-                            <td colSpan={4} className="px-3 py-1 select-none font-medium">
+                          <tr key={idx} className="bg-cyan-950/20 text-cyan-300/80 font-mono text-[10px] border-y border-cyan-800/20">
+                            <td colSpan={3} className="px-3 py-0.5 select-none font-medium">
                               {line.text}
                             </td>
                           </tr>
@@ -300,28 +300,19 @@ export function AgentActionCard({
                           key={idx}
                           className={`${
                             line.type === "add"
-                              ? "bg-emerald-500/[0.09] text-emerald-200 border-l-2 border-emerald-400"
+                              ? "bg-emerald-500/[0.08] text-emerald-200 border-l-2 border-emerald-400"
                               : line.type === "del"
-                              ? "bg-rose-500/[0.09] text-rose-200 border-l-2 border-rose-400"
+                              ? "bg-rose-500/[0.08] text-rose-200 border-l-2 border-rose-400"
                               : "text-slate-400 hover:bg-white/[0.015] border-l-2 border-transparent"
                           }`}
                         >
-                          <td className="w-9 pr-1.5 text-right select-none text-slate-600 font-mono text-[10px] py-0.5 tabular-nums">
+                          <td className="w-8 pr-1.5 text-right select-none text-slate-600 font-mono text-[10px] py-0.5 tabular-nums">
                             {line.type === "del" || line.type === "ctx" ? line.oldLine || "" : ""}
                           </td>
-                          <td className="w-9 pr-2 text-right select-none text-slate-600 font-mono text-[10px] py-0.5 tabular-nums border-r border-white/[0.06]">
+                          <td className="w-8 pr-2 text-right select-none text-slate-600 font-mono text-[10px] py-0.5 tabular-nums border-r border-white/[0.06]">
                             {line.type === "add" || line.type === "ctx" ? line.newLine || "" : ""}
                           </td>
-                          <td className="w-4 text-center select-none font-bold py-0.5 text-[10px]">
-                            {line.type === "add" ? (
-                              <span className="text-emerald-400">+</span>
-                            ) : line.type === "del" ? (
-                              <span className="text-rose-400">-</span>
-                            ) : (
-                              " "
-                            )}
-                          </td>
-                          <td className="pl-1.5 pr-3 py-0.5 whitespace-pre font-mono leading-relaxed text-[11px] min-h-[1.25rem]">
+                          <td className="pl-2.5 pr-3 py-0.5 whitespace-pre font-mono leading-relaxed text-[11px] min-h-[1.25rem]">
                             {line.text || " "}
                           </td>
                         </tr>
@@ -363,7 +354,7 @@ export function AgentActionCard({
 
     return (
       <div className="my-0.5 font-mono text-xs select-none">
-        <div className="flex items-center justify-between py-0.5 group/cmd">
+        <div className="flex items-center justify-between py-0.5 group/cmd opacity-[0.67] hover:opacity-100 transition-opacity duration-150">
           <button
             type="button"
             onClick={() => setIsExpanded((v) => !v)}

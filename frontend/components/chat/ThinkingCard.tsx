@@ -45,32 +45,32 @@ export function ThinkingCard({
   }
 
   return (
-    <div className="group/scaffold relative flex flex-col w-full my-1.5 select-none font-mono">
+    <div className="group/scaffold relative flex flex-col w-full my-1 select-none font-mono opacity-[0.67] hover:opacity-100 transition-opacity duration-150">
       <div className="flex items-center justify-between text-xs text-slate-400">
         <button
           type="button"
           onClick={() => setIsExpanded(!isExpanded)}
-          className="flex items-center gap-2 text-slate-400 hover:text-slate-200 focus-visible:outline-none transition-colors cursor-pointer group py-0.5"
+          className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 focus-visible:outline-none transition-colors cursor-pointer group/btn py-0.5 max-w-fit"
           aria-expanded={isExpanded}
         >
-          <span className="relative flex h-2 w-2 shrink-0">
+          <span className="grid size-3.5 shrink-0 place-items-center">
             {isLive ? (
-              <>
+              <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-60" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
-              </>
+              </span>
             ) : (
-              <span className="h-1.5 w-1.5 rounded-full bg-slate-500 group-hover:bg-cyan-400 transition-colors" />
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-500 group-hover/btn:bg-cyan-400 transition-colors" />
             )}
           </span>
 
-          <span className={`text-[11.5px] tracking-tight ${isLive ? "text-cyan-300 animate-pulse font-medium" : "text-slate-400 group-hover:text-slate-200"}`}>
+          <span className={`text-[11.5px] tracking-tight ${isLive ? "text-cyan-300 animate-pulse font-medium" : "text-slate-400 group-hover/btn:text-slate-200"}`}>
             {thoughtLabel}
           </span>
 
           <svg
-            className={`w-3 h-3 text-slate-500 group-hover:text-slate-300 transition-transform duration-150 shrink-0 ${
-              isExpanded ? "rotate-90" : ""
+            className={`w-3 h-3 text-slate-500 opacity-0 group-hover/scaffold:opacity-80 transition-all duration-150 shrink-0 ml-0.5 ${
+              isExpanded ? "rotate-90 opacity-80" : ""
             }`}
             fill="none"
             stroke="currentColor"
@@ -81,14 +81,14 @@ export function ThinkingCard({
         </button>
 
         {isLive && liveElapsed > 0 && (
-          <span className="text-[10.5px] font-mono tabular-nums text-slate-500">
+          <span className="text-[10px] font-mono tabular-nums text-slate-500 ml-auto">
             {liveElapsed.toFixed(1)}s
           </span>
         )}
       </div>
 
       {isExpanded && (
-        <div className="mt-1.5 w-full min-w-0 max-w-full overflow-y-auto max-h-56 border-l border-white/10 pl-3 py-1 text-slate-400 font-sans text-xs leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] break-words select-text custom-scrollbar animate-fade-in">
+        <div className="mt-1 w-full min-w-0 max-w-full overflow-y-auto max-h-56 border-l border-white/[0.08] pl-3.5 py-1 text-slate-400 font-sans text-xs leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] break-words select-text custom-scrollbar animate-fade-in">
           {text}
         </div>
       )}

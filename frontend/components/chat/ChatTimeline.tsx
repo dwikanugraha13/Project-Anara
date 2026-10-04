@@ -632,26 +632,24 @@ export default function ChatTimeline({
                           </div>
                         )}
 
-                        {/* Tool Execution Summary Pill in History (Anara Desktop Standard) */}
+                        {/* Tool Execution Summary in History (Desktop Reference Parity) */}
                         {item.toolsUsed && item.toolsUsed.length > 0 && !item.agentActionData && (
-                          <div className="flex items-center gap-2 mb-2 select-none">
-                            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-white/[0.03] hover:bg-white/[0.05] border border-white/[0.08] text-[11px] font-mono text-slate-300 transition-colors">
-                              <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                              </svg>
-                              <span>
-                                {item.toolRecordsCount ? `${item.toolRecordsCount} calls` : `${item.toolsUsed.length} tool${item.toolsUsed.length > 1 ? "s" : ""}`}
-                                <span className="text-slate-500 ml-1.5 font-normal">
-                                  ({Array.from(new Set(item.toolsUsed)).slice(0, 3).join(", ")}
-                                  {new Set(item.toolsUsed).size > 3 ? "..." : ""})
-                                </span>
+                          <div className="flex items-center gap-1.5 mb-1.5 select-none opacity-[0.67] hover:opacity-100 transition-opacity max-w-fit">
+                            <span className="grid size-3.5 shrink-0 place-items-center text-slate-500 text-[11px] font-mono">
+                              »
+                            </span>
+                            <span className="text-[11.5px] font-mono text-slate-400">
+                              Executed {item.toolsUsed.length} tool{item.toolsUsed.length > 1 ? "s" : ""}
+                              <span className="text-slate-500 ml-1">
+                                ({Array.from(new Set(item.toolsUsed)).slice(0, 3).join(", ")}
+                                {new Set(item.toolsUsed).size > 3 ? "..." : ""})
                               </span>
-                              {item.durationText && (
-                                <span className="text-[10px] text-slate-500 font-mono pl-1.5 border-l border-white/[0.08] tabular-nums">
-                                  {item.durationText}
-                                </span>
-                              )}
-                            </div>
+                            </span>
+                            {item.durationText && (
+                              <span className="text-[10px] text-slate-500 font-mono tabular-nums ml-1">
+                                · {item.durationText}
+                              </span>
+                            )}
                           </div>
                         )}
 
@@ -667,9 +665,11 @@ export default function ChatTimeline({
                                 <span>{liveToolProgress.toolName}</span>
                               </ToolRunTicker>
                             ) : (
-                              <div className="py-1.5 text-xs text-slate-400 font-mono select-none flex items-center gap-2">
-                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-                                <span>Thinking...</span>
+                              <div className="py-1 text-xs text-slate-400 font-mono select-none flex items-center gap-1.5 opacity-[0.67]">
+                                <span className="grid size-3.5 shrink-0 place-items-center">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                                </span>
+                                <span className="text-slate-400 text-[11.5px]">Thinking...</span>
                               </div>
                             )}
                           </div>
@@ -714,7 +714,7 @@ export default function ChatTimeline({
                               )}
                               {displayMarkdown ? (
                                 <div className={`relative leading-relaxed font-sans text-[13.5px] ${
-                                  item.isStreaming ? 'streaming-text-gradient streaming-arc-border rounded-lg' : 'text-slate-200'
+                                  item.isStreaming ? 'streaming-text-gradient text-slate-100' : 'text-slate-200'
                                 }`}>
                                   <AgentMarkdown
                                     content={displayMarkdown}

@@ -71,12 +71,12 @@ export function TerminalTranscript({
 
   return (
     <div className="flex flex-col gap-1.5 w-full my-1 font-mono text-[11px] select-text">
-      {/* Command prompt bar */}
+      {/* Command prompt bar (Desktop Reference Standard) */}
       {(command || exitCode !== undefined) && (
-        <div className="flex min-w-0 items-center justify-between gap-2 rounded border border-white/[0.08] bg-black/60 px-2.5 py-1.5 leading-relaxed backdrop-blur-md">
+        <div className="flex min-w-0 items-center justify-between gap-2 rounded-[0.25rem] border border-white/[0.08] bg-black/50 px-2 py-1 leading-relaxed">
           {command && (
-            <div className="min-w-0 flex-1 overflow-x-auto custom-scrollbar whitespace-pre font-mono text-slate-200">
-              <span className="text-cyan-400 select-none font-bold mr-1">$</span>
+            <div className="min-w-0 flex-1 overflow-x-auto custom-scrollbar whitespace-pre font-mono text-slate-200 text-[11px]">
+              <span className="text-cyan-400 select-none font-bold mr-1.5">$</span>
               {command}
             </div>
           )}
@@ -88,7 +88,7 @@ export function TerminalTranscript({
             )}
             {exitCode !== undefined && (
               <span
-                className={`shrink-0 rounded px-1.5 py-px text-[10px] font-bold tabular-nums border ${
+                className={`shrink-0 rounded px-1 py-px text-[9.5px] font-bold tabular-nums border ${
                   exitCode === 0
                     ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
                     : "bg-amber-500/10 text-amber-400 border-amber-500/20"
@@ -100,11 +100,11 @@ export function TerminalTranscript({
             <button
               type="button"
               onClick={handleCopy}
-              className="text-slate-500 hover:text-slate-300 p-1 rounded hover:bg-white/[0.05] transition-colors cursor-pointer"
+              className="text-slate-500 hover:text-slate-300 p-0.5 rounded hover:bg-white/[0.05] transition-colors cursor-pointer"
               title="Copy output"
             >
               {copied ? (
-                <span className="text-[10px] text-emerald-400 font-medium">Copied</span>
+                <span className="text-[9.5px] text-emerald-400 font-medium">Copied</span>
               ) : (
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />

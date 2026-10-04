@@ -60,34 +60,34 @@ export function ReadFileView({
   };
 
   return (
-    <div className="flex flex-col gap-1 w-full my-1 font-mono text-[11px] select-text">
-      {/* 1-Line Clean Header Row */}
-      <div className="flex items-center justify-between gap-2 px-2.5 py-1 rounded border border-white/[0.08] bg-black/60 hover:border-white/15 transition-all">
+    <div className="flex flex-col gap-1 w-full my-0.5 font-mono text-xs select-text">
+      {/* 1-Line Clean Scaffold Row (Desktop Reference Parity) */}
+      <div className="flex items-center justify-between py-0.5 transition-colors group/readrow opacity-[0.67] hover:opacity-100 transition-opacity duration-150">
         <button
           type="button"
           onClick={() => setIsExpanded((v) => !v)}
-          className="flex items-baseline gap-1.5 min-w-0 max-w-fit text-left cursor-pointer group/title select-none"
+          className="flex items-center gap-1.5 max-w-fit text-left cursor-pointer group/btn select-none py-0.5"
         >
-          <span className="px-1.5 py-px rounded text-[9.5px] font-bold text-cyan-300 bg-cyan-500/10 border border-cyan-400/20 shrink-0">
-            READ
+          <span className="grid size-3.5 shrink-0 place-items-center text-slate-500 group-hover/btn:text-slate-300 text-[11px] font-mono">
+            »
           </span>
-          <span className="text-slate-200 font-semibold truncate text-[11.5px] group-hover/title:text-white transition-colors">
-            {filename}
+          <span className="text-slate-400 group-hover/btn:text-slate-200 transition-colors text-[11.5px] font-mono">
+            Read <span className="font-semibold text-slate-200 group-hover/btn:text-white">{filename}</span>
           </span>
           {lineRangeLabel && (
-            <span className="px-1 py-px rounded text-[9.5px] text-cyan-300/80 bg-cyan-500/5 font-mono tabular-nums shrink-0">
+            <span className="text-[10px] text-slate-500 font-mono tabular-nums shrink-0">
               {lineRangeLabel}
             </span>
           )}
           {dirPath && <span className="text-slate-500 text-[10px] truncate hidden sm:inline">{dirPath}</span>}
-          <span className="text-slate-500 text-[10px] tabular-nums shrink-0 ml-0.5">
+          <span className="text-slate-500 text-[10px] tabular-nums shrink-0">
             ({lines.length} lines)
           </span>
 
-          {/* Affordance Caret on Right */}
+          {/* Affordance Caret on Right (Hover Only) */}
           <svg
-            className={`w-3 h-3 text-slate-500 group-hover/title:text-slate-300 transition-transform duration-150 shrink-0 ml-1 ${
-              isExpanded ? "rotate-90" : ""
+            className={`w-3 h-3 text-slate-500 opacity-0 group-hover/btn:opacity-80 transition-all duration-150 shrink-0 ml-0.5 ${
+              isExpanded ? "rotate-90 opacity-80" : ""
             }`}
             fill="none"
             stroke="currentColor"
@@ -102,16 +102,16 @@ export function ReadFileView({
             <button
               type="button"
               onClick={() => onOpenFile(filePath, filename)}
-              className="text-cyan-300 hover:text-white px-2 py-0.5 rounded text-[10px] bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/25 transition-all cursor-pointer"
+              className="text-slate-400 hover:text-cyan-300 px-1 py-0.5 rounded text-[10.5px] transition-colors cursor-pointer"
               title="Open file in IDE"
             >
-              View in Editor ↗
+              ↗
             </button>
           )}
           <button
             type="button"
             onClick={handleCopy}
-            className="text-slate-400 hover:text-white p-1 rounded hover:bg-white/[0.05] transition-colors cursor-pointer text-[10.5px]"
+            className="text-slate-500 hover:text-slate-300 p-0.5 rounded hover:bg-white/[0.05] transition-colors cursor-pointer text-[10px]"
             title="Copy content"
           >
             {copied ? <span className="text-[10px] text-emerald-400 font-medium">Copied</span> : "Copy"}
@@ -121,7 +121,7 @@ export function ReadFileView({
 
       {/* Expanded Table Gutter Surface */}
       {isExpanded && (
-        <div className="rounded border border-white/[0.08] bg-black/50 max-h-[300px] overflow-x-auto overflow-y-auto overscroll-x-contain overscroll-y-auto custom-scrollbar shadow-[0_4px_16px_rgba(0,0,0,0.4)] animate-fade-in">
+        <div className="rounded-lg border border-white/[0.08] bg-black/60 max-h-[300px] overflow-x-auto overflow-y-auto overscroll-x-contain overscroll-y-auto custom-scrollbar shadow-[0_4px_16px_rgba(0,0,0,0.4)] animate-fade-in">
           <table className="w-full border-collapse">
             <tbody>
               {lines.map((l, idx) => (

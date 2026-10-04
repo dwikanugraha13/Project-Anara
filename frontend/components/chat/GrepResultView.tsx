@@ -9,12 +9,15 @@ export function GrepResultView({
   matches,
   rawResult,
   onOpenFile,
+  defaultExpanded = false,
 }: {
   pattern?: string;
   matches?: Array<{ file: string; line_number: number; line: string }>;
   rawResult?: string;
   onOpenFile?: (filePath: string, fileName?: string, lineNumber?: number) => void;
+  defaultExpanded?: boolean;
 }) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [copied, setCopied] = useState(false);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -65,68 +68,85 @@ export function GrepResultView({
   const totalHits = parsedMatches.length;
 
   return (
-    <div className="flex flex-col gap-1 w-full my-1 font-mono text-[11px] select-text">
-      {/* Header bar */}
-      <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-t border border-b-0 border-white/[0.08] bg-black/60">
-        <div className="flex items-baseline gap-1.5 min-w-0">
-          <span className="px-1.5 py-px rounded text-[9.5px] font-bold text-purple-300 bg-purple-500/10 border border-purple-400/20">
-            GREP
-          </span>
-          {pattern && (
-            <span className="text-slate-200 font-semibold truncate text-[11px]">
-              &quot;{pattern}&quot;
-            </span>
-          )}
-          <span className="text-slate-400 text-[10.5px] tabular-nums shrink-0 ml-1">
-            ({totalHits} match{totalHits === 1 ? "" : "es"} across {groupedByFile.length} file{groupedByFile.length === 1 ? "" : "s"})
-          </span>
-        </div>
-
+    <div className="flex flex-col gap-1 w-full my-0.5 font-mono text-xs select-text">
+      {/* 1-Line Clean Scaffold Row (Desktop Reference Parity) */}
+      <div className="flex items-center justify-between py-0.5 transition-colors group/greprow opacity-[0.67] hover:opacity-100 transition-opacity duration-150">
         <button
           type="button"
-          onClick={handleCopy}
-          className="text-slate-400 hover:text-white p-1 rounded hover:bg-white/[0.05] transition-colors cursor-pointer text-[10.5px]"
-          title="Copy results"
+          onClick={() => setIsExpanded((v) => !v)}
+          className="flex items-center gap-1.5 max-w-fit text-left cursor-pointer group/btn select-none py-0.5"
         >
-          {copied ? <span className="text-[10px] text-emerald-400 font-medium">Copied</span> : "Copy"}
+          <span className="grid size-3.5 shrink-0 place-items-center text-slate-500 group-hover/btn:text-slate-300 text-[11px] font-mono">
+            »
+          </span>
+          <span className="text-slate-400 group-hover/btn:text-slate-200 transition-colors text-[11.5px] font-mono">
+            Searched {pattern ? <span className="font-semibold text-slate-200 group-hover/btn:text-white">&quot;{pattern}&quot;</span> : "codebase"}
+          </span>
+          <span className="text-slate-500 text-[10px] tabular-nums shrink-0 ml-0.5">
+            ({totalHits} match{totalHits === 1 ? "" : "es"} across {groupedByFile.length} file{groupedByFile.length === 1 ? "" : "s"})
+          </span>
+
+          {/* Affordance Caret on Right (Hover Only) */}
+          <svg
+            className={`w-3 h-3 text-slate-500 opacity-0 group-hover/btn:opacity-80 transition-all duration-150 shrink-0 ml-0.5 ${
+              isExpanded ? "rotate-90 opacity-80" : ""
+            }`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
         </button>
+
+        <div className="flex items-center gap-1.5 shrink-0 ml-auto select-none">
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="text-slate-500 hover:text-slate-300 p-0.5 rounded hover:bg-white/[0.05] transition-colors cursor-pointer text-[10px]"
+            title="Copy results"
+          >
+            {copied ? <span className="text-[10px] text-emerald-400 font-medium">Copied</span> : "Copy"}
+          </button>
+        </div>
       </div>
 
-      {/* Grouped results body */}
-      <div className="rounded-b border border-white/[0.08] bg-black/50 p-2 max-h-[300px] overflow-x-auto overflow-y-auto custom-scrollbar shadow-[0_4px_16px_rgba(0,0,0,0.4)] space-y-2">
-        {groupedByFile.length > 0 ? (
-          groupedByFile.map(({ file, hits }, fIdx) => {
-            const filename = file.split(/[/\\]/).pop() || file;
-            const lastSlash = Math.max(file.lastIndexOf("/"), file.lastIndexOf("\\"));
-            const dir = lastSlash !== -1 ? file.slice(0, lastSlash + 1) : "";
+      {/* Grouped results body (Expanded Surface) */}
+      {isExpanded && (
+        <div className="rounded-lg border border-white/[0.08] bg-black/60 p-2.5 max-h-[300px] overflow-x-auto overflow-y-auto overscroll-x-contain overscroll-y-auto custom-scrollbar shadow-[0_4px_16px_rgba(0,0,0,0.4)] space-y-2 animate-fade-in">
+          {groupedByFile.length > 0 ? (
+            groupedByFile.map(({ file, hits }, fIdx) => {
+              const filename = file.split(/[/\\]/).pop() || file;
+              const lastSlash = Math.max(file.lastIndexOf("/"), file.lastIndexOf("\\"));
+              const dir = lastSlash !== -1 ? file.slice(0, lastSlash + 1) : "";
 
-            return (
-              <div key={fIdx} className="rounded border border-white/[0.04] bg-white/[0.015] p-2">
-                <div className="flex items-center justify-between pb-1 mb-1 border-b border-white/[0.04]">
-                  <div
-                    onClick={() => onOpenFile?.(file, filename)}
-                    className="flex items-baseline gap-1 truncate cursor-pointer group/title"
-                  >
-                    {dir && <span className="text-slate-500 text-[10px] truncate">{dir}</span>}
-                    <span className="text-slate-200 font-medium text-[11px] group-hover/title:text-cyan-300 transition-colors truncate">
-                      {filename}
-                    </span>
-                    <span className="text-slate-500 text-[9.5px]">({hits.length})</span>
+              return (
+                <div key={fIdx} className="border-t border-white/[0.06] first:border-t-0 pt-1.5 first:pt-0">
+                  <div className="flex items-center justify-between pb-1">
+                    <div
+                      onClick={() => onOpenFile?.(file, filename)}
+                      className="flex items-baseline gap-1 truncate cursor-pointer group/title"
+                    >
+                      {dir && <span className="text-slate-500 text-[10px] truncate">{dir}</span>}
+                      <span className="text-slate-200 font-medium text-[11px] group-hover/title:text-cyan-300 transition-colors truncate">
+                        {filename}
+                      </span>
+                      <span className="text-slate-500 text-[9.5px]">({hits.length})</span>
+                    </div>
+
+                    {onOpenFile && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenFile(file, filename)}
+                        className="text-slate-500 hover:text-cyan-300 text-[10px] ml-2 shrink-0 cursor-pointer"
+                        title="Open file"
+                      >
+                        ↗
+                      </button>
+                    )}
                   </div>
 
-                  {onOpenFile && (
-                    <button
-                      type="button"
-                      onClick={() => onOpenFile(file, filename)}
-                      className="text-slate-500 hover:text-cyan-300 text-[10px] ml-2 shrink-0 cursor-pointer"
-                      title="Open file"
-                    >
-                      ↗
-                    </button>
-                  )}
-                </div>
-
-                <div className="space-y-0.5">
+                  <div className="space-y-0.5">
                   {hits.map((h, hIdx) => {
                     const lineText = h.line;
                     return (
@@ -170,6 +190,7 @@ export function GrepResultView({
           </pre>
         )}
       </div>
-    </div>
-  );
+    )}
+  </div>
+);
 }

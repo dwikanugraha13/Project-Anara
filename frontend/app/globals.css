@@ -376,22 +376,22 @@ button:not([role="tab"]):not([data-no-scale]):active,
   color: #fde68a;
 }
 
-/* Streaming live caret */
+/* Streaming live caret (Sleek 2px vertical beam - Desktop Standard) */
 @keyframes caret-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.3; transform: scale(0.92); }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
 }
 
 .streaming-caret {
   display: inline-block;
-  width: 7px;
-  height: 14px;
-  margin-left: 3px;
-  vertical-align: middle;
-  background-color: #22d3ee;
-  border-radius: 2px;
-  box-shadow: 0 0 8px #22d3ee;
-  animation: caret-pulse 0.8s ease-in-out infinite;
+  width: 2px !important;
+  height: 1.15em !important;
+  margin-left: 2px !important;
+  vertical-align: text-bottom !important;
+  background-color: #22d3ee !important;
+  border-radius: 1px !important;
+  box-shadow: 0 0 6px rgba(34, 211, 238, 0.75) !important;
+  animation: caret-pulse 0.8s ease-in-out infinite !important;
 }
 
 /* Avatar halo ring */
@@ -669,33 +669,7 @@ button:not([role="tab"]):not([data-no-scale]):active,
 }
 
 .streaming-arc-border::before {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  padding: 1px;
-  overflow: hidden;
-  background: linear-gradient(
-    160deg,
-    transparent 0%,
-    transparent 18.75%,
-    rgba(34, 211, 238, 0.35) 25%,
-    rgba(139, 92, 246, 0.25) 31.25%,
-    transparent 43.75%,
-    transparent 50%,
-    transparent 68.75%,
-    rgba(34, 211, 238, 0.2) 75%,
-    rgba(139, 92, 246, 0.15) 81.25%,
-    transparent 93.75%,
-    transparent 100%
-  );
-  background-size: 200% 200%;
-  animation: anara-stream-arc 2.2s linear infinite;
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-  z-index: 1;
+  display: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

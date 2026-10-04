@@ -102,6 +102,11 @@ export function stripDiffFileHeaders(diff: string): string {
   return lines.slice(start).join("\n");
 }
 
+// ── CANONICAL SCAFFOLDING CONSTANTS (Desktop Standard Parity) ──────────────
+export const SCAFFOLD_ROW_CLS = "opacity-[0.67] hover:opacity-100 transition-opacity duration-150";
+export const SCAFFOLD_LEADING_CLS = "grid size-3.5 shrink-0 place-items-center";
+export const SCAFFOLD_CARET_CLS = "w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-80 transition-all duration-150 shrink-0 ml-0.5";
+
 export const FILE_EDIT_TOOLS = new Set([
   "patch",
   "write_file",
@@ -120,6 +125,7 @@ export const SHELL_TOOLS = new Set([
   "command",
   "cli",
   "powershell",
+  "cmd",
 ]);
 export const SEARCH_TOOLS = new Set([
   "search_files",

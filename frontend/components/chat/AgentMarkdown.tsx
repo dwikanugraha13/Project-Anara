@@ -485,7 +485,7 @@ function renderInlineText(text: string, isLast?: boolean, isStreaming?: boolean)
       elements.push(
         <code
           key={match.index}
-          className="px-1.5 py-0.5 rounded-md bg-white/[0.08] text-cyan-200 border border-white/10 font-mono text-[11.5px] select-all"
+          className="px-1.5 py-0.5 rounded-[0.25rem] bg-white/[0.05] text-cyan-300/90 border border-white/[0.08] font-mono text-[11.5px] select-all tracking-tight"
         >
           {codeText}
         </code>
@@ -872,7 +872,7 @@ function AgentMarkdown({
             return (
               <blockquote
                 key={`quote-${idx}`}
-                className="my-3 pl-3.5 py-1 border-l-2 border-cyan-400/70 bg-cyan-950/20 rounded-r-lg text-slate-300 italic text-[13px]"
+                className="my-2 pl-3.5 py-0.5 border-l-2 border-cyan-400/60 text-slate-300/90 italic text-[13px]"
               >
                 {renderInlineText(block.content, isLastBlock, isStreaming)}
               </blockquote>
