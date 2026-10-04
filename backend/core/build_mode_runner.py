@@ -261,6 +261,11 @@ async def execute_build_mode_core(
                 final_reply = f"Completed action '{resolved_task}'."
         else:
             final_reply = cleaned
+    elif isinstance(reply, dict) and reply.get("intercepted"):
+        # Tool was intercepted by safety gate — NEVER leak raw Python dict to user chat
+        cmd = reply.get("cmd_preview") or reply.get("tool_name") or "action"
+        reason = reply.get("danger_reason") or reply.get("reason") or "Requires manual user approval"
+        final_reply = f"🛡️ **Action Intercepted for Approval:**\nTool `{reply.get('tool_name')}` with command `{cmd}` paused for approval ({reason})."
     else:
         final_reply = str(reply) if reply else f"Completed action '{resolved_task}'."
 

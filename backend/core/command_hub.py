@@ -682,6 +682,100 @@ async def _handle_cmd_approvals(ctx: UniversalCommandContext) -> UniversalComman
     )
 
 
+@command_hub.register(
+    name="sessions",
+    aliases=["session"],
+    description="List active and recent conversation sessions",
+    usage="/sessions"
+)
+async def _handle_cmd_sessions(ctx: UniversalCommandContext) -> UniversalCommandResponse:
+    from memory import memory_engine
+    sessions = memory_engine.get_sessions(limit=10, include_archived=False)
+    if not sessions:
+        return UniversalCommandResponse(text="📋 <b>No conversation sessions found.</b>")
+
+    cur_sid = ctx.session_id or 0
+    lines = [
+        "📋 <b>CONVERSATION SESSIONS</b>",
+        f"Active Channel: <code>{ctx.channel.upper()}</code>",
+        f"Current Session: <b>#{cur_sid}</b>\n"
+    ]
+
+    buttons = []
+    for s in sessions[:8]:
+        sid = s["id"]
+        title = s.get("title") or "Chat Session"
+        m_count = s.get("message_count", 0)
+        is_cur = (sid == cur_sid)
+        cur_marker = " <i>(Active)</i>" if is_cur else ""
+        lines.append(f"• <b>#{sid}</b>{cur_marker}: {html.escape(title[:45])} (<i>{m_count} msgs</i>)")
+        if not is_cur:
+            buttons.append([
+                CommandButton(
+                    text=f"🔄 #{sid} {title[:20]}",
+                    callback_data=f"resume:{sid}"
+                )
+            ])
+
+    lines.append("\n<i>To switch or resume a session, use:</i>\n<code>/resume &lt;id or title&gt;</code>\n<i>(Example: <code>/resume 12</code>)</i>")
+    return UniversalCommandResponse(text="\n".join(lines), buttons=buttons if buttons else None)
+
+
+@command_hub.register(
+    name="resume",
+    description="Resume and switch active conversation session by ID or title",
+    usage="/resume [session_id|title_keyword]"
+)
+async def _handle_cmd_resume(ctx: UniversalCommandContext) -> UniversalCommandResponse:
+    clean_arg = ctx.args.strip()
+    if not clean_arg:
+        return await _handle_cmd_sessions(ctx)
+
+    from memory import memory_engine
+    sessions = memory_engine.get_sessions(limit=50, include_archived=False)
+
+    target_sess = None
+    if clean_arg.isdigit():
+        target_id = int(clean_arg)
+        target_sess = next((s for s in sessions if s["id"] == target_id), None)
+        if not target_sess:
+            target_sess = memory_engine.get_session(target_id)
+    else:
+        q = clean_arg.lower()
+        target_sess = next(
+            (s for s in sessions if q in (s.get("title") or "").lower() or q in (s.get("session_key") or "").lower()),
+            None
+        )
+
+    if not target_sess:
+        escaped_arg = html.escape(clean_arg)
+        return UniversalCommandResponse(
+            text=f"❌ <b>Session Not Found:</b>\nNo session matching <code>{escaped_arg}</code>.\n\nType <code>/sessions</code> to view available sessions."
+        )
+
+    target_id = target_sess["id"]
+    target_title = target_sess.get("title") or f"Session #{target_id}"
+
+    # Set as active session for this channel & user
+    try:
+        from core.channel_adapter import set_channel_active_session
+        set_channel_active_session(ctx.channel, ctx.channel_id, target_id)
+    except Exception:
+        pass
+
+    ctx.session_id = target_id
+    m_count = target_sess.get("message_count", 0)
+
+    text = (
+        f"🔄 <b>Session Resumed!</b>\n\n"
+        f"• <b>Session</b>: #{target_id} — <b>{html.escape(target_title)}</b>\n"
+        f"• <b>Channel</b>: <code>{ctx.channel.upper()}</code>\n"
+        f"• <b>History</b>: {m_count} messages loaded\n\n"
+        "<i>Context successfully loaded. You can continue the conversation directly!</i>"
+    )
+    return UniversalCommandResponse(text=text)
+
+
 
 # ── VOICE HELPERS & PERSISTENCE ──
 

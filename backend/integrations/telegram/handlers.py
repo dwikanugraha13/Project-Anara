@@ -230,6 +230,36 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                 )
             return
 
+        # Case D2: Resume Session (/resume)
+        if cb_data.startswith("resume:"):
+            target_sid_str = cb_data.split(":", 1)[1]
+            try:
+                target_sid = int(target_sid_str)
+                from core.channel_adapter import set_channel_active_session
+                set_channel_active_session("telegram", chat_id, target_sid)
+                from memory import memory_engine
+                target_sess = memory_engine.get_session(target_sid)
+                t_title = str(target_sess.get("title") or f"Session #{target_sid}") if target_sess else f"Session #{target_sid}"
+                m_count = target_sess.get("message_count", 0) if target_sess else 0
+                await answer_telegram_callback_query(cb_id, text=f"Resumed session #{target_sid}")
+                if message_id:
+                    confirm_text = (
+                        f"🔄 <b>Session Resumed!</b>\n\n"
+                        f"• <b>Session</b>: #{target_sid} — <b>{html.escape(t_title)}</b>\n"
+                        f"• <b>Channel</b>: <code>TELEGRAM</code>\n"
+                        f"• <b>History</b>: {m_count} messages loaded\n\n"
+                        f"<i>Context successfully loaded. Send a message to continue this conversation!</i>"
+                    )
+                    await edit_telegram_message(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        text=confirm_text,
+                        reply_markup=None
+                    )
+            except Exception as e:
+                await answer_telegram_callback_query(cb_id, text=f"Error: {e}")
+            return
+
         # Case E: Interactive Question Wizard Answer
         if cb_data.startswith("qans:"):
             parts = cb_data.split(":")

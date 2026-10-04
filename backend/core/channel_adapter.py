@@ -133,12 +133,41 @@ class ChannelResponse(BaseModel):
     is_command: bool = False
 
 
+_CHANNEL_ACTIVE_SESSION: Dict[str, int] = {}
+
+
+def set_channel_active_session(channel: str, channel_id: str, session_id: int):
+    """Sets active session override for a channel / chat (e.g. from /resume)."""
+    key = f"{channel}_{str(channel_id).strip()}"
+    _CHANNEL_ACTIVE_SESSION[key] = session_id
+    try:
+        from core.agent import anara_agent
+        anara_agent.set_active_session_id(session_id)
+    except Exception:
+        pass
+
+
+def get_channel_active_session(channel: str, channel_id: str) -> Optional[int]:
+    key = f"{channel}_{str(channel_id).strip()}"
+    return _CHANNEL_ACTIVE_SESSION.get(key)
+
+
 def get_or_create_channel_session(req: ChannelRequest) -> int:
     """Binds an incoming channel request to an isolated persistent chat session (Anara Standard)."""
     if req.session_id:
         return req.session_id
+
     speaker = req.sender_name or "User"
     cid = str(req.channel_id or "default").strip()
+
+    # Check explicit runtime resume/switch mapping first
+    active_key = f"{req.channel}_{cid}"
+    if active_key in _CHANNEL_ACTIVE_SESSION:
+        bound_id = _CHANNEL_ACTIVE_SESSION[active_key]
+        sess = memory_engine.get_session(bound_id)
+        if sess and not sess.get("is_archived"):
+            return sess["id"]
+
     canonical_key = f"channel_{req.channel}_{cid}"
 
     # 1. Direct indexed resolution via canonical session_key (immune to title renames)
