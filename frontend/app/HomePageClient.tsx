@@ -31,6 +31,7 @@ import {
   clearInFlightSnapshot,
   mergeInFlightWithTranscript,
 } from "@/lib/inflightJournal";
+import { playAnaraCompletionChime, playAnaraAlertChime } from "@/lib/anaraSoundSynthesizer";
 
 export type TranscriptEntry = TranscriptItem;
 
@@ -497,6 +498,7 @@ export default function HomePageClient({
     clearInFlightSnapshot(activeSessionId);
     accumulatedAiTextRef.current = "";
     setActiveThinkingText(null);
+    playAnaraCompletionChime();
     // Brief 300ms buffer after speech ends before unpausing microphone
     setTimeout(() => {
       setAssistantStatus("idle");
@@ -689,6 +691,7 @@ export default function HomePageClient({
       // Flush any pending streaming content first
       streamFlushNow();
       streamReset();
+      playAnaraAlertChime();
 
       setTranscript((prev) => [
         ...prev,

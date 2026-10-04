@@ -22,6 +22,7 @@ import type { WorkspaceTreeData, GitStatusData, ChatSession } from "@/components
 import { CodeStudioHeader } from "./CodeStudioHeader";
 import { CodeStudioWorkspace } from "./CodeStudioWorkspace";
 import { useCodeStudioLayout } from "./useCodeStudioLayout";
+import { playAnaraCompletionChime, playAnaraAlertChime } from "@/lib/anaraSoundSynthesizer";
 
 const AnaraBrain = lazy(() => import("@/components/brain/AnaraBrain"));
 const AgentStatusBar = lazy(() => import("@/components/statusbar/AgentStatusBar"));
@@ -777,6 +778,7 @@ export default function CodePageClient({
 
       cStreamFlushNow();
       cStreamReset();
+      playAnaraAlertChime();
 
       setTranscript((prev) => [
         ...prev,
@@ -815,6 +817,7 @@ export default function CodePageClient({
     onTurnComplete: () => {
       setAssistantStatus("idle");
       setActiveThinkingText(null);
+      playAnaraCompletionChime();
       loadGitStatus(activeSessionId);
     },
     onSessionSwitched: (payload) => {

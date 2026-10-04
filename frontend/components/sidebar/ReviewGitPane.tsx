@@ -38,8 +38,39 @@ export default function ReviewGitPane({
   const [isBusy, setIsBusy] = useState(false);
   const [confirmRevertPath, setConfirmRevertPath] = useState<string | null>(null);
   const [isRevertingAll, setIsRevertingAll] = useState(false);
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
+  const [diffText, setDiffText] = useState<string | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
 
   const backendUrl = typeof window !== "undefined" ? getBackendUrl() : "http://localhost:8000";
+
+  const fetchDiffForFile = useCallback(
+    async (filePath: string) => {
+      if (selectedFilePath === filePath && diffText !== null) {
+        setSelectedFilePath(null);
+        setDiffText(null);
+        return;
+      }
+      setSelectedFilePath(filePath);
+      setDiffLoading(true);
+      try {
+        const res = await fetch(
+          `${backendUrl}/api/agent/git/file-diff?path=${encodeURIComponent(filePath)}&session_id=${sessionId || ""}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setDiffText(data.diff || "");
+        } else {
+          setDiffText("Failed to load diff.");
+        }
+      } catch {
+        setDiffText("Error loading diff.");
+      } finally {
+        setDiffLoading(false);
+      }
+    },
+    [backendUrl, sessionId, selectedFilePath, diffText]
+  );
 
   // Stage single or all files
   const handleStage = async (path?: string) => {
@@ -218,7 +249,7 @@ export default function ReviewGitPane({
           </div>
         ) : (
           files.map((file) => {
-            const isSelected = activeFilePath === file.path;
+            const isSelected = selectedFilePath === file.path || activeFilePath === file.path;
             const isUntracked = file.status === "??" || file.status === "U";
             const isModified = file.status.includes("M");
             const isDeleted = file.status.includes("D");
@@ -230,7 +261,10 @@ export default function ReviewGitPane({
                 className={`group flex items-center justify-between px-2 py-1.5 rounded-lg transition-colors cursor-pointer ${
                   isSelected ? "bg-white/10 text-white" : "hover:bg-white/[0.04] text-slate-300"
                 }`}
-                onClick={() => onSelectDiffFile?.(file.path)}
+                onClick={() => {
+                  fetchDiffForFile(file.path);
+                  onSelectDiffFile?.(file.path);
+                }}
               >
                 <div className="flex items-center gap-2 min-w-0">
                   {/* Status Badge */}
@@ -291,6 +325,59 @@ export default function ReviewGitPane({
           })
         )}
       </div>
+
+      {/* ── Inline Diff Viewer (Desktop Reference Standard) ── */}
+      {selectedFilePath && (
+        <div className="border-t border-white/[0.08] bg-black/60 flex flex-col max-h-[220px] shrink-0 animate-fade-in select-text">
+          <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/[0.06] bg-white/[0.02] text-xs select-none">
+            <span className="font-semibold text-white truncate text-[11px]">
+              Diff: {selectedFilePath.split("/").pop()}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedFilePath(null);
+                setDiffText(null);
+              }}
+              className="text-slate-500 hover:text-white p-0.5 rounded hover:bg-white/10 transition-colors cursor-pointer"
+              title="Close diff view"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="flex-1 overflow-x-auto overflow-y-auto overscroll-x-contain overscroll-y-auto p-2 font-mono text-[10.5px] leading-relaxed custom-scrollbar">
+            {diffLoading ? (
+              <div className="text-slate-500 italic py-2">Loading git diff...</div>
+            ) : diffText ? (
+              <pre className="whitespace-pre">
+                {diffText.split("\n").map((line, idx) => {
+                  const isAdd = line.startsWith("+") && !line.startsWith("+++");
+                  const isDel = line.startsWith("-") && !line.startsWith("---");
+                  const isHunk = line.startsWith("@@");
+                  return (
+                    <div
+                      key={idx}
+                      className={`px-1 rounded-xs ${
+                        isAdd
+                          ? "bg-emerald-500/10 text-emerald-300 border-l-2 border-emerald-400"
+                          : isDel
+                          ? "bg-rose-500/10 text-rose-300 border-l-2 border-rose-400"
+                          : isHunk
+                          ? "text-cyan-400/80 bg-cyan-950/20 py-0.5"
+                          : "text-slate-400"
+                      }`}
+                    >
+                      {line || " "}
+                    </div>
+                  );
+                })}
+              </pre>
+            ) : (
+              <div className="text-slate-500 italic py-2">No differences against HEAD.</div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Review Ship Bar: Commit / Push / PR Actions ── */}
       <ReviewShipBar
