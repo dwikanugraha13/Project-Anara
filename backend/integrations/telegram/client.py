@@ -232,6 +232,7 @@ async def send_telegram_message(
     chat_id: Optional[str] = None,
     parse_mode: str = "HTML",
     reply_markup: Optional[Dict[str, Any]] = None,
+    reply_to_message_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Sends a text message with semantic chunking, rich constructs, tag balancing, and auto-fallbacks."""
     token = get_stored_telegram_token()
@@ -307,6 +308,8 @@ async def send_telegram_message(
     }
     if reply_markup:
         payload["reply_markup"] = reply_markup
+    if reply_to_message_id:
+        payload["reply_parameters"] = {"message_id": reply_to_message_id}
 
     code, data = await _telegram_api_post("sendMessage", payload, token, timeout=15.0)
     if code == 200 and data.get("ok"):

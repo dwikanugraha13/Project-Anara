@@ -368,6 +368,7 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
         sender_name = (sender.get("first_name", "") + " " + sender.get("last_name", "")).strip() or sender.get("username") or "User"
         user_id = str(sender.get("id", "telegram_user"))
         raw_text = (msg.get("text") or msg.get("caption") or "").strip()
+        in_msg_id = msg.get("message_id")
 
         incoming_attachments = []
         doc = msg.get("document")
@@ -692,7 +693,13 @@ async def process_incoming_telegram_update(u: Dict[str, Any]):
                 )
                 mark_attempting(obl_id)
                 try:
-                    await send_telegram_message(text=res.text, chat_id=chat_id, reply_markup=res.reply_markup)
+                    target_reply_id = in_msg_id if is_command_or_ui else None
+                    await send_telegram_message(
+                        text=res.text,
+                        chat_id=chat_id,
+                        reply_markup=res.reply_markup,
+                        reply_to_message_id=target_reply_id
+                    )
                     mark_delivered(obl_id)
                 except Exception as s_err:
                     mark_failed(obl_id, str(s_err))

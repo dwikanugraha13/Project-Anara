@@ -716,8 +716,11 @@ async def _handle_cmd_sessions(ctx: UniversalCommandContext) -> UniversalCommand
     bound_sid = get_channel_active_session(ctx.channel, ctx.channel_id)
     cur_sid = bound_sid if bound_sid is not None else (ctx.session_id or 0)
 
-    header = "📋 <b>Named Sessions</b>" if not is_all else "📋 <b>All Sessions</b>"
+    header = "📋 <b>Named Sessions</b>" if not (is_all or is_full) else "📋 <b>Sessions</b>"
     lines = [header, ""]
+
+    if is_all:
+        lines.append("<i>Note: all (cross-chat listing) requires a configured admin; showing this chat's sessions only.</i>\n")
 
     buttons = []
     for idx, s in enumerate(sessions, 1):
@@ -731,11 +734,7 @@ async def _handle_cmd_sessions(ctx: UniversalCommandContext) -> UniversalCommand
             raw_snippet = "p"
         snippet = raw_snippet[:35] + ("..." if len(raw_snippet) > 35 else "")
 
-        if is_full:
-            m_count = s.get("message_count", 0)
-            lines.append(f"{idx}. {html.escape(title)}{cur_marker} — <code>{skey}</code> — <i>_{html.escape(snippet)}_</i> ({m_count} msgs)")
-        else:
-            lines.append(f"{idx}. {html.escape(title)}{cur_marker} — <code>{skey}</code> — <i>_{html.escape(snippet)}_</i>")
+        lines.append(f"{idx}. {html.escape(title)}{cur_marker} — <code>{skey}</code> — <i>_{html.escape(snippet)}_</i>")
 
         if not is_cur and idx <= 5:
             buttons.append([
