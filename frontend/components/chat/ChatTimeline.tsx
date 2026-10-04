@@ -119,7 +119,7 @@ export default function ChatTimeline({
     const el = scrollContainerRef.current;
     if (!el) return;
     const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const near = distanceToBottom < 100;
+    const near = distanceToBottom < 150;
     setIsNearBottom(near);
     if (near) {
       isFollowingRef.current = true;
@@ -772,14 +772,14 @@ export default function ChatTimeline({
         </div>
       </div>
 
-      {/* Floating Circular Scroll Down Button with Unread Pulse (Anara Desktop Standard) */}
+      {/* Floating Circular Scroll Down Button with Unread Pulse (Clean Bottom-Right Positioning) */}
       {!isNearBottom && (
         <button
           type="button"
           onClick={() => scrollToBottom(true)}
-          style={{ bottom: `${Math.max(16, (footerDockHeight || 0) + 16)}px` }}
-          className="absolute left-1/2 -translate-x-1/2 z-40 px-3 py-1.5 rounded-full bg-[#060913]/95 hover:bg-[#0c1328] border border-white/20 hover:border-cyan-400/50 text-slate-300 hover:text-white flex items-center gap-2 shadow-[0_8px_32px_rgba(0,0,0,0.85)] backdrop-blur-xl cursor-pointer transition-all active:scale-95 animate-fade-in group font-mono text-xs"
-          title="Scroll to bottom"
+          style={{ bottom: `${Math.max(12, (footerDockHeight || 0) + 12)}px` }}
+          className="absolute right-6 z-40 px-3 py-1.5 rounded-full bg-[#060913]/95 hover:bg-[#0c1328] border border-white/20 hover:border-cyan-400/50 text-slate-300 hover:text-white flex items-center gap-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.85)] backdrop-blur-xl cursor-pointer transition-all active:scale-95 animate-fade-in group font-mono text-[11px]"
+          title="Scroll to latest message"
           aria-label="Scroll to bottom"
         >
           {hasUnread && (
@@ -792,8 +792,8 @@ export default function ChatTimeline({
               )}
             </span>
           )}
-          <span>Jump to latest</span>
-          <svg className="w-3.5 h-3.5 text-slate-400 group-hover:text-cyan-300 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <span>Latest</span>
+          <svg className="w-3 h-3 text-slate-400 group-hover:text-cyan-300 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
           </svg>
         </button>

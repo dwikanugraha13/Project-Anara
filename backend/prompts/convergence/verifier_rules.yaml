@@ -23,6 +23,14 @@ non_code_extensions:
   - ".svg"
   - ".ico"
   - ".pdf"
+  - ".html"
+  - ".htm"
+  - ".css"
+  - ".scss"
+  - ".json"
+  - ".yaml"
+  - ".yml"
+  - ".xml"
 
 non_code_filenames:
   - "license"

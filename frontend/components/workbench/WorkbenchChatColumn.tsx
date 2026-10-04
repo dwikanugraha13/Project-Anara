@@ -179,7 +179,7 @@ export function WorkbenchChatColumn({
             showInteractionModeToggle={true}
             inputMessage={inputMessage}
             setInputMessage={setInputMessage}
-            onSend={(text: string, mode?: "plan" | "build") => onSendText?.(text, mode || "build")}
+            onSend={(text: string, mode?: "plan" | "build") => onSendText?.(text, mode)}
             onSteer={onSteer}
             agentMode={agentMode}
             setAgentMode={setAgentMode}

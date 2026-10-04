@@ -426,7 +426,7 @@ function CodeBlock({
                     </span>
                   ))}
                   {isStreamingLeaf && isLastLine && (
-                    <span className="inline-block w-2 h-3.5 bg-cyan-400 rounded-xs animate-pulse ml-1 align-middle shadow-[0_0_8px_rgba(34,211,238,0.7)]" />
+                    <span className="streaming-caret inline-block w-[2px] h-[1.15em] bg-cyan-400 animate-pulse ml-0.5 align-middle shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
                   )}
                 </span>
               </div>
@@ -527,7 +527,7 @@ function renderInlineText(text: string, isLast?: boolean, isStreaming?: boolean)
     <>
       {elements}
       {isLast && isStreaming && (
-        <span className="inline-block w-2 h-4 bg-cyan-400 rounded-xs animate-pulse ml-1 align-text-bottom shadow-[0_0_8px_rgba(34,211,238,0.7)]" />
+        <span className="streaming-caret inline-block w-[2px] h-[1.15em] bg-cyan-400 animate-pulse ml-0.5 align-text-bottom shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
       )}
     </>
   );

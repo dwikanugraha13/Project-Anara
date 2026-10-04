@@ -152,10 +152,18 @@ class AgentRunner:
                     )
                     logger.info(f"[Agent Mode] Action #{active_pending.action_id} rejected by user.")
 
+            # Sync approval mode from client request if provided
+            incoming_approval = data.get("approval_mode")
+            if incoming_approval and str(incoming_approval).strip().lower() in ("manual", "smart", "off", "plan", "auto"):
+                from config import save_config
+                save_config({"approvals.mode": str(incoming_approval).strip().lower()})
+
             if is_approved:
                 agent_mode = "build"
                 logger.info("[Agent Mode] Pending action approved -> Switch to BUILD MODE")
             elif req_agent_mode == "plan" or session_mode == "plan":
+                agent_mode = "plan"
+            elif incoming_approval in ("manual", "plan"):
                 agent_mode = "plan"
             else:
                 # Full Autonomous Standard: Default to build mode with full tool capabilities.

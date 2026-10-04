@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { getBackendUrl } from "@/lib/apiClient";
 import ContextUsagePopover, { ContextUsageData } from "./ContextUsagePopover";
 import ApprovalModePopover, { ApprovalMode } from "./ApprovalModePopover";
 
@@ -61,13 +62,16 @@ export default function AgentStatusBar({
       }
     } catch {}
 
-    fetch("/api/approvals/mode")
+    const backendUrl = getBackendUrl();
+    fetch(`${backendUrl}/api/approvals/mode`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data?.mode && (data.mode === "manual" || data.mode === "smart" || data.mode === "off")) {
-          setApprovalMode(data.mode);
+        if (data?.mode) {
+          const raw = data.mode.toLowerCase();
+          const mapped: ApprovalMode = raw === "manual" || raw === "plan" ? "manual" : raw === "off" || raw === "yolo" ? "off" : "smart";
+          setApprovalMode(mapped);
           try {
-            localStorage.setItem("anara_approval_mode", data.mode);
+            localStorage.setItem("anara_approval_mode", mapped);
           } catch {}
         }
       })
@@ -79,7 +83,8 @@ export default function AgentStatusBar({
     try {
       localStorage.setItem("anara_approval_mode", newMode);
     } catch {}
-    fetch("/api/approvals/mode", {
+    const backendUrl = getBackendUrl();
+    fetch(`${backendUrl}/api/approvals/mode`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode: newMode }),

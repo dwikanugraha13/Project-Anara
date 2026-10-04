@@ -450,6 +450,10 @@ class ConvergenceDetector:
             except Exception:
                 pass
 
+            # If no test suite is detected in the workspace, do not block with stop-gate
+            if not cmd_suggestion:
+                return None
+
             from core.prompt_loader import load_config_yaml
             rules = load_config_yaml("convergence/verifier_rules.yaml", default={})
             nudge_tmpl = rules.get(

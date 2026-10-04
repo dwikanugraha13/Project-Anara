@@ -1034,10 +1034,10 @@ export default function HomePageClient({
       forceUnlock();
 
       // Enforce active approval mode ('plan' vs 'auto'/'off') if mode not explicitly forced
-      let activeApproval = "auto";
+      let activeApproval = "smart";
       if (typeof window !== "undefined") {
         try {
-          activeApproval = (localStorage.getItem("anara_approval_mode") || "auto").toLowerCase();
+          activeApproval = (localStorage.getItem("anara_approval_mode") || "smart").toLowerCase();
         } catch {}
       }
       const effectiveMode: "plan" | "build" = explicitMode || (activeApproval === "plan" || activeApproval === "manual" ? "plan" : "build");
@@ -1071,6 +1071,7 @@ export default function HomePageClient({
         channel: "web",
         platform: "web",
         agent_mode: effectiveMode,
+        approval_mode: activeApproval,
         reasoning_effort: reasoningEffort,
         sessionId: activeSessionId,
         session_id: activeSessionId,

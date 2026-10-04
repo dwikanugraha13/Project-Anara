@@ -951,20 +951,30 @@ export default function CodePageClient({
     }
   };
 
-  const handleSendText = (text: string, mode: "plan" | "build" = agentMode) => {
+  const handleSendText = (text: string, mode?: "plan" | "build") => {
     if (!text.trim()) return;
     const trimmed = text.trim();
+
+    let activeApproval = "smart";
+    if (typeof window !== "undefined") {
+      try {
+        activeApproval = (localStorage.getItem("anara_approval_mode") || "smart").toLowerCase();
+      } catch {}
+    }
+    const effectiveMode: "plan" | "build" = mode || (activeApproval === "plan" || activeApproval === "manual" ? "plan" : agentMode);
+
     setTranscript((prev) => [
       ...prev,
       { speaker: "input", text: trimmed },
-      { speaker: "output", text: "", agentMode: mode, startTime: Date.now() },
+      { speaker: "output", text: "", agentMode: effectiveMode, startTime: Date.now() },
     ]);
     sendJSON({
       type: "text_input",
       text: trimmed,
       channel: "code",
       platform: "code",
-      agent_mode: mode,
+      agent_mode: effectiveMode,
+      approval_mode: activeApproval,
       reasoning_effort: reasoningEffort,
       sessionId: activeSessionId,
       session_type: "code",

@@ -70,7 +70,7 @@ export interface CodeStudioWorkspaceProps {
   handleOpenFileIDE: (path: string, name: string) => void;
   handlePickLocalFolder: (initialPath?: string) => void;
   handleClearWorkspace: () => void;
-  handleSendText: (text: string, mode: "plan" | "build") => void;
+  handleSendText: (text: string, mode?: "plan" | "build") => void;
   inputMessage: string;
   setInputMessage: (msg: string) => void;
   sendJSON: (msg: any) => void;
@@ -420,7 +420,7 @@ export function CodeStudioWorkspace({
             showInteractionModeToggle={false}
             inputMessage={inputMessage}
             setInputMessage={setInputMessage}
-            onSend={(text: string, mode?: "plan" | "build") => handleSendText(text, mode || "build")}
+            onSend={(text: string, mode?: "plan" | "build") => handleSendText(text, mode)}
             agentMode={agentMode}
             setAgentMode={setAgentMode}
             models={models}

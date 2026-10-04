@@ -38,7 +38,8 @@ export function AgentActionCard({
     tool.includes("write") ||
     tool.includes("edit")
   );
-  const [isExpanded, setIsExpanded] = useState(isFileEdit);
+  // Keep file cards collapsed by default (1-line clean scaffold) unless user expands
+  const [isExpanded, setIsExpanded] = useState(false);
   const [isReverting, setIsReverting] = useState(false);
   const [isReverted, setIsReverted] = useState(false);
   const [rollbackError, setRollbackError] = useState<string | null>(null);
@@ -169,8 +170,11 @@ export function AgentActionCard({
 
   // ── Render File Modification Diff Card ──
   if (isWrite) {
-    const addCount = action.added ?? parsedDiff.added ?? 1;
-    const delCount = action.deleted ?? parsedDiff.deleted ?? 0;
+    const rawContent = action.content || action.rawResult || "";
+    const contentLines = rawContent ? rawContent.split("\n").length : 0;
+    const isNewCreate = !parsedDiff.isRealDiff && (action.deleted === undefined || action.deleted === 0);
+    const addCount = action.added !== undefined ? action.added : (parsedDiff.isRealDiff ? parsedDiff.added : contentLines || 1);
+    const delCount = action.deleted !== undefined ? action.deleted : (parsedDiff.isRealDiff ? parsedDiff.deleted : 0);
 
     return (
       <div className="my-1.5 font-mono text-xs select-none">
@@ -191,14 +195,16 @@ export function AgentActionCard({
                 <span className="inline-flex rounded-full h-1.5 w-1.5 bg-slate-500 group-hover:bg-cyan-400 transition-colors" />
               )}
             </span>
-            <span className="text-cyan-400 font-bold text-[11px] tracking-tight">Edit</span>
+            <span className="text-cyan-400 font-bold text-[11px] tracking-tight">
+              {isNewCreate ? "Create" : "Edit"}
+            </span>
             <span className="text-slate-200 font-semibold truncate text-[11.5px] group-hover:text-white transition-colors">
               {filename}
             </span>
-            {dirPath && <span className="text-slate-500 truncate text-[10.5px]">{dirPath}</span>}
+            {dirPath && <span className="text-slate-500 truncate text-[10.5px] hidden sm:inline">{dirPath}</span>}
             <div className="flex items-center gap-1.5 text-[10px] shrink-0 ml-1 font-bold">
               <span className="text-emerald-400">+{addCount}</span>
-              <span className="text-rose-400">-{delCount}</span>
+              {delCount > 0 && <span className="text-rose-400">−{delCount}</span>}
             </div>
             <svg
               className={`w-3 h-3 text-slate-500 group-hover:text-slate-300 transition-transform duration-150 shrink-0 ml-1 ${

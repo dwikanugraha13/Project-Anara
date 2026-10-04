@@ -20,6 +20,15 @@ const nextConfig: NextConfig = {
   },
   devIndicators: false,
   turbopack: {},
+  rewrites: async () => {
+    const backendPort = process.env.NEXT_PUBLIC_BACKEND_PORT || "8000";
+    return [
+      {
+        source: "/api/:path*",
+        destination: `http://localhost:${backendPort}/api/:path*`,
+      },
+    ];
+  },
   headers: async () => {
     return [
       {
