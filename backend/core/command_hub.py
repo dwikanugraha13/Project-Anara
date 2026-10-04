@@ -716,17 +716,33 @@ async def _handle_cmd_sessions(ctx: UniversalCommandContext) -> UniversalCommand
     bound_sid = get_channel_active_session(ctx.channel, ctx.channel_id)
     cur_sid = bound_sid if bound_sid is not None else (ctx.session_id or 0)
 
-    header = "📋 <b>Named Sessions</b>" if not (is_all or is_full) else "📋 <b>Sessions</b>"
+    header = "📋 <b>Sessions</b>" if (is_all or is_full) else "📋 <b>Named Sessions</b>"
     lines = [header, ""]
 
     if is_all:
         lines.append("<i>Note: all (cross-chat listing) requires a configured admin; showing this chat's sessions only.</i>\n")
 
+    import hashlib
     buttons = []
     for idx, s in enumerate(sessions, 1):
         sid = s["id"]
-        skey = s.get("session_key") or f"session_{sid}"
+        raw_skey = s.get("session_key") or ""
+        if not raw_skey or raw_skey.startswith("channel_"):
+            created_str = str(s.get("created_at") or "")
+            try:
+                clean_dt = created_str.replace("-", "").replace(":", "").replace(" ", "_")[:15]
+                hex_seed = hashlib.md5(f"{sid}_{created_str}".encode()).hexdigest()[:6]
+                skey = f"{clean_dt}_{hex_seed}"
+            except Exception:
+                skey = f"20261001_000000_{sid:06x}"
+        else:
+            skey = raw_skey
+
         title = s.get("title") or "Untitled Session"
+        # If title is an internal channel tag, make it clean
+        if title.startswith("Telegram Chat ("):
+            title = "Telegram Chat"
+
         is_cur = (sid == cur_sid)
         cur_marker = " (current)" if is_cur else ""
         raw_snippet = (s.get("last_user_text") or "").strip().replace("\n", " ")
@@ -734,7 +750,7 @@ async def _handle_cmd_sessions(ctx: UniversalCommandContext) -> UniversalCommand
             raw_snippet = "p"
         snippet = raw_snippet[:35] + ("..." if len(raw_snippet) > 35 else "")
 
-        lines.append(f"{idx}. {html.escape(title)}{cur_marker} — <code>{skey}</code> — <i>_{html.escape(snippet)}_</i>")
+        lines.append(f"{idx}. {html.escape(title)}{cur_marker} — <code>{skey}</code> — <i>{html.escape(snippet)}</i>")
 
         if not is_cur and idx <= 5:
             buttons.append([
@@ -745,8 +761,8 @@ async def _handle_cmd_sessions(ctx: UniversalCommandContext) -> UniversalCommand
             ])
 
     lines.append("")
-    lines.append("Resume: <code>/resume &lt;session id&gt;</code> or <code>/resume &lt;number&gt;</code> from /resume.")
-    lines.append("More: <code>/sessions all</code>, <code>/sessions full</code>, <code>/sessions search &lt;query&gt;</code>.")
+    lines.append("Resume: /resume <session id> or /resume <number> from /resume.")
+    lines.append("More: /sessions all, /sessions full, /sessions search <query>.")
 
     return UniversalCommandResponse(text="\n".join(lines), buttons=buttons if buttons else None)
 
@@ -782,6 +798,19 @@ async def _handle_cmd_resume(ctx: UniversalCommandContext) -> UniversalCommandRe
     if not target_sess:
         q = clean_arg.lower()
         target_sess = next((s for s in sessions if (s.get("session_key") or "").lower() == q), None)
+        if not target_sess:
+            import hashlib
+            for s in sessions:
+                sid = s["id"]
+                raw_skey = s.get("session_key") or ""
+                if not raw_skey or raw_skey.startswith("channel_"):
+                    created_str = str(s.get("created_at") or "")
+                    clean_dt = created_str.replace("-", "").replace(":", "").replace(" ", "_")[:15]
+                    hex_seed = hashlib.md5(f"{sid}_{created_str}".encode()).hexdigest()[:6]
+                    synth_key = f"{clean_dt}_{hex_seed}".lower()
+                    if q == synth_key or q in synth_key:
+                        target_sess = s
+                        break
         if not target_sess:
             target_sess = next(
                 (s for s in sessions if q in (s.get("title") or "").lower() or q in (s.get("session_key") or "").lower()),

@@ -545,7 +545,8 @@ class ChatSessionsMixin:
         is_placeholder = (
             not current_title
             or current_title.lower() in ["new chat", "new session", "new project", "session", "chat"]
-            or current_title.lower().startswith(("session #", "chat #"))
+            or current_title.lower().startswith(("session #", "chat #", "telegram chat (", "web chat (", "discord chat ("))
+            or current_title.lower().endswith("]")
         )
         if not is_placeholder:
             return None
@@ -854,7 +855,8 @@ async def maybe_auto_title_session(session_id: int, user_text: str = "", ai_text
         is_placeholder = (
             not current_title
             or current_title.lower() in ["new chat", "new session", "new project", "session", "chat"]
-            or current_title.lower().startswith(("session #", "chat #"))
+            or current_title.lower().startswith(("session #", "chat #", "telegram chat (", "web chat (", "discord chat ("))
+            or current_title.lower().endswith("]")
         )
         if not is_placeholder:
             return None
