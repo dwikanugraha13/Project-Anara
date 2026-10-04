@@ -8,6 +8,7 @@ import { ReadFileView } from "./ReadFileView";
 import { GrepResultView } from "./GrepResultView";
 import { GlobResultView } from "./GlobResultView";
 import { AgentActionCard } from "./AgentActionCard";
+import { ToolRunTicker } from "./ToolRunTicker";
 
 // ── TOOL RUN GROUP CARD (Anara Desktop Standard) ────────────────────────
 export function ToolRunGroupCard({
@@ -143,6 +144,19 @@ export function ToolRunGroupCard({
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
       </button>
+
+      {/* Live Reel Activity Ticker while running and collapsed */}
+      {isRunning && !isExpanded && activeItems.length > 0 && (
+        <div className="pl-4 my-0.5">
+          <ToolRunTicker isRunning inline>
+            {activeItems.map((item, idx) => (
+              <span key={idx}>
+                {item.command || item.filename || item.filePath || item.detail || "Executing action..."}
+              </span>
+            ))}
+          </ToolRunTicker>
+        </div>
+      )}
 
       {/* Expanded List of Tool Rows */}
       <div

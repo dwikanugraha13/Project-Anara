@@ -7,11 +7,14 @@ export function ReadFileView({
   filePath,
   content,
   onOpenFile,
+  defaultExpanded = false,
 }: {
   filePath: string;
   content: string;
   onOpenFile?: (filePath: string, fileName?: string) => void;
+  defaultExpanded?: boolean;
 }) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [copied, setCopied] = useState(false);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -38,6 +41,14 @@ export function ReadFileView({
     });
   }, [content]);
 
+  // Compute line range label (e.g. L1-45 or L12)
+  const lineRangeLabel = useMemo(() => {
+    if (lines.length === 0) return "";
+    const start = lines[0].lineNo;
+    const end = lines[lines.length - 1].lineNo;
+    return start === end ? `L${start}` : `L${start}-${end}`;
+  }, [lines]);
+
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
     const cleanCode = lines.map((l) => l.text).join("\n");
@@ -50,24 +61,48 @@ export function ReadFileView({
 
   return (
     <div className="flex flex-col gap-1 w-full my-1 font-mono text-[11px] select-text">
-      <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-t border border-b-0 border-white/[0.08] bg-black/60">
-        <div className="flex items-baseline gap-1.5 min-w-0">
-          <span className="px-1.5 py-px rounded text-[9.5px] font-bold text-cyan-300 bg-cyan-500/10 border border-cyan-400/20">
+      {/* 1-Line Clean Header Row */}
+      <div className="flex items-center justify-between gap-2 px-2.5 py-1 rounded border border-white/[0.08] bg-black/60 hover:border-white/15 transition-all">
+        <button
+          type="button"
+          onClick={() => setIsExpanded((v) => !v)}
+          className="flex items-baseline gap-1.5 min-w-0 max-w-fit text-left cursor-pointer group/title select-none"
+        >
+          <span className="px-1.5 py-px rounded text-[9.5px] font-bold text-cyan-300 bg-cyan-500/10 border border-cyan-400/20 shrink-0">
             READ
           </span>
-          <span className="text-slate-200 font-semibold truncate text-[11.5px]">{filename}</span>
-          {dirPath && <span className="text-slate-500 text-[10px] truncate">{dirPath}</span>}
-          <span className="text-slate-500 text-[10px] tabular-nums shrink-0 ml-1">
+          <span className="text-slate-200 font-semibold truncate text-[11.5px] group-hover/title:text-white transition-colors">
+            {filename}
+          </span>
+          {lineRangeLabel && (
+            <span className="px-1 py-px rounded text-[9.5px] text-cyan-300/80 bg-cyan-500/5 font-mono tabular-nums shrink-0">
+              {lineRangeLabel}
+            </span>
+          )}
+          {dirPath && <span className="text-slate-500 text-[10px] truncate hidden sm:inline">{dirPath}</span>}
+          <span className="text-slate-500 text-[10px] tabular-nums shrink-0 ml-0.5">
             ({lines.length} lines)
           </span>
-        </div>
 
-        <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+          {/* Affordance Caret on Right */}
+          <svg
+            className={`w-3 h-3 text-slate-500 group-hover/title:text-slate-300 transition-transform duration-150 shrink-0 ml-1 ${
+              isExpanded ? "rotate-90" : ""
+            }`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+
+        <div className="flex items-center gap-1.5 shrink-0 ml-auto select-none">
           {onOpenFile && (
             <button
               type="button"
               onClick={() => onOpenFile(filePath, filename)}
-              className="text-cyan-300 hover:text-white px-2 py-0.5 rounded text-[10.5px] bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/25 transition-all cursor-pointer"
+              className="text-cyan-300 hover:text-white px-2 py-0.5 rounded text-[10px] bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/25 transition-all cursor-pointer"
               title="Open file in IDE"
             >
               View in Editor ↗
@@ -84,22 +119,25 @@ export function ReadFileView({
         </div>
       </div>
 
-      <div className="rounded-b border border-white/[0.08] bg-black/50 max-h-[300px] overflow-x-auto overflow-y-auto custom-scrollbar shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
-        <table className="w-full border-collapse">
-          <tbody>
-            {lines.map((l, idx) => (
-              <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
-                <td className="w-10 pr-2 text-right select-none text-slate-600 font-mono text-[10px] py-0.5 border-r border-white/[0.06] tabular-nums">
-                  {l.lineNo}
-                </td>
-                <td className="pl-3 pr-3 py-0.5 whitespace-pre font-mono leading-relaxed text-[11px] text-slate-200 min-h-[1.25rem]">
-                  {l.text || " "}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {/* Expanded Table Gutter Surface */}
+      {isExpanded && (
+        <div className="rounded border border-white/[0.08] bg-black/50 max-h-[300px] overflow-x-auto overflow-y-auto overscroll-x-contain overscroll-y-auto custom-scrollbar shadow-[0_4px_16px_rgba(0,0,0,0.4)] animate-fade-in">
+          <table className="w-full border-collapse">
+            <tbody>
+              {lines.map((l, idx) => (
+                <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
+                  <td className="w-10 pr-2 text-right select-none text-slate-600 font-mono text-[10px] py-0.5 border-r border-white/[0.06] tabular-nums">
+                    {l.lineNo}
+                  </td>
+                  <td className="pl-3 pr-3 py-0.5 whitespace-pre font-mono leading-relaxed text-[11px] text-slate-200 min-h-[1.25rem]">
+                    {l.text || " "}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

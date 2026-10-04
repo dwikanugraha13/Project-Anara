@@ -641,6 +641,104 @@ export default function CodePageClient({
         return [...prev, newEntry];
       });
     },
+    onSubagentEvent: (msg) => {
+      console.log(`[CodeStudio] Subagent Event: ${msg.type}`, msg);
+      const taskId = String(msg.task_id || "1");
+      const status: any =
+        msg.type === "subagent_task_completed" ? "completed" :
+        msg.type === "subagent_task_failed" ? (msg.status === "timed_out" ? "timed_out" : "failed") :
+        "running";
+
+      setTranscript((prev) => {
+        const lastIdx = prev.length - 1;
+        const last = prev[lastIdx];
+        if (last && last.visualType === "subagent" && last.subagentData) {
+          const currentTasks = [...last.subagentData.tasks];
+          const taskIdx = currentTasks.findIndex((t) => t.taskId === taskId);
+          const currentActivity = msg.tool_name
+            ? `${msg.tool_name}: ${msg.detail || msg.status || "executing"}`
+            : (msg.detail || msg.summary || "Running subagent mission...");
+
+          if (taskIdx >= 0) {
+            const existing = currentTasks[taskIdx];
+            currentTasks[taskIdx] = {
+              ...existing,
+              status,
+              durationSec: msg.duration_sec ?? existing.durationSec,
+              summary: msg.summary ?? existing.summary,
+              findings: msg.findings ?? existing.findings,
+              keyFindings: msg.key_findings ?? existing.keyFindings,
+              referencedFiles: msg.referenced_files ?? existing.referencedFiles,
+              error: msg.error ?? existing.error,
+              activity: [...existing.activity, currentActivity].slice(-8),
+            };
+          } else {
+            currentTasks.push({
+              id: taskId,
+              taskId,
+              goal: msg.goal || msg.title || "Subagent Mission",
+              model: msg.model,
+              status,
+              depth: msg.depth || 1,
+              startedAt: Date.now(),
+              activity: [currentActivity],
+              summary: msg.summary,
+              findings: msg.findings,
+              keyFindings: msg.key_findings,
+              referencedFiles: msg.referenced_files,
+              error: msg.error,
+            });
+          }
+
+          const updatedData = {
+            ...last.subagentData,
+            status: currentTasks.some((t) => t.status === "running") ? "running" : "completed",
+            tasks: currentTasks,
+          };
+
+          return [
+            ...prev.slice(0, lastIdx),
+            {
+              ...last,
+              subagentData: updatedData,
+            },
+          ];
+        }
+
+        const initialTask = {
+          id: taskId,
+          taskId,
+          goal: msg.goal || msg.title || "Subagent Mission",
+          model: msg.model,
+          status,
+          depth: msg.depth || 1,
+          startedAt: Date.now(),
+          activity: [msg.tool_name ? `${msg.tool_name}: running` : (msg.detail || "Spawning autonomous worker...")],
+          summary: msg.summary,
+          findings: msg.findings,
+          keyFindings: msg.key_findings,
+          referencedFiles: msg.referenced_files,
+          error: msg.error,
+        };
+
+        const subagentData = {
+          delegationId: `del_${Date.now()}`,
+          goal: msg.goal || msg.title || "Delegated Subagent Mission",
+          status,
+          tasks: [initialTask],
+        };
+
+        return [
+          ...prev,
+          {
+            speaker: "output",
+            text: "",
+            visualType: "subagent" as any,
+            subagentData,
+          },
+        ];
+      });
+    },
     onTokenUsage: (usage) => {
       setLatestTokenUsage(usage);
       setTranscript((prev) => {

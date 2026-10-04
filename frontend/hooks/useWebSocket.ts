@@ -57,6 +57,7 @@ export function useWebSocket({
   onAgentThinking,
   onInteractiveQuestion,
   onPlanPending,
+  onSubagentEvent,
 }: UseWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
@@ -110,6 +111,7 @@ export function useWebSocket({
     onAgentThinking,
     onInteractiveQuestion,
     onPlanPending,
+    onSubagentEvent,
   });
 
   useEffect(() => {
@@ -134,6 +136,7 @@ export function useWebSocket({
       onAgentThinking,
       onInteractiveQuestion,
       onPlanPending,
+      onSubagentEvent,
     };
   });
 
@@ -375,6 +378,18 @@ export function useWebSocket({
                 if (cb.onAgentThinking) {
                   const thinkingContent = msg.text !== undefined ? msg.text : (msg.data !== undefined ? msg.data : "");
                   cb.onAgentThinking(thinkingContent);
+                }
+                break;
+
+              case "subagent_task_started":
+              case "subagent_progress":
+              case "subagent_task_completed":
+              case "subagent_task_failed":
+                if (cb.onSubagentEvent) {
+                  cb.onSubagentEvent(msg);
+                }
+                if (typeof window !== "undefined") {
+                  window.dispatchEvent(new CustomEvent("anara-subagent-event", { detail: msg }));
                 }
                 break;
 

@@ -13,7 +13,7 @@ export function GrepResultView({
   pattern?: string;
   matches?: Array<{ file: string; line_number: number; line: string }>;
   rawResult?: string;
-  onOpenFile?: (filePath: string, fileName?: string) => void;
+  onOpenFile?: (filePath: string, fileName?: string, lineNumber?: number) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -127,20 +127,39 @@ export function GrepResultView({
                 </div>
 
                 <div className="space-y-0.5">
-                  {hits.map((h, hIdx) => (
-                    <div
-                      key={hIdx}
-                      onClick={() => onOpenFile?.(file, filename)}
-                      className="flex items-baseline gap-2 py-0.5 px-1 rounded hover:bg-white/[0.04] cursor-pointer group/hit transition-colors"
-                    >
-                      <span className="px-1 py-px rounded text-[9px] font-mono text-purple-300 bg-purple-500/10 border border-purple-400/20 shrink-0 tabular-nums select-none">
-                        L{h.line_number}
-                      </span>
-                      <span className="whitespace-pre font-mono text-[10.5px] text-slate-300 group-hover/hit:text-slate-100 transition-colors truncate">
-                        {h.line}
-                      </span>
-                    </div>
-                  ))}
+                  {hits.map((h, hIdx) => {
+                    const lineText = h.line;
+                    return (
+                      <div
+                        key={hIdx}
+                        onClick={() => onOpenFile?.(file, filename, h.line_number)}
+                        className="flex items-baseline gap-2 py-0.5 px-1 rounded hover:bg-white/[0.04] cursor-pointer group/hit transition-colors"
+                      >
+                        <span className="px-1 py-px rounded text-[9px] font-mono text-purple-300 bg-purple-500/10 border border-purple-400/20 shrink-0 tabular-nums select-none group-hover/hit:bg-purple-500/20 group-hover/hit:border-purple-400/40 transition-colors">
+                          L{h.line_number}
+                        </span>
+                        <span className="whitespace-pre font-mono text-[10.5px] text-slate-300 group-hover/hit:text-slate-100 transition-colors truncate">
+                          {pattern && lineText.toLowerCase().includes(pattern.toLowerCase()) ? (
+                            (() => {
+                              const regex = new RegExp(`(${pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi");
+                              const parts = lineText.split(regex);
+                              return parts.map((part, pIdx) =>
+                                regex.test(part) ? (
+                                  <mark key={pIdx} className="bg-purple-500/30 text-purple-200 px-0.5 rounded font-bold">
+                                    {part}
+                                  </mark>
+                                ) : (
+                                  part
+                                )
+                              );
+                            })()
+                          ) : (
+                            lineText
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );

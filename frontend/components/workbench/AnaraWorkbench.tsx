@@ -48,7 +48,7 @@ export interface TranscriptItem {
   text: string;
   id?: string;
   timestamp?: number | string;
-  visualType?: "image" | "weather" | "code" | "system_hud" | "knowledge_card" | "todo_list" | "briefing" | "agent_action" | "document_viewer" | "folder_workspace" | "plan_card" | "interactive_question" | "approval" | "none";
+  visualType?: "image" | "weather" | "code" | "system_hud" | "knowledge_card" | "todo_list" | "briefing" | "agent_action" | "document_viewer" | "folder_workspace" | "plan_card" | "interactive_question" | "approval" | "subagent" | "none";
   imageUrl?: string;
   imagePrompt?: string;
   imageTitle?: string;
@@ -61,6 +61,7 @@ export interface TranscriptItem {
   todoData?: any;
   briefingData?: any;
   agentActionData?: any;
+  subagentData?: any;
   questionData?: InteractiveQuestionData;
   documentViewerData?: {
     fileName: string;

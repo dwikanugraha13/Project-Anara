@@ -44,6 +44,31 @@ export function TerminalTranscript({
   const outputPayload = rawResult || stdout || "";
   const hasSplitStreams = Boolean(stdout || stderr);
 
+  // Pinned auto-tailing ref (Desktop Reference Standard)
+  const stdoutScrollRef = useRef<HTMLDivElement>(null);
+  const stderrScrollRef = useRef<HTMLDivElement>(null);
+  const mergedScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = stdoutScrollRef.current || mergedScrollRef.current;
+    if (el) {
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 32;
+      if (nearBottom) {
+        el.scrollTop = el.scrollHeight;
+      }
+    }
+  }, [stdout, outputPayload]);
+
+  useEffect(() => {
+    const el = stderrScrollRef.current;
+    if (el) {
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 32;
+      if (nearBottom) {
+        el.scrollTop = el.scrollHeight;
+      }
+    }
+  }, [stderr]);
+
   return (
     <div className="flex flex-col gap-1.5 w-full my-1 font-mono text-[11px] select-text">
       {/* Command prompt bar */}
@@ -96,7 +121,10 @@ export function TerminalTranscript({
           {stdout && (
             <div className="relative">
               {stderr && <div className="text-[9.5px] uppercase tracking-wider text-slate-500 mb-0.5 font-bold">stdout</div>}
-              <div className="p-2.5 rounded border border-white/[0.06] bg-black/50 text-slate-300 text-[10.5px] leading-relaxed max-h-[260px] overflow-x-auto overflow-y-auto custom-scrollbar whitespace-pre font-mono shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
+              <div
+                ref={stdoutScrollRef}
+                className="p-2.5 rounded border border-white/[0.06] bg-black/50 text-slate-300 text-[10.5px] leading-relaxed max-h-[260px] overflow-x-auto overflow-y-auto overscroll-x-contain overscroll-y-auto custom-scrollbar whitespace-pre font-mono shadow-[0_4px_16px_rgba(0,0,0,0.4)]"
+              >
                 {parseAnsiToTokens(clampForDisplay(stdout)).map((span, sIdx) => (
                   <span key={sIdx} className={span.className || undefined}>
                     {span.text}
@@ -108,7 +136,10 @@ export function TerminalTranscript({
           {stderr && (
             <div className="relative">
               <div className="text-[9.5px] uppercase tracking-wider text-amber-400/80 mb-0.5 font-bold">stderr</div>
-              <div className="p-2.5 rounded border border-amber-500/20 bg-amber-950/20 text-amber-200 text-[10.5px] leading-relaxed max-h-[260px] overflow-x-auto overflow-y-auto custom-scrollbar whitespace-pre font-mono shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
+              <div
+                ref={stderrScrollRef}
+                className="p-2.5 rounded border border-amber-500/20 bg-amber-950/20 text-amber-200 text-[10.5px] leading-relaxed max-h-[260px] overflow-x-auto overflow-y-auto overscroll-x-contain overscroll-y-auto custom-scrollbar whitespace-pre font-mono shadow-[0_4px_16px_rgba(0,0,0,0.4)]"
+              >
                 {parseAnsiToTokens(clampForDisplay(stderr)).map((span, sIdx) => (
                   <span key={sIdx} className={span.className || undefined}>
                     {span.text}
@@ -119,7 +150,10 @@ export function TerminalTranscript({
           )}
         </div>
       ) : outputPayload ? (
-        <div className="p-2.5 rounded border border-white/[0.06] bg-black/50 text-slate-300 text-[10.5px] leading-relaxed max-h-[260px] overflow-x-auto overflow-y-auto custom-scrollbar whitespace-pre font-mono shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
+        <div
+          ref={mergedScrollRef}
+          className="p-2.5 rounded border border-white/[0.06] bg-black/50 text-slate-300 text-[10.5px] leading-relaxed max-h-[260px] overflow-x-auto overflow-y-auto overscroll-x-contain overscroll-y-auto custom-scrollbar whitespace-pre font-mono shadow-[0_4px_16px_rgba(0,0,0,0.4)]"
+        >
           {parseAnsiToTokens(clampForDisplay(outputPayload)).map((span, sIdx) => (
             <span key={sIdx} className={span.className || undefined}>
               {span.text}

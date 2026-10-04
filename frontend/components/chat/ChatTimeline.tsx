@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState, useMemo, useCallback } from "react";
 import AgentMarkdown from "./AgentMarkdown";
-import AgentToolCard, { ToolRunGroupCard, ExplorationGroupCard, ThinkingCard } from "./AgentToolCard";
+import AgentToolCard, { ToolRunGroupCard, ExplorationGroupCard, ThinkingCard, SubagentCard } from "./AgentToolCard";
 import InteractiveQuestionCard from "./InteractiveQuestionCard";
 import { InteractiveApprovalCard } from "./InteractiveApprovalCard";
 import { ToolRunTicker } from "./ToolRunTicker";
@@ -580,6 +580,15 @@ export default function ChatTimeline({
                           onApprove={onApproveAction}
                           onReject={onRejectAction ? (planId) => onRejectAction(planId) : undefined}
                         />
+                      </div>
+                    );
+                  }
+
+                  // ── Subagent Delegation Card (Multi-worker Swarm) ──
+                  if ((item.visualType === "subagent" || item.subagentData) && item.subagentData) {
+                    return (
+                      <div key={idx} className="w-full my-1 px-1 animate-fade-in">
+                        <SubagentCard data={item.subagentData} onOpenFile={onOpenFile} />
                       </div>
                     );
                   }

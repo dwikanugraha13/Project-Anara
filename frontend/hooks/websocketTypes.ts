@@ -185,7 +185,7 @@ export interface HudVisualPayload {
 }
 
 export interface WebSocketMessage {
-  type: "audio_chunk" | "transcript" | "transcript_partial" | "token_usage" | "tool_progress" | "plan_pending" | "need_approval" | "interrupted" | "turn_complete" | "error" | "emotion_update" | "acoustic_emotion" | "brain_sync" | "speaker_identified" | "hud_timer" | "hud_visual" | "media_play" | "media_control" | "proactive_message" | "session_switched" | "session_id_sync" | "agent_action" | "agent_action_start" | "agent_action_complete" | "agent_thinking" | "interactive_question" | "workspace_file_uploaded" | "workspace_folder_imported" | "workspace_file_created";
+  type: "audio_chunk" | "transcript" | "transcript_partial" | "token_usage" | "tool_progress" | "plan_pending" | "need_approval" | "interrupted" | "turn_complete" | "error" | "emotion_update" | "acoustic_emotion" | "brain_sync" | "speaker_identified" | "hud_timer" | "hud_visual" | "media_play" | "media_control" | "proactive_message" | "session_switched" | "session_id_sync" | "agent_action" | "agent_action_start" | "agent_action_complete" | "agent_thinking" | "interactive_question" | "workspace_file_uploaded" | "workspace_folder_imported" | "workspace_file_created" | "subagent_task_started" | "subagent_progress" | "subagent_task_completed" | "subagent_task_failed";
   data?: any;
   event?: string;
   name?: string | null;
@@ -338,4 +338,5 @@ export interface UseWebSocketOptions {
   onAgentThinking?: (text: string) => void;
   onInteractiveQuestion?: (payload: InteractiveQuestionPayload) => void;
   onPlanPending?: (payload: any) => void;
+  onSubagentEvent?: (payload: any) => void;
 }

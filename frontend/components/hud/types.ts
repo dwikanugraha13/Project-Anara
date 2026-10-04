@@ -81,6 +81,37 @@ export interface AgentActionData {
   durationMs?: number;
   durationText?: string;
   command?: string;
+  subagentData?: SubagentTaskData;
+}
+
+export type SubagentStatus = "running" | "completed" | "failed" | "timed_out" | "dispatched";
+
+export interface SubagentProgressItem {
+  id: string;
+  taskId: string;
+  goal: string;
+  title?: string;
+  model?: string;
+  status: SubagentStatus;
+  depth?: number;
+  startedAt?: number;
+  durationSec?: number;
+  currentTool?: string;
+  activity: string[];
+  summary?: string;
+  findings?: string;
+  keyFindings?: string[];
+  referencedFiles?: string[];
+  error?: string;
+  childSessionId?: string;
+}
+
+export interface SubagentTaskData {
+  delegationId: string;
+  goal: string;
+  tasks: SubagentProgressItem[];
+  status: SubagentStatus;
+  batchSize?: number;
 }
 
 export interface DocumentViewerData {
@@ -142,7 +173,7 @@ export interface ImageItem {
 }
 
 export interface AnaraHUDProps {
-  visualType?: "image" | "weather" | "code" | "system_hud" | "knowledge_card" | "todo_list" | "briefing" | "agent_action" | "document_viewer" | "folder_workspace" | "plan_card" | "none";
+  visualType?: "image" | "weather" | "code" | "system_hud" | "knowledge_card" | "todo_list" | "briefing" | "agent_action" | "document_viewer" | "folder_workspace" | "plan_card" | "subagent" | "none";
   imageUrl?: string;
   imageTitle?: string;
   sourceDomain?: string;

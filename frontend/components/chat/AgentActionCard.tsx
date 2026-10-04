@@ -8,6 +8,7 @@ import { TerminalTranscript } from "./TerminalTranscript";
 import { ReadFileView } from "./ReadFileView";
 import { GrepResultView } from "./GrepResultView";
 import { GlobResultView } from "./GlobResultView";
+import { SubagentCard } from "./SubagentCard";
 
 // ── DIFF & CODE MODIFICATION CARD (Anara Desktop Standard) ──────────────
 export interface DiffLineItem {
@@ -431,6 +432,27 @@ export function AgentActionCard({
         onOpenFile={onOpenFile}
       />
     );
+  }
+
+  // ── Render Subagent Delegation Card ──
+  if (action.subagentData || tool.includes("delegate") || tool.includes("subagent")) {
+    const rawData = action.subagentData || {
+      delegationId: action.checkpointId || `del_${Date.now()}`,
+      goal: action.detail || action.actionTitle || "Delegated Mission",
+      status: isStart ? "running" : "completed",
+      tasks: [
+        {
+          id: "task_1",
+          taskId: "1",
+          goal: action.detail || action.actionTitle || "Delegated Mission",
+          status: isStart ? "running" : "completed",
+          activity: action.summary ? [action.summary] : ["Executing delegated mission in background..."],
+          durationSec: action.durationMs ? action.durationMs / 1000 : undefined,
+          findings: action.rawResult,
+        },
+      ],
+    };
+    return <SubagentCard data={rawData} onOpenFile={onOpenFile} />;
   }
 
   // ── Fallback Generic Action Item ──

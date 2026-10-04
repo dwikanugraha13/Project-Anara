@@ -8,14 +8,15 @@ export interface ToolRunTickerProps {
   totalCount?: number;
   isRunning?: boolean;
   durationText?: string;
+  inline?: boolean;
 }
 
 /**
- * ToolRunTicker.tsx — Anara Flat Hairline Single-Line Activity Ticker
+ * ToolRunTicker.tsx — Anara Hairline Dynamic Reel Activity Ticker
  *
- * Provides a sleek single-line viewport over a growing list of tool executions.
- * Each new action ticks smoothly in place with status pulses, preventing multiple tool runs
- * from taking excessive vertical space in the transcript while preserving full auditability.
+ * Provides a sleek single-line viewport over a sequence of tool actions.
+ * Employs CSS translateY reel transitions (240ms cubic-bezier) so new tool operations
+ * smoothly slide up into view in place, preventing multi-tool runs from flooding the chat.
  */
 export function ToolRunTicker({
   children,
@@ -23,9 +24,32 @@ export function ToolRunTicker({
   totalCount = 0,
   isRunning = false,
   durationText,
+  inline = false,
 }: ToolRunTickerProps) {
   const rows = Children.toArray(children);
   const displayCount = totalCount || rows.length;
+  const activeIdx = Math.max(0, rows.length - 1);
+
+  if (inline) {
+    return (
+      <div className="h-[20px] overflow-hidden select-none font-mono text-[11px] [isolation:isolate] [overflow:clip]">
+        <div
+          className="transition-transform duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+          style={{
+            transform: `translateY(calc(${activeIdx} * 20px * -1))`,
+          }}
+        >
+          {rows.map((row, idx) => (
+            <div key={idx} className="h-[20px] flex items-center min-w-0 overflow-hidden">
+              <span className={`truncate ${isRunning && idx === activeIdx ? "text-cyan-300 font-medium" : "text-slate-400"}`}>
+                {row}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="my-1 w-full max-w-full select-none font-mono text-xs">
@@ -42,11 +66,30 @@ export function ToolRunTicker({
             )}
           </span>
 
-          <div className="relative min-h-[22px] h-[22px] flex items-center overflow-hidden min-w-0 flex-1">
-            <div className="flex items-center text-[11.5px] font-medium tracking-tight text-slate-300 transition-transform duration-200">
-              <span className={`truncate ${isRunning ? "text-cyan-300" : "text-slate-300"}`}>
-                {activeItemText || (rows.length > 0 ? rows[rows.length - 1] : "Executing tool actions...")}
-              </span>
+          <div className="relative min-h-[22px] h-[22px] overflow-hidden min-w-0 flex-1 [isolation:isolate] [overflow:clip]">
+            <div
+              className="transition-transform duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+              style={{
+                transform: `translateY(calc(${activeIdx} * 22px * -1))`,
+              }}
+            >
+              {rows.length > 0 ? (
+                rows.map((row, idx) => (
+                  <div key={idx} className="h-[22px] flex items-center min-w-0 overflow-hidden">
+                    <span className={`truncate text-[11.5px] font-medium tracking-tight ${
+                      isRunning && idx === activeIdx ? "text-cyan-300" : "text-slate-300"
+                    }`}>
+                      {row}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="h-[22px] flex items-center min-w-0 overflow-hidden">
+                  <span className="truncate text-[11.5px] font-medium tracking-tight text-slate-400">
+                    {activeItemText || "Executing tool actions..."}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>

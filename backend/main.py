@@ -25,7 +25,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 from memory import memory_engine, get_current_indonesian_time_str
-from core import ModelCapabilityRegistry, require_gateway_auth
+from core import ModelCapabilityRegistry, require_gateway_auth, subagent_manager
 from tools import register_agent_event_listener
 from shared_state import (
     broadcast_agent_event,
@@ -59,6 +59,7 @@ _background_tasks = set()
 
 # Register real-time cross-service event listeners
 register_agent_event_listener(broadcast_agent_event)
+subagent_manager.register_listener(broadcast_agent_event)
 memory_engine.register_mutation_listener(broadcast_brain_sync)
 
 @asynccontextmanager
