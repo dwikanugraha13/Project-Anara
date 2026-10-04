@@ -48,7 +48,7 @@ export interface TranscriptItem {
   text: string;
   id?: string;
   timestamp?: number | string;
-  visualType?: "image" | "weather" | "code" | "system_hud" | "knowledge_card" | "todo_list" | "briefing" | "agent_action" | "document_viewer" | "folder_workspace" | "plan_card" | "interactive_question" | "none";
+  visualType?: "image" | "weather" | "code" | "system_hud" | "knowledge_card" | "todo_list" | "briefing" | "agent_action" | "document_viewer" | "folder_workspace" | "plan_card" | "interactive_question" | "approval" | "none";
   imageUrl?: string;
   imagePrompt?: string;
   imageTitle?: string;
@@ -96,6 +96,13 @@ export interface TranscriptItem {
   toolsUsed?: string[];
   toolRecordsCount?: number;
   isStreaming?: boolean;
+  approvalData?: {
+    planId: string;
+    toolName: string;
+    commandPreview?: string;
+    rationale?: string;
+    riskLevel?: "low" | "medium" | "high" | "critical";
+  };
   interrupted?: boolean;
   isError?: boolean;
   errorDetails?: string;
@@ -133,6 +140,8 @@ export interface AnaraWorkbenchProps {
   onNewSession?: () => void;
   onApprovePlan?: (plan: PlanData) => void;
   onRejectPlan?: (plan?: any) => void;
+  onApproveAction?: (planId: string, scope: "once" | "session") => void;
+  onRejectAction?: (planId: string) => void;
   onSidebarToggle?: (isOpen: boolean) => void;
   sidebarWidth?: number;
   onWidthChange?: (width: number) => void;
@@ -179,6 +188,8 @@ export default function AnaraWorkbench({
   onNewSession,
   onApprovePlan,
   onRejectPlan,
+  onApproveAction,
+  onRejectAction,
   sidebarWidth,
   onWidthChange,
   initialSidebarTab,
@@ -813,6 +824,8 @@ export default function AnaraWorkbench({
               setFooterDockHeight={setFooterDockHeight}
               onApprovePlan={onApprovePlan}
               onRejectPlan={onRejectPlan}
+              onApproveAction={onApproveAction}
+              onRejectAction={onRejectAction}
               activeThinkingText={activeThinkingText}
               onAnswerQuestion={onAnswerQuestion}
               handleOpenFileIDE={handleOpenFileIDE}
@@ -911,7 +924,7 @@ export default function AnaraWorkbench({
           style={{ left: "var(--sidebar-width, 260px)", right: 0 }}
         >
           <AnaraHUD
-            visualType={latestVisual.visualType === "interactive_question" ? "none" : latestVisual.visualType}
+            visualType={latestVisual.visualType === "interactive_question" || latestVisual.visualType === "approval" ? "none" : latestVisual.visualType}
             imageUrl={latestVisual.imageUrl}
             imageTitle={latestVisual.imageTitle}
             sourceDomain={latestVisual.sourceDomain}

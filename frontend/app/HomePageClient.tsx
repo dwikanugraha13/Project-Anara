@@ -676,6 +676,37 @@ export default function HomePageClient({
       setActiveSessionId(sessionId);
       localStorage.setItem("anara_active_session_id", String(sessionId));
     },
+    onPlanPending: (msg) => {
+      // Approval card: create a transcript entry with visual approval card
+      const planId = msg.plan_id || msg.planId || `plan_${Date.now()}`;
+      const toolName = msg.tool_name || msg.toolName || "";
+      const toolArgs = msg.tool_args || msg.toolArgs || {};
+      const commandPreview = toolArgs.command || toolArgs.file_path || toolArgs.title || "";
+      const rationale = msg.text || msg.rationale || "";
+      const actionMeta = msg.action_metadata || {};
+      const riskLevel = (actionMeta.risk_level || actionMeta.riskLevel || "medium") as "low" | "medium" | "high" | "critical";
+
+      // Flush any pending streaming content first
+      streamFlushNow();
+      streamReset();
+
+      setTranscript((prev) => [
+        ...prev,
+        {
+          speaker: "output",
+          text: rationale,
+          visualType: "approval",
+          approvalData: {
+            planId,
+            toolName,
+            commandPreview,
+            rationale,
+            riskLevel,
+          },
+        },
+      ]);
+      setAssistantStatus("idle");
+    },
     onAgentAction: (payload) => {
       console.log(`[App] Live Agent Action: ${payload.actionTitle} (${payload.eventType})`);
       setTranscript((prev) => {
@@ -1020,6 +1051,38 @@ export default function HomePageClient({
     [transcript, handleSendText]
   );
 
+  const handleApproveAction = useCallback(
+    (planId: string, scope: "once" | "session") => {
+      // Send approval through WebSocket as natural language (classify_approval_intent recognizes it)
+      handleSendText("Yes, approve and execute.", "build");
+      // Update transcript to mark the approval card as decided
+      setTranscript((prev) =>
+        prev.map((item) => {
+          if (item.visualType === "approval" && item.approvalData?.planId === planId) {
+            return { ...item, text: `${item.text}\n\n✓ Approved (${scope})` };
+          }
+          return item;
+        })
+      );
+    },
+    [handleSendText]
+  );
+
+  const handleRejectAction = useCallback(
+    (planId: string) => {
+      handleSendText("No, reject this action.", "build");
+      setTranscript((prev) =>
+        prev.map((item) => {
+          if (item.visualType === "approval" && item.approvalData?.planId === planId) {
+            return { ...item, text: `${item.text}\n\n✗ Rejected` };
+          }
+          return item;
+        })
+      );
+    },
+    [handleSendText]
+  );
+
   const handleAnswerQuestion = useCallback(
     (questionId: string, answers: any, dismissed: boolean = false) => {
       sendJSON({
@@ -1198,6 +1261,8 @@ export default function HomePageClient({
           onWidthChange={handleWidthChange}
           onApprovePlan={handleApprovePlan}
           onRejectPlan={handleRejectPlan}
+          onApproveAction={handleApproveAction}
+          onRejectAction={handleRejectAction}
           onAnswerQuestion={handleAnswerQuestion}
           initialSidebarTab={initialSidebarTab}
           activeThinkingText={activeThinkingText}

@@ -10,7 +10,7 @@ export interface TranscriptItem {
   text: string;
   id?: string;
   timestamp?: number | string;
-  visualType?: "image" | "weather" | "code" | "system_hud" | "knowledge_card" | "todo_list" | "briefing" | "agent_action" | "document_viewer" | "folder_workspace" | "plan_card" | "interactive_question" | "none";
+  visualType?: "image" | "weather" | "code" | "system_hud" | "knowledge_card" | "todo_list" | "briefing" | "agent_action" | "document_viewer" | "folder_workspace" | "plan_card" | "interactive_question" | "approval" | "none";
   imageUrl?: string;
   imagePrompt?: string;
   imageTitle?: string;
@@ -58,6 +58,13 @@ export interface TranscriptItem {
   toolsUsed?: string[];
   toolRecordsCount?: number;
   isStreaming?: boolean;
+  approvalData?: {
+    planId: string;
+    toolName: string;
+    commandPreview?: string;
+    rationale?: string;
+    riskLevel?: "low" | "medium" | "high" | "critical";
+  };
   interrupted?: boolean;
   isError?: boolean;
   errorDetails?: string;

@@ -4,6 +4,7 @@ import React, { useRef, useEffect, useState, useMemo, useCallback } from "react"
 import AgentMarkdown from "./AgentMarkdown";
 import AgentToolCard, { ToolRunGroupCard, ExplorationGroupCard, ThinkingCard } from "./AgentToolCard";
 import InteractiveQuestionCard from "./InteractiveQuestionCard";
+import { InteractiveApprovalCard } from "./InteractiveApprovalCard";
 import { ToolRunTicker } from "./ToolRunTicker";
 import FindBar from "./FindBar";
 import type { TranscriptItem, AssistantStatus } from "../workbench/AnaraWorkbench";
@@ -20,6 +21,8 @@ export interface ChatTimelineProps {
   footerDockHeight?: number;
   onApprovePlan?: (plan?: any) => void;
   onRejectPlan?: () => void;
+  onApproveAction?: (planId: string, scope: "once" | "session") => void;
+  onRejectAction?: (planId: string) => void;
   onOpenFile?: (path: string, fileName?: string) => void;
   onOpenLightbox?: (data: { url: string; title: string; sourceDomain?: string; sourceUrl?: string; prompt?: string }) => void;
   onDismissVisual?: () => void;
@@ -38,6 +41,8 @@ export default function ChatTimeline({
   footerDockHeight = 120,
   onApprovePlan,
   onRejectPlan,
+  onApproveAction,
+  onRejectAction,
   onOpenFile,
   onOpenLightbox,
   onDismissVisual,
@@ -558,6 +563,23 @@ export default function ChatTimeline({
                     return (
                       <div key={idx} className="w-full my-1 px-1 animate-fade-in">
                         <AgentToolCard todoData={item.todoData} sessionId={activeSessionId} onOpenFile={onOpenFile} />
+                      </div>
+                    );
+                  }
+
+                  // ── Approval Card (Interactive Approval Gate) ──
+                  if (item.visualType === "approval" && item.approvalData) {
+                    return (
+                      <div key={idx} className="w-full my-1 px-1 animate-fade-in">
+                        <InteractiveApprovalCard
+                          planId={item.approvalData.planId}
+                          toolName={item.approvalData.toolName}
+                          commandPreview={item.approvalData.commandPreview}
+                          rationale={item.approvalData.rationale}
+                          riskLevel={item.approvalData.riskLevel}
+                          onApprove={onApproveAction}
+                          onReject={onRejectAction ? (planId) => onRejectAction(planId) : undefined}
+                        />
                       </div>
                     );
                   }

@@ -38,6 +38,8 @@ export interface WorkbenchChatColumnProps {
   setFooterDockHeight: (h: number) => void;
   onApprovePlan?: (planData: any) => void;
   onRejectPlan?: (planData?: any) => void;
+  onApproveAction?: (planId: string, scope: "once" | "session") => void;
+  onRejectAction?: (planId: string) => void;
   activeThinkingText?: string | null;
   onAnswerQuestion?: (questionId: string, answers: any, dismissed?: boolean) => void;
   handleOpenFileIDE: (path: string, name: string) => void;
@@ -89,6 +91,8 @@ export function WorkbenchChatColumn({
   setFooterDockHeight,
   onApprovePlan,
   onRejectPlan,
+  onApproveAction,
+  onRejectAction,
   activeThinkingText,
   onAnswerQuestion,
   handleOpenFileIDE,
@@ -152,6 +156,8 @@ export function WorkbenchChatColumn({
           liveToolProgress={liveToolProgress}
           footerDockHeight={footerDockHeight}
           onApprovePlan={onApprovePlan}
+          onApproveAction={onApproveAction}
+          onRejectAction={onRejectAction}
           activeThinkingText={activeThinkingText}
           onAnswerQuestion={onAnswerQuestion}
           onOpenFile={(p: string) => handleOpenFileIDE(p, p.split("/").pop() || "file")}
