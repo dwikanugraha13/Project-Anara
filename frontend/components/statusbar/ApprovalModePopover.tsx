@@ -37,6 +37,33 @@ const MODE_OPTIONS: ModeOption[] = [
   },
 ];
 
+const MODE_BADGE_STYLES: Record<ApprovalMode, string> = {
+  manual: "text-amber-300 bg-amber-500/10 border-amber-400/25",
+  smart: "text-sky-300 bg-sky-500/10 border-sky-400/25",
+  off: "text-rose-300 bg-rose-500/10 border-rose-400/25",
+};
+
+const OPTION_THEMES: Record<ApprovalMode, { activeBg: string; activeBorder: string; activeText: string; checkColor: string }> = {
+  manual: {
+    activeBg: "bg-amber-500/[0.08]",
+    activeBorder: "border-amber-400/30",
+    activeText: "text-amber-200",
+    checkColor: "text-amber-300",
+  },
+  smart: {
+    activeBg: "bg-sky-500/[0.08]",
+    activeBorder: "border-sky-400/30",
+    activeText: "text-sky-200",
+    checkColor: "text-sky-300",
+  },
+  off: {
+    activeBg: "bg-rose-500/[0.08]",
+    activeBorder: "border-rose-400/30",
+    activeText: "text-rose-200",
+    checkColor: "text-rose-300",
+  },
+};
+
 export default function ApprovalModePopover({
   isOpen,
   onClose,
@@ -68,7 +95,7 @@ export default function ApprovalModePopover({
         <span className="text-[11px] font-semibold text-slate-400 font-sans tracking-tight">
           Approval mode
         </span>
-        <span className="text-[9.5px] font-mono px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/[0.08] capitalize text-slate-300">
+        <span className={`text-[9.5px] font-mono px-1.5 py-0.5 rounded border capitalize ${MODE_BADGE_STYLES[mode] || "text-slate-300 bg-white/[0.05] border-white/[0.08]"}`}>
           {mode}
         </span>
       </div>
@@ -77,6 +104,7 @@ export default function ApprovalModePopover({
       <div className="mt-1 flex flex-col gap-0.5">
         {MODE_OPTIONS.map((opt) => {
           const isSelected = mode === opt.id;
+          const theme = OPTION_THEMES[opt.id];
           return (
             <button
               key={opt.id}
@@ -85,15 +113,15 @@ export default function ApprovalModePopover({
                 onChange(opt.id);
                 onClose();
               }}
-              className={`w-full flex items-start gap-2 text-left px-2.5 py-2 rounded-lg transition-all cursor-pointer ${
+              className={`w-full flex items-start gap-2 text-left px-2.5 py-2 rounded-lg transition-all cursor-pointer border ${
                 isSelected
-                  ? "bg-white/[0.08] text-white border border-white/10"
-                  : "hover:bg-white/[0.04] text-slate-300 hover:text-white border border-transparent"
+                  ? `${theme.activeBg} ${theme.activeBorder} text-white`
+                  : "hover:bg-white/[0.04] text-slate-300 hover:text-white border-transparent"
               }`}
             >
               {/* Label + Description */}
               <div className="flex flex-col min-w-0 flex-1">
-                <span className="text-xs font-semibold tracking-tight text-white font-sans">
+                <span className={`text-xs font-semibold tracking-tight font-sans ${isSelected ? theme.activeText : "text-white"}`}>
                   {opt.title}
                 </span>
                 <span className="text-[10.5px] leading-tight text-slate-400 mt-0.5 font-sans">
@@ -103,7 +131,7 @@ export default function ApprovalModePopover({
 
               {/* Checkmark */}
               {isSelected && (
-                <div className="shrink-0 mt-0.5 text-zinc-200">
+                <div className={`shrink-0 mt-0.5 ${theme.checkColor}`}>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
                       strokeLinecap="round"

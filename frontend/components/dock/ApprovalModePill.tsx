@@ -89,8 +89,29 @@ export default function ApprovalModePill({ disabled = false }: ApprovalModePillP
     }).catch(() => {});
   };
 
-  const isManual = mode === "manual";
-  const isOff = mode === "off";
+  const MODE_PILL_STYLES: Record<ApprovalMode, { active: string; idle: string; icon: string }> = {
+    manual: {
+      active: "bg-amber-500/15 border-amber-400/35 text-amber-200",
+      idle: "bg-amber-500/8 border-amber-400/20 hover:border-amber-400/35 hover:bg-amber-500/12 text-amber-300 hover:text-amber-200",
+      icon: "text-amber-400/70",
+    },
+    smart: {
+      active: "bg-sky-500/15 border-sky-400/35 text-sky-200",
+      idle: "bg-sky-500/8 border-sky-400/20 hover:border-sky-400/35 hover:bg-sky-500/12 text-sky-300 hover:text-sky-200",
+      icon: "text-sky-400/70",
+    },
+    off: {
+      active: "bg-rose-500/15 border-rose-400/35 text-rose-200",
+      idle: "bg-rose-500/8 border-rose-400/20 hover:border-rose-400/35 hover:bg-rose-500/12 text-rose-300 hover:text-rose-200",
+      icon: "text-rose-400/70",
+    },
+  };
+
+  const currentStyle = MODE_PILL_STYLES[mode] || {
+    active: "bg-white/[0.08] border-white/20 text-white",
+    idle: "bg-white/[0.03] border-white/[0.08] hover:border-white/[0.16] hover:bg-white/[0.06] text-zinc-300 hover:text-white",
+    icon: "text-zinc-500",
+  };
 
   return (
     <div className="relative shrink-0" ref={pillRef}>
@@ -104,16 +125,14 @@ export default function ApprovalModePill({ disabled = false }: ApprovalModePillP
         }}
         title={`Approval Mode: ${mode.toUpperCase()} (Click to change)`}
         className={`flex items-center gap-1.5 py-1 px-2.5 rounded-lg border text-[11px] font-medium font-mono transition-colors cursor-pointer select-none ${
-          isOpen
-            ? "bg-white/[0.08] border-white/20 text-white"
-            : "bg-white/[0.03] border-white/[0.08] hover:border-white/[0.16] hover:bg-white/[0.06] text-zinc-300 hover:text-white"
+          isOpen ? currentStyle.active : currentStyle.idle
         }`}
       >
         <span className="font-semibold tracking-tight capitalize">
           {mode}
         </span>
         <svg
-          className={`w-3 h-3 text-zinc-500 transition-transform shrink-0 ${isOpen ? "rotate-180 text-zinc-300" : ""}`}
+          className={`w-3 h-3 transition-transform shrink-0 ${isOpen ? "rotate-180" : ""} ${currentStyle.icon}`}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
