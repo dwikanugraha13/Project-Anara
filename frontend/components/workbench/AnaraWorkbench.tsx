@@ -30,10 +30,6 @@ const ReviewGitPane = dynamic(() => import("../sidebar/ReviewGitPane"), {
   ssr: false,
 });
 
-const AgentStatusBar = dynamic(() => import("../statusbar/AgentStatusBar"), {
-  ssr: false,
-});
-
 const AnaraBrain = lazy(() => import("../brain/AnaraBrain"));
 const AnaraMediaPlayer = lazy(() => import("../dock/AnaraMediaPlayer"));
 import { WorkbenchTitlebar } from "./WorkbenchTitlebar";
@@ -895,29 +891,6 @@ export default function AnaraWorkbench({
             />
           </div>
         </div>
-
-        {/* Unified Agent Statusbar (Anara Desktop Standard) */}
-        <AgentStatusBar
-          isConnected={isConnected}
-          activeSessionId={activeSessionId}
-          workspaceName={workspaceName}
-          gitStatus={gitStatus}
-          onOpenGitReview={() => {
-            setIsContextPaneOpen(true);
-            setContextTab("review");
-            fetchGitStatus();
-          }}
-          tokenUsage={latestTokenUsage}
-          assistantStatus={status}
-          activeModelId={activeModelId}
-          reasoningEffort={reasoningEffort}
-          onToggleTerminal={() => {
-            setIsContextPaneOpen(true);
-            setContextTab("terminal");
-            setIsTerminalOpen((v) => !v);
-          }}
-          isTerminalOpen={isContextPaneOpen && contextTab === "terminal"}
-        />
       </div>
     )}
 
