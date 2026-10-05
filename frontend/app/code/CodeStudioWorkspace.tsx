@@ -5,6 +5,7 @@ import { ActivityBar } from "./ActivityBar";
 import ReviewGitPane from "@/components/sidebar/ReviewGitPane";
 import WorkspaceTreeView from "@/components/sidebar/WorkspaceTreeView";
 import SessionHistoryList from "@/components/sidebar/SessionHistoryList";
+import SegmentedStudioTabs from "@/components/sidebar/SegmentedStudioTabs";
 import AnaraCodeIDE from "@/components/ide/AnaraCodeIDE";
 import WorkbenchTerminal from "@/components/ide/WorkbenchTerminal";
 import ChatTimeline from "@/components/chat/ChatTimeline";
@@ -276,6 +277,15 @@ export function CodeStudioWorkspace({
             style={{ width: `var(--studio-left-width, ${leftWidth}px)`, transition: "none" }}
             className="h-full shrink-0 flex flex-col bg-[#060913]/90 backdrop-blur-xl overflow-hidden select-none relative studio-pane border-r border-white/[0.08]"
           >
+            {/* ── Top Header: Sidebar Tabs [SESSIONS | CODE | BOTS] ── */}
+            <div className="h-[38px] px-2.5 bg-[#060913] border-b border-white/[0.08] flex items-center justify-between shrink-0 select-none font-mono">
+              <SegmentedStudioTabs
+                activeTab="code"
+                activeSessionId={activeSessionId}
+                onOpenBrain={() => setIsBrainDrawerOpen(true)}
+              />
+            </div>
+
             {explorerMode === "sessions" ? (
               <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[#060913]/90">
                 <SessionHistoryList

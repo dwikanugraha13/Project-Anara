@@ -18,7 +18,6 @@ import {
 import type { AnaraBrainProps } from "@/components/brain/types";
 import type { IdeTabFile } from "@/components/ide";
 import type { WorkspaceTreeData, GitStatusData, ChatSession } from "@/components/sidebar/types";
-import { CodeStudioHeader } from "./CodeStudioHeader";
 import { CodeStudioWorkspace } from "./CodeStudioWorkspace";
 import { useCodeStudioLayout } from "./useCodeStudioLayout";
 import { playAnaraCompletionChime, playAnaraAlertChime } from "@/lib/anaraSoundSynthesizer";
@@ -1177,34 +1176,8 @@ export default function CodePageClient({
   }, [activeSession, activeSessionId]);
 
   return (
-    <main className="relative w-screen h-screen overflow-hidden flex flex-col font-sans select-none bg-[#030712] text-slate-100">
-      {/* ══════════════════════════════════════════════════════════════════════
-          1. STUDIO TOP NAVIGATION BAR (Modularized Header)
-         ══════════════════════════════════════════════════════════════════════ */}
-      <CodeStudioHeader
-        workspaceTree={workspaceTree}
-        gitStatus={gitStatus}
-        activeSession={activeSession}
-        activeSessionId={activeSessionId}
-        sessions={sessions}
-        sessionsLoading={sessionsLoading}
-        isSessionDropdownOpen={isSessionDropdownOpen}
-        setIsSessionDropdownOpen={setIsSessionDropdownOpen}
-        sessionDropdownRef={sessionDropdownRef}
-        handleSelectSession={handleSelectSession}
-        handleNewSession={handleNewSession}
-        isLeftOpen={isLeftOpen}
-        setIsLeftOpen={setIsLeftOpen}
-        isTerminalOpen={isTerminalOpen}
-        setIsTerminalOpen={setIsTerminalOpen}
-        isRightOpen={isRightOpen}
-        setIsRightOpen={setIsRightOpen}
-        setIsBrainDrawerOpen={setIsBrainDrawerOpen}
-      />
-
-      {/* ══════════════════════════════════════════════════════════════════════
-          2. THREE-PANE AUTONOMOUS CODING STUDIO WORKBENCH (Modularized)
-         ══════════════════════════════════════════════════════════════════════ */}
+    <main className="relative w-screen h-screen overflow-hidden flex flex-row font-sans select-none bg-[#030712] text-slate-100">
+      {/* ── THREE-PANE AUTONOMOUS CODING STUDIO WORKBENCH (FULL BLEED TO TOP) ── */}
       <CodeStudioWorkspace
         isLeftOpen={isLeftOpen}
         setIsLeftOpen={setIsLeftOpen}
