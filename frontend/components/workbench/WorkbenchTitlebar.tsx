@@ -136,15 +136,6 @@ export function WorkbenchTitlebar({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
         </button>
-
-        <span className="text-slate-700 mx-0.5">|</span>
-
-        {/* Window Action Glyphs */}
-        <div className="flex items-center gap-1 text-slate-500">
-          <span className="px-1 text-xs select-none" title="Minimize">—</span>
-          <span className="px-1 text-xs select-none" title="Maximize">▢</span>
-          <span className="px-1 text-xs select-none hover:text-rose-400" title="Close">✕</span>
-        </div>
       </div>
     </div>
   );
