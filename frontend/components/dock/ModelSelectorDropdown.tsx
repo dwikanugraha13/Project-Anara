@@ -204,6 +204,28 @@ export function getProviderDisplayName(providerKey: string | undefined | null): 
   return PROVIDER_LABEL_MAP[k] || (k.length <= 4 ? k.toUpperCase() : k.charAt(0).toUpperCase() + k.slice(1));
 }
 
+export function getProviderShortName(providerKey: string | undefined | null): string {
+  if (!providerKey) return "Custom";
+  const k = providerKey.toLowerCase().trim();
+  const shortMap: Record<string, string> = {
+    openai: "OpenAI",
+    codex: "Codex",
+    anthropic: "Anthropic",
+    gemini: "Gemini",
+    google: "Google",
+    deepseek: "DeepSeek",
+    groq: "Groq",
+    ollama: "Ollama",
+    local: "Local",
+    llamacpp: "Local",
+    "9router": "9Router",
+    openrouter: "OpenRouter",
+    xai: "xAI",
+    custom: "Custom",
+  };
+  return shortMap[k] || (k.length <= 5 ? k.toUpperCase() : k.charAt(0).toUpperCase() + k.slice(1));
+}
+
 /**
  * Evaluates whether a model qualifies for tier badges (Reasoning, Fast, Vision, Pro)
  */
@@ -272,7 +294,6 @@ export default function ModelSelectorDropdown({
 }: ModelSelectorDropdownProps) {
   const [modelSearchQuery, setModelSearchQuery] = useState("");
   const [selectedProviderKey, setSelectedProviderKey] = useState<string>("All");
-  const [selectedRouteKey, setSelectedRouteKey] = useState<string>("All");
   const [focusedIndex, setFocusedIndex] = useState<number>(0);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -298,10 +319,7 @@ export default function ModelSelectorDropdown({
     });
   }, [effectiveModels, interactionMode]);
 
-  /**
-   * Deduplicate tier variants: models sharing the same base slug (after stripping
-   * -low/-medium/-high/-thinking suffixes) are consolidated into a single entry.
-   */
+  // Consolidate tier variants sharing the same base identifier
   const deduplicatedModels = useMemo(() => {
     const tierPriority: Record<string, number> = {
       "": 0,
@@ -344,9 +362,7 @@ export default function ModelSelectorDropdown({
     }));
   }, [modeFilteredModels]);
 
-  /**
-   * Provider Groups ordered canonically according to Anara standards
-   */
+  // Provider groups ordered canonically
   const providerGroups = useMemo(() => {
     const counts: Record<string, { label: string; count: number; order: number }> = {};
     for (const m of deduplicatedModels) {
@@ -354,7 +370,7 @@ export default function ModelSelectorDropdown({
       if (!counts[pKey]) {
         const orderIdx = CANONICAL_PROVIDER_ORDER.indexOf(pKey);
         counts[pKey] = {
-          label: getProviderDisplayName(pKey),
+          label: getProviderShortName(pKey),
           count: 0,
           order: orderIdx >= 0 ? orderIdx : 999,
         };
@@ -368,36 +384,12 @@ export default function ModelSelectorDropdown({
     });
 
     return [
-      { key: "All", label: "All Providers", count: deduplicatedModels.length },
+      { key: "All", label: "All", count: deduplicatedModels.length },
       ...sorted.map(([key, info]) => ({ key, label: info.label, count: info.count })),
     ];
   }, [deduplicatedModels]);
 
-  // Sub-Routes within selected provider (e.g. Antigravity, Claudeflare, Xkiro within 9Router)
-  const availableRoutes = useMemo(() => {
-    const relevantModels = selectedProviderKey === "All"
-      ? deduplicatedModels
-      : deduplicatedModels.filter((m) => (m.provider || "custom").toLowerCase() === selectedProviderKey.toLowerCase());
-
-    const routeCounts: Record<string, { label: string; count: number }> = {};
-    for (const m of relevantModels) {
-      const rLabel = extractModelRoute(m.id);
-      if (rLabel) {
-        if (!routeCounts[rLabel]) {
-          routeCounts[rLabel] = { label: rLabel, count: 0 };
-        }
-        routeCounts[rLabel].count += 1;
-      }
-    }
-    const sorted = Object.entries(routeCounts).sort((a, b) => b[1].count - a[1].count);
-    if (sorted.length <= 1) return [];
-    return [
-      { key: "All", label: "All Routes", count: relevantModels.length },
-      ...sorted.map(([key, info]) => ({ key, label: info.label, count: info.count })),
-    ];
-  }, [deduplicatedModels, selectedProviderKey]);
-
-  // Filter models by search query, provider chip, and route chip
+  // Filter models by search query and provider
   const displayedModels = useMemo(() => {
     const q = modelSearchQuery.toLowerCase().trim();
     return deduplicatedModels.filter((m: AIModelInfo) => {
@@ -406,12 +398,7 @@ export default function ModelSelectorDropdown({
         const pKey = (m.provider || "custom").toLowerCase();
         if (pKey !== selectedProviderKey.toLowerCase()) return false;
       }
-      // 2. Sub-route filter
-      if (selectedRouteKey !== "All") {
-        const rLabel = extractModelRoute(m.id);
-        if (rLabel !== selectedRouteKey) return false;
-      }
-      // 3. Search filter
+      // 2. Search query filter
       if (!q) return true;
       const siblings = (m as any)._siblings as string[] | undefined;
       return (
@@ -422,7 +409,7 @@ export default function ModelSelectorDropdown({
         (siblings && siblings.some((s: string) => s.toLowerCase().includes(q)))
       );
     });
-  }, [deduplicatedModels, selectedProviderKey, selectedRouteKey, modelSearchQuery]);
+  }, [deduplicatedModels, selectedProviderKey, modelSearchQuery]);
 
   /**
    * Group displayed models by provider preserving provider headers even during search
@@ -573,36 +560,36 @@ export default function ModelSelectorDropdown({
         e.nativeEvent?.stopImmediatePropagation?.();
       }}
       onKeyDown={handleKeyDown}
-      className="absolute bottom-9 left-0 z-50 w-84 sm:w-[460px] p-2.5 rounded-2xl bg-[#090d16]/98 border border-white/[0.08] backdrop-blur-2xl shadow-2xl shadow-black/95 animate-scale-up flex flex-col font-mono select-none max-h-[500px]"
+      className="absolute bottom-9 left-0 z-50 w-72 sm:w-80 max-w-[calc(100vw-2rem)] max-h-[420px] rounded-2xl border border-white/[0.08] bg-[#090d16]/98 backdrop-blur-2xl shadow-2xl shadow-black/95 animate-scale-up flex flex-col font-mono select-none overflow-hidden"
     >
-      {/* 1. Header: Clean Title + Esc Hint + Close Button */}
-      <div className="px-1.5 pb-2 border-b border-white/[0.06] flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      {/* 1. Header: Compact title bar + Status + Count + Close */}
+      <div className="px-2.5 pt-2.5 pb-2 border-b border-white/[0.06] flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-1.5 min-w-0">
           <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0 shadow-[0_0_6px_rgba(34,211,238,0.6)]" />
-          <span className="text-[11px] font-mono font-semibold uppercase tracking-wider text-zinc-200">
-            {interactionMode === "voice" ? "Live Audio Engines" : "AI Execution Engines"}
+          <span className="text-[11px] font-mono font-semibold uppercase tracking-wider text-zinc-200 truncate">
+            {interactionMode === "voice" ? "Voice Engines" : "Models"}
           </span>
-          <span className="text-[9.5px] font-mono text-zinc-500 bg-white/[0.04] px-1.5 py-0.2 rounded border border-white/[0.06]">
+          <span className="text-[9px] font-mono text-zinc-500 bg-white/[0.04] px-1.5 py-0.2 rounded border border-white/[0.06] shrink-0">
             {displayedModels.length}
           </span>
           {isUsingFallback && (
             <span
-              title="Using curated standby catalog while backend model stream initializes"
-              className="text-[8px] font-mono font-semibold uppercase text-amber-400 bg-amber-500/[0.08] border border-amber-500/20 px-1 py-0.2 rounded"
+              title="Using curated standby catalog"
+              className="text-[8px] font-mono font-semibold uppercase text-amber-400 bg-amber-500/[0.08] border border-amber-500/20 px-1 py-0.2 rounded shrink-0"
             >
               Standby
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1.5">
-          <kbd className="hidden sm:inline-block text-[8.5px] font-mono px-1.5 py-0.5 rounded bg-white/[0.03] border border-white/[0.06] text-zinc-500">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <kbd className="hidden sm:inline-block text-[8px] font-mono px-1 py-0.5 rounded bg-white/[0.03] border border-white/[0.06] text-zinc-500">
             ESC
           </kbd>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close model picker"
-            title="Close model picker (Esc)"
+            title="Close (Esc)"
             className="w-5 h-5 rounded-md flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.06] transition-colors cursor-pointer"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -612,106 +599,96 @@ export default function ModelSelectorDropdown({
         </div>
       </div>
 
-      {/* 2. Keyboard-Ready Search Input */}
-      <div className="relative pt-2 px-0.5">
-        <svg
-          className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-[17px] pointer-events-none"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-        <input
-          ref={searchInputRef}
-          type="text"
-          placeholder={interactionMode === "voice" ? "Search live audio models..." : "Search by name, provider, or tier (↑↓ Enter)..."}
-          value={modelSearchQuery}
-          onChange={(e) => {
-            setModelSearchQuery(e.target.value);
-            setFocusedIndex(0);
-          }}
-          className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-white/[0.03] border border-white/[0.08] text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-cyan-400/40 font-mono transition-colors"
-        />
+      {/* 2. Compact Search Bar with Magnifier & Clear Button */}
+      <div className="p-2 border-b border-white/[0.04] shrink-0 space-y-1.5">
+        <div className="relative flex items-center">
+          <svg
+            className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 pointer-events-none"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            ref={searchInputRef}
+            type="text"
+            placeholder={interactionMode === "voice" ? "Search audio engines..." : "Search models..."}
+            value={modelSearchQuery}
+            onChange={(e) => {
+              setModelSearchQuery(e.target.value);
+              setFocusedIndex(0);
+            }}
+            className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-white/[0.03] border border-white/[0.08] text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-cyan-400/40 font-mono transition-colors"
+          />
+          {modelSearchQuery && (
+            <button
+              type="button"
+              onClick={() => {
+                setModelSearchQuery("");
+                setFocusedIndex(0);
+                searchInputRef.current?.focus();
+              }}
+              aria-label="Clear search"
+              className="absolute right-2 w-4 h-4 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.08] transition-colors cursor-pointer"
+            >
+              <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {/* Streamlined single-row horizontal provider filter */}
+        {providerGroups.length > 1 && (
+          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5 shrink-0">
+            {providerGroups.map((pg) => {
+              const isFilterActive = selectedProviderKey === pg.key;
+              return (
+                <button
+                  key={pg.key}
+                  type="button"
+                  onClick={() => {
+                    setSelectedProviderKey(pg.key);
+                    setFocusedIndex(0);
+                  }}
+                  className={`px-2 py-0.5 rounded-md text-[9.5px] font-mono whitespace-nowrap transition-colors border cursor-pointer shrink-0 ${
+                    isFilterActive
+                      ? "bg-white/[0.12] text-white border-white/[0.2] font-semibold"
+                      : "bg-transparent text-zinc-400 hover:text-zinc-200 border-transparent hover:bg-white/[0.04]"
+                  }`}
+                >
+                  {pg.label} <span className="opacity-50 text-[8px] ml-0.5">{pg.count}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* 3. Canonical Provider Filter Chips */}
-      {providerGroups.length > 1 && (
-        <div className="flex items-center gap-1 overflow-x-auto custom-scrollbar py-1 px-0.5 shrink-0 border-b border-white/[0.04]">
-          {providerGroups.map((pg) => {
-            const isFilterActive = selectedProviderKey === pg.key;
-            return (
-              <button
-                key={pg.key}
-                type="button"
-                onClick={() => {
-                  setSelectedProviderKey(pg.key);
-                  setSelectedRouteKey("All");
-                  setFocusedIndex(0);
-                }}
-                className={`px-2 py-0.5 rounded-lg text-[10px] font-mono whitespace-nowrap transition-colors border cursor-pointer ${
-                  isFilterActive
-                    ? "bg-white/[0.12] text-white border-white/[0.22] font-semibold shadow-sm"
-                    : "bg-transparent text-zinc-400 hover:text-zinc-200 border-transparent hover:bg-white/[0.04]"
-                }`}
-              >
-                {pg.label} <span className="opacity-50 text-[8.5px] ml-0.5">{pg.count}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* 4. Sub-Route Filter Chips */}
-      {availableRoutes.length > 1 && (
-        <div className="flex items-center gap-1 overflow-x-auto custom-scrollbar py-1 px-0.5 shrink-0 bg-white/[0.015] rounded-lg mt-0.5">
-          <span className="text-[8.5px] font-mono text-zinc-500 uppercase tracking-wider pl-1 shrink-0">
-            Route:
-          </span>
-          {availableRoutes.map((rg) => {
-            const isFilterActive = selectedRouteKey === rg.key;
-            return (
-              <button
-                key={rg.key}
-                type="button"
-                onClick={() => {
-                  setSelectedRouteKey(rg.key);
-                  setFocusedIndex(0);
-                }}
-                className={`px-1.5 py-0.2 rounded-md text-[9.5px] font-mono whitespace-nowrap transition-colors border cursor-pointer ${
-                  isFilterActive
-                    ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-semibold"
-                    : "bg-transparent text-zinc-400 hover:text-zinc-200 border-transparent hover:bg-white/[0.04]"
-                }`}
-              >
-                {rg.label} <span className="opacity-50 text-[8px] ml-0.5">{rg.count}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* 5. Tabular Model Catalog List with Keyboard Focus and Section Dividers */}
+      {/* 3. High-Density 1-Line Model Item Catalog */}
       <div
         ref={listContainerRef}
         role="listbox"
         aria-label="Models list"
-        className="mt-1 space-y-0.5 overflow-y-auto custom-scrollbar flex-1 pr-1"
+        className="p-1 space-y-0.5 overflow-y-auto custom-scrollbar flex-1 min-h-0"
       >
         {displayedModels.length === 0 ? (
           <div className="py-8 text-center text-xs text-zinc-500 font-mono">
             {interactionMode === "voice"
-              ? "No live audio models match your criteria."
-              : "No matching models found. Press Esc to dismiss."}
+              ? "No voice engines match search."
+              : "No matching models found."}
           </div>
         ) : (
           groupedSections.map((sec, secIdx) => (
             <div key={sec.title || `sec-${secIdx}`} className="space-y-0.5">
-              {/* Provider Heading (Always preserved, Anara standard) */}
-              <div className="sticky top-0 z-10 text-[9.5px] font-mono font-semibold uppercase tracking-wider text-zinc-400 px-2 py-1 bg-[#090d16]/95 backdrop-blur-sm border-b border-white/[0.04] flex items-center justify-between">
-                <span>{sec.title}</span>
-                <span className="text-[8.5px] text-zinc-500">{sec.models.length}</span>
-              </div>
+              {/* Subtle section divider when browsing all providers without an active search */}
+              {selectedProviderKey === "All" && !modelSearchQuery && groupedSections.length > 1 && (
+                <div className="sticky top-0 z-10 px-2 py-0.5 text-[8.5px] font-mono font-semibold uppercase tracking-wider text-zinc-500 bg-[#090d16]/95 backdrop-blur-sm border-b border-white/[0.04] flex items-center justify-between">
+                  <span>{sec.title}</span>
+                  <span className="text-[8px] text-zinc-600">{sec.models.length}</span>
+                </div>
+              )}
 
               {sec.models.map((m) => {
                 const globalIndex = displayedModels.findIndex((item) => item.id === m.id);
@@ -720,10 +697,21 @@ export default function ModelSelectorDropdown({
                 const siblings = (m as any)._siblings as string[] | undefined;
                 const isSelected = m.id === activeModelId || (siblings && siblings.includes(activeModelId));
                 const displayName = formatModelDisplayName(m.name || m.id);
-                const inherentTier = extractModelTier(m.id);
+                const { isReasoning, isFast, isVision } = getModelTierBadges(m);
+
+                // Status indicator dot: cyan for reasoning, amber for fast, emerald for standard
+                let dotColor = "bg-emerald-400";
+                let dotGlow = "shadow-[0_0_5px_rgba(52,211,153,0.6)]";
+                if (isReasoning) {
+                  dotColor = "bg-cyan-400";
+                  dotGlow = "shadow-[0_0_5px_rgba(34,211,238,0.7)]";
+                } else if (isFast) {
+                  dotColor = "bg-amber-400";
+                  dotGlow = "shadow-[0_0_5px_rgba(251,191,36,0.6)]";
+                }
+
                 const routeName = extractModelRoute(m.id) || m.provider?.toLowerCase();
                 const modalities = getModelModalities(m);
-                const { isReasoning, isFast, isVision, isPro } = getModelTierBadges(m);
 
                 return (
                   <button
@@ -734,114 +722,55 @@ export default function ModelSelectorDropdown({
                     data-model-idx={globalIndex}
                     onClick={() => handleSelect(m)}
                     onMouseEnter={() => setFocusedIndex(globalIndex)}
-                    title={`${displayName} (${m.id})\nProvider: ${getProviderDisplayName(m.provider)}\nRoute: ${routeName}\nTier: ${inherentTier || "Standard"}\nModalities: ${modalities.map((x) => x.label).join(", ")}`}
-                    className={`w-full h-8 px-2 rounded-lg flex items-center justify-between text-left transition-colors cursor-pointer border ${
+                    title={`${displayName} (${m.id})\nProvider: ${getProviderDisplayName(m.provider)}\nRoute: ${routeName}\nModalities: ${modalities.map((x) => x.label).join(", ")}`}
+                    className={`w-full h-7.5 px-2 rounded-lg flex items-center justify-between text-left transition-colors cursor-pointer border ${
                       isFocused
                         ? "bg-white/[0.10] border-cyan-400/40 text-white"
                         : isSelected
-                        ? "bg-white/[0.06] border-white/[0.14] text-white shadow-sm"
-                        : "bg-transparent border-transparent hover:bg-white/[0.04] hover:border-white/[0.07] text-zinc-300 hover:text-white"
+                        ? "bg-white/[0.06] border-white/[0.12] text-white"
+                        : "bg-transparent border-transparent hover:bg-white/[0.04] text-zinc-300 hover:text-white"
                     }`}
                   >
-                    {/* Left: Indicator + Clean Model Name + Tiers + Route */}
-                    <div className="flex items-center gap-1.5 min-w-0 flex-1 pr-2">
+                    {/* Left: Status indicator dot + model display name */}
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1 pr-1.5">
                       <span
-                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                          isSelected
-                            ? "bg-cyan-400 ring-2 ring-cyan-400/20 shadow-[0_0_6px_rgba(34,211,238,0.8)]"
-                            : isFocused
-                            ? "bg-zinc-400"
-                            : "bg-transparent"
-                        }`}
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor} ${dotGlow}`}
                       />
-                      <span className={`text-[11.5px] truncate ${isSelected ? "text-white font-semibold" : "text-zinc-200"}`}>
+                      <span className="truncate font-medium text-xs text-white">
                         {displayName}
-                      </span>
-
-                      {/* Tier Badges (Reasoning, Fast, Vision, Pro - Anara Standard) */}
-                      <div className="flex items-center gap-0.5 shrink-0">
-                        {isReasoning && (
-                          <span
-                            title="Reasoning / Deep Thinking"
-                            className="text-[7.5px] font-mono font-medium px-1 py-0.2 rounded border text-purple-300 bg-purple-500/[0.12] border-purple-400/30"
-                          >
-                            REASON
-                          </span>
-                        )}
-                        {isFast && !isReasoning && (
-                          <span
-                            title="Fast LPU / Low-latency inference"
-                            className="text-[7.5px] font-mono font-medium px-1 py-0.2 rounded border text-cyan-300 bg-cyan-500/[0.12] border-cyan-400/30"
-                          >
-                            FAST
-                          </span>
-                        )}
-                        {isPro && (
-                          <span
-                            title="Flagship / Pro Tier"
-                            className="text-[7.5px] font-mono font-medium px-1 py-0.2 rounded border text-amber-300 bg-amber-500/[0.12] border-amber-400/30"
-                          >
-                            PRO
-                          </span>
-                        )}
-                        {siblingCount && siblingCount > 1 && (
-                          <span
-                            title={`${siblingCount} tier variants consolidated (controlled via Think pill):\n${siblings?.join("\n")}`}
-                            className="text-[7.5px] font-mono font-semibold px-1 py-0.2 rounded border bg-white/[0.05] text-zinc-400 border-white/[0.10]"
-                          >
-                            {siblingCount} Tiers
-                          </span>
-                        )}
-                      </div>
-
-                      <span className="text-[9px] font-mono text-zinc-500 shrink-0 hidden sm:inline-block">
-                        {routeName}
                       </span>
                     </div>
 
-                    {/* Right: Modality Chips + Context Size + Checkmark */}
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {/* Modality micro-tags */}
-                      <div className="flex items-center gap-0.5">
-                        {isVision && (
-                          <span
-                            title="Vision capable"
-                            className="text-[7.5px] font-mono font-medium px-1 py-0.2 rounded border text-emerald-400 bg-emerald-500/[0.06] border-emerald-500/20"
-                          >
-                            IMG
-                          </span>
-                        )}
-                        {modalities.some((m) => m.id === "video") && (
-                          <span
-                            title="Video capable"
-                            className="text-[7.5px] font-mono font-medium px-1 py-0.2 rounded border text-amber-400 bg-amber-500/[0.06] border-amber-500/20"
-                          >
-                            VID
-                          </span>
-                        )}
-                        {modalities.some((m) => m.id === "audio") && (
-                          <span
-                            title="Voice capable"
-                            className="text-[7.5px] font-mono font-medium px-1 py-0.2 rounded border text-sky-400 bg-sky-500/[0.06] border-sky-500/20"
-                          >
-                            AUD
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Context tokens length */}
-                      {m.context_window ? (
-                        <span className="text-[9px] font-mono text-zinc-400 w-7 text-right shrink-0">
+                    {/* Right: Subtle small capability badges + checkmark */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      {isReasoning && (
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-white/[0.04] text-slate-400 font-mono">
+                          REASON
+                        </span>
+                      )}
+                      {isFast && !isReasoning && (
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-white/[0.04] text-slate-400 font-mono">
+                          FAST
+                        </span>
+                      )}
+                      {isVision && (
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-white/[0.04] text-slate-400 font-mono">
+                          IMG
+                        </span>
+                      )}
+                      {m.context_window && (
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-white/[0.04] text-slate-400 font-mono hidden sm:inline-block">
                           {formatTokens(m.context_window)}
                         </span>
-                      ) : (
-                        <span className="w-7 shrink-0" />
                       )}
-
-                      {/* Active Checkmark */}
+                      {siblingCount && siblingCount > 1 && !isReasoning && (
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-white/[0.04] text-slate-400 font-mono">
+                          {siblingCount}T
+                        </span>
+                      )}
                       <div className="w-3.5 h-3.5 flex items-center justify-center shrink-0">
                         {isSelected && (
-                          <svg className="w-3 h-3 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                           </svg>
                         )}
