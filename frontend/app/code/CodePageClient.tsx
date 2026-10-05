@@ -24,7 +24,6 @@ import { useCodeStudioLayout } from "./useCodeStudioLayout";
 import { playAnaraCompletionChime, playAnaraAlertChime } from "@/lib/anaraSoundSynthesizer";
 
 const AnaraBrain = lazy(() => import("@/components/brain/AnaraBrain"));
-const AgentStatusBar = lazy(() => import("@/components/statusbar/AgentStatusBar"));
 
 export interface CodePageClientProps {
   initialSidebarWidth?: number;
@@ -1266,27 +1265,6 @@ export default function CodePageClient({
         workspaceFilesList={workspaceFilesList}
         activeUnansweredQuestion={activeUnansweredQuestion}
       />
-
-      {/* ── Unified Agent Statusbar (Anara Desktop Standard) ── */}
-      <Suspense fallback={null}>
-        <AgentStatusBar
-          isConnected={wsStatus === "connected"}
-          activeSessionId={activeSessionId}
-          workspaceName={workspaceTree?.is_custom_folder && workspaceTree?.workspace_name ? workspaceTree.workspace_name : ""}
-          gitStatus={gitStatus}
-          onOpenGitReview={() => {
-            setIsLeftOpen(true);
-            setExplorerMode("git");
-            loadGitStatus(activeSessionId);
-          }}
-          tokenUsage={latestTokenUsage}
-          assistantStatus={assistantStatus}
-          activeModelId={activeModelId}
-          reasoningEffort={reasoningEffort}
-          onToggleTerminal={() => setIsTerminalOpen((v) => !v)}
-          isTerminalOpen={isTerminalOpen}
-        />
-      </Suspense>
 
       {/* ── Anara Brain Modal Drawer ── */}
       {isBrainDrawerOpen && (
