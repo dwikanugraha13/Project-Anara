@@ -14,7 +14,6 @@ import {
   ReasoningEffortLevel,
   saveReasoningEffortForModel,
   getSavedReasoningEffortForModel,
-  resolveSiblingTierModelId,
 } from "@/lib/reasoningEffort";
 import type { AnaraBrainProps } from "@/components/brain/types";
 import type { IdeTabFile } from "@/components/ide";
@@ -295,16 +294,14 @@ export default function CodePageClient({
   const handleSelectModel = useCallback(async (modelId: string) => {
     const saved = getSavedReasoningEffortForModel(modelId);
     setReasoningEffort(saved);
-    const resolvedId = resolveSiblingTierModelId(modelId, saved as any, models);
-    const targetModelId = resolvedId || modelId;
-    setActiveModelId(targetModelId);
+    setActiveModelId(modelId);
     try {
-      localStorage.setItem("anara_code_model", targetModelId);
-      await anaraApi.models.setActive(targetModelId);
+      localStorage.setItem("anara_code_model", modelId);
+      await anaraApi.models.setActive(modelId);
     } catch (err) {
       console.warn("[CodeStudio] setActiveModel error:", err);
     }
-  }, [models]);
+  }, []);
 
   // ── Fetch Sessions List (Universal: All sessions accessible in Code Studio) ──
   const loadSessions = useCallback(async () => {

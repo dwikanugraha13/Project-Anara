@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import ModelSelectorDropdown, { AIModelInfo, isReasoningSupported } from "./ModelSelectorDropdown";
 import ReasoningPill from "./ReasoningPill";
 import ApprovalModePill from "./ApprovalModePill";
-import { getModelModalities, resolveSiblingTierModelId } from "@/lib/reasoningEffort";
+import { getModelModalities, findModelById } from "@/lib/reasoningEffort";
 import { formatModelDisplayName } from "@/lib/modelFormat";
 import type { AssistantStatus } from "./BottomDock";
 
@@ -262,7 +262,7 @@ export function DockControlsCluster({
         {/* AI Model Selector Button & Popover */}
         <div className="relative shrink-0" data-dropdown-root="true">
           {(() => {
-            const cur = models.find((m) => m.id === activeModelId) || models[0];
+            const cur = findModelById(models, activeModelId) || { id: activeModelId, name: activeModelId, supports_reasoning: true };
             const displayName = formatModelDisplayName(cur?.name || cur?.id || activeModelId);
             const modalities = getModelModalities(cur);
 
@@ -302,7 +302,7 @@ export function DockControlsCluster({
 
         {/* Dedicated Reasoning Pill */}
         {(() => {
-          const cur = models.find((m) => m.id === activeModelId) || models[0];
+          const cur = findModelById(models, activeModelId) || { id: activeModelId, name: activeModelId, supports_reasoning: true };
           const hasReasoning = isReasoningSupported(cur);
           if (!hasReasoning || interactionMode === "voice") return null;
           return (
@@ -312,10 +312,6 @@ export function DockControlsCluster({
               reasoningEffort={reasoningEffort}
               onSelectReasoningEffort={(effort) => {
                 onSelectReasoningEffort?.(effort as any);
-                const siblingId = resolveSiblingTierModelId(activeModelId, effort as any, models);
-                if (siblingId && siblingId !== activeModelId) {
-                  onSelectModel(siblingId);
-                }
               }}
               modelName={formatModelDisplayName(cur?.name || cur?.id || activeModelId)}
             />

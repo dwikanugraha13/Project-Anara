@@ -452,83 +452,45 @@ export function saveReasoningEffortForModel(modelId: string, level: ReasoningEff
 }
 
 /**
+ * Prefix-tolerant model resolver that locates a model in a list even if
+ * provider prefixes differ (e.g. 'ag/gemini-3.8-flash-high' vs '9router/ag/gemini-3.8-flash-high').
+ */
+export function findModelById(models: MinimalModelInfo[], targetId: string): MinimalModelInfo | undefined {
+  if (!targetId || !models || models.length === 0) return undefined;
+  const tLower = targetId.toLowerCase().trim();
+
+  // 1. Direct ID match
+  const direct = models.find((m) => m.id.toLowerCase() === tLower);
+  if (direct) return direct;
+
+  // 2. Prefix-tolerant match (strip leading namespace like '9router/' or 'openrouter/')
+  const tClean = targetId.replace(/^[a-z0-9_-]+\//i, "").toLowerCase();
+  const cleanMatch = models.find((m) => {
+    const mLower = m.id.toLowerCase();
+    const mClean = mLower.replace(/^[a-z0-9_-]+\//i, "").toLowerCase();
+    return (
+      mLower === tClean ||
+      mClean === tLower ||
+      mClean === tClean ||
+      mLower.endsWith("/" + tLower) ||
+      tLower.endsWith("/" + mLower)
+    );
+  });
+  if (cleanMatch) return cleanMatch;
+
+  // 3. Fallback to base slug match (e.g. without -high / -medium suffix)
+  const tBase = getBaseSlug(targetId).toLowerCase();
+  return models.find((m) => getBaseSlug(m.id).toLowerCase() === tBase);
+}
+
+/**
  * Resolves a sibling model ID when the active model belongs to a provider that
- * encodes reasoning levels into model slugs (e.g. 9router ag/gemini-3.8-flash -> ag/gemini-3.8-flash-high).
+ * encodes reasoning levels into model slugs. (Deprecated: model is preserved decoupled from effort level).
  */
 export function resolveSiblingTierModelId(
   activeModelId: string,
-  targetEffort: ReasoningEffortLevel,
-  allModels: MinimalModelInfo[]
+  _targetEffort: ReasoningEffortLevel,
+  _allModels: MinimalModelInfo[]
 ): string {
-  if (!activeModelId || !allModels || allModels.length === 0) return activeModelId;
-
-  const baseSlug = getBaseSlug(activeModelId);
-
-  // Helper: Find model by case-insensitive ID match, or match without router prefix
-  const findModel = (targetId: string): MinimalModelInfo | undefined => {
-    const tLower = targetId.toLowerCase();
-    const direct = allModels.find((m) => m.id.toLowerCase() === tLower);
-    if (direct) return direct;
-
-    // Check with router prefix stripped (e.g. "ag/gemini-3.8-flash" vs "gemini-3.8-flash")
-    const tNoPrefix = tLower.includes("/") ? tLower.split("/").slice(1).join("/") : tLower;
-    return allModels.find((m) => {
-      const mLower = m.id.toLowerCase();
-      const mNoPrefix = mLower.includes("/") ? mLower.split("/").slice(1).join("/") : mLower;
-      return mNoPrefix === tNoPrefix;
-    });
-  };
-
-  // Case 1: Switching to "off"
-  if (targetEffort === "off") {
-    // 1. Look for base model without tier suffix
-    const baseModel = findModel(baseSlug);
-    if (baseModel) return baseModel.id;
-
-    // 2. Look for explicit "-off" or "-none" sibling
-    const offSibling = findModel(`${baseSlug}-off`) || findModel(`${baseSlug}-none`);
-    if (offSibling) return offSibling.id;
-
-    return activeModelId;
-  }
-
-  // Case 2: Switching to "medium" (Standard/Default tier)
-  if (targetEffort === "medium") {
-    // 1. Look for explicit "-medium" sibling
-    const mediumSibling = findModel(`${baseSlug}-medium`);
-    if (mediumSibling) return mediumSibling.id;
-
-    // 2. Base model without suffix often represents standard/medium reasoning in gateway routers
-    const baseModel = findModel(baseSlug);
-    if (baseModel) return baseModel.id;
-
-    return activeModelId;
-  }
-
-  // Case 3: Target effort is explicit tier ('low', 'high', 'ultra', 'budget', 'max')
-  // 1. Exact tier candidate: e.g. ag/gemini-3.8-flash-high or ag/gemini-3.8-flash:high
-  const directCandidate =
-    findModel(`${baseSlug}-${targetEffort}`) || findModel(`${baseSlug}:${targetEffort}`);
-  if (directCandidate) return directCandidate.id;
-
-  // 2. Fallbacks for related tiers
-  if (targetEffort === "ultra") {
-    const maxSibling = findModel(`${baseSlug}-max`) || findModel(`${baseSlug}-high`);
-    if (maxSibling) return maxSibling.id;
-  } else if (targetEffort === "max") {
-    const highSibling = findModel(`${baseSlug}-high`) || findModel(`${baseSlug}-ultra`);
-    if (highSibling) return highSibling.id;
-  } else if (targetEffort === "high") {
-    const thinkingSibling =
-      findModel(`${baseSlug}-thinking`) ||
-      findModel(`${baseSlug}-reasoning`) ||
-      findModel(`${baseSlug}-thought`);
-    if (thinkingSibling) return thinkingSibling.id;
-  } else if (targetEffort === "budget") {
-    const lowSibling = findModel(`${baseSlug}-low`);
-    if (lowSibling) return lowSibling.id;
-  }
-
-  // If no sibling found, maintain activeModelId
   return activeModelId;
 }

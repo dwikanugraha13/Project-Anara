@@ -12,7 +12,7 @@ import type { InteractiveQuestionData } from "../chat/InteractiveQuestionCard";
 import BottomDock from "../dock/BottomDock";
 import type { AnaraBrainProps } from "../brain/types";
 import { getBackendUrl } from "@/lib/apiClient";
-import { getSavedReasoningEffortForModel, resolveSiblingTierModelId } from "@/lib/reasoningEffort";
+import { getSavedReasoningEffortForModel } from "@/lib/reasoningEffort";
 import type { AnaraCodeIDEProps } from "../ide/AnaraCodeIDE";
 import CommandPalette, { CommandItem } from "../command/CommandPalette";
 import { useLayoutSplitter } from "@/hooks/useLayoutSplitter";
@@ -256,24 +256,15 @@ export default function AnaraWorkbench({
       // Automatically synchronize per-model reasoning effort
       const savedEffort = getSavedReasoningEffortForModel(newModelId);
       onSelectReasoningEffort?.(savedEffort as any);
-      // Resolve sibling tier variant if provider encodes tier in model slug (e.g. 9router ag/gemini-3.8-flash -> ag/gemini-3.8-flash-high)
-      const resolvedId = resolveSiblingTierModelId(newModelId, savedEffort as any, models);
-      const targetModelId = resolvedId || newModelId;
-      if (targetModelId !== newModelId) {
-        setChatModelId(targetModelId);
-        try {
-          localStorage.setItem("anara_chat_model", targetModelId);
-        } catch {}
-      }
       try {
         await fetch(`${BACKEND_URL}/api/models/active`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model_id: targetModelId }),
+          body: JSON.stringify({ model_id: newModelId }),
         });
       } catch {}
     }
-  }, [interactionMode, onSelectReasoningEffort, models]);
+  }, [interactionMode, onSelectReasoningEffort]);
 
   const contextPaneRef = useRef<HTMLDivElement>(null);
   const [isContextPaneOpen, setIsContextPaneOpen] = useState(false);
