@@ -65,7 +65,7 @@ export function DockComposerInput({
     const el = textareaRef.current;
     if (!el || isInputExpanded) return;
     if (!inputMessage) {
-      el.style.height = "36px";
+      el.style.height = "26px";
       el.style.overflowY = "hidden";
       setIsInputOverflowed(false);
       return;
@@ -111,11 +111,11 @@ export function DockComposerInput({
             onChange={handleTextareaChange}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
-            placeholder="What's on your mind? (Shift+Enter for newline, / for commands, @ for files)"
-            className={`w-full bg-transparent border-none py-1.5 px-1 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none font-sans resize-none custom-scrollbar leading-relaxed ${
+            placeholder="Start with a goal... (type '/' for commands, '@' for files)"
+            className={`w-full bg-transparent border-none py-0.5 px-1 text-xs sm:text-[13px] text-white placeholder:text-slate-500 focus:outline-none font-sans resize-none custom-scrollbar leading-relaxed ${
               isInputOverflowed || isInputExpanded ? "overflow-y-auto" : "overflow-hidden"
             } ${isInputExpanded ? "flex-1 h-full max-h-none" : ""}`}
-            style={isInputExpanded ? { minHeight: "140px" } : { maxHeight: "180px", minHeight: "36px" }}
+            style={isInputExpanded ? { minHeight: "140px" } : { maxHeight: "180px", minHeight: "26px" }}
             autoFocus
           />
         </div>

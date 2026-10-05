@@ -598,10 +598,10 @@ export default function BottomDock({
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`w-full rounded-2xl p-2.5 px-3.5 flex flex-col gap-2 pointer-events-auto border shadow-[0_20px_50px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.12)] relative transition-[border-color,box-shadow] duration-200 isolate ${
+          className={`w-full rounded-2xl py-2 px-3 sm:py-2 sm:px-3.5 flex flex-col gap-1 pointer-events-auto border shadow-[0_16px_36px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.08)] relative transition-[border-color,box-shadow] duration-200 isolate ${
             isDragOver
               ? "border-cyan-400 ring-2 ring-cyan-400/50 shadow-[0_0_30px_rgba(34,211,238,0.25)]"
-              : "border-white/[0.10] hover:border-white/[0.20]"
+              : "border-white/[0.08] hover:border-white/[0.16]"
           } ${isInputExpanded ? "h-full flex-1 min-h-0" : ""}`}
         >
           {/* Isolated Glass Backing */}
@@ -638,7 +638,7 @@ export default function BottomDock({
 
           {/* Coding Status Strip: strictly hidden when not in a local git repo */}
           {gitStatus?.is_git && gitStatus?.branch ? (
-            <div className="w-full flex items-center justify-between pb-1.5 mb-1 border-b border-white/[0.06] text-[11px] font-mono select-none">
+            <div className="w-full flex items-center justify-between pb-1 mb-0.5 border-b border-white/[0.06] text-[10.5px] font-mono select-none">
               {/* Left: Branch Indicator */}
               <div className="flex items-center gap-1.5 text-slate-300">
                 <svg className="w-3.5 h-3.5 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -648,7 +648,7 @@ export default function BottomDock({
               </div>
 
               {/* Right: Telemetry (Turns & Git Diff Delta) */}
-              <div className="flex items-center gap-3 text-slate-400">
+              <div className="flex items-center gap-2.5 text-slate-400">
                 {promptTurnsCount !== undefined && promptTurnsCount > 0 && (
                   <span className="flex items-center gap-0.5 text-slate-300" title="Conversation Turns">
                     <span className="text-slate-400">↑</span>
@@ -656,7 +656,7 @@ export default function BottomDock({
                   </span>
                 )}
                 {(gitStatus.insertions !== undefined || gitStatus.deletions !== undefined) && (
-                  <span className="flex items-center gap-1.5 font-mono tabular-nums text-[10.5px]">
+                  <span className="flex items-center gap-1 font-mono tabular-nums text-[10px]">
                     {gitStatus.insertions ? <span className="text-emerald-400">+{gitStatus.insertions}</span> : null}
                     {gitStatus.deletions ? <span className="text-rose-400">-{gitStatus.deletions}</span> : null}
                   </span>
@@ -667,7 +667,7 @@ export default function BottomDock({
 
           {/* Active Sequential Queue Banner */}
           {queuedCount > 0 && (
-            <div className="flex items-center justify-between px-3 py-1 mb-1.5 rounded-lg bg-cyan-950/40 border border-cyan-500/20 text-[10.5px] font-mono text-cyan-300 backdrop-blur-md">
+            <div className="flex items-center justify-between px-3 py-1 mb-1 rounded-lg bg-cyan-950/40 border border-cyan-500/20 text-[10.5px] font-mono text-cyan-300 backdrop-blur-md">
               <div className="flex items-center gap-2 truncate">
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shrink-0" />
                 <span className="font-semibold uppercase tracking-wider text-cyan-400 shrink-0">
@@ -687,7 +687,7 @@ export default function BottomDock({
           )}
 
           {/* Input Area / Voice Waveform */}
-          <div className={`w-full flex items-center gap-2 ${isInputExpanded ? "flex-1 min-h-0 overflow-hidden" : "min-h-[36px]"}`}>
+          <div className={`w-full flex items-center gap-2 ${isInputExpanded ? "flex-1 min-h-0 overflow-hidden" : "min-h-[26px]"}`}>
             {interactionMode === "voice" && !inputMessage.trim() && attachedFiles.length === 0 ? (
               <DockAudioWaveform
                 status={status}

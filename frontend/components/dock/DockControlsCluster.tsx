@@ -257,8 +257,11 @@ export function DockControlsCluster({
           </div>
         )}
 
-        {/* Mode Dropdown (Interaction Mode) */}
+      {/* Mode Dropdown (Interaction Mode) */}
+      </div>
 
+      {/* Right Cluster: [Model] [Reasoning] [Approval] [Mic/Interrupt] [Send Button] */}
+      <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
         {/* AI Model Selector Button & Popover */}
         <div className="relative shrink-0" data-dropdown-root="true">
           {(() => {
@@ -322,10 +325,8 @@ export function DockControlsCluster({
         {interactionMode !== "voice" && (
           <ApprovalModePill />
         )}
-      </div>
 
-      {/* Right Cluster: Quick Mic, Interrupt & Send Button */}
-      <div className="flex items-center gap-1.5 shrink-0">
+        {/* Quick Mic, Interrupt & Send Button */}
         {interactionMode === "voice" && status === "speaking" && (
           <button
             type="button"
