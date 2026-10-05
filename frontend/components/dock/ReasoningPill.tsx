@@ -163,11 +163,6 @@ export default function ReasoningPill({
             : "bg-white/[0.04] hover:bg-white/[0.07] border-white/[0.08] hover:border-white/[0.15] text-zinc-300 hover:text-white"
         }`}
       >
-        <span
-          className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-            isOff ? "bg-zinc-600" : "bg-purple-400"
-          }`}
-        />
         <span className="font-semibold tracking-tight">
           {isOff ? "Off" : currentConfig.shortLabel}
         </span>

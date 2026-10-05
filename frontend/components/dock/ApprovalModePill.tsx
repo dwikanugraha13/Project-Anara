@@ -103,39 +103,12 @@ export default function ApprovalModePill({ disabled = false }: ApprovalModePillP
           setIsOpen((prev) => !prev);
         }}
         title={`Approval Mode: ${mode.toUpperCase()} (Click to change)`}
-        className={`flex items-center gap-1.5 py-1 px-2.5 rounded-lg border text-[11px] font-medium transition-colors cursor-pointer select-none ${
+        className={`flex items-center gap-1.5 py-1 px-2.5 rounded-lg border text-[11px] font-medium font-mono transition-colors cursor-pointer select-none ${
           isOpen
             ? "bg-white/[0.08] border-white/20 text-white"
-            : isManual
-            ? "bg-amber-500/10 hover:bg-amber-500/15 border-amber-400/25 text-amber-300 hover:text-amber-200"
-            : isOff
-            ? "bg-emerald-500/10 hover:bg-emerald-500/15 border-emerald-400/25 text-emerald-300 hover:text-emerald-200"
-            : "bg-white/[0.04] hover:bg-white/[0.07] border-white/[0.08] hover:border-white/[0.15] text-zinc-300 hover:text-white"
+            : "bg-white/[0.03] border-white/[0.08] hover:border-white/[0.16] hover:bg-white/[0.06] text-zinc-300 hover:text-white"
         }`}
       >
-        {isManual ? (
-          <svg className="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.8}
-              d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
-            />
-          </svg>
-        ) : isOff ? (
-          <svg className="w-3.5 h-3.5 text-emerald-400 shrink-0" fill="currentColor" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={0} d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
-        ) : (
-          <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.8}
-              d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"
-            />
-          </svg>
-        )}
         <span className="font-semibold tracking-tight capitalize">
           {mode}
         </span>

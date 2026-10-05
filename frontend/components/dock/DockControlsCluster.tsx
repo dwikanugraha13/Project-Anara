@@ -280,7 +280,6 @@ export function DockControlsCluster({
                     : "bg-white/[0.03] border-white/[0.08] hover:border-white/[0.16] hover:bg-white/[0.06] text-zinc-300 hover:text-white"
                 }`}
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
                 <span className="truncate max-w-[120px] sm:max-w-[170px] font-semibold tracking-tight" suppressHydrationWarning>
                   {displayName}
                 </span>
