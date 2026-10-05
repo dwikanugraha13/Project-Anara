@@ -568,7 +568,6 @@ export default function ModelSelectorDropdown({
       {/* 1. Header: Compact title bar + Status + Count + Close */}
       <div className="px-2.5 pt-2.5 pb-2 border-b border-white/[0.06] flex items-center justify-between shrink-0">
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0 shadow-[0_0_6px_rgba(34,211,238,0.6)]" />
           <span className="text-[11px] font-mono font-semibold uppercase tracking-wider text-zinc-200 truncate">
             {interactionMode === "voice" ? "Voice Engines" : "Models"}
           </span>
@@ -578,7 +577,7 @@ export default function ModelSelectorDropdown({
           {isUsingFallback && (
             <span
               title="Using curated standby catalog"
-              className="text-[8px] font-mono font-semibold uppercase text-amber-400 bg-amber-500/[0.08] border border-amber-500/20 px-1 py-0.2 rounded shrink-0"
+              className="text-[8px] font-mono font-semibold uppercase text-zinc-400 bg-white/[0.04] border border-white/[0.08] px-1 py-0.2 rounded shrink-0"
             >
               Standby
             </span>
@@ -702,17 +701,6 @@ export default function ModelSelectorDropdown({
                 const displayName = formatModelDisplayName(m.name || m.id);
                 const { isReasoning, isFast, isVision } = getModelTierBadges(m);
 
-                // Status indicator dot: cyan for reasoning, amber for fast, emerald for standard
-                let dotColor = "bg-emerald-400";
-                let dotGlow = "shadow-[0_0_5px_rgba(52,211,153,0.6)]";
-                if (isReasoning) {
-                  dotColor = "bg-cyan-400";
-                  dotGlow = "shadow-[0_0_5px_rgba(34,211,238,0.7)]";
-                } else if (isFast) {
-                  dotColor = "bg-amber-400";
-                  dotGlow = "shadow-[0_0_5px_rgba(251,191,36,0.6)]";
-                }
-
                 const routeName = extractModelRoute(m.id) || m.provider?.toLowerCase();
                 const modalities = getModelModalities(m);
 
@@ -728,18 +716,15 @@ export default function ModelSelectorDropdown({
                     title={`${displayName} (${m.id})\nProvider: ${getProviderDisplayName(m.provider)}\nRoute: ${routeName}\nModalities: ${modalities.map((x) => x.label).join(", ")}`}
                     className={`w-full h-7.5 px-2 rounded-lg flex items-center justify-between text-left transition-colors cursor-pointer border ${
                       isFocused
-                        ? "bg-white/[0.10] border-cyan-400/40 text-white"
+                        ? "bg-white/[0.08] border-white/20 text-white"
                         : isSelected
-                        ? "bg-white/[0.06] border-white/[0.12] text-white"
-                        : "bg-transparent border-transparent hover:bg-white/[0.04] text-zinc-300 hover:text-white"
+                        ? "bg-white/[0.05] border-white/[0.12] text-white"
+                        : "bg-transparent border-transparent hover:bg-white/[0.03] text-zinc-300 hover:text-white"
                     }`}
                   >
-                    {/* Left: Status indicator dot + model display name */}
-                    <div className="flex items-center gap-1.5 min-w-0 flex-1 pr-1.5">
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor} ${dotGlow}`}
-                      />
-                      <span className="truncate font-medium text-xs text-white">
+                    {/* Left: Model display name */}
+                    <div className="flex items-center min-w-0 flex-1 pr-1.5">
+                      <span className="truncate font-medium text-xs text-zinc-200">
                         {displayName}
                       </span>
                     </div>
@@ -747,33 +732,33 @@ export default function ModelSelectorDropdown({
                     {/* Right: Subtle small capability badges + checkmark */}
                     <div className="flex items-center gap-1 shrink-0">
                       {isReasoning && (
-                        <span className="text-[9px] px-1 py-0.2 rounded bg-white/[0.04] text-slate-400 font-mono">
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-white/[0.04] text-zinc-400 font-mono">
                           REASON
                         </span>
                       )}
                       {isFast && !isReasoning && (
-                        <span className="text-[9px] px-1 py-0.2 rounded bg-white/[0.04] text-slate-400 font-mono">
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-white/[0.04] text-zinc-400 font-mono">
                           FAST
                         </span>
                       )}
                       {isVision && (
-                        <span className="text-[9px] px-1 py-0.2 rounded bg-white/[0.04] text-slate-400 font-mono">
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-white/[0.04] text-zinc-400 font-mono">
                           IMG
                         </span>
                       )}
                       {m.context_window && (
-                        <span className="text-[9px] px-1 py-0.2 rounded bg-white/[0.04] text-slate-400 font-mono hidden sm:inline-block">
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-white/[0.04] text-zinc-400 font-mono hidden sm:inline-block">
                           {formatTokens(m.context_window)}
                         </span>
                       )}
                       {siblingCount && siblingCount > 1 && !isReasoning && (
-                        <span className="text-[9px] px-1 py-0.2 rounded bg-white/[0.04] text-slate-400 font-mono">
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-white/[0.04] text-zinc-400 font-mono">
                           {siblingCount}T
                         </span>
                       )}
                       <div className="w-3.5 h-3.5 flex items-center justify-center shrink-0">
                         {isSelected && (
-                          <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-3.5 h-3.5 text-zinc-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                           </svg>
                         )}
