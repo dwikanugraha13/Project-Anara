@@ -25,17 +25,17 @@ logger = logging.getLogger(__name__)
 _OAUTH_REFRESH_LOCK = asyncio.Lock()
 
 _VISION_REGEX = re.compile(
-    r'(\bvision\b|-vl\b|\bllava\b|\bpixtral\b|\bmultimodal\b|\bgpt-4o\b|\bgpt-4-turbo\b|\bgpt-5\b|\bclaude-(?:sonnet|opus|haiku|[3-9])\b|\bgemini-|\bqwen(?:2\.5)?-vl\b|\bmimo-v)',
+    r'(\bvision\b|-vl\b|\bllava\b|\bpixtral\b|\bmultimodal\b|\bgpt-[4-9]|\bclaude-[3-9]|\bgemini-|\bqwen(?:[0-9.]+)?-vl\b|\bmimo-v)',
     re.IGNORECASE
 )
 
 _VIDEO_REGEX = re.compile(
-    r'(\bgemini-(?:1\.5|2\.[0-9]|2\.5|3\.[0-9]|flash|pro)\b|\bqwen2(?:.5)?-vl\b|\bvideo\b|\bgpt-4o\b|\bgpt-5\b|\bclaude-(?:sonnet|opus)-[4-9]\b)',
+    r'(\bgemini-(?:[1-9]\.[0-9]|[1-9]\.5|flash|pro)\b|\bqwen(?:[0-9.]+)?-vl\b|\bvideo\b|\bgpt-[4-9]|\bclaude-(?:sonnet|opus)-[4-9]\b)',
     re.IGNORECASE
 )
 
 _REASONING_REGEX = re.compile(
-    r'(\b(o[1-9]|o[1-9]-mini|o[1-9]-preview|r1|deepseek-r1|deepseek-reasoner|qwq|cot|thought|thinking|thinker|think|claude-3[-.]7|claude-(?:sonnet|opus|haiku)-[4-9]|claude-[4-9]|gpt-5|gpt-6|astra|ultra)\b|gemini-(?:2\.5|3\.[0-9]|flash-thinking))',
+    r'(\b(o[1-9]|o[1-9]-mini|o[1-9]-preview|r1|deepseek-r1|deepseek-reasoner|qwq|cot|thought|thinking|thinker|think|claude-3[-.]7|claude-(?:sonnet|opus|haiku)-[4-9]|claude-[4-9]|gpt-5|gpt-6|gpt-7|astra|ultra)\b|gemini-(?:2\.5|3\.[0-9]|flash-thinking))',
     re.IGNORECASE
 )
 
@@ -63,6 +63,16 @@ def detect_model_capabilities(item: Any = None, model_id: str = "") -> Dict[str,
         supports_reasoning = False
 
     if isinstance(item, dict):
+        # -1. Direct explicit boolean flags if already supplied
+        if isinstance(item.get("supports_vision"), bool):
+            supports_vision = item["supports_vision"]
+        if isinstance(item.get("supports_video"), bool):
+            supports_video = item["supports_video"]
+        if isinstance(item.get("supports_audio"), bool):
+            supports_audio = item["supports_audio"]
+        if isinstance(item.get("supports_reasoning"), bool):
+            supports_reasoning = item["supports_reasoning"]
+
         # 0. Upstream explicit reasoning effort declarations
         if any(k in item for k in ("reasoning_options", "reasoning_effort_levels", "supported_reasoning_levels", "allowed_effort")):
             supports_reasoning = True
@@ -74,15 +84,15 @@ def detect_model_capabilities(item: Any = None, model_id: str = "") -> Dict[str,
             if any(p in param_set for p in ("reasoning", "include_reasoning", "reasoning_effort", "thinking", "effort")):
                 supports_reasoning = True
 
-        # 2. Modalities list / set (OpenRouter / Standard OpenAI extended metadata)
-        modalities = item.get("modalities") or []
+        # 2. Modalities list / set (OpenRouter / Standard OpenAI extended metadata / input_modalities)
+        modalities = item.get("modalities") or item.get("input_modalities") or item.get("output_modalities") or []
         if isinstance(modalities, list):
             mod_set = {str(m).lower() for m in modalities}
-            if any(m in mod_set for m in ("image", "vision", "image_url")):
+            if any(m in mod_set for m in ("image", "vision", "image_url", "imageinput")):
                 supports_vision = True
-            if any(m in mod_set for m in ("video",)):
+            if any(m in mod_set for m in ("video", "videoinput")):
                 supports_video = True
-            if any(m in mod_set for m in ("audio", "voice")):
+            if any(m in mod_set for m in ("audio", "voice", "audioinput")):
                 supports_audio = True
 
         # 3. Architecture modality & instruct type (OpenRouter format: "text+image->text", instruct_type: "thinking")
@@ -99,17 +109,18 @@ def detect_model_capabilities(item: Any = None, model_id: str = "") -> Dict[str,
             if any(t in instruct_type for t in ("thinking", "reasoning", "cot")):
                 supports_reasoning = True
 
-        # 4. Ollama & HuggingFace capabilities / tags / details
-        details = item.get("details") or {}
-        if isinstance(details, dict):
-            families = details.get("families") or []
-            if isinstance(families, list):
-                fam_set = {str(f).lower() for f in families}
-                if any(f in fam_set for f in ("clip", "mllama", "vision")):
-                    supports_vision = True
-
+        # 4. Upstream capabilities dictionary (OpenAI / vLLM / Proxy standard) or list
         capabilities = item.get("capabilities") or item.get("tags") or []
-        if isinstance(capabilities, list):
+        if isinstance(capabilities, dict):
+            if any(capabilities.get(k) for k in ("vision", "image", "visual", "imageInput")):
+                supports_vision = True
+            if any(capabilities.get(k) for k in ("video", "videoInput")):
+                supports_video = True
+            if any(capabilities.get(k) for k in ("audio", "voice", "audioInput")):
+                supports_audio = True
+            if any(capabilities.get(k) for k in ("reasoning", "thinking", "cot")):
+                supports_reasoning = True
+        elif isinstance(capabilities, list):
             cap_set = {str(c).lower() for c in capabilities}
             if any(c in cap_set for c in ("thinking", "reasoning", "cot")):
                 supports_reasoning = True
@@ -120,7 +131,16 @@ def detect_model_capabilities(item: Any = None, model_id: str = "") -> Dict[str,
             if any(c in cap_set for c in ("audio", "voice", "speech")):
                 supports_audio = True
 
-        # 5. Features / supported generation methods (Google Gemini SDK & OpenAI-compatible)
+        # 5. Ollama & HuggingFace capabilities / tags / details
+        details = item.get("details") or {}
+        if isinstance(details, dict):
+            families = details.get("families") or []
+            if isinstance(families, list):
+                fam_set = {str(f).lower() for f in families}
+                if any(f in fam_set for f in ("clip", "mllama", "vision")):
+                    supports_vision = True
+
+        # 6. Features / supported generation methods (Google Gemini SDK & OpenAI-compatible)
         methods = item.get("supported_generation_methods") or []
         if isinstance(methods, list):
             meth_set = {str(m).lower() for m in methods}

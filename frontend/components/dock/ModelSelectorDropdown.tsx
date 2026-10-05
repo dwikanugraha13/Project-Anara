@@ -26,6 +26,8 @@ export interface AIModelInfo {
   supports_vision?: boolean;
   supports_video?: boolean;
   modalities?: string[];
+  input_modalities?: string[];
+  capabilities?: Record<string, any> | string[];
   supported_reasoning_levels?: string[];
   context_window?: number;
   max_output_tokens?: number;
@@ -239,8 +241,11 @@ export function getModelTierBadges(model: AIModelInfo): {
   const name = (model.name || "").toLowerCase();
   const badgeLower = (model.badge || "").toLowerCase();
 
+  const modalities = getModelModalities(model);
+
   const isReasoning =
     isReasoningSupported(model) ||
+    modalities.some((m) => m.id === "reasoning") ||
     Boolean(extractModelTier(model.id)) ||
     badgeLower === "reasoning" ||
     mid.includes("reason") ||
@@ -260,21 +265,19 @@ export function getModelTierBadges(model: AIModelInfo): {
     name.includes("mini") ||
     model.provider?.toLowerCase() === "groq";
 
-  const isVision =
-    Boolean(model.supports_vision) ||
-    (Array.isArray(model.modalities) && model.modalities.includes("image")) ||
-    mid.includes("vision") ||
-    mid.includes("-vl") ||
-    mid.includes("4o") ||
-    name.includes("vision");
+  const isVision = Boolean(
+    model.supports_vision ||
+    modalities.some((m) => m.id === "image") ||
+    (Array.isArray(model.modalities) && (model.modalities.includes("image") || model.modalities.includes("vision"))) ||
+    (model.capabilities && typeof model.capabilities === "object" && Boolean((model.capabilities as Record<string, any>).vision || (model.capabilities as Record<string, any>).image))
+  );
 
   const isPro =
     badgeLower === "pro" ||
     mid.includes("pro") ||
     mid.includes("opus") ||
     mid.includes("sonnet") ||
-    mid.includes("gpt-4") ||
-    mid.includes("gpt-5") ||
+    /gpt-[4-9]/i.test(mid) ||
     mid.includes("astra") ||
     mid.includes("ultra") ||
     name.includes("pro");

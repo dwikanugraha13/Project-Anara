@@ -189,6 +189,19 @@ export function getModelModalities(model?: MinimalModelInfo | null): ModelModali
     ...(Array.isArray(model.output_modalities) ? model.output_modalities : []),
   ].map((m) => String(m).toLowerCase());
 
+  // Dynamically inspect model.capabilities if present (e.g. { vision: true, reasoning: true })
+  let capsVision = false;
+  let capsVideo = false;
+  let capsAudio = false;
+  let capsReasoning = false;
+  if (model.capabilities && typeof model.capabilities === "object" && !Array.isArray(model.capabilities)) {
+    const c = model.capabilities as Record<string, any>;
+    if (c.vision || c.image || c.imageInput) capsVision = true;
+    if (c.video || c.videoInput) capsVideo = true;
+    if (c.audio || c.voice || c.audioInput) capsAudio = true;
+    if (c.reasoning || c.thinking) capsReasoning = true;
+  }
+
   // 1. Text is universal
   modalities.push({
     id: "text",
@@ -202,9 +215,10 @@ export function getModelModalities(model?: MinimalModelInfo | null): ModelModali
   // 2. Vision / Image
   const hasVision =
     model.supports_vision ||
+    capsVision ||
     allMods.includes("image") ||
     allMods.includes("vision") ||
-    /(\bvision\b|-vl\b|\bllava\b|\bpixtral\b|\bmultimodal\b|\bgpt-4o\b|\bgpt-4-turbo\b|\bgpt-5\b|\bclaude-(?:sonnet|opus|haiku|[3-9])\b|\bgemini-|\bqwen(?:2\.5)?-vl\b|\bmimo-v)/i.test(mid);
+    /(\bvision\b|-vl\b|\bllava\b|\bpixtral\b|\bmultimodal\b|\bgpt-[4-9]|\bclaude-[3-9]|\bgemini-|\bqwen(?:[0-9.]+)?-vl\b|\bmimo-v)/i.test(mid);
 
   if (hasVision) {
     modalities.push({
@@ -220,8 +234,9 @@ export function getModelModalities(model?: MinimalModelInfo | null): ModelModali
   // 3. Video
   const hasVideo =
     model.supports_video ||
+    capsVideo ||
     allMods.includes("video") ||
-    /(\bgemini-(?:1\.5|2\.[0-9]|2\.5|3\.[0-9]|flash|pro)\b|\bqwen2(?:.5)?-vl\b|\bvideo\b|\bgpt-4o\b|\bgpt-5\b|\bclaude-(?:sonnet|opus)-[4-9]\b)/i.test(mid);
+    /(\bgemini-(?:[1-9]\.[0-9]|[1-9]\.5|flash|pro)\b|\bqwen(?:[0-9.]+)?-vl\b|\bvideo\b|\bgpt-[4-9]|\bclaude-(?:sonnet|opus)-[4-9]\b)/i.test(mid);
 
   if (hasVideo) {
     modalities.push({
@@ -237,6 +252,7 @@ export function getModelModalities(model?: MinimalModelInfo | null): ModelModali
   // 4. Voice / Audio
   const hasVoice =
     model.supports_voice ||
+    capsAudio ||
     allMods.includes("audio") ||
     allMods.includes("voice") ||
     /(\baudio\b|\bvoice\b|\brealtime\b|\blive-preview\b|\bflash-live\b)/i.test(mid);
@@ -253,7 +269,7 @@ export function getModelModalities(model?: MinimalModelInfo | null): ModelModali
   }
 
   // 5. Reasoning / Thinking
-  if (isReasoningSupported(model)) {
+  if (isReasoningSupported(model) || capsReasoning) {
     modalities.push({
       id: "reasoning",
       label: "Thinking",

@@ -14,6 +14,7 @@ This module is read-only (no file I/O, no DB writes). All cache lives in process
 
 import asyncio
 import logging
+import re
 import time
 from typing import Any, Dict, List, Optional
 
@@ -112,16 +113,21 @@ class ModelCapabilityRegistry:
         norm_id = cls.normalize_id(model_id)
         info = cls._cache.get(norm_id) or cls._cache.get(model_id)
         if info is not None:
-            input_mods = set(info.get("input_modalities") or [])
-            return bool(info.get("supports_vision") or "image" in input_mods or "vision" in input_mods)
+            input_mods = set(info.get("input_modalities") or info.get("modalities") or [])
+            caps = info.get("capabilities") or {}
+            caps_dict = caps if isinstance(caps, dict) else {}
+            return bool(
+                info.get("supports_vision")
+                or "image" in input_mods
+                or "vision" in input_mods
+                or caps_dict.get("vision")
+                or caps_dict.get("image")
+                or caps_dict.get("imageInput")
+            )
 
-        # Anara Standard: evaluate verified multimodal model identifiers when unindexed
+        # Anara Standard: evaluate verified multimodal model identifiers dynamically
         mid = norm_id.lower()
-        verified_vision_families = (
-            "vision", "-vl", "llava", "pixtral", "multimodal",
-            "gpt-4o", "gpt-4-turbo", "claude-3", "gemini-", "qwen-vl"
-        )
-        return any(tag in mid for tag in verified_vision_families)
+        return bool(re.search(r'(\bvision\b|-vl\b|\bllava\b|\bpixtral\b|\bmultimodal\b|\bgpt-[4-9]|\bclaude-[3-9]|\bgemini-|\bqwen.*vl|\bmimo-v)', mid))
 
     @classmethod
     def find_models(cls, capability: str = "text", provider: Optional[str] = None) -> List[str]:
