@@ -84,7 +84,7 @@ export default function CodePageClient({
   // ── Workspace & Git State ──
   const [workspaceTree, setWorkspaceTree] = useState<WorkspaceTreeData | null>(null);
   const [gitStatus, setGitStatus] = useState<GitStatusData | null>(null);
-  const [explorerMode, setExplorerMode] = useState<"tree" | "git">("tree");
+  const [explorerMode, setExplorerMode] = useState<"tree" | "git" | "sessions">("tree");
   const [explorerFilter, setExplorerFilter] = useState("");
   const [latestTokenUsage, setLatestTokenUsage] = useState<any>(null);
 
@@ -1268,6 +1268,8 @@ export default function CodePageClient({
         sessionDropdownRef={sessionDropdownRef}
         handleSelectSession={handleSelectSession}
         handleNewSession={handleNewSession}
+        handlePatchSession={handlePatchSession}
+        handleDeleteSession={handleDeleteSession}
         reasoningEffort={reasoningEffort}
         handleSelectReasoningEffort={handleSelectReasoningEffort}
         workspaceFilesList={workspaceFilesList}

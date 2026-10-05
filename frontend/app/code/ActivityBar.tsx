@@ -7,8 +7,8 @@ import type { GitStatusData } from "@/components/sidebar/types";
 export interface ActivityBarProps {
   isLeftOpen: boolean;
   setIsLeftOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  explorerMode: "tree" | "git";
-  setExplorerMode: React.Dispatch<React.SetStateAction<"tree" | "git">>;
+  explorerMode: "tree" | "git" | "sessions";
+  setExplorerMode: React.Dispatch<React.SetStateAction<"tree" | "git" | "sessions">>;
   isTerminalOpen: boolean;
   setIsTerminalOpen: React.Dispatch<React.SetStateAction<boolean>>;
   isRightOpen: boolean;
@@ -60,6 +60,32 @@ export function ActivityBar({
           )}
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+          </svg>
+        </button>
+
+        {/* Sessions & Chat History Toggle */}
+        <button
+          type="button"
+          onClick={() => {
+            if (isLeftOpen && explorerMode === "sessions") {
+              setIsLeftOpen(false);
+            } else {
+              setIsLeftOpen(true);
+              setExplorerMode("sessions");
+            }
+          }}
+          className={`relative w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
+            isLeftOpen && explorerMode === "sessions"
+              ? "bg-white/[0.08] text-cyan-300 shadow-sm"
+              : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
+          }`}
+          title="Chat & Workspace Sessions (Toggle)"
+        >
+          {isLeftOpen && explorerMode === "sessions" && (
+            <div className="absolute left-0 inset-y-1.5 w-0.5 bg-cyan-400 rounded-r shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
+          )}
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
           </svg>
         </button>
 

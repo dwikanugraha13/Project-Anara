@@ -21,8 +21,8 @@ export { nodeHasMatch } from "./treeUtils";
 export interface WorkspaceTreeViewProps {
   workspaceTree: WorkspaceTreeData;
   gitStatus: GitStatusData | null;
-  explorerMode: "tree" | "git";
-  setExplorerMode: React.Dispatch<React.SetStateAction<"tree" | "git">>;
+  explorerMode: "tree" | "git" | "sessions";
+  setExplorerMode: React.Dispatch<React.SetStateAction<"tree" | "git" | "sessions">>;
   explorerFilter: string;
   setExplorerFilter: (s: string) => void;
   activeFilePath?: string;

@@ -123,7 +123,7 @@ export default function ChatSessionSidebar({
 
   const [gitStatus, setGitStatus] = useState<GitStatusData | null>(null);
   const [explorerFilter, setExplorerFilter] = useState("");
-  const [explorerMode, setExplorerMode] = useState<"tree" | "git">("tree");
+  const [explorerMode, setExplorerMode] = useState<"tree" | "git" | "sessions">("tree");
 
   const loadGitStatus = useCallback(async (sessionId?: number | null) => {
     if (!sessionId) {
