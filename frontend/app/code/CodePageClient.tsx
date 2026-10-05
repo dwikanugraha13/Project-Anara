@@ -819,6 +819,19 @@ export default function CodePageClient({
       setActiveThinkingText(null);
       playAnaraCompletionChime();
       loadGitStatus(activeSessionId);
+      setTranscript((prev) => {
+        const last = prev[prev.length - 1];
+        if (
+          last &&
+          last.speaker === "output" &&
+          !last.text &&
+          (!last.visualType || last.visualType === "none") &&
+          (!last.toolsUsed || last.toolsUsed.length === 0)
+        ) {
+          return prev.slice(0, -1).map((t) => (t.isStreaming ? { ...t, isStreaming: false } : t));
+        }
+        return prev.map((t) => (t.isStreaming ? { ...t, isStreaming: false } : t));
+      });
     },
     onSessionSwitched: (payload) => {
       if (payload.sessionId) {

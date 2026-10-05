@@ -468,6 +468,7 @@ export default function HomePageClient({
     if (danceActiveRef.current) return; // don't reset during dance
     clearInFlightSnapshot(activeSessionId);
     stopAudio();
+    streamReset();
     accumulatedAiTextRef.current = "";
     avatarRef.current?.resetLipSync();
     setAssistantStatus("idle");
@@ -486,7 +487,7 @@ export default function HomePageClient({
       }
       return prev;
     });
-  }, [stopAudio, activeSessionId]);
+  }, [stopAudio, activeSessionId, streamReset]);
 
   const assistantStatusRef = useRef<AssistantStatus>("idle");
   useEffect(() => {
@@ -498,13 +499,28 @@ export default function HomePageClient({
     clearInFlightSnapshot(activeSessionId);
     accumulatedAiTextRef.current = "";
     setActiveThinkingText(null);
+    streamFlushNow();
+    streamReset();
     playAnaraCompletionChime();
+    setTranscript((prev) => {
+      const last = prev[prev.length - 1];
+      if (
+        last &&
+        last.speaker === "output" &&
+        !last.text &&
+        (!last.visualType || last.visualType === "none") &&
+        (!last.toolsUsed || last.toolsUsed.length === 0)
+      ) {
+        return prev.slice(0, -1).map((t) => (t.isStreaming ? { ...t, isStreaming: false } : t));
+      }
+      return prev.map((t) => (t.isStreaming ? { ...t, isStreaming: false } : t));
+    });
     // Brief 300ms buffer after speech ends before unpausing microphone
     setTimeout(() => {
       setAssistantStatus("idle");
       avatarRef.current?.setEmotion("neutral");
     }, 300);
-  }, [activeSessionId]);
+  }, [activeSessionId, streamFlushNow, streamReset]);
 
   const [latestTokenUsage, setLatestTokenUsage] = useState<any>(null);
 
@@ -693,9 +709,8 @@ export default function HomePageClient({
       streamReset();
       playAnaraAlertChime();
 
-      setTranscript((prev) => [
-        ...prev,
-        {
+      setTranscript((prev) => {
+        const approvalEntry: TranscriptEntry = {
           speaker: "output",
           text: rationale,
           visualType: "approval",
@@ -706,8 +721,14 @@ export default function HomePageClient({
             rationale,
             riskLevel,
           },
-        },
-      ]);
+        };
+        const lastIdx = prev.length - 1;
+        const last = prev[lastIdx];
+        if (last && last.speaker === "output" && !last.text && (!last.visualType || last.visualType === "none")) {
+          return [...prev.slice(0, lastIdx), approvalEntry];
+        }
+        return [...prev, approvalEntry];
+      });
       setAssistantStatus("idle");
     },
     onAgentAction: (payload) => {
@@ -825,15 +846,18 @@ export default function HomePageClient({
           tasks: [initialTask],
         };
 
-        return [
-          ...prev,
-          {
-            speaker: "output",
-            text: "",
-            visualType: "subagent" as any,
-            subagentData,
-          },
-        ];
+        const subagentEntry: TranscriptEntry = {
+          speaker: "output",
+          text: "",
+          visualType: "subagent" as any,
+          subagentData,
+        };
+
+        if (last && last.speaker === "output" && !last.text && (!last.visualType || last.visualType === "none")) {
+          return [...prev.slice(0, lastIdx), subagentEntry];
+        }
+
+        return [...prev, subagentEntry];
       });
     },
     onInteractiveQuestion: (payload) => {
@@ -1055,10 +1079,16 @@ export default function HomePageClient({
 
       const nowMs = Date.now();
       setTranscript((prev) => {
-        const cleaned = prev.filter((t, idx, arr) => t.text || idx === arr.length - 1);
-        const finalBase = (cleaned.length > 0 && cleaned[cleaned.length - 1].speaker === "output" && !cleaned[cleaned.length - 1].text)
-          ? cleaned.slice(0, -1)
-          : cleaned;
+        const cleaned = prev.filter(
+          (t, idx, arr) => t.text || Boolean(t.visualType && t.visualType !== "none") || idx === arr.length - 1
+        );
+        const finalBase =
+          cleaned.length > 0 &&
+          cleaned[cleaned.length - 1].speaker === "output" &&
+          !cleaned[cleaned.length - 1].text &&
+          (!cleaned[cleaned.length - 1].visualType || cleaned[cleaned.length - 1].visualType === "none")
+            ? cleaned.slice(0, -1)
+            : cleaned;
         return [...finalBase, { speaker: "input", text: trimmed }, { speaker: "output", text: "", agentMode: effectiveMode, startTime: nowMs }];
       });
 

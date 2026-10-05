@@ -18,11 +18,12 @@ export function restoreTranscriptFromMessages(messages: SessionMessage[]): Trans
       restored.push({ speaker: "input", text: u });
     }
 
-    if (a || vis.visualType || m.media_type) {
+    const hasValidVisual = Boolean(vis.visualType && vis.visualType !== "none");
+    if (a || hasValidVisual || m.media_type) {
       restored.push({
         speaker: "output",
         text: a,
-        visualType: vis.visualType || (m.media_type as any),
+        visualType: hasValidVisual ? vis.visualType : (m.media_type as any),
         imageUrl: vis.imageUrl || m.media_url,
         imageTitle: vis.imageTitle,
         sourceDomain: vis.sourceDomain,

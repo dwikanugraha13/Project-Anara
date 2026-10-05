@@ -658,6 +658,26 @@ export default function ChatTimeline({
 
                   // ── Narrative Markdown Turn (Direct Canvas Stream, Zero Slop Card-itis) ──
                   const currentThinking = item.thinkingText || (isLatestAi ? activeThinkingText : null);
+                  const isTurnActive = (status === "thinking" || Boolean(item.isStreaming)) && status !== "idle";
+                  const isWaitingForFirstToken = Boolean(
+                    isLatestAi &&
+                    isTurnActive &&
+                    !item.text &&
+                    !item.isError &&
+                    !item.interrupted
+                  );
+
+                  // Suppress ghost/empty assistant turns with zero content
+                  if (
+                    !item.text &&
+                    !currentThinking &&
+                    !isWaitingForFirstToken &&
+                    !item.isError &&
+                    !item.interrupted &&
+                    (!item.toolsUsed || item.toolsUsed.length === 0)
+                  ) {
+                    return null;
+                  }
 
                   return (
                     <div
@@ -681,7 +701,7 @@ export default function ChatTimeline({
                             <ThinkingCard
                               text={currentThinking}
                               durationSec={item.thinkingDuration}
-                              isLive={Boolean(isLatestAi && !item.text)}
+                              isLive={Boolean(isLatestAi && !item.text && isTurnActive)}
                             />
                           </div>
                         )}
@@ -707,10 +727,10 @@ export default function ChatTimeline({
                           </div>
                         )}
 
-                        {/* 2. In-flight Tool or Initial Wait Indicator (only when NO text and NO thinking card) */}
-                        {!item.text && !currentThinking ? (
+                        {/* 2. In-flight Tool or Initial Wait Indicator (only when active, waiting for first token, and NO thinking card) */}
+                        {isWaitingForFirstToken && !currentThinking ? (
                           <div className="w-full max-w-full">
-                            {isLatestAi && liveToolProgress ? (
+                            {liveToolProgress ? (
                               <ToolRunTicker
                                 activeItemText={`Executing ${liveToolProgress.toolName}...`}
                                 totalCount={1}
@@ -730,7 +750,7 @@ export default function ChatTimeline({
                         ) : null}
 
                         {/* 3. In-flight tool progress when thinking is already showing */}
-                        {!item.text && currentThinking && isLatestAi && liveToolProgress ? (
+                        {isWaitingForFirstToken && currentThinking && liveToolProgress ? (
                           <div className="w-full max-w-full mb-2">
                             <ToolRunTicker
                               activeItemText={`Executing ${liveToolProgress.toolName}...`}
