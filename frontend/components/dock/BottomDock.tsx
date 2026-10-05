@@ -727,7 +727,7 @@ export default function BottomDock({
                   setAttachedFiles([]);
                 }}
                 handleTextareaChange={handleTextareaChange}
-                placeholder={isCodeStudio ? "Ask Anara... ('/' or '@')" : "Start with a goal... (type '/' for commands, '@' for files)"}
+                placeholder={isCodeStudio ? "Ask Anara... ('/' or '@')" : "Ask Anara... (type '/' for commands, '@' for files)"}
               />
             )}
           </div>

@@ -60,7 +60,7 @@ export function DockComposerInput({
   workspaceFiles,
   onClearAttachments,
   handleTextareaChange,
-  placeholder = "Start with a goal... (type '/' for commands, '@' for files)",
+  placeholder = "Ask Anara... (type '/' for commands, '@' for files)",
 }: DockComposerInputProps) {
   // Single-pass layout auto-resize
   useIsomorphicLayoutEffect(() => {
