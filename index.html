@@ -1,14 +1,12 @@
 <!DOCTYPE html>
-<html lang="id" class="scroll-smooth">
+<html lang="en" class="scroll-smooth">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Modern App & Tech Landing Page</title>
-  <!-- Google Fonts: Inter -->
+  <title>Project Anara — Autonomous AI Platform</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <!-- Tailwind CSS CDN -->
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -16,57 +14,45 @@
       theme: {
         extend: {
           fontFamily: {
-            sans: ['Inter', 'sans-serif'],
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
           },
           colors: {
             brand: {
-              50: '#eff6ff',
-              100: '#dbeafe',
-              500: '#3b82f6',
-              600: '#2563eb',
-              700: '#1d4ed8',
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+              900: '#312e81',
             }
           }
         }
       }
     }
   </script>
-  <style>
-    body {
-      font-family: 'Inter', sans-serif;
-    }
-    .gradient-text {
-      background: linear-gradient(135deg, #60a5fa 0%, #a855f7 50%, #ec4899 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    .gradient-bg {
-      background: radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.15) 0%, rgba(15, 23, 42, 0) 70%);
-    }
-  </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col selection:bg-blue-500 selection:text-white antialiased">
+<body class="bg-slate-950 text-slate-100 min-h-screen selection:bg-indigo-500 selection:text-white antialiased">
 
   <!-- Navbar -->
   <header class="sticky top-0 z-50 backdrop-blur-md bg-slate-950/80 border-b border-slate-800/80">
     <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-      <a href="#" class="flex items-center gap-2 group">
-        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-bold text-white shadow-lg shadow-blue-500/25 group-hover:scale-105 transition-transform">
-          A
+      <div class="flex items-center gap-3">
+        <div class="h-9 w-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/25">
+          <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
         </div>
-        <span class="font-bold text-lg tracking-tight group-hover:text-blue-400 transition-colors">Anara<span class="text-blue-500">.io</span></span>
-      </a>
+        <span class="font-bold text-lg tracking-tight text-white">Project Anara</span>
+      </div>
 
-      <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-slate-300">
+      <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-slate-400">
         <a href="#features" class="hover:text-white transition-colors">Fitur</a>
-        <a href="#solutions" class="hover:text-white transition-colors">Solusi</a>
-        <a href="#pricing" class="hover:text-white transition-colors">Harga</a>
+        <a href="#architecture" class="hover:text-white transition-colors">Arsitektur</a>
         <a href="#docs" class="hover:text-white transition-colors">Dokumentasi</a>
       </nav>
 
       <div class="flex items-center gap-3">
-        <a href="#login" class="text-sm font-medium text-slate-300 hover:text-white px-3 py-2 transition-colors">Masuk</a>
-        <a href="#get-started" class="text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-all shadow-md shadow-blue-600/30 hover:shadow-blue-500/40 hover:-translate-y-0.5">
+        <a href="#get-started" class="text-sm font-semibold px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-md shadow-indigo-600/30">
           Mulai Sekarang
         </a>
       </div>
@@ -74,147 +60,113 @@
   </header>
 
   <!-- Hero Section -->
-  <main class="flex-grow">
-    <section class="relative pt-24 pb-20 overflow-hidden gradient-bg">
-      <div class="max-w-5xl mx-auto px-6 text-center">
-        <!-- Badge -->
-        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-blue-500/30 bg-blue-500/10 text-blue-400 text-xs font-medium mb-8">
-          <span class="flex h-2 w-2 rounded-full bg-blue-400 animate-pulse"></span>
-          Versi Terbaru 2.0 Kini Tersedia
-        </div>
+  <section class="relative pt-24 pb-20 overflow-hidden">
+    <div class="absolute inset-0 -z-10 flex items-center justify-center">
+      <div class="w-[600px] h-[350px] bg-gradient-to-tr from-indigo-600/20 via-violet-600/20 to-transparent blur-3xl rounded-full"></div>
+    </div>
 
-        <!-- Headline -->
-        <h1 class="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight text-white mb-6 leading-tight">
-          Bangun Aplikasi Lebih Cepat dengan <br class="hidden sm:block">
-          <span class="gradient-text">Arsitektur Cerdas & Modern</span>
-        </h1>
+    <div class="max-w-5xl mx-auto px-6 text-center">
+      <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 text-xs font-semibold uppercase tracking-wider mb-6">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        Anara Autonomous Intelligence Engine v2.0
+      </div>
 
-        <!-- Subheadline -->
-        <p class="max-w-2xl mx-auto text-lg text-slate-400 mb-10 leading-relaxed">
-          Platform serba bisa buat developer dan tim modern. Otomasi alur kerja, integrasi real-time, dan performa tinggi tanpa hambatan.
-        </p>
+      <h1 class="text-4xl sm:text-6xl font-extrabold tracking-tight text-white leading-tight">
+        Membangun Masa Depan <br class="hidden sm:inline" />
+        <span class="bg-gradient-to-r from-indigo-400 via-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
+          AI Rekayasa & Otomasi Sistem
+        </span>
+      </h1>
 
-        <!-- CTA Buttons -->
-        <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
-          <a href="#get-started" class="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-all shadow-lg shadow-blue-600/30 hover:shadow-blue-500/50 hover:-translate-y-0.5 text-center">
-            Coba Gratis 14 Hari
-          </a>
-          <a href="#demo" class="w-full sm:w-auto px-7 py-3.5 rounded-xl border border-slate-800 hover:border-slate-700 bg-slate-900/60 hover:bg-slate-800 text-slate-300 font-semibold transition-all text-center flex items-center justify-center gap-2">
-            <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+      <p class="mt-6 text-base sm:text-lg text-slate-400 max-w-2xl mx-auto leading-relaxed">
+        Platform agen cerdas otonom multi-antarmuka dengan eksekusi aman, koordinasi multi-alat, memori persisten, dan kapabilitas full-stack engineering.
+      </p>
+
+      <div class="mt-10 flex flex-wrap items-center justify-center gap-4">
+        <a href="#get-started" class="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-semibold text-white shadow-lg shadow-indigo-600/30 transition-all">
+          Eksplorasi Workspace
+        </a>
+        <a href="#docs" class="px-6 py-3 rounded-xl border border-slate-700 hover:border-slate-600 bg-slate-900/60 hover:bg-slate-900 font-semibold text-slate-300 hover:text-white transition-all">
+          Baca Dokumentasi
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Grid -->
+  <section id="features" class="py-20 border-t border-slate-900 bg-slate-950/50">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-center max-w-2xl mx-auto mb-16">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-indigo-400">Kapabilitas Unggulan</h2>
+        <p class="text-3xl font-extrabold text-white mt-2">Didesain untuk Performa & Keandalan</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- Feature 1 -->
+        <div class="p-6 rounded-2xl border border-slate-800/80 bg-slate-900/40 hover:border-indigo-500/50 hover:bg-slate-900/80 transition-all">
+          <div class="w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center mb-5">
+            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
             </svg>
-            Tonton Demo
-          </a>
-        </div>
-
-        <!-- Dashboard Preview Mockup -->
-        <div class="relative mx-auto rounded-2xl border border-slate-800 bg-slate-900/80 p-3 sm:p-4 shadow-2xl backdrop-blur-sm">
-          <div class="flex items-center gap-2 mb-3 px-2">
-            <div class="w-3 h-3 rounded-full bg-rose-500/80"></div>
-            <div class="w-3 h-3 rounded-full bg-amber-500/80"></div>
-            <div class="w-3 h-3 rounded-full bg-emerald-500/80"></div>
-            <span class="text-xs text-slate-500 font-mono ml-2">dashboard.anara.io</span>
           </div>
-          <div class="rounded-xl overflow-hidden bg-slate-950 p-8 border border-slate-800/60 text-left grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div class="p-5 rounded-lg bg-slate-900/70 border border-slate-800">
-              <div class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Total Deployments</div>
-              <div class="text-3xl font-bold text-white mb-1">14,289</div>
-              <div class="text-xs text-emerald-400 flex items-center gap-1">↑ 18.2% minggu ini</div>
-            </div>
-            <div class="p-5 rounded-lg bg-slate-900/70 border border-slate-800">
-              <div class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Avg. Response Time</div>
-              <div class="text-3xl font-bold text-white mb-1">24ms</div>
-              <div class="text-xs text-emerald-400 flex items-center gap-1">↑ Optimal latency</div>
-            </div>
-            <div class="p-5 rounded-lg bg-slate-900/70 border border-slate-800">
-              <div class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">System Uptime</div>
-              <div class="text-3xl font-bold text-white mb-1">99.99%</div>
-              <div class="text-xs text-blue-400 flex items-center gap-1">Zero downtime recorded</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Features Section -->
-    <section id="features" class="py-24 border-t border-slate-900 bg-slate-950">
-      <div class="max-w-6xl mx-auto px-6">
-        <div class="text-center mb-16">
-          <h2 class="text-xs uppercase tracking-widest text-blue-400 font-bold mb-3">Keunggulan Utama</h2>
-          <p class="text-3xl sm:text-4xl font-extrabold text-white">Semua Kebutuhan dalam Satu Tempat</p>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <!-- Card 1 -->
-          <div class="p-8 rounded-2xl bg-slate-900/40 border border-slate-800 hover:border-slate-700 transition-all hover:-translate-y-1">
-            <div class="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center mb-6">
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-              </svg>
-            </div>
-            <h3 class="text-xl font-bold text-white mb-3">Kecepatan Kilat</h3>
-            <p class="text-slate-400 text-sm leading-relaxed">
-              Arsitektur teroptimasi dengan latensi rendah dan pemrosesan paralel memastikan aplikasi berjalan instan tanpa jeda.
-            </p>
-          </div>
-
-          <!-- Card 2 -->
-          <div class="p-8 rounded-2xl bg-slate-900/40 border border-slate-800 hover:border-slate-700 transition-all hover:-translate-y-1">
-            <div class="w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center mb-6">
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
-              </svg>
-            </div>
-            <h3 class="text-xl font-bold text-white mb-3">Keamanan Terjamin</h3>
-            <p class="text-slate-400 text-sm leading-relaxed">
-              Enkripsi end-to-end, proteksi data berlapis, dan isolasi lingkungan kerja menjaga integritas sistem lu tetap aman.
-            </p>
-          </div>
-
-          <!-- Card 3 -->
-          <div class="p-8 rounded-2xl bg-slate-900/40 border border-slate-800 hover:border-slate-700 transition-all hover:-translate-y-1">
-            <div class="w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center mb-6">
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path>
-              </svg>
-            </div>
-            <h3 class="text-xl font-bold text-white mb-3">Integrasi Modular</h3>
-            <p class="text-slate-400 text-sm leading-relaxed">
-              Dukungan API dan webhook yang fleksibel, memudahkan koneksi ke berbagai platform, database, dan layanan third-party.
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Call to Action Banner -->
-    <section class="py-20 border-t border-slate-900">
-      <div class="max-w-5xl mx-auto px-6">
-        <div class="rounded-3xl bg-gradient-to-r from-blue-900/40 via-indigo-900/40 to-slate-900 border border-blue-500/30 p-10 sm:p-14 text-center relative overflow-hidden">
-          <h2 class="text-3xl sm:text-4xl font-extrabold text-white mb-4">Siap Mengembangkan Proyek Lu?</h2>
-          <p class="max-w-xl mx-auto text-slate-300 mb-8 text-sm sm:text-base">
-            Mulai sekarang juga dan rasakan kemudahan membangun solusi digital dengan ekosistem modern kami.
+          <h3 class="text-lg font-bold text-white mb-2">Autonomous Code Studio</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            Menganalisis, merefaktor, dan menguji kode program secara mandiri dengan test verification loop dan kepatuhan arsitektur ketat.
           </p>
-          <a href="#get-started" class="inline-block px-8 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-all shadow-lg shadow-blue-600/30 hover:scale-105">
-            Daftar & Mulai Gratis
-          </a>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="p-6 rounded-2xl border border-slate-800/80 bg-slate-900/40 hover:border-violet-500/50 hover:bg-slate-900/80 transition-all">
+          <div class="w-12 h-12 rounded-xl bg-violet-500/10 border border-violet-500/20 text-violet-400 flex items-center justify-center mb-5">
+            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">Safety Plan/Build Gate</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            Perubahan sistem dan berkas dipagari oleh protokol perencanaan terstruktur sebelum dieksekusi secara otonom.
+          </p>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="p-6 rounded-2xl border border-slate-800/80 bg-slate-900/40 hover:border-fuchsia-500/50 hover:bg-slate-900/80 transition-all">
+          <div class="w-12 h-12 rounded-xl bg-fuchsia-500/10 border border-fuchsia-500/20 text-fuchsia-400 flex items-center justify-center mb-5">
+            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7c0-2-1-3-3-3H7C5 4 4 5 4 7z M9 9h6 M9 13h4" />
+            </svg>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">Omnichannel Continuity</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            Sinkronisasi percakapan, tugas, dan konteks berkelanjutan melintasi Web Studio, 3D Companion, Telegram, dan WhatsApp.
+          </p>
         </div>
       </div>
-    </section>
-  </main>
+    </div>
+  </section>
+
+  <!-- CTA Section -->
+  <section id="get-started" class="py-20">
+    <div class="max-w-5xl mx-auto px-6">
+      <div class="rounded-3xl p-10 sm:p-14 bg-gradient-to-r from-indigo-900/50 via-slate-900 to-slate-950 border border-indigo-500/30 text-center relative overflow-hidden">
+        <h2 class="text-3xl sm:text-4xl font-extrabold text-white mb-4">Siap Memaksimalkan Workflow?</h2>
+        <p class="text-slate-300 text-base max-w-xl mx-auto mb-8">
+          Kolaborasi langsung dengan Project Anara untuk mengotomasi alur pengembangan perangkat lunak Anda.
+        </p>
+        <a href="#features" class="inline-flex px-8 py-3.5 rounded-xl bg-white text-slate-950 font-bold hover:bg-slate-100 transition-all shadow-xl">
+          Jelajahi Sekarang
+        </a>
+      </div>
+    </div>
+  </section>
 
   <!-- Footer -->
-  <footer class="border-t border-slate-900 bg-slate-950 py-10">
-    <div class="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-      <div class="flex items-center gap-2">
-        <span class="font-bold text-slate-300">Anara.io</span>
-        <span>&copy; 2026 Hak Cipta Dilindungi.</span>
-      </div>
-      <div class="flex items-center gap-6">
-        <a href="#terms" class="hover:text-slate-400 transition-colors">Ketentuan</a>
-        <a href="#privacy" class="hover:text-slate-400 transition-colors">Privasi</a>
-        <a href="#contact" class="hover:text-slate-400 transition-colors">Kontak</a>
+  <footer class="py-10 border-t border-slate-900 text-center text-sm text-slate-500">
+    <div class="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <p>&copy; 2026 Project Anara. Seluruh hak cipta dilindungi.</p>
+      <div class="flex gap-6">
+        <a href="#features" class="hover:text-slate-400 transition-colors">Fitur</a>
+        <a href="#docs" class="hover:text-slate-400 transition-colors">Dokumentasi</a>
+        <a href="#get-started" class="hover:text-slate-400 transition-colors">Mulai</a>
       </div>
     </div>
   </footer>
