@@ -2,55 +2,65 @@
 
 import React from "react";
 
-export type ApprovalMode = "manual" | "smart" | "off";
+export type ApprovalMode = "plan" | "auto" | "off" | "manual" | "smart";
+
+export function normalizeApprovalMode(raw?: string | null): "plan" | "auto" | "off" {
+  const clean = (raw || "").trim().toLowerCase();
+  if (clean === "plan" || clean === "manual") return "plan";
+  if (clean === "off" || clean === "yolo") return "off";
+  return "auto";
+}
 
 export interface ApprovalModePopoverProps {
   isOpen: boolean;
   onClose: () => void;
   mode: ApprovalMode;
-  onChange: (mode: ApprovalMode) => void;
+  onChange: (mode: "plan" | "auto" | "off") => void;
   anchored?: boolean;
   className?: string;
 }
 
 interface ModeOption {
-  id: ApprovalMode;
+  id: "plan" | "auto" | "off";
   title: string;
   description: string;
 }
 
 const MODE_OPTIONS: ModeOption[] = [
   {
-    id: "manual",
-    title: "Manual",
-    description: "Ask before actions that require approval",
+    id: "plan",
+    title: "Plan",
+    description: "Propose plans and ask before modifying files or executing commands",
   },
   {
-    id: "smart",
-    title: "Smart",
-    description: "Automatically assess actions and ask when needed",
+    id: "auto",
+    title: "Auto",
+    description: "Execute project files autonomously with smart safety checks",
   },
   {
     id: "off",
     title: "Off",
-    description: "Run without approval prompts",
+    description: "Run without approval prompts (catastrophic commands still blocked)",
   },
 ];
 
-const MODE_BADGE_STYLES: Record<ApprovalMode, string> = {
+const MODE_BADGE_STYLES: Record<string, string> = {
+  plan: "text-amber-300 bg-amber-500/10 border-amber-400/25",
   manual: "text-amber-300 bg-amber-500/10 border-amber-400/25",
+  auto: "text-sky-300 bg-sky-500/10 border-sky-400/25",
   smart: "text-sky-300 bg-sky-500/10 border-sky-400/25",
   off: "text-rose-300 bg-rose-500/10 border-rose-400/25",
+  yolo: "text-rose-300 bg-rose-500/10 border-rose-400/25",
 };
 
-const OPTION_THEMES: Record<ApprovalMode, { activeBg: string; activeBorder: string; activeText: string; checkColor: string }> = {
-  manual: {
+const OPTION_THEMES: Record<"plan" | "auto" | "off", { activeBg: string; activeBorder: string; activeText: string; checkColor: string }> = {
+  plan: {
     activeBg: "bg-amber-500/[0.08]",
     activeBorder: "border-amber-400/30",
     activeText: "text-amber-200",
     checkColor: "text-amber-300",
   },
-  smart: {
+  auto: {
     activeBg: "bg-sky-500/[0.08]",
     activeBorder: "border-sky-400/30",
     activeText: "text-sky-200",
@@ -95,15 +105,15 @@ export default function ApprovalModePopover({
         <span className="text-[11px] font-semibold text-slate-400 font-sans tracking-tight">
           Approval mode
         </span>
-        <span className={`text-[9.5px] font-mono px-1.5 py-0.5 rounded border capitalize ${MODE_BADGE_STYLES[mode] || "text-slate-300 bg-white/[0.05] border-white/[0.08]"}`}>
-          {mode}
+        <span className={`text-[9.5px] font-mono px-1.5 py-0.5 rounded border capitalize ${MODE_BADGE_STYLES[normalizeApprovalMode(mode)] || "text-slate-300 bg-white/[0.05] border-white/[0.08]"}`}>
+          {normalizeApprovalMode(mode)}
         </span>
       </div>
 
       {/* Options List */}
       <div className="mt-1 flex flex-col gap-0.5">
         {MODE_OPTIONS.map((opt) => {
-          const isSelected = mode === opt.id;
+          const isSelected = normalizeApprovalMode(mode) === opt.id;
           const theme = OPTION_THEMES[opt.id];
           return (
             <button

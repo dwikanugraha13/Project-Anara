@@ -151,6 +151,16 @@ def detect_dangerous_command(command: str) -> tuple[bool, str | None, str | None
     return (False, None, None)
 
 
+def normalize_approval_mode(mode: str | None) -> str:
+    """Normalizes any approval mode or legacy alias to canonical 'plan', 'auto', or 'off'."""
+    clean = str(mode or "").strip().lower()
+    if clean in ("plan", "manual"):
+        return "plan"
+    if clean in ("off", "yolo"):
+        return "off"
+    return "auto"
+
+
 def check_command_safety(command: str, approval_mode: str) -> dict | None:
     """Run the safety floor. Returns a block dict if the command must be blocked,
     or None if it can proceed.
@@ -168,7 +178,8 @@ def check_command_safety(command: str, approval_mode: str) -> dict | None:
         }
 
     # 2. In 'off' mode, dangerous patterns do NOT block (only hardline does)
-    if approval_mode in ("off", "yolo"):
+    norm_mode = normalize_approval_mode(approval_mode)
+    if norm_mode == "off":
         return None
 
     # 3. Dangerous pattern detection (for plan and auto modes)

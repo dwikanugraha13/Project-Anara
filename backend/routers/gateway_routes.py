@@ -212,35 +212,25 @@ class ApprovalModeRequest(BaseModel):
 
 @router.get("/api/approvals/mode")
 async def get_approval_mode_endpoint():
-    """Returns the persistent approval mode (manual, smart, off)."""
+    """Returns the persistent approval mode (plan, auto, off)."""
     from config import cfg_get
-    mode = str(cfg_get("approvals.mode", "smart")).strip().lower()
-    if mode in ("smart", "auto"):
-        normalized = "smart"
-    elif mode in ("manual", "plan"):
-        normalized = "manual"
-    elif mode in ("off", "yolo"):
-        normalized = "off"
-    else:
-        normalized = "smart"
-    return {"status": "ok", "mode": normalized}
+    from core.approval_guard import normalize_approval_mode
+    mode = normalize_approval_mode(cfg_get("approvals.mode", "auto"))
+    return {"status": "ok", "mode": mode}
 
 
 @router.post("/api/approvals/mode")
 async def set_approval_mode_endpoint(req: ApprovalModeRequest):
     """Sets and persists the approval mode to config.yaml."""
     from config import save_config
-    mode = req.mode.strip().lower()
-    if mode in ("smart", "auto"):
-        normalized = "smart"
-    elif mode in ("manual", "plan"):
-        normalized = "manual"
-    elif mode in ("off", "yolo"):
-        normalized = "off"
-    else:
+    from core.approval_guard import normalize_approval_mode
+    raw_mode = req.mode.strip().lower()
+    valid_aliases = {"plan", "auto", "off", "manual", "smart", "yolo"}
+    if raw_mode not in valid_aliases:
         raise HTTPException(
             status_code=400,
-            detail="Invalid approval mode. Must be 'manual', 'smart', or 'off'."
+            detail="Invalid approval mode. Must be 'plan', 'auto', or 'off'."
         )
+    normalized = normalize_approval_mode(raw_mode)
     save_config({"approvals.mode": normalized})
     return {"status": "ok", "mode": normalized}

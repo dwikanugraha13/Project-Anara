@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import ApprovalModePopover, { ApprovalMode } from "../statusbar/ApprovalModePopover";
+import ApprovalModePopover, { ApprovalMode, normalizeApprovalMode } from "../statusbar/ApprovalModePopover";
 import { BACKEND_URL } from "@/lib/apiClient";
 
 export interface ApprovalModePillProps {
@@ -11,14 +11,14 @@ export interface ApprovalModePillProps {
 export default function ApprovalModePill({ disabled = false }: ApprovalModePillProps) {
   const [isOpen, setIsOpen] = useState(false);
   const pillRef = useRef<HTMLDivElement>(null);
-  const [mode, setMode] = useState<ApprovalMode>("smart");
+  const [mode, setMode] = useState<"plan" | "auto" | "off">("auto");
 
   // Load initial mode from localStorage & backend config
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("anara_approval_mode") as ApprovalMode | null;
-      if (saved && (saved === "manual" || saved === "smart" || saved === "off")) {
-        setMode(saved);
+      const saved = localStorage.getItem("anara_approval_mode");
+      if (saved) {
+        setMode(normalizeApprovalMode(saved));
       }
     } catch {}
 
@@ -26,9 +26,7 @@ export default function ApprovalModePill({ disabled = false }: ApprovalModePillP
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.config?.approvals?.mode) {
-          const raw = String(data.config.approvals.mode).toLowerCase();
-          const mapped: ApprovalMode =
-            raw === "manual" || raw === "plan" ? "manual" : raw === "off" || raw === "yolo" ? "off" : "smart";
+          const mapped = normalizeApprovalMode(data.config.approvals.mode);
           setMode(mapped);
           try {
             localStorage.setItem("anara_approval_mode", mapped);
@@ -42,9 +40,7 @@ export default function ApprovalModePill({ disabled = false }: ApprovalModePillP
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
       if (e.key === "anara_approval_mode" && e.newValue) {
-        if (e.newValue === "manual" || e.newValue === "smart" || e.newValue === "off") {
-          setMode(e.newValue as ApprovalMode);
-        }
+        setMode(normalizeApprovalMode(e.newValue));
       }
     };
     window.addEventListener("storage", handleStorage);
@@ -77,7 +73,7 @@ export default function ApprovalModePill({ disabled = false }: ApprovalModePillP
     };
   }, [isOpen]);
 
-  const handleModeChange = (newMode: ApprovalMode) => {
+  const handleModeChange = (newMode: "plan" | "auto" | "off") => {
     setMode(newMode);
     try {
       localStorage.setItem("anara_approval_mode", newMode);
@@ -89,11 +85,21 @@ export default function ApprovalModePill({ disabled = false }: ApprovalModePillP
     }).catch(() => {});
   };
 
-  const MODE_PILL_STYLES: Record<ApprovalMode, { active: string; idle: string; icon: string }> = {
+  const MODE_PILL_STYLES: Record<string, { active: string; idle: string; icon: string }> = {
+    plan: {
+      active: "bg-amber-500/15 border-amber-400/35 text-amber-200",
+      idle: "bg-amber-500/8 border-amber-400/20 hover:border-amber-400/35 hover:bg-amber-500/12 text-amber-300 hover:text-amber-200",
+      icon: "text-amber-400/70",
+    },
     manual: {
       active: "bg-amber-500/15 border-amber-400/35 text-amber-200",
       idle: "bg-amber-500/8 border-amber-400/20 hover:border-amber-400/35 hover:bg-amber-500/12 text-amber-300 hover:text-amber-200",
       icon: "text-amber-400/70",
+    },
+    auto: {
+      active: "bg-sky-500/15 border-sky-400/35 text-sky-200",
+      idle: "bg-sky-500/8 border-sky-400/20 hover:border-sky-400/35 hover:bg-sky-500/12 text-sky-300 hover:text-sky-200",
+      icon: "text-sky-400/70",
     },
     smart: {
       active: "bg-sky-500/15 border-sky-400/35 text-sky-200",
@@ -101,6 +107,11 @@ export default function ApprovalModePill({ disabled = false }: ApprovalModePillP
       icon: "text-sky-400/70",
     },
     off: {
+      active: "bg-rose-500/15 border-rose-400/35 text-rose-200",
+      idle: "bg-rose-500/8 border-rose-400/20 hover:border-rose-400/35 hover:bg-rose-500/12 text-rose-300 hover:text-rose-200",
+      icon: "text-rose-400/70",
+    },
+    yolo: {
       active: "bg-rose-500/15 border-rose-400/35 text-rose-200",
       idle: "bg-rose-500/8 border-rose-400/20 hover:border-rose-400/35 hover:bg-rose-500/12 text-rose-300 hover:text-rose-200",
       icon: "text-rose-400/70",

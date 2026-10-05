@@ -287,12 +287,12 @@ async def _execute_native_agent_loop(
 
             # ── Anara Approval Engine (Native Loop) ────────────────────────
             from config import cfg_get
-            approval_mode = str(cfg_get("approvals.mode", "auto")).strip().lower()
+            from core.approval_guard import check_command_safety, normalize_approval_mode
+            approval_mode = normalize_approval_mode(cfg_get("approvals.mode", "auto"))
             _danger_desc = ""
 
             # Hardline safety floor: blocks catastrophic commands even in Off/YOLO mode
             if t_name in ("execute_cli_command", "terminal", "run_terminal_command"):
-                from core.approval_guard import check_command_safety
                 cmd_text = t_args.get("command", "")
                 safety_result = check_command_safety(cmd_text, approval_mode)
                 if safety_result and safety_result.get("hardline"):
@@ -314,8 +314,8 @@ async def _execute_native_agent_loop(
                     t_risk = "ask"
                     _danger_desc = safety_result.get("description", "")
 
-            # Smart approval gate for auto/smart mode
-            if approval_mode in ("auto", "smart") and t_risk in ("mutating", "ask"):
+            # Approval gate by canonical mode: auto, plan, off
+            if approval_mode == "auto" and t_risk in ("mutating", "ask"):
                 if t_name in ("execute_cli_command", "terminal", "run_terminal_command"):
                     try:
                         from core.approval_smart import smart_approve
@@ -338,9 +338,9 @@ async def _execute_native_agent_loop(
                         should_intercept = True
                 else:
                     should_intercept = (t_risk == "ask")
-            elif approval_mode in ("off", "yolo"):
+            elif approval_mode == "off":
                 should_intercept = False
-            elif approval_mode in ("plan", "manual"):
+            elif approval_mode == "plan":
                 should_intercept = t_risk in ("mutating", "ask")
             else:
                 should_intercept = (t_risk == "ask") or (intercept_mutating_tools and t_risk in ("mutating", "ask"))
@@ -1007,12 +1007,12 @@ async def _execute_json_agent_loop(
 
             # ── Anara Approval Engine (JSON Loop) ──────────────────────────
             from config import cfg_get
-            approval_mode = str(cfg_get("approvals.mode", "auto")).strip().lower()
+            from core.approval_guard import check_command_safety, normalize_approval_mode
+            approval_mode = normalize_approval_mode(cfg_get("approvals.mode", "auto"))
             _danger_desc = ""
 
             # Hardline safety floor: blocks catastrophic commands even in Off/YOLO mode
             if t_name in ("execute_cli_command", "terminal", "run_terminal_command"):
-                from core.approval_guard import check_command_safety
                 cmd_text = t_args.get("command", "")
                 safety_result = check_command_safety(cmd_text, approval_mode)
                 if safety_result and safety_result.get("hardline"):
@@ -1034,8 +1034,8 @@ async def _execute_json_agent_loop(
                     t_risk = "ask"
                     _danger_desc = safety_result.get("description", "")
 
-            # Smart approval gate for auto/smart mode
-            if approval_mode in ("auto", "smart") and t_risk in ("mutating", "ask"):
+            # Approval gate by canonical mode: auto, plan, off
+            if approval_mode == "auto" and t_risk in ("mutating", "ask"):
                 if t_name in ("execute_cli_command", "terminal", "run_terminal_command"):
                     try:
                         from core.approval_smart import smart_approve
@@ -1058,9 +1058,9 @@ async def _execute_json_agent_loop(
                         should_intercept = True
                 else:
                     should_intercept = (t_risk == "ask")
-            elif approval_mode in ("off", "yolo"):
+            elif approval_mode == "off":
                 should_intercept = False
-            elif approval_mode in ("plan", "manual"):
+            elif approval_mode == "plan":
                 should_intercept = t_risk in ("mutating", "ask")
             else:
                 should_intercept = (t_risk == "ask") or (intercept_mutating_tools and t_risk in ("mutating", "ask"))

@@ -643,41 +643,40 @@ async def _handle_cmd_branch(ctx: UniversalCommandContext) -> UniversalCommandRe
 )
 async def _handle_cmd_approvals(ctx: UniversalCommandContext) -> UniversalCommandResponse:
     from config import cfg_get, save_config
-    arg = ctx.args.strip().lower()
+    from core.approval_guard import normalize_approval_mode
+
+    raw_arg = ctx.args.strip().lower()
     if ctx.command == "yolo":
         arg = "off"
-    elif arg == "manual":
-        arg = "plan"
-    elif arg == "smart":
-        arg = "auto"
+    elif raw_arg:
+        arg = normalize_approval_mode(raw_arg)
+    else:
+        arg = ""
 
-    current_mode = str(cfg_get("approvals.mode", "auto")).strip().lower()
-    if current_mode == "manual":
-        current_mode = "plan"
-    elif current_mode == "smart":
-        current_mode = "auto"
+    current_mode = normalize_approval_mode(cfg_get("approvals.mode", "auto"))
 
     if not arg:
         desc = {
-            "manual": "Ask before actions that require approval (intercept mutating tools for approval)",
-            "smart": "Automatically assess actions and ask when needed (autonomous execution with smart safety gates)",
-            "off": "Run without approval prompts (full autonomous execution)"
+            "plan": "Propose plans and ask before modifying files or executing commands (deliberate verification)",
+            "auto": "Execute project files autonomously with smart safety gates (standard development)",
+            "off": "Run without approval prompts (fast-track execution; catastrophic commands still blocked)"
         }.get(current_mode, "")
         return UniversalCommandResponse(
-            text=f"⚙️ <b>Approval Mode:</b> <code>{current_mode}</code>\n<i>{desc}</i>\n\nUsage: <code>/approvals [manual|smart|off]</code>"
+            text=f"⚙️ <b>Approval Mode:</b> <code>{current_mode}</code>\n<i>{desc}</i>\n\nUsage: <code>/approvals [plan|auto|off]</code>"
         )
 
-    if arg not in ("manual", "smart", "off"):
+    valid_aliases = {"plan", "auto", "off", "manual", "smart", "yolo"}
+    if raw_arg not in valid_aliases:
         return UniversalCommandResponse(
-            text="⚠️ <b>Invalid approval mode.</b>\nValid values: <code>manual</code>, <code>smart</code>, <code>off</code>\nExample: <code>/approvals smart</code>"
+            text="⚠️ <b>Invalid approval mode.</b>\nValid values: <code>plan</code>, <code>auto</code>, <code>off</code>\nExample: <code>/approvals auto</code>"
         )
 
     save_config({"approvals.mode": arg})
     return UniversalCommandResponse(
         text=f"✅ <b>Approval Mode updated:</b> <code>{arg}</code>\n" + (
             "🚀 <i>Off mode active — autonomous execution, catastrophic commands still blocked by hardline floor.</i>" if arg == "off" else
-            "✨ <i>Smart mode active — guardian LLM assesses risk, safe commands run directly, risky actions pause for approval.</i>" if arg == "smart" else
-            "🛡️ <i>Manual mode active — all mutating actions pause for explicit approval before execution.</i>"
+            "✨ <i>Auto mode active — autonomous project coding, shell commands guarded by safety evaluation.</i>" if arg == "auto" else
+            "🛡️ <i>Plan mode active — proposed actions pause for explicit approval before execution.</i>"
         )
     )
 

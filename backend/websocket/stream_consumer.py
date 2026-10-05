@@ -154,20 +154,22 @@ class AgentRunner:
 
             # Sync approval mode from client request if provided
             incoming_approval = data.get("approval_mode")
-            if incoming_approval and str(incoming_approval).strip().lower() in ("manual", "smart", "off", "plan", "auto"):
+            from core.approval_guard import normalize_approval_mode
+            if incoming_approval:
+                norm_approval = normalize_approval_mode(incoming_approval)
                 from config import save_config
-                save_config({"approvals.mode": str(incoming_approval).strip().lower()})
+                save_config({"approvals.mode": norm_approval})
 
             if is_approved:
                 agent_mode = "build"
                 logger.info("[Agent Mode] Pending action approved -> Switch to BUILD MODE")
             elif req_agent_mode == "plan" or session_mode == "plan":
                 agent_mode = "plan"
-            elif incoming_approval in ("manual", "plan"):
+            elif incoming_approval and normalize_approval_mode(incoming_approval) == "plan":
                 agent_mode = "plan"
             else:
                 # Full Autonomous Standard: Default to build mode with full tool capabilities.
-                # Safety and confirmation gates are governed dynamically by approvals.mode (manual, smart, off).
+                # Safety and confirmation gates are governed dynamically by approvals.mode (plan, auto, off).
                 agent_mode = "build"
 
             # 4. Core ReAct Turn Execution via AnaraExecutionRunner (Anara Standard)

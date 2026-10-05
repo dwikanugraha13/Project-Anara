@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { getBackendUrl } from "@/lib/apiClient";
 import ContextUsagePopover, { ContextUsageData } from "./ContextUsagePopover";
-import ApprovalModePopover, { ApprovalMode } from "./ApprovalModePopover";
+import ApprovalModePopover, { ApprovalMode, normalizeApprovalMode } from "./ApprovalModePopover";
 
 export interface AgentStatusBarProps {
   isConnected: boolean;
@@ -48,7 +48,7 @@ export default function AgentStatusBar({
   subagentsCount = 0,
 }: AgentStatusBarProps) {
   const [isContextPopoverOpen, setIsContextPopoverOpen] = useState(false);
-  const [approvalMode, setApprovalMode] = useState<ApprovalMode>("smart");
+  const [approvalMode, setApprovalMode] = useState<"plan" | "auto" | "off">("auto");
   const [isApprovalPopoverOpen, setIsApprovalPopoverOpen] = useState(false);
   const [turnElapsedSec, setTurnElapsedSec] = useState<number | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -56,9 +56,9 @@ export default function AgentStatusBar({
   // Sync approval mode from localStorage and backend
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("anara_approval_mode") as ApprovalMode | null;
-      if (saved && (saved === "manual" || saved === "smart" || saved === "off")) {
-        setApprovalMode(saved);
+      const saved = localStorage.getItem("anara_approval_mode");
+      if (saved) {
+        setApprovalMode(normalizeApprovalMode(saved));
       }
     } catch {}
 
@@ -67,8 +67,7 @@ export default function AgentStatusBar({
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.mode) {
-          const raw = data.mode.toLowerCase();
-          const mapped: ApprovalMode = raw === "manual" || raw === "plan" ? "manual" : raw === "off" || raw === "yolo" ? "off" : "smart";
+          const mapped = normalizeApprovalMode(data.mode);
           setApprovalMode(mapped);
           try {
             localStorage.setItem("anara_approval_mode", mapped);
@@ -78,7 +77,7 @@ export default function AgentStatusBar({
       .catch(() => {});
   }, []);
 
-  const handleApprovalModeChange = (newMode: ApprovalMode) => {
+  const handleApprovalModeChange = (newMode: "plan" | "auto" | "off") => {
     setApprovalMode(newMode);
     try {
       localStorage.setItem("anara_approval_mode", newMode);
@@ -255,10 +254,10 @@ export default function AgentStatusBar({
             onClick={() => setIsApprovalPopoverOpen((v) => !v)}
             className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-all cursor-pointer text-[10.5px] ${
               approvalMode === "off"
-                ? "bg-emerald-500/15 text-emerald-300 border border-emerald-400/25 hover:bg-emerald-500/25"
-                : approvalMode === "manual"
+                ? "bg-rose-500/15 text-rose-300 border border-rose-400/25 hover:bg-rose-500/25"
+                : approvalMode === "plan"
                 ? "bg-amber-500/15 text-amber-300 border border-amber-400/25 hover:bg-amber-500/25"
-                : "text-slate-300 hover:text-white hover:bg-white/10"
+                : "bg-sky-500/15 text-sky-300 border border-sky-400/25 hover:bg-sky-500/25"
             }`}
             title={`Approval mode: ${approvalMode} (Click to change)`}
           >
@@ -266,10 +265,10 @@ export default function AgentStatusBar({
             <svg
               className={`w-3 h-3 ${
                 approvalMode === "off"
-                  ? "text-emerald-400"
-                  : approvalMode === "manual"
+                  ? "text-rose-400"
+                  : approvalMode === "plan"
                   ? "text-amber-400"
-                  : "text-cyan-400"
+                  : "text-sky-400"
               }`}
               viewBox="0 0 24 24"
               fill={approvalMode === "off" ? "currentColor" : "none"}

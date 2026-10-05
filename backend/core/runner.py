@@ -158,7 +158,8 @@ class AnaraExecutionRunner:
             is_approved = (semantic_intent == "approve")
 
         from config import cfg_get
-        approval_mode = str(cfg_get("approvals.mode", "auto")).strip().lower()
+        from core.approval_guard import normalize_approval_mode
+        approval_mode = normalize_approval_mode(cfg_get("approvals.mode", "auto"))
 
         if pending and is_approved:
             session_state_manager.clear_pending(self.platform, str(effective_sid), final_state=ActionState.APPROVED)
@@ -166,7 +167,7 @@ class AnaraExecutionRunner:
             logger.info(f"[ExecutionRunner] Pending action #{pending.plan_id} APPROVED -> switching to BUILD MODE")
             if pending.original_prompt:
                 clean_text = f"Approved plan execution for original request: '{pending.original_prompt}'."
-        elif approval_mode in ("plan", "manual") or requested_mode == "plan" or session_mode == "plan":
+        elif approval_mode == "plan" or requested_mode == "plan" or session_mode == "plan":
             agent_mode = "plan"
             logger.info(f"[ExecutionRunner] PLAN MODE enforced (approval_mode={approval_mode}, requested_mode={requested_mode})")
         elif requested_mode and requested_mode in ("plan", "build", "conversational"):
@@ -343,7 +344,7 @@ class AnaraExecutionRunner:
                     ))
 
         # Run model execution task in background to allow event queue streaming
-        intercept_mutating = (agent_mode == "plan" or approval_mode in ("plan", "manual"))
+        intercept_mutating = (agent_mode == "plan" or approval_mode == "plan")
         model_task = asyncio.create_task(
             call_universal_chat_model(
                 model_id=selected_model,
