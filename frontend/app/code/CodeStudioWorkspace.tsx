@@ -78,6 +78,13 @@ export interface CodeStudioWorkspaceProps {
   sendSteer: (text: string) => void;
   wsStatus: string;
   activeSessionId: number | null;
+  activeSession?: any;
+  sessions?: any[];
+  sessionsLoading?: boolean;
+  isSessionDropdownOpen?: boolean;
+  setIsSessionDropdownOpen?: React.Dispatch<React.SetStateAction<boolean>>;
+  sessionDropdownRef?: React.RefObject<HTMLDivElement | null>;
+  handleSelectSession?: (id: number) => void;
   handleNewSession: () => void;
   reasoningEffort: ReasoningEffortLevel;
   handleSelectReasoningEffort: (tier: ReasoningEffortLevel) => void;
@@ -140,6 +147,13 @@ export function CodeStudioWorkspace({
   sendSteer,
   wsStatus,
   activeSessionId,
+  activeSession,
+  sessions,
+  sessionsLoading = false,
+  isSessionDropdownOpen = false,
+  setIsSessionDropdownOpen,
+  sessionDropdownRef,
+  handleSelectSession,
   handleNewSession,
   reasoningEffort,
   handleSelectReasoningEffort,
@@ -246,6 +260,74 @@ export function CodeStudioWorkspace({
             style={{ width: `var(--studio-left-width, ${leftWidth}px)`, transition: "none" }}
             className="h-full shrink-0 flex flex-col bg-[#060913]/90 backdrop-blur-xl overflow-hidden select-none relative studio-pane border-r border-white/[0.08]"
           >
+            {/* Left Sidebar Header: Session Selector */}
+            <div
+              className="h-9 px-2 bg-[#070b16]/95 border-b border-white/[0.08] flex items-center justify-between font-mono text-xs shrink-0 select-none relative z-30"
+              ref={sessionDropdownRef as any}
+            >
+              {(() => {
+                const cachedTitle = typeof window !== "undefined" ? localStorage.getItem("anara_active_session_title") || "" : "";
+                const displayTitle = activeSession?.title || (activeSessionId ? cachedTitle || `Session #${activeSessionId}` : (sessionsLoading ? "Loading..." : "New Session"));
+                return (
+                  <button
+                    type="button"
+                    onClick={() => setIsSessionDropdownOpen?.((v) => !v)}
+                    className="w-full flex items-center justify-between gap-1.5 px-2 py-1 rounded-md bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] hover:border-cyan-400/30 text-xs font-mono text-slate-200 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
+                    title="Select or switch coding workspace session"
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                      </svg>
+                      <span className="font-semibold text-white truncate text-[11px]">
+                        {displayTitle}
+                      </span>
+                    </div>
+                    <svg className={`w-3 h-3 text-slate-400 transition-transform duration-150 shrink-0 ${isSessionDropdownOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                );
+              })()}
+
+              {isSessionDropdownOpen && (
+                <div className="absolute left-2 right-2 top-full mt-1 max-h-80 overflow-y-auto custom-scrollbar rounded-xl bg-[#060913]/98 backdrop-blur-2xl border border-white/15 shadow-2xl z-50 p-1.5 select-none font-mono animate-fade-in">
+                  <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-white/10 flex items-center justify-between">
+                    <span>Workspace Sessions</span>
+                    <span>{sessions?.length || 0} sessions</span>
+                  </div>
+
+                  <div className="py-1 space-y-0.5">
+                    {(!sessions || sessions.length === 0) ? (
+                      <div className="p-3 text-center text-xs text-slate-500">No sessions yet</div>
+                    ) : (
+                      sessions.map((s) => {
+                        const isCur = s.id === activeSessionId;
+                        return (
+                          <div
+                            key={s.id}
+                            onClick={() => {
+                              handleSelectSession?.(s.id);
+                              setIsSessionDropdownOpen?.(false);
+                            }}
+                            className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
+                              isCur
+                                ? "bg-cyan-500/20 text-cyan-200 font-semibold border border-cyan-400/30"
+                                : "hover:bg-white/[0.06] text-slate-300 hover:text-white"
+                            }`}
+                          >
+                            <span className="truncate flex-1">{s.title || `Session #${s.id}`}</span>
+                            <span className="text-[10px] text-slate-500 ml-2 shrink-0">
+                              {s.message_count}
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             {explorerMode === "git" ? (
               <ReviewGitPane
                 gitStatus={gitStatus}

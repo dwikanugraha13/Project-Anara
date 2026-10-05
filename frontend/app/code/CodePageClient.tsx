@@ -1260,6 +1260,13 @@ export default function CodePageClient({
         sendSteer={sendSteer}
         wsStatus={wsStatus}
         activeSessionId={activeSessionId}
+        activeSession={activeSession}
+        sessions={sessions}
+        sessionsLoading={sessionsLoading}
+        isSessionDropdownOpen={isSessionDropdownOpen}
+        setIsSessionDropdownOpen={setIsSessionDropdownOpen}
+        sessionDropdownRef={sessionDropdownRef}
+        handleSelectSession={handleSelectSession}
         handleNewSession={handleNewSession}
         reasoningEffort={reasoningEffort}
         handleSelectReasoningEffort={handleSelectReasoningEffort}
