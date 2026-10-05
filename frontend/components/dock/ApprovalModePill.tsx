@@ -161,6 +161,7 @@ export default function ApprovalModePill({ disabled = false, compact = false }: 
         mode={mode}
         onChange={handleModeChange}
         anchored={true}
+        align="right"
       />
     </div>
   );

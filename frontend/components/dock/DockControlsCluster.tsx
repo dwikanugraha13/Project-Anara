@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import ModelSelectorDropdown, { AIModelInfo, isReasoningSupported } from "./ModelSelectorDropdown";
 import ReasoningPill from "./ReasoningPill";
 import ApprovalModePill from "./ApprovalModePill";
@@ -39,9 +39,11 @@ export interface DockControlsClusterProps {
 }
 
 /**
- * DockControlsCluster — Bottom action toolbar row (Zero divider line, seamless obsidian glass).
- * In Desktop mode: spacious single horizontal row.
- * In Anara Code (Studio) mode: 2-tier responsive dock where Reasoning and Approval mode drop down below.
+ * DockControlsCluster — Responsive bottom action toolbar row.
+ * - Dynamic width awareness: When the agent bar is wide, model button expands automatically,
+ *   and reasoning & approval stay on the top line as default.
+ * - When the agent bar is narrowed (< 430px in Code Studio), reasoning and approval mode
+ *   drop down cleanly to the row below.
  */
 export function DockControlsCluster({
   models,
@@ -72,10 +74,30 @@ export function DockControlsCluster({
   compact = false,
   isCodeStudio = false,
 }: DockControlsClusterProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState<number>(600);
+
   const [isAttachMenuOpen, setIsAttachMenuOpen] = useState(false);
   const [isVoiceChatDropdownOpen, setIsVoiceChatDropdownOpen] = useState(false);
   const [isAgentModeDropdownOpen, setIsAgentModeDropdownOpen] = useState(false);
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+
+  // Measure container width dynamically to adapt between 1-tier and 2-tier layouts
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0) {
+          setContainerWidth(entry.contentRect.width);
+        }
+      }
+    });
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const closeDropdown = useCallback(() => {
     setIsAttachMenuOpen(false);
@@ -119,6 +141,9 @@ export function DockControlsCluster({
       setIsAgentModeDropdownOpen(false);
     }
   };
+
+  // Condition to drop reasoning & approval to the bottom row
+  const isNarrow = isCodeStudio && containerWidth < 430;
 
   // ── Render Helpers ──
 
@@ -263,20 +288,25 @@ export function DockControlsCluster({
     );
   };
 
-  const renderModelSelector = (isCompactStyle: boolean) => {
+  const renderModelSelector = (flexibleWidth: boolean) => {
     const cur = findModelById(models, activeModelId) || { id: activeModelId, name: activeModelId, supports_reasoning: true };
     const displayName = formatModelDisplayName(cur?.name || cur?.id || activeModelId);
     const modalities = getModelModalities(cur);
 
     return (
-      <div className={`relative min-w-0 ${isCompactStyle ? "shrink max-w-full flex-1" : "shrink-0 max-w-[170px]"}`} data-dropdown-root="true">
+      <div
+        className={`relative min-w-0 ${
+          flexibleWidth
+            ? "flex-1 max-w-[320px]"
+            : "shrink-0 max-w-[200px] sm:max-w-[280px]"
+        }`}
+        data-dropdown-root="true"
+      >
         <button
           type="button"
           onClick={(e) => toggleDropdown("model", e)}
           title={`Active Model: ${cur?.id || activeModelId} (${modalities.map((m) => m.label).join(", ")})`}
-          className={`flex items-center gap-1.5 py-1 rounded-lg border text-[11px] font-medium font-mono transition-colors cursor-pointer select-none min-w-0 ${
-            isCompactStyle ? "px-2 w-full justify-between" : "px-2.5"
-          } ${
+          className={`flex items-center gap-1.5 py-1 rounded-lg border text-[11px] font-medium font-mono transition-colors cursor-pointer select-none min-w-0 w-full justify-between px-2.5 ${
             isModelDropdownOpen
               ? "bg-white/[0.08] border-white/20 text-white"
               : "bg-white/[0.03] border-white/[0.08] hover:border-white/[0.16] hover:bg-white/[0.06] text-zinc-300 hover:text-white"
@@ -304,7 +334,7 @@ export function DockControlsCluster({
     );
   };
 
-  const renderReasoningPill = (isCompactStyle: boolean) => {
+  const renderReasoningPill = (isCompactPill: boolean) => {
     const cur = findModelById(models, activeModelId) || { id: activeModelId, name: activeModelId, supports_reasoning: true };
     const hasReasoning = isReasoningSupported(cur);
     if (!hasReasoning || interactionMode === "voice") return null;
@@ -317,17 +347,17 @@ export function DockControlsCluster({
           onSelectReasoningEffort?.(effort as any);
         }}
         modelName={formatModelDisplayName(cur?.name || cur?.id || activeModelId)}
-        compact={isCompactStyle}
+        compact={isCompactPill}
       />
     );
   };
 
-  const renderApprovalModePill = (isCompactStyle: boolean) => {
+  const renderApprovalModePill = (isCompactPill: boolean) => {
     if (interactionMode === "voice") return null;
-    return <ApprovalModePill compact={isCompactStyle} />;
+    return <ApprovalModePill compact={isCompactPill} />;
   };
 
-  const renderSendStopButton = (isCompactStyle: boolean) => {
+  const renderSendStopButton = (isCompactButton: boolean) => {
     if (interactionMode === "voice") {
       if (status === "speaking") {
         return (
@@ -380,7 +410,7 @@ export function DockControlsCluster({
         <button
           type="button"
           onClick={onInterrupt}
-          className={`${isCompactStyle ? "w-7 h-7" : "w-8 h-8"} rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer bg-rose-500/20 hover:bg-rose-500/35 text-rose-200 border border-rose-400/40 shadow-sm active:scale-95 group shrink-0`}
+          className={`${isCompactButton ? "w-7 h-7" : "w-8 h-8"} rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer bg-rose-500/20 hover:bg-rose-500/35 text-rose-200 border border-rose-400/40 shadow-sm active:scale-95 group shrink-0`}
           title="Stop generating response (Escape or Click)"
         >
           <div className="w-2.5 h-2.5 rounded-[2px] bg-rose-400 group-hover:bg-white transition-colors shadow-sm" />
@@ -388,7 +418,7 @@ export function DockControlsCluster({
       );
     }
 
-    if (isCompactStyle) {
+    if (isCompactButton) {
       return (
         <button
           type="button"
@@ -430,48 +460,46 @@ export function DockControlsCluster({
     );
   };
 
-  // ── ANARA CODE (STUDIO) 2-TIER RESPONSIVE DOCK ──
-  // Reasoning and Approval Mode drop down to the bottom tier, leaving top tier spacious for Model and Send
-  if (isCodeStudio) {
-    return (
-      <div className="flex flex-col gap-1 w-full min-w-0 pt-0.5">
-        {/* Tier 1: Attachment + Model Selector on Left, Send/Stop on Right */}
-        <div className="flex items-center justify-between gap-1.5 w-full min-w-0">
+  return (
+    <div ref={containerRef} className="w-full">
+      {/* ── 2-TIER LAYOUT (Used when narrowed in Code Studio) ── */}
+      {isNarrow ? (
+        <div className="flex flex-col gap-1.5 w-full min-w-0 pt-0.5 animate-in fade-in duration-150">
+          {/* Row 1: Attachment + Model Selector (widens flexibly) on Left, Send/Stop on Right */}
+          <div className="flex items-center justify-between gap-1.5 w-full min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              {renderAttachmentButton()}
+              {renderModelSelector(true)}
+            </div>
+            <div className="shrink-0 flex items-center gap-1">
+              {renderSendStopButton(true)}
+            </div>
+          </div>
+
+          {/* Row 2 (Turun di bawah): [ Reasoning Pill ] [ Approval Mode Pill ] */}
+          <div className="flex items-center gap-1.5 w-full min-w-0 pt-0.5">
+            {renderReasoningPill(true)}
+            {renderApprovalModePill(true)}
+          </div>
+        </div>
+      ) : (
+        /* ── 1-TIER DEFAULT LAYOUT (When wide in Code Studio, or on Desktop) ── */
+        <div className="flex items-center justify-between gap-2 pt-1 w-full animate-in fade-in duration-150">
+          {/* Left Cluster: [+] [Voice/Chat] + Model Selector (expands as bar widens) */}
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
             {renderAttachmentButton()}
+            {renderInteractionMode()}
             {renderModelSelector(true)}
           </div>
-          <div className="shrink-0 flex items-center gap-1">
-            {renderSendStopButton(true)}
+
+          {/* Right Cluster: [Reasoning] [Approval] [Send/Stop] */}
+          <div className="flex items-center gap-1.5 shrink-0 justify-end">
+            {renderReasoningPill(false)}
+            {renderApprovalModePill(false)}
+            {renderSendStopButton(false)}
           </div>
         </div>
-
-        {/* Tier 2 (Turun di bawah): [ Reasoning Pill ] [ Approval Mode Pill ] */}
-        <div className="flex items-center gap-1.5 w-full min-w-0 pt-0.5">
-          {renderReasoningPill(true)}
-          {renderApprovalModePill(true)}
-        </div>
-      </div>
-    );
-  }
-
-  // ── STANDARD DESKTOP 1-TIER DOCK ──
-  // Single spacious row with full padding and zero artificial squishing
-  return (
-    <div className="flex items-center justify-between gap-2 pt-1 w-full">
-      {/* Left Cluster: [+] [Voice/Chat] */}
-      <div className="flex items-center gap-2 flex-wrap min-w-0">
-        {renderAttachmentButton()}
-        {renderInteractionMode()}
-      </div>
-
-      {/* Right Cluster: [Model] [Reasoning] [Approval] [Mic/Interrupt/Send] */}
-      <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-        {renderModelSelector(false)}
-        {renderReasoningPill(false)}
-        {renderApprovalModePill(false)}
-        {renderSendStopButton(false)}
-      </div>
+      )}
     </div>
   );
 }

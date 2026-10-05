@@ -17,6 +17,7 @@ export interface ApprovalModePopoverProps {
   mode: ApprovalMode;
   onChange: (mode: "plan" | "auto" | "off") => void;
   anchored?: boolean;
+  align?: "left" | "right";
   className?: string;
 }
 
@@ -80,6 +81,7 @@ export default function ApprovalModePopover({
   mode,
   onChange,
   anchored = false,
+  align = "right",
   className,
 }: ApprovalModePopoverProps) {
   if (!isOpen) return null;
@@ -90,10 +92,10 @@ export default function ApprovalModePopover({
       aria-label="Approval Mode Popover"
       className={
         anchored
-          ? `absolute bottom-9 left-0 z-50 w-72 p-1.5 rounded-xl bg-[#060913]/95 backdrop-blur-2xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.85)] text-slate-200 select-none animate-in fade-in zoom-in-95 duration-100 ${
+          ? `absolute bottom-9 ${align === "right" ? "right-0" : "left-0"} z-50 w-64 sm:w-72 max-w-[calc(100vw-2rem)] p-1.5 rounded-xl bg-[#060913]/98 backdrop-blur-2xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.9)] text-slate-200 select-none animate-in fade-in zoom-in-95 duration-100 ${
               className || ""
             }`
-          : "absolute bottom-8 right-32 w-72 p-1.5 rounded-xl bg-[#060913]/95 backdrop-blur-2xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.85)] text-slate-200 select-none animate-in fade-in zoom-in-95 duration-100"
+          : "absolute bottom-8 right-32 w-64 sm:w-72 p-1.5 rounded-xl bg-[#060913]/98 backdrop-blur-2xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.9)] text-slate-200 select-none animate-in fade-in zoom-in-95 duration-100"
       }
       onClick={(e) => {
         e.stopPropagation();
