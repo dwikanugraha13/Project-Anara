@@ -725,6 +725,7 @@ export default function BottomDock({
                   setAttachedFiles([]);
                 }}
                 handleTextareaChange={handleTextareaChange}
+                placeholder={embedded ? "Ask Anara... ('/' or '@')" : undefined}
               />
             )}
           </div>
@@ -756,6 +757,7 @@ export default function BottomDock({
             isBusy={isBusy}
             canSend={canSend}
             onSend={() => handleFormSubmit()}
+            compact={embedded}
           />
         </div>
       )}

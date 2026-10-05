@@ -34,6 +34,7 @@ export interface DockControlsClusterProps {
   isBusy: boolean;
   canSend: boolean;
   onSend: () => void;
+  compact?: boolean;
 }
 
 /**
@@ -66,6 +67,7 @@ export function DockControlsCluster({
   isBusy,
   canSend,
   onSend,
+  compact = false,
 }: DockControlsClusterProps) {
   const [isAttachMenuOpen, setIsAttachMenuOpen] = useState(false);
   const [isVoiceChatDropdownOpen, setIsVoiceChatDropdownOpen] = useState(false);
@@ -261,9 +263,9 @@ export function DockControlsCluster({
       </div>
 
       {/* Right Cluster: [Model] [Reasoning] [Approval] [Mic/Interrupt] [Send Button] */}
-      <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+      <div className="flex items-center gap-1 min-w-0 justify-end flex-1">
         {/* AI Model Selector Button & Popover */}
-        <div className="relative shrink-0" data-dropdown-root="true">
+        <div className={`relative min-w-0 shrink ${compact ? "max-w-[110px]" : "max-w-[130px] sm:max-w-[170px]"}`} data-dropdown-root="true">
           {(() => {
             const cur = findModelById(models, activeModelId) || { id: activeModelId, name: activeModelId, supports_reasoning: true };
             const displayName = formatModelDisplayName(cur?.name || cur?.id || activeModelId);
@@ -274,13 +276,15 @@ export function DockControlsCluster({
                 type="button"
                 onClick={(e) => toggleDropdown("model", e)}
                 title={`Active Model: ${cur?.id || activeModelId} (${modalities.map((m) => m.label).join(", ")})`}
-                className={`flex items-center gap-1.5 py-1 px-2.5 rounded-lg border text-[11px] font-medium font-mono transition-colors cursor-pointer select-none ${
+                className={`flex items-center gap-1 py-1 rounded-lg border text-[11px] font-medium font-mono transition-colors cursor-pointer select-none min-w-0 w-full ${
+                  compact ? "px-1.5" : "px-2.5"
+                } ${
                   isModelDropdownOpen
                     ? "bg-white/[0.08] border-white/20 text-white"
                     : "bg-white/[0.03] border-white/[0.08] hover:border-white/[0.16] hover:bg-white/[0.06] text-zinc-300 hover:text-white"
                 }`}
               >
-                <span className="truncate max-w-[120px] sm:max-w-[170px] font-semibold tracking-tight" suppressHydrationWarning>
+                <span className="truncate font-semibold tracking-tight min-w-0 text-[10.5px] sm:text-[11px]" suppressHydrationWarning>
                   {displayName}
                 </span>
                 <svg className="w-3 h-3 text-zinc-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -316,13 +320,14 @@ export function DockControlsCluster({
                 onSelectReasoningEffort?.(effort as any);
               }}
               modelName={formatModelDisplayName(cur?.name || cur?.id || activeModelId)}
+              compact={compact}
             />
           );
         })()}
 
         {/* Dedicated Approval Mode Pill (Manual / Smart / Off) */}
         {interactionMode !== "voice" && (
-          <ApprovalModePill />
+          <ApprovalModePill compact={compact} />
         )}
 
         {/* Quick Mic, Interrupt & Send Button */}
@@ -395,17 +400,33 @@ export function DockControlsCluster({
             <button
               type="button"
               onClick={onInterrupt}
-              className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer bg-rose-500/20 hover:bg-rose-500/35 text-rose-200 border border-rose-400/40 shadow-sm active:scale-95 group"
+              className={`${compact ? "w-7 h-7" : "w-8 h-8"} rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer bg-rose-500/20 hover:bg-rose-500/35 text-rose-200 border border-rose-400/40 shadow-sm active:scale-95 group shrink-0`}
               title="Stop generating response (Escape or Click)"
             >
               <div className="w-2.5 h-2.5 rounded-[2px] bg-rose-400 group-hover:bg-white transition-colors shadow-sm" />
+            </button>
+          ) : compact ? (
+            <button
+              type="button"
+              onClick={onSend}
+              disabled={!canSend}
+              className={`w-7 h-7 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer shadow-md shrink-0 ${
+                canSend
+                  ? "bg-[#ECEEF2] hover:bg-white text-[#0F131A] shadow-[0_0_12px_rgba(255,255,255,0.25)] active:scale-95 font-semibold"
+                  : "bg-white/[0.06] text-slate-500 border border-white/10 cursor-not-allowed opacity-40"
+              }`}
+              title="Send prompt (Enter)"
+            >
+              <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                <path d="M12 3v10m0-10l-4 4m4-4l4 4M5 14v4a2 2 0 002 2h10a2 2 0 002-2v-4" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+              </svg>
             </button>
           ) : (
             <button
               type="button"
               onClick={onSend}
               disabled={!canSend}
-              className={`h-8 px-2.5 rounded-full flex items-center gap-1 transition-all duration-200 cursor-pointer shadow-md ${
+              className={`h-8 px-2.5 rounded-full flex items-center gap-1 transition-all duration-200 cursor-pointer shadow-md shrink-0 ${
                 canSend
                   ? "bg-[#ECEEF2] hover:bg-white text-[#0F131A] shadow-[0_0_15px_rgba(255,255,255,0.25)] active:scale-95 font-semibold"
                   : "bg-white/[0.06] text-slate-500 border border-white/10 cursor-not-allowed opacity-40"

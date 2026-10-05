@@ -18,6 +18,7 @@ export interface ReasoningPillProps {
   disabled?: boolean;
   modelName?: string;
   supportedLevels?: ReasoningEffortLevel[];
+  compact?: boolean;
 }
 
 export default function ReasoningPill({
@@ -28,6 +29,7 @@ export default function ReasoningPill({
   disabled = false,
   modelName = "Model",
   supportedLevels,
+  compact = false,
 }: ReasoningPillProps) {
   const [isOpen, setIsOpen] = useState(false);
   const pillRef = useRef<HTMLDivElement>(null);
@@ -155,7 +157,9 @@ export default function ReasoningPill({
           setIsOpen((prev) => !prev);
         }}
         title={`Thinking Effort: ${currentConfig.label} (${currentConfig.description})`}
-        className={`flex items-center gap-1.5 py-1 px-2.5 rounded-lg border text-[11px] font-medium transition-colors cursor-pointer select-none ${
+        className={`flex items-center gap-1 py-1 rounded-lg border text-[11px] font-medium transition-colors cursor-pointer select-none ${
+          compact ? "px-1.5 text-[10.5px]" : "px-2.5"
+        } ${
           isOpen
             ? "bg-white/[0.08] border-white/20 text-white"
             : isOff

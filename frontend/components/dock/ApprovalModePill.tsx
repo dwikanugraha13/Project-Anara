@@ -6,9 +6,10 @@ import { BACKEND_URL } from "@/lib/apiClient";
 
 export interface ApprovalModePillProps {
   disabled?: boolean;
+  compact?: boolean;
 }
 
-export default function ApprovalModePill({ disabled = false }: ApprovalModePillProps) {
+export default function ApprovalModePill({ disabled = false, compact = false }: ApprovalModePillProps) {
   const [isOpen, setIsOpen] = useState(false);
   const pillRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<"plan" | "auto" | "off">("auto");
@@ -135,7 +136,9 @@ export default function ApprovalModePill({ disabled = false }: ApprovalModePillP
           setIsOpen((prev) => !prev);
         }}
         title={`Approval Mode: ${mode.toUpperCase()} (Click to change)`}
-        className={`flex items-center gap-1.5 py-1 px-2.5 rounded-lg border text-[11px] font-medium font-mono transition-colors cursor-pointer select-none ${
+        className={`flex items-center gap-1 py-1 rounded-lg border text-[11px] font-medium font-mono transition-colors cursor-pointer select-none ${
+          compact ? "px-1.5 text-[10.5px]" : "px-2.5"
+        } ${
           isOpen ? currentStyle.active : currentStyle.idle
         }`}
       >

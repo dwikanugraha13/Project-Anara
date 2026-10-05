@@ -28,6 +28,7 @@ export interface DockComposerInputProps {
   workspaceFiles: Array<{ path: string; name: string; isDir?: boolean }>;
   onClearAttachments: () => void;
   handleTextareaChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  placeholder?: string;
 }
 
 const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
@@ -59,6 +60,7 @@ export function DockComposerInput({
   workspaceFiles,
   onClearAttachments,
   handleTextareaChange,
+  placeholder = "Start with a goal... (type '/' for commands, '@' for files)",
 }: DockComposerInputProps) {
   // Single-pass layout auto-resize
   useIsomorphicLayoutEffect(() => {
@@ -111,7 +113,7 @@ export function DockComposerInput({
             onChange={handleTextareaChange}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
-            placeholder="Start with a goal... (type '/' for commands, '@' for files)"
+            placeholder={placeholder}
             className={`w-full bg-transparent border-none py-0.5 px-1 text-xs sm:text-[13px] text-white placeholder:text-slate-500 focus:outline-none font-sans resize-none custom-scrollbar leading-relaxed ${
               isInputOverflowed || isInputExpanded ? "overflow-y-auto" : "overflow-hidden"
             } ${isInputExpanded ? "flex-1 h-full max-h-none" : ""}`}
