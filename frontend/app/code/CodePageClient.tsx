@@ -22,6 +22,7 @@ import { CodeStudioHeader } from "./CodeStudioHeader";
 import { CodeStudioWorkspace } from "./CodeStudioWorkspace";
 import { useCodeStudioLayout } from "./useCodeStudioLayout";
 import { playAnaraCompletionChime, playAnaraAlertChime } from "@/lib/anaraSoundSynthesizer";
+import { normalizeApprovalMode } from "@/components/statusbar/ApprovalModePopover";
 
 const AnaraBrain = lazy(() => import("@/components/brain/AnaraBrain"));
 
@@ -967,13 +968,13 @@ export default function CodePageClient({
     if (!text.trim()) return;
     const trimmed = text.trim();
 
-    let activeApproval = "smart";
+    let activeApproval = "auto";
     if (typeof window !== "undefined") {
       try {
-        activeApproval = (localStorage.getItem("anara_approval_mode") || "smart").toLowerCase();
+        activeApproval = normalizeApprovalMode(localStorage.getItem("anara_approval_mode"));
       } catch {}
     }
-    const effectiveMode: "plan" | "build" = mode || (activeApproval === "plan" || activeApproval === "manual" ? "plan" : agentMode);
+    const effectiveMode: "plan" | "build" = mode || (activeApproval === "plan" ? "plan" : agentMode);
 
     setTranscript((prev) => [
       ...prev,

@@ -32,6 +32,7 @@ import {
   mergeInFlightWithTranscript,
 } from "@/lib/inflightJournal";
 import { playAnaraCompletionChime, playAnaraAlertChime } from "@/lib/anaraSoundSynthesizer";
+import { normalizeApprovalMode } from "@/components/statusbar/ApprovalModePopover";
 
 export type TranscriptEntry = TranscriptItem;
 
@@ -1061,13 +1062,13 @@ export default function HomePageClient({
       forceUnlock();
 
       // Enforce active approval mode ('plan' vs 'auto'/'off') if mode not explicitly forced
-      let activeApproval = "smart";
+      let activeApproval = "auto";
       if (typeof window !== "undefined") {
         try {
-          activeApproval = (localStorage.getItem("anara_approval_mode") || "smart").toLowerCase();
+          activeApproval = normalizeApprovalMode(localStorage.getItem("anara_approval_mode"));
         } catch {}
       }
-      const effectiveMode: "plan" | "build" = explicitMode || (activeApproval === "plan" || activeApproval === "manual" ? "plan" : "build");
+      const effectiveMode: "plan" | "build" = explicitMode || (activeApproval === "plan" ? "plan" : "build");
 
       if (danceActiveRef.current) {
         console.log("[Dance] User chatted during dance — smoothly stopping dance and switching focus to conversation");
