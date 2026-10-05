@@ -304,7 +304,7 @@ export default function ChatTimeline({
   }, [transcript, status]);
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 h-full relative pt-4 pb-4">
+    <div className="flex-1 flex flex-col min-w-0 h-full relative pt-3 pb-1">
       {/* Scrollable Chat Message Stream */}
       <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto overscroll-contain custom-scrollbar px-2 sm:px-4">
         <div ref={contentRef} className="max-w-3xl xl:max-w-4xl mx-auto w-full flex flex-col gap-3 py-3">
@@ -857,11 +857,8 @@ export default function ChatTimeline({
             onOpenFile={onOpenFile}
             onOpenReviewTab={onOpenReviewTab}
           />
-          {/* Dynamic bottom spacer taking footerDockHeight into account */}
-          <div
-            style={{ height: `${Math.max(28, (footerDockHeight || 0) + 12)}px` }}
-            className="w-full shrink-0 pointer-events-none transition-[height] duration-150 ease-out"
-          />
+          {/* Clean minimal bottom spacer for comfortable scroll breathing room */}
+          <div className="w-full shrink-0 h-3.5 pointer-events-none" />
           <div ref={transcriptEndRef} />
         </div>
       </div>
@@ -871,8 +868,7 @@ export default function ChatTimeline({
         <button
           type="button"
           onClick={() => scrollToBottom(true)}
-          style={{ bottom: `${Math.max(12, (footerDockHeight || 0) + 12)}px` }}
-          className="absolute left-1/2 -translate-x-1/2 z-40 px-3 py-1 rounded-full bg-[#060913]/95 hover:bg-[#0c1328] border border-white/20 hover:border-white/40 text-slate-300 hover:text-white flex items-center gap-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.85)] backdrop-blur-xl cursor-pointer transition-all active:scale-95 animate-fade-in font-mono text-[11px] select-none"
+          className="absolute left-1/2 -translate-x-1/2 bottom-3.5 z-40 px-3 py-1 rounded-full bg-[#060913]/95 hover:bg-[#0c1328] border border-white/20 hover:border-white/40 text-slate-300 hover:text-white flex items-center gap-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.85)] backdrop-blur-xl cursor-pointer transition-all active:scale-95 animate-fade-in font-mono text-[11px] select-none"
           title="Scroll to latest message"
           aria-label="Scroll to bottom"
         >

@@ -548,7 +548,7 @@ export default function BottomDock({
       ref={footerDockRef}
       className={
         embedded
-          ? "relative w-full p-2.5 z-20 flex flex-col items-center gap-1.5 pointer-events-auto shrink-0 bg-transparent mt-auto"
+          ? "relative w-full px-1.5 sm:px-2 pt-0 pb-1.5 z-20 flex flex-col items-center gap-1 pointer-events-auto shrink-0 bg-transparent"
           : `fixed px-3 sm:px-4 z-30 flex flex-col items-center gap-1.5 pointer-events-none mx-auto right-0 transition-[top,bottom,max-width] duration-300 ${
               isInputExpanded
                 ? "bottom-4 top-16 max-w-3xl lg:max-w-4xl"
