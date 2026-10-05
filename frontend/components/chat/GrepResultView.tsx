@@ -76,8 +76,10 @@ export function GrepResultView({
           onClick={() => setIsExpanded((v) => !v)}
           className="flex items-center gap-1.5 max-w-fit text-left cursor-pointer group/btn select-none py-0.5"
         >
-          <span className="grid size-3.5 shrink-0 place-items-center text-slate-500 group-hover/btn:text-slate-300 text-[11px] font-mono">
-            »
+          <span className="grid size-3.5 shrink-0 place-items-center text-slate-400">
+            <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
           </span>
           <span className="text-slate-400 group-hover/btn:text-slate-200 transition-colors text-[11.5px] font-mono">
             Searched {pattern ? <span className="font-semibold text-slate-200 group-hover/btn:text-white">&quot;{pattern}&quot;</span> : "codebase"}
@@ -155,7 +157,7 @@ export function GrepResultView({
                         onClick={() => onOpenFile?.(file, filename, h.line_number)}
                         className="flex items-baseline gap-2 py-0.5 px-1 rounded hover:bg-white/[0.04] cursor-pointer group/hit transition-colors"
                       >
-                        <span className="px-1 py-px rounded text-[9px] font-mono text-purple-300 bg-purple-500/10 border border-purple-400/20 shrink-0 tabular-nums select-none group-hover/hit:bg-purple-500/20 group-hover/hit:border-purple-400/40 transition-colors">
+                        <span className="px-1 py-px rounded text-[9px] font-mono text-slate-400 bg-white/[0.04] border border-white/[0.08] shrink-0 tabular-nums select-none group-hover/hit:text-slate-200 transition-colors">
                           L{h.line_number}
                         </span>
                         <span className="whitespace-pre font-mono text-[10.5px] text-slate-300 group-hover/hit:text-slate-100 transition-colors truncate">
@@ -165,7 +167,7 @@ export function GrepResultView({
                               const parts = lineText.split(regex);
                               return parts.map((part, pIdx) =>
                                 regex.test(part) ? (
-                                  <mark key={pIdx} className="bg-purple-500/30 text-purple-200 px-0.5 rounded font-bold">
+                                  <mark key={pIdx} className="bg-white/[0.12] text-white px-0.5 rounded font-semibold">
                                     {part}
                                   </mark>
                                 ) : (

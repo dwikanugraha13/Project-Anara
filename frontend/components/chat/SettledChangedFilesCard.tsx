@@ -90,46 +90,41 @@ export function SettledChangedFilesCard({
   const totalDeleted = changedFiles.reduce((acc, f) => acc + f.deleted, 0);
 
   return (
-    <div className="w-full my-2 rounded-lg border border-white/[0.08] bg-black/40 backdrop-blur-md overflow-hidden select-none font-mono animate-fade-in">
+    <div
+      className="w-full my-2 rounded-3xl bg-white/[0.035] px-3.5 py-3 select-none font-mono animate-fade-in"
+      data-slot="aui_changed-files"
+    >
       {/* Header bar */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.06] bg-white/[0.015]">
-        <div className="flex items-center gap-2">
-          <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          <span className="text-[11.5px] font-semibold text-slate-200">
-            {changedFiles.length} file{changedFiles.length === 1 ? "" : "s"} modified
-          </span>
-          <div className="flex items-center gap-1 font-mono text-[10.5px] tabular-nums font-bold shrink-0 ml-1">
-            {totalAdded > 0 && <span className="text-emerald-400">+{totalAdded}</span>}
-            {totalDeleted > 0 && <span className="text-rose-400">−{totalDeleted}</span>}
-          </div>
-        </div>
+      <div className="flex items-center justify-between pb-1.5 border-b border-white/[0.06]">
+        <span className="text-[12px] font-semibold text-slate-200 tracking-tight">
+          {changedFiles.length} file{changedFiles.length === 1 ? "" : "s"} changed
+        </span>
 
         {onOpenReviewTab && (
           <button
             type="button"
             onClick={onOpenReviewTab}
-            className="flex items-center gap-1 text-[11px] text-slate-300 hover:text-white px-2 py-0.5 rounded bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 transition-all cursor-pointer font-sans"
+            className="text-[11px] text-slate-400 hover:text-slate-100 transition-colors cursor-pointer font-sans"
             title="Inspect all changed files in Git Review"
           >
-            <span>Review changes</span>
-            <span className="text-[10px]">↗</span>
+            Review changes
           </button>
         )}
       </div>
 
       {/* File list */}
-      <div className="max-h-[140px] overflow-y-auto overscroll-y-auto custom-scrollbar p-1.5 space-y-0.5">
+      <div className="-mx-1.5 mt-1.5 max-h-[150px] overflow-y-auto overscroll-y-auto custom-scrollbar px-1.5 space-y-0.5">
         {changedFiles.map((file, idx) => (
           <div
             key={idx}
             onClick={() => onOpenFile?.(file.path, file.filename)}
-            className="flex items-center justify-between px-2 py-1 rounded hover:bg-white/[0.04] transition-colors cursor-pointer group text-xs"
+            className="flex items-center justify-between px-2 py-1 rounded-md hover:bg-white/[0.04] transition-colors cursor-pointer group text-xs"
           >
-            <div className="flex items-baseline gap-1.5 min-w-0 truncate">
-              <span className="text-slate-500 group-hover:text-slate-400 text-[10px]">»</span>
-              <span className="text-slate-200 font-medium group-hover:text-white transition-colors truncate text-[11px]">
+            <div className="flex items-center gap-2 min-w-0 truncate">
+              <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span className="text-slate-300 font-medium group-hover:text-white transition-colors truncate text-[11px]">
                 {file.filename}
               </span>
               {file.dirPath && (
@@ -139,14 +134,9 @@ export function SettledChangedFilesCard({
               )}
             </div>
 
-            <div className="flex items-center gap-2 shrink-0 ml-2">
-              <div className="flex items-center gap-1 font-mono text-[10px] tabular-nums">
-                {file.added > 0 && <span className="text-emerald-400/90">+{file.added}</span>}
-                {file.deleted > 0 && <span className="text-rose-400/90">−{file.deleted}</span>}
-              </div>
-              <span className="text-slate-500 group-hover:text-white text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
-                ↗
-              </span>
+            <div className="flex items-center gap-1 font-mono text-[10px] tabular-nums shrink-0 ml-2">
+              {file.added > 0 && <span className="text-emerald-400">+{file.added}</span>}
+              {file.deleted > 0 && <span className="text-rose-400">−{file.deleted}</span>}
             </div>
           </div>
         ))}

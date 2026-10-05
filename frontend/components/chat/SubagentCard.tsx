@@ -2,14 +2,26 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { SubagentProgressItem, SubagentTaskData, SubagentStatus } from "../hud/types";
+import { SCAFFOLD_GLYPH_CLASS } from "./ScaffoldRow";
+import { DisclosureCaret } from "./DisclosureCaret";
+
+// ── FORMAT STOPWATCH TIME ───────────────────────────────────────────────────
+function formatElapsed(seconds: number): string {
+  if (seconds < 60) {
+    return `${Math.round(seconds)}s`;
+  }
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
+}
 
 // ── STATUS GLYPH ─────────────────────────────────────────────────────────────
 function StatusGlyph({ status }: { status: SubagentStatus }) {
   if (status === "running") {
     return (
-      <span className="relative flex h-3 w-3 shrink-0 items-center justify-center">
+      <span className="relative flex h-3.5 w-3.5 shrink-0 items-center justify-center">
         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-60" />
-        <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
+        <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-400" />
       </span>
     );
   }
@@ -17,9 +29,9 @@ function StatusGlyph({ status }: { status: SubagentStatus }) {
   if (status === "failed" || status === "timed_out") {
     return (
       <svg className="w-3.5 h-3.5 text-rose-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <circle cx="12" cy="12" r="10" strokeWidth="2" />
-        <line x1="12" y1="8" x2="12" y2="12" strokeWidth="2" strokeLinecap="round" />
-        <line x1="12" y1="16" x2="12.01" y2="16" strokeWidth="2" strokeLinecap="round" />
+        <circle cx="12" cy="12" r="10" strokeWidth={2} />
+        <line x1="12" y1="8" x2="12" y2="12" strokeWidth={2} strokeLinecap="round" />
+        <line x1="12" y1="16" x2="12.01" y2="16" strokeWidth={2} strokeLinecap="round" />
       </svg>
     );
   }
@@ -31,6 +43,16 @@ function StatusGlyph({ status }: { status: SubagentStatus }) {
   return (
     <svg className="w-3.5 h-3.5 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M5 13l4 4L19 7" />
+    </svg>
+  );
+}
+
+// ── AGENT ICON GLYPH (Codicon Agent Standard, Zero Emojis) ───────────────────
+function AgentIconGlyph({ className = "w-3 h-3 text-slate-500" }: { className?: string }) {
+  return (
+    <svg className={`shrink-0 ${className}`} fill="currentColor" viewBox="0 0 16 16">
+      <path d="M8 1a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM6 6a2 2 0 0 0-2 2v3h1V8a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3h1V8a2 2 0 0 0-2-2H6z" />
+      <path d="M2.5 13a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5z" />
     </svg>
   );
 }
@@ -72,15 +94,16 @@ function SubagentActivityTicker({
   );
 }
 
-// ── SUBAGENT ROW VIEW (2-line compact footprint) ─────────────────────────────
+// ── SUBAGENT ROW VIEW (Compact 2-Line Footprint + In-Place Accordion) ───────
 function SubagentRowView({
   task,
-  onInspect,
+  onOpenFile,
 }: {
   task: SubagentProgressItem;
-  onInspect: (task: SubagentProgressItem) => void;
+  onOpenFile?: (filePath: string, fileName?: string) => void;
 }) {
   const isLive = task.status === "running";
+  const [open, setOpen] = useState(false);
   const [elapsed, setElapsed] = useState<number>(0);
   const startRef = useRef<number>(task.startedAt || Date.now());
 
@@ -92,207 +115,129 @@ function SubagentRowView({
     return () => clearInterval(timer);
   }, [isLive]);
 
-  return (
-    <div className="relative flex flex-col gap-1 rounded-xl border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] p-2.5 transition-all">
-      {/* Top Hairline Accent */}
-      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent pointer-events-none rounded-t-xl" />
+  const durationText = isLive
+    ? formatElapsed(elapsed)
+    : task.durationSec !== undefined
+    ? formatElapsed(task.durationSec)
+    : "";
 
-      {/* Row Header: Status Glyph | Goal Text | Model Badge | Live Timer | Inspect */}
-      <div className="flex items-center gap-2 min-w-0 font-mono text-xs select-none">
-        <StatusGlyph status={task.status} />
+  return (
+    <div className="grid min-w-0 max-w-full gap-0.5 rounded-xl border border-white/[0.08] bg-white/[0.02] p-2.5 transition-all">
+      {/* Line 1: Goal line (Scaffolded header) */}
+      <div className="flex min-w-0 max-w-full items-center gap-1.5 font-mono text-xs select-none" data-conversation-scaffold="">
+        <span className={SCAFFOLD_GLYPH_CLASS}>
+          <StatusGlyph status={task.status} />
+        </span>
 
         <button
           type="button"
-          onClick={() => onInspect(task)}
-          className="min-w-0 truncate text-left font-medium text-slate-200 hover:text-white transition-colors cursor-pointer text-[11.5px]"
+          onClick={() => setOpen((prev) => !prev)}
+          className="min-w-0 flex-1 truncate text-left font-medium text-slate-200 hover:text-white transition-colors cursor-pointer text-[11.5px]"
           title={task.goal}
         >
           {task.goal}
         </button>
 
         {task.model && (
-          <span className="hidden sm:inline-flex px-1.5 py-px rounded bg-white/[0.04] border border-white/[0.06] text-[9.5px] text-slate-400 font-mono">
+          <span className="hidden sm:inline-flex px-1.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.06] text-[10px] text-slate-300 font-mono shrink-0">
             {task.model}
           </span>
         )}
 
         {/* Live Elapsed Stopwatch / Settled Duration */}
-        <div className="ml-auto flex items-center gap-2 shrink-0">
-          {isLive ? (
-            <span className="text-[10px] font-mono tabular-nums text-slate-300 animate-pulse">
-              {elapsed}s
-            </span>
-          ) : task.durationSec !== undefined ? (
-            <span className="text-[10px] font-mono tabular-nums text-slate-500">
-              {task.durationSec.toFixed(1)}s
-            </span>
-          ) : null}
+        {durationText && (
+          <span className="text-[10px] font-mono tabular-nums text-slate-400 shrink-0 ml-1">
+            {durationText}
+          </span>
+        )}
 
-          {/* Agent Icon */}
-          <span className="text-slate-500 text-[10px] select-none">⚡</span>
+        {/* Clean Agent Icon (Zero Emojis) */}
+        <AgentIconGlyph className="w-3 h-3 text-slate-500 shrink-0 ml-1" />
 
-          {/* Inspect Button */}
-          <button
-            type="button"
-            onClick={() => onInspect(task)}
-            className="p-1 rounded text-slate-500 hover:text-slate-200 hover:bg-white/[0.06] transition-colors cursor-pointer"
-            title="Inspect subagent execution details"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-            </svg>
-          </button>
-        </div>
+        {/* In-place Accordion Caret */}
+        <button
+          type="button"
+          onClick={() => setOpen((prev) => !prev)}
+          className="p-1 rounded text-slate-500 hover:text-slate-200 transition-colors cursor-pointer shrink-0"
+          title={open ? "Collapse steps" : "Expand steps"}
+        >
+          <DisclosureCaret open={open} size={11} />
+        </button>
       </div>
 
-      {/* Line 2: Relayed Activity Ticker Reel */}
-      {task.activity.length > 0 && (
-        <div className="pl-5 min-w-0 max-w-full">
+      {/* Line 2: Relayed Activity Ticker Reel (shown when closed or running) */}
+      {task.activity.length > 0 && !open && (
+        <div className="min-w-0 max-w-full pl-5">
           <SubagentActivityTicker activity={task.activity} isLive={isLive} />
         </div>
       )}
-    </div>
-  );
-}
 
-// ── SUBAGENT DETAIL INSPECTION MODAL ─────────────────────────────────────────
-function SubagentDetailModal({
-  task,
-  onClose,
-  onOpenFile,
-}: {
-  task: SubagentProgressItem;
-  onClose: () => void;
-  onOpenFile?: (filePath: string, fileName?: string) => void;
-}) {
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in"
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full max-w-2xl max-h-[85vh] rounded-2xl border border-white/[0.12] bg-[#060913] p-5 shadow-2xl overflow-y-auto custom-scrollbar flex flex-col gap-4 font-mono text-xs select-text"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Specular hairline */}
-        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-cyan-400/40 to-transparent pointer-events-none" />
-
-        {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <StatusGlyph status={task.status} />
-            <div className="min-w-0">
-              <h3 className="font-semibold text-slate-100 text-sm truncate">{task.goal}</h3>
-              <p className="text-[10.5px] text-slate-400">Subagent Mission #{task.taskId}</p>
+      {/* Expanded In-Place Drawer (Matching Reference Specification) */}
+      {open && (
+        <div className="mt-2 pl-5 pt-2 border-t border-white/[0.06] flex flex-col gap-2 font-mono text-xs">
+          {/* Key Findings List if completed */}
+          {task.keyFindings && task.keyFindings.length > 0 && (
+            <div className="flex flex-col gap-1 p-2 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+              <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-semibold">
+                Key Findings
+              </span>
+              <ul className="space-y-0.5 font-sans text-[11px] text-slate-300 list-disc list-inside">
+                {task.keyFindings.map((finding, idx) => (
+                  <li key={idx} className="leading-snug">{finding}</li>
+                ))}
+              </ul>
             </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded-lg hover:bg-white/[0.08] text-slate-400 hover:text-white transition-colors cursor-pointer"
-          >
-            ✕
-          </button>
-        </div>
+          )}
 
-        {/* Mission Metadata */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
-          <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
-            <span className="text-slate-500 block text-[9.5px]">STATUS</span>
-            <span className="font-medium text-slate-200 capitalize">{task.status}</span>
-          </div>
-          <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
-            <span className="text-slate-500 block text-[9.5px]">MODEL</span>
-            <span className="font-medium text-slate-200">{task.model || "Active Model"}</span>
-          </div>
-          <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
-            <span className="text-slate-500 block text-[9.5px]">DURATION</span>
-            <span className="font-medium text-slate-200 tabular-nums">
-              {task.durationSec ? `${task.durationSec.toFixed(1)}s` : "Running"}
-            </span>
-          </div>
-          <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
-            <span className="text-slate-500 block text-[9.5px]">DEPTH</span>
-            <span className="font-medium text-slate-200">{task.depth || 1}</span>
-          </div>
-        </div>
-
-        {/* Executive Summary / Findings */}
-        {(task.findings || task.summary) && (
-          <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-white/[0.02] border border-white/[0.06]">
-            <span className="text-[10px] uppercase tracking-wider text-slate-300 font-bold">
-              Executive Findings
-            </span>
-            <p className="font-sans text-[12px] leading-relaxed text-slate-200 whitespace-pre-wrap">
-              {task.findings || task.summary}
-            </p>
-          </div>
-        )}
-
-        {/* Key Findings List */}
-        {task.keyFindings && task.keyFindings.length > 0 && (
-          <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-white/[0.02] border border-white/[0.06]">
-            <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold">
-              Key Discoveries
-            </span>
-            <ul className="space-y-1 font-sans text-[11.5px] text-slate-300 list-disc list-inside">
-              {task.keyFindings.map((finding, idx) => (
-                <li key={idx} className="leading-snug">{finding}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* Referenced Files */}
-        {task.referencedFiles && task.referencedFiles.length > 0 && (
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
-              Referenced Files ({task.referencedFiles.length})
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              {task.referencedFiles.map((file, idx) => {
-                const fname = file.split(/[\/\\]/).pop() || file;
-                return (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => onOpenFile?.(file, fname)}
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-slate-200 hover:text-white transition-colors cursor-pointer text-[10.5px]"
-                  >
-                    <span>{fname}</span>
-                    <span className="text-slate-500 text-[9px]">↗</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Complete Activity Steps Reel */}
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
-            Execution Log ({task.activity.length} steps)
-          </span>
-          <div className="max-h-48 overflow-y-auto custom-scrollbar rounded-lg border border-white/[0.06] bg-black/60 p-2.5 space-y-1">
-            {task.activity.map((step, idx) => (
-              <div key={idx} className="flex items-start gap-2 text-[10.5px] leading-relaxed text-slate-300">
-                <span className="text-slate-600 select-none tabular-nums shrink-0">{idx + 1}.</span>
-                <span className="font-mono whitespace-pre-wrap break-all">{step}</span>
+          {/* Referenced Files with Link */}
+          {task.referencedFiles && task.referencedFiles.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <span className="text-[9.5px] uppercase tracking-wider text-slate-400 font-semibold">
+                Referenced Files ({task.referencedFiles.length})
+              </span>
+              <div className="flex flex-wrap gap-1">
+                {task.referencedFiles.map((file, idx) => {
+                  const fname = file.split(/[\/\\]/).pop() || file;
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => onOpenFile?.(file, fname)}
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-slate-200 hover:text-white transition-colors cursor-pointer text-[10px]"
+                    >
+                      <span>{fname}</span>
+                      <span className="text-slate-500 text-[9px]">↗</span>
+                    </button>
+                  );
+                })}
               </div>
-            ))}
-          </div>
-        </div>
+            </div>
+          )}
 
-        {/* Error payload if any */}
-        {task.error && (
-          <div className="p-3 rounded-xl bg-rose-950/20 border border-rose-500/20 text-rose-300 text-[11px] leading-relaxed">
-            <span className="font-bold block mb-0.5">Execution Error:</span>
-            {task.error}
+          {/* Detailed In-Place Steps / Tool Calls */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[9.5px] uppercase tracking-wider text-slate-400 font-semibold">
+              Execution Trace ({task.activity.length} actions)
+            </span>
+            <div className="max-h-48 overflow-y-auto rounded-lg border border-white/[0.06] bg-black/40 p-2 space-y-1">
+              {task.activity.map((step, idx) => (
+                <div key={idx} className="flex items-start gap-1.5 text-[10.5px] leading-relaxed text-slate-300">
+                  <span className="text-slate-600 select-none tabular-nums shrink-0">{idx + 1}.</span>
+                  <span className="font-mono whitespace-pre-wrap break-all text-slate-300">{step}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        )}
-      </div>
+
+          {/* Error notice if failed */}
+          {task.error && (
+            <div className="p-2 rounded-lg bg-rose-950/20 border border-rose-500/20 text-rose-300 text-[10.5px]">
+              <span className="font-semibold block mb-0.5">Error:</span>
+              {task.error}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -304,7 +249,7 @@ export interface SubagentCardProps {
 }
 
 export function SubagentCard({ data, onOpenFile }: SubagentCardProps) {
-  const [selectedTask, setSelectedTask] = useState<SubagentProgressItem | null>(null);
+  const [isOpen, setIsOpen] = useState(true);
 
   if (!data || !data.tasks || data.tasks.length === 0) return null;
 
@@ -312,52 +257,44 @@ export function SubagentCard({ data, onOpenFile }: SubagentCardProps) {
   const running = data.tasks.filter((t) => t.status === "running").length;
   const completed = data.tasks.filter((t) => t.status === "completed").length;
   const failed = data.tasks.filter((t) => t.status === "failed" || t.status === "timed_out").length;
-  const isAllDone = running === 0;
 
   return (
-    <div className="my-2 w-full max-w-full rounded-2xl border border-white/[0.08] bg-[#060913]/90 p-3 shadow-2xl backdrop-blur-2xl font-mono select-none">
-      {/* Group Title Bar */}
-      <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/[0.06] text-xs">
-        <div className="flex items-center gap-2">
-          <span className="p-1 rounded-md bg-white/[0.05] border border-white/10 text-slate-300">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-            </svg>
-          </span>
+    <div className="my-2 w-full max-w-full font-mono select-none" data-delegate-card="">
+      {/* Collapsible Header Row: Caret | N Subagents | Progress Stats */}
+      <div className="mb-1.5 flex items-center justify-between text-xs" data-conversation-scaffold="">
+        <button
+          type="button"
+          onClick={() => setIsOpen((prev) => !prev)}
+          className="flex items-center gap-1.5 cursor-pointer text-slate-300 hover:text-white transition-colors"
+        >
+          <DisclosureCaret open={isOpen} size={11} />
           <span className="font-semibold text-slate-100 text-[12px] tracking-tight">
-            Delegated Swarm
+            {total} Subagent{total === 1 ? "" : "s"}
           </span>
-          <span className="text-[10.5px] text-slate-500">
+          <span className="text-[10px] text-slate-500 font-mono ml-1">
             ({completed}/{total} finished{running > 0 ? `, ${running} active` : ""}{failed > 0 ? `, ${failed} failed` : ""})
           </span>
-        </div>
+        </button>
 
         {running > 0 && (
-          <span className="flex items-center gap-1.5 text-[10.5px] text-slate-400 font-mono">
+          <span className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono">
             <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-ping" />
             <span>Executing...</span>
           </span>
         )}
       </div>
 
-      {/* Subagent Rows Grid (Compact Footprint: 2 lines per child) */}
-      <div className="flex flex-col gap-2">
-        {data.tasks.map((task) => (
-          <SubagentRowView
-            key={task.taskId || task.id}
-            task={task}
-            onInspect={(t) => setSelectedTask(t)}
-          />
-        ))}
-      </div>
-
-      {/* Modal Inspector when a task is clicked */}
-      {selectedTask && (
-        <SubagentDetailModal
-          task={selectedTask}
-          onClose={() => setSelectedTask(null)}
-          onOpenFile={onOpenFile}
-        />
+      {/* Subagent Rows (Compact Footprint: 2 lines per child) */}
+      {isOpen && (
+        <div className="flex flex-col gap-1.5">
+          {data.tasks.map((task) => (
+            <SubagentRowView
+              key={task.taskId || task.id}
+              task={task}
+              onOpenFile={onOpenFile}
+            />
+          ))}
+        </div>
       )}
     </div>
   );

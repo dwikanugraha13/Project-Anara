@@ -9,6 +9,7 @@ import { ReadFileView } from "./ReadFileView";
 import { GrepResultView } from "./GrepResultView";
 import { GlobResultView } from "./GlobResultView";
 import { SubagentCard } from "./SubagentCard";
+import { DisclosureCaret } from "./DisclosureCaret";
 
 // ── DIFF & CODE MODIFICATION CARD (Anara Desktop Standard) ──────────────
 export interface DiffLineItem {
@@ -185,17 +186,10 @@ export function AgentActionCard({
             onClick={() => setIsExpanded((v) => !v)}
             className="flex items-center gap-1.5 max-w-fit text-left cursor-pointer font-mono group/btn py-0.5"
           >
-            <span className="grid size-3.5 shrink-0 place-items-center text-slate-400 group-hover/btn:text-slate-200 transition-colors">
-              {isStart ? (
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
-                </span>
-              ) : (
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                </svg>
-              )}
+            <span className="grid size-3.5 shrink-0 place-items-center text-slate-400">
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+              </svg>
             </span>
             <span className="text-slate-200 font-semibold truncate text-[11.5px] group-hover/btn:text-white transition-colors">
               {filename}
@@ -205,16 +199,11 @@ export function AgentActionCard({
               {addCount > 0 && <span className="text-emerald-400">+{addCount}</span>}
               {delCount > 0 && <span className="text-rose-400">−{delCount}</span>}
             </div>
-            <svg
-              className={`w-3 h-3 text-slate-500 opacity-0 group-hover/btn:opacity-80 transition-all duration-150 shrink-0 ml-0.5 ${
-                isExpanded ? "rotate-90 opacity-80" : ""
-              }`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
+            <DisclosureCaret
+              open={isExpanded}
+              size={11}
+              className="opacity-0 group-hover/btn:opacity-80 ml-0.5 text-slate-400"
+            />
           </button>
 
           <div className="flex items-center gap-1.5 shrink-0 ml-auto">
@@ -287,13 +276,7 @@ export function AgentActionCard({
                   <tbody>
                     {parsedDiff.lines.map((line: DiffLineItem, idx: number) => {
                       if (line.type === "hunk") {
-                        return (
-                          <tr key={idx} className="bg-white/[0.03] text-slate-400 font-mono text-[10px] border-y border-white/[0.06]">
-                            <td colSpan={3} className="px-3 py-0.5 select-none font-medium">
-                              {line.text}
-                            </td>
-                          </tr>
-                        );
+                        return null;
                       }
                       return (
                         <tr
@@ -360,29 +343,19 @@ export function AgentActionCard({
             onClick={() => setIsExpanded((v) => !v)}
             className="flex items-center gap-1.5 text-left text-slate-400 hover:text-slate-200 transition-colors cursor-pointer max-w-fit group/btn"
           >
-            <span className="grid size-3.5 shrink-0 place-items-center">
-              {isStart ? (
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
-                </span>
-              ) : (
-                <span className="text-[11px] font-mono text-slate-500 group-hover/btn:text-slate-300">»</span>
-              )}
+            <span className="grid size-3.5 shrink-0 place-items-center text-slate-400">
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 9l3 3-3 3m5 0h3" />
+              </svg>
             </span>
             <span className="truncate font-mono text-[11.5px] text-slate-400 group-hover/btn:text-slate-200 transition-colors">
               {isStart ? `Running ${cmd}` : `Ran ${cmd}`}
             </span>
-            <svg
-              className={`w-3 h-3 text-slate-500 opacity-0 group-hover/btn:opacity-80 transition-all duration-150 shrink-0 ml-0.5 ${
-                isExpanded ? "rotate-90 opacity-80" : ""
-              }`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
+            <DisclosureCaret
+              open={isExpanded}
+              size={11}
+              className="opacity-0 group-hover/btn:opacity-80 ml-0.5 text-slate-400"
+            />
           </button>
 
           <div className="flex items-center gap-2 shrink-0 ml-auto">

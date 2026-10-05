@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import { ScaffoldRow, SCAFFOLD_LABEL_CLASS, SCAFFOLD_META_CLASS } from "./ScaffoldRow";
 
-// ── THINKING CARD (Liquid Glass Reasoning Stream) ────────────────────────
+// ── THINKING CARD (Quiet Scaffolding Disclosure Standard) ────────────────────
 export function ThinkingCard({
   text,
   durationSec,
@@ -15,6 +16,7 @@ export function ThinkingCard({
   const [isExpanded, setIsExpanded] = useState(isLive);
   const [liveElapsed, setLiveElapsed] = useState<number>(0);
   const liveStartTimeRef = useRef<number>(Date.now());
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isLive) {
@@ -31,6 +33,13 @@ export function ThinkingCard({
     return () => clearInterval(interval);
   }, [isLive]);
 
+  // Auto-scroll reasoning preview on incoming tokens while live
+  useEffect(() => {
+    if (!isLive || !isExpanded || !scrollRef.current) return;
+    const el = scrollRef.current;
+    el.scrollTop = el.scrollHeight;
+  }, [text, isLive, isExpanded]);
+
   if (!text || text.trim().length === 0) return null;
 
   let thoughtLabel = "Thinking";
@@ -45,50 +54,32 @@ export function ThinkingCard({
   }
 
   return (
-    <div className="group/scaffold relative flex flex-col w-full my-1 select-none font-mono opacity-[0.67] hover:opacity-100 transition-opacity duration-150">
-      <div className="flex items-center justify-between text-xs text-slate-400">
-        <button
-          type="button"
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 focus-visible:outline-none transition-colors cursor-pointer group/btn py-0.5 max-w-fit"
-          aria-expanded={isExpanded}
-        >
-          <span className="grid size-3.5 shrink-0 place-items-center">
-            {isLive ? (
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-60" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
-              </span>
-            ) : (
-              <span className="h-1.5 w-1.5 rounded-full bg-slate-500 group-hover/btn:bg-slate-300 transition-colors" />
-            )}
-          </span>
+    <div
+      className="group/scaffold relative flex flex-col w-full my-1 select-none font-mono text-[11px] text-slate-400"
+      data-conversation-scaffold=""
+      data-slot="aui_thinking-disclosure"
+    >
+      <ScaffoldRow
+        open={isExpanded}
+        onToggle={() => setIsExpanded(!isExpanded)}
+        trailing={
+          isLive && liveElapsed > 0 ? (
+            <span className={SCAFFOLD_META_CLASS}>{liveElapsed}s</span>
+          ) : undefined
+        }
+      >
+        <span className={`${SCAFFOLD_LABEL_CLASS} ${isLive ? "text-slate-200 animate-pulse font-medium" : ""}`}>
+          {thoughtLabel}
+        </span>
+      </ScaffoldRow>
 
-          <span className={`text-[11.5px] tracking-tight ${isLive ? "text-slate-200 animate-pulse font-medium" : "text-slate-400 group-hover/btn:text-slate-200"}`}>
-            {thoughtLabel}
-          </span>
-
-          <svg
-            className={`w-3 h-3 text-slate-500 opacity-0 group-hover/scaffold:opacity-80 transition-all duration-150 shrink-0 ml-0.5 ${
-              isExpanded ? "rotate-90 opacity-80" : ""
-            }`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
-
-        {isLive && liveElapsed > 0 && (
-          <span className="text-[10px] font-mono tabular-nums text-slate-500 ml-auto">
-            {liveElapsed.toFixed(1)}s
-          </span>
-        )}
-      </div>
-
+      {/* Flush reasoning body without left border or indent */}
       {isExpanded && (
-        <div className="mt-1 w-full min-w-0 max-w-full overflow-y-auto max-h-56 border-l border-white/[0.08] pl-3.5 py-1 text-slate-400 font-sans text-xs leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] break-words select-text custom-scrollbar animate-fade-in">
+        <div
+          ref={scrollRef}
+          className="mt-0.5 w-full min-w-0 max-w-full overflow-y-auto max-h-48 pt-0.5 pb-1 text-slate-300 font-sans text-xs leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] break-words select-text custom-scrollbar animate-fade-in"
+          data-slot="aui_thinking-body"
+        >
           {text}
         </div>
       )}

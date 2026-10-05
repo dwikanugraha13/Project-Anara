@@ -51,8 +51,10 @@ export function GlobResultView({
           onClick={() => setIsExpanded((v) => !v)}
           className="flex items-center gap-1.5 max-w-fit text-left cursor-pointer group/btn select-none py-0.5"
         >
-          <span className="grid size-3.5 shrink-0 place-items-center text-slate-500 group-hover/btn:text-slate-300 text-[11px] font-mono">
-            »
+          <span className="grid size-3.5 shrink-0 place-items-center text-slate-400">
+            <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
           </span>
           <span className="text-slate-400 group-hover/btn:text-slate-200 transition-colors text-[11.5px] font-mono">
             Found {fileList.length} file{fileList.length === 1 ? "" : "s"} {pattern ? <span>matching <span className="font-semibold text-slate-200 group-hover/btn:text-white">&quot;{pattern}&quot;</span></span> : ""}

@@ -73,6 +73,16 @@ async def _tool_execute_cli_command(command: str, workdir: Optional[str] = None)
         return_code = sandbox_res.get("exit_code", 0)
         is_ok = sandbox_res.get("status") == "success"
 
+        # Anara Standard: Semantic Exit Code Interpretation
+        exit_code_meaning = None
+        cmd_first = (cmd.strip().split() or [""])[0].lower()
+        if return_code == 1 and cmd_first in ("grep", "rg", "findstr"):
+            exit_code_meaning = "No matches found (not an error)"
+            is_ok = True
+        elif return_code == 1 and cmd_first in ("diff",):
+            exit_code_meaning = "Files differ (expected, not an error)"
+            is_ok = True
+
         status_label = "Success" if is_ok else f"Failed (exit code {return_code})"
         _emit_agent_event("agent_action_complete", {
             "tool_name": "execute_cli_command",
@@ -80,21 +90,25 @@ async def _tool_execute_cli_command(command: str, workdir: Optional[str] = None)
             "detail": cmd,
             "command": cmd,
             "exit_code": return_code,
+            "exit_code_meaning": exit_code_meaning,
             "duration_ms": duration_ms,
             "duration_text": duration_text,
-            "summary": f"exit {return_code}",
+            "summary": f"exit {return_code}" if not exit_code_meaning else f"exit {return_code} ({exit_code_meaning})",
             "raw_result": combined[:2500],
             "icon": "terminal"
         })
 
         from tools.output_manager import compact_tool_output
-        return {
+        res = {
             "status": "success" if is_ok else "error",
             "return_code": return_code,
             "working_directory": cwd,
             "sandboxed": True,
-            "output": compact_tool_output(combined, max_lines=60, max_chars=4000, source_label="cli_output")
+            "output": compact_tool_output(combined, max_lines=200, max_chars=30000, source_label="cli_output")
         }
+        if exit_code_meaning:
+            res["exit_code_meaning"] = exit_code_meaning
+        return res
     except Exception as e:
         logger.warning(f"[AgentTools] CLI exec error: {e}")
         return {"status": "error", "message": str(e)}
