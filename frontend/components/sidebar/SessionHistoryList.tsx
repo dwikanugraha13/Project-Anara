@@ -1,7 +1,21 @@
 "use client";
 
-import React, { useState, useMemo, useRef } from "react";
-import { ChatSession, formatSmartDateTime, formatRelativeTime, resolveSessionDisplay, groupSessions, type SessionCategory, SESSION_PREVIEW_COUNT } from "./types";
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import {
+  ChatSession,
+  formatSmartDateTime,
+  formatRelativeTime,
+  formatTokens,
+  resolveSessionDisplay,
+  groupSessionsDynamic,
+  type SessionCategory,
+  SESSION_PREVIEW_COUNT,
+  type SidebarFilterState,
+  DEFAULT_SIDEBAR_FILTER_STATE,
+  loadSidebarFilterState,
+  saveSidebarFilterState,
+} from "./types";
+import SidebarFilterMenu from "./SidebarFilterMenu";
 import { exportSession } from "@/lib/sessionExport";
 
 interface SessionHistoryListProps {
@@ -45,6 +59,53 @@ export default function SessionHistoryList({
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+  const [filterState, setFilterState] = useState<SidebarFilterState>(loadSidebarFilterState);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const filterButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    setFilterState(loadSidebarFilterState());
+  }, []);
+
+  const handleFilterStateChange = (partial: Partial<SidebarFilterState>) => {
+    setFilterState((prev) => {
+      const next = { ...prev, ...partial };
+      saveSidebarFilterState(partial);
+      return next;
+    });
+  };
+
+  const handleResetFilterDefaults = () => {
+    setFilterState({ ...DEFAULT_SIDEBAR_FILTER_STATE });
+    saveSidebarFilterState(DEFAULT_SIDEBAR_FILTER_STATE);
+    setCollapsedCategories({});
+    setExpandedCategories({});
+  };
+
+  const availableProjects = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of sessions) {
+      if (s.workspace_info?.root_path) {
+        const name =
+          s.workspace_info.name ||
+          s.workspace_info.root_path.split(/[\\/]/).filter(Boolean).pop() ||
+          "Project";
+        map.set(s.workspace_info.root_path, name);
+      }
+    }
+    return Array.from(map.entries()).map(([path, name]) => ({ path, name }));
+  }, [sessions]);
+
+  const isFilterActive = useMemo(() => {
+    return (
+      filterState.grouping !== DEFAULT_SIDEBAR_FILTER_STATE.grouping ||
+      filterState.ordering !== DEFAULT_SIDEBAR_FILTER_STATE.ordering ||
+      filterState.channelFilter !== DEFAULT_SIDEBAR_FILTER_STATE.channelFilter ||
+      filterState.showArchived !== DEFAULT_SIDEBAR_FILTER_STATE.showArchived ||
+      filterState.showTokens !== DEFAULT_SIDEBAR_FILTER_STATE.showTokens ||
+      (filterState.projectFilter && filterState.projectFilter.length > 0)
+    );
+  }, [filterState]);
 
   React.useEffect(() => {
     if (menuOpenId === null) return;
@@ -68,6 +129,30 @@ export default function SessionHistoryList({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     let res = sessions;
+
+    // 1. Channel filter
+    if (filterState.channelFilter !== "all") {
+      res = res.filter((s) => {
+        const display = resolveSessionDisplay(s);
+        const ch = s.channel || display.channel;
+        return ch === filterState.channelFilter;
+      });
+    }
+
+    // 2. Archived filter
+    if (!filterState.showArchived) {
+      res = res.filter((s) => s.is_archived === 0);
+    }
+
+    // 3. Project filter
+    if (filterState.projectFilter && filterState.projectFilter.length > 0) {
+      res = res.filter((s) => {
+        const wp = s.workspace_info?.root_path || "";
+        return filterState.projectFilter!.includes(wp);
+      });
+    }
+
+    // 4. Search query & empty CLI filtering
     if (!q) {
       res = res.filter((s) => {
         const isCli = (s.title || "").toLowerCase().includes("cli");
@@ -82,9 +167,38 @@ export default function SessionHistoryList({
       );
     }
     return res;
-  }, [sessions, search, activeSessionId]);
+  }, [
+    sessions,
+    search,
+    activeSessionId,
+    filterState.channelFilter,
+    filterState.showArchived,
+    filterState.projectFilter,
+  ]);
 
-  const categories = useMemo(() => groupSessions(filtered), [filtered]);
+  const categories = useMemo(
+    () => groupSessionsDynamic(filtered, filterState.grouping, filterState.ordering),
+    [filtered, filterState.grouping, filterState.ordering]
+  );
+
+  const handleExpandAll = () => {
+    setCollapsedCategories({});
+    const allExp: Record<string, boolean> = {};
+    for (const cat of categories) {
+      const key = cat.workspacePath || `${cat.category}-${cat.label}`;
+      allExp[key] = true;
+    }
+    setExpandedCategories(allExp);
+  };
+
+  const handleCollapseAll = () => {
+    const allCol: Record<string, boolean> = {};
+    for (const cat of categories) {
+      const key = cat.workspacePath || `${cat.category}-${cat.label}`;
+      allCol[key] = true;
+    }
+    setCollapsedCategories(allCol);
+  };
 
   const categoryIcon = (cat: SessionCategory) => {
     if (cat.category === "pinned") return (
@@ -95,6 +209,21 @@ export default function SessionHistoryList({
     if (cat.category === "home") return (
       <svg className="w-3 h-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+      </svg>
+    );
+    if (cat.category === "date") return (
+      <svg className="w-3 h-3 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      </svg>
+    );
+    if (cat.category === "status") return (
+      <svg className="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    );
+    if (cat.category === "none") return (
+      <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 6h16M4 12h16M4 18h16" />
       </svg>
     );
     // Project category — folder icon
@@ -213,19 +342,19 @@ export default function SessionHistoryList({
                 <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
                 </svg>
-              ) : display.channel === "telegram" ? (
+              ) : filterState.showChannel && display.channel === "telegram" ? (
                 <span className="w-3.5 h-3.5 rounded bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-sky-400" title="Telegram">
                   <svg className="w-2 h-2" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.52 2.77-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .26z" />
                   </svg>
                 </span>
-              ) : display.channel === "whatsapp" ? (
+              ) : filterState.showChannel && display.channel === "whatsapp" ? (
                 <span className="w-3.5 h-3.5 rounded bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-emerald-400" title="WhatsApp">
                   <svg className="w-2 h-2" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0012.04 2z" />
                   </svg>
                 </span>
-              ) : display.channel === "cli" ? (
+              ) : filterState.showChannel && display.channel === "cli" ? (
                 <span className="w-3.5 h-3.5 rounded bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-emerald-400" title="CLI">
                   <svg className="w-2 h-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 9l3 3-3 3m5 0h3" />
@@ -246,9 +375,22 @@ export default function SessionHistoryList({
               {display.title}
             </span>
 
-            <span className="text-[10px] font-mono text-slate-500 shrink-0 pointer-events-none group-hover/item:opacity-0 transition-opacity tabular-nums">
-              {relTime || smartTime}
-            </span>
+            {/* Token badge if showTokens */}
+            {filterState.showTokens && (
+              <span
+                className="text-[10px] font-mono text-cyan-400/80 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20 tabular-nums shrink-0"
+                title={`${(s.total_tokens ?? 0).toLocaleString()} tokens`}
+              >
+                {formatTokens(s.total_tokens)}
+              </span>
+            )}
+
+            {/* Timestamp if showUpdated */}
+            {filterState.showUpdated && (
+              <span className="text-[10px] font-mono text-slate-500 shrink-0 pointer-events-none group-hover/item:opacity-0 transition-opacity tabular-nums">
+                {relTime || smartTime}
+              </span>
+            )}
           </div>
         )}
 
@@ -296,8 +438,59 @@ export default function SessionHistoryList({
 
   return (
     <>
+      {/* Header row in sidebar: SESSIONS label on the left, action buttons on the right: New session (+) and Filter button */}
+      <div className="px-3 pt-2.5 pb-1 flex items-center justify-between select-none relative font-sans">
+        <span className="text-[11px] font-semibold tracking-wider uppercase font-mono text-slate-400">
+          Sessions
+        </span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onNewSession}
+            className="w-6 h-6 rounded-md flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/[0.08] transition-colors cursor-pointer"
+            title={sessionType === "code" ? "New Project (Ctrl+N)" : "New session (Ctrl+N)"}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+          <div className="relative">
+            <button
+              ref={filterButtonRef}
+              onClick={() => setIsFilterOpen(!isFilterOpen)}
+              className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors cursor-pointer relative ${
+                isFilterOpen || isFilterActive
+                  ? "text-cyan-400 bg-cyan-500/10 border border-cyan-500/20"
+                  : "text-slate-400 hover:text-white hover:bg-white/[0.08]"
+              }`}
+              title="Filter and group sessions"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+              {isFilterActive && (
+                <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee]" />
+              )}
+            </button>
+
+            {/* Floating Filter Menu Popover */}
+            {isFilterOpen && (
+              <SidebarFilterMenu
+                isOpen={isFilterOpen}
+                onClose={() => setIsFilterOpen(false)}
+                filterState={filterState}
+                onChangeFilterState={handleFilterStateChange}
+                availableProjects={availableProjects}
+                onExpandAll={handleExpandAll}
+                onCollapseAll={handleCollapseAll}
+                onResetDefaults={handleResetFilterDefaults}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Action Bar */}
-      <div className="px-2.5 pt-2 flex flex-col gap-1.5 font-sans">
+      <div className="px-2.5 pt-1 flex flex-col gap-1.5 font-sans">
         <button
           onClick={onNewSession}
           className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.16] text-slate-200 hover:text-white text-xs font-medium transition-all active:scale-[0.98] cursor-pointer shadow-sm group backdrop-blur-md"
@@ -400,12 +593,25 @@ export default function SessionHistoryList({
         ) : (
           categories.map((category) => {
             const isPinned = category.category === "pinned";
-            // Use workspace path as unique key for project categories
-            const categoryKey = category.workspacePath || category.category;
+            // Use workspace path or category-label combo as unique key
+            const categoryKey = category.workspacePath || `${category.category}-${category.label}`;
             const isCollapsed = collapsedCategories[categoryKey] ?? false;
             const isExpanded = expandedCategories[categoryKey] ?? false;
             const totalCount = category.items.length;
-            const accentClass = category.category === "pinned" ? "text-cyan-400/90" : category.category === "home" ? "text-indigo-400/90" : "text-amber-400/90";
+            const accentClass =
+              category.category === "pinned"
+                ? "text-cyan-400/90"
+                : category.category === "home"
+                ? "text-indigo-400/90"
+                : category.category === "date"
+                ? "text-sky-400/90"
+                : category.category === "status"
+                ? category.label === "Working"
+                  ? "text-emerald-400/90"
+                  : "text-slate-400/90"
+                : category.category === "none"
+                ? "text-slate-300/90"
+                : "text-amber-400/90";
             // Session pattern: preview SESSION_PREVIEW_COUNT, "Show all N sessions" to expand
             const visibleItems = isExpanded || isPinned ? category.items : category.items.slice(0, SESSION_PREVIEW_COUNT);
             const hiddenCount = totalCount - visibleItems.length;

@@ -89,6 +89,11 @@ class ChatSessionsMixin:
             query = """
                 SELECT s.id, s.session_key, s.title, s.speaker_name,
                        (SELECT COUNT(*) FROM conversations WHERE conversations.session_id = s.id) AS message_count,
+                       (CASE 
+                           WHEN (SELECT SUM(total_tokens) FROM token_usage_logs WHERE session_id = s.id) > 0 
+                           THEN (SELECT SUM(total_tokens) FROM token_usage_logs WHERE session_id = s.id)
+                           ELSE (SELECT COALESCE(SUM(LENGTH(COALESCE(user_text, '')) + LENGTH(COALESCE(ai_text, ''))), 0) / 4 FROM conversations WHERE session_id = s.id)
+                        END) AS total_tokens,
                        s.is_archived, s.is_pinned,
                        COALESCE(s.session_type, 'chat') AS session_type,
                        COALESCE(s.channel, 'web') AS channel,
