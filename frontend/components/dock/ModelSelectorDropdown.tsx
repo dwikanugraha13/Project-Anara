@@ -44,6 +44,7 @@ export interface ModelSelectorDropdownProps {
   interactionMode: "voice" | "chat";
   reasoningEffort?: "off" | "low" | "medium" | "high" | "max" | "ultra" | "budget" | string;
   onSelectReasoningEffort?: (effort: ReasoningEffortLevel) => void;
+  fillContainer?: boolean;
 }
 
 /**
@@ -294,6 +295,7 @@ export default function ModelSelectorDropdown({
   interactionMode,
   reasoningEffort,
   onSelectReasoningEffort,
+  fillContainer = false,
 }: ModelSelectorDropdownProps) {
   const [modelSearchQuery, setModelSearchQuery] = useState("");
   const [selectedProviderKey, setSelectedProviderKey] = useState<string>("All");
@@ -563,7 +565,11 @@ export default function ModelSelectorDropdown({
         e.nativeEvent?.stopImmediatePropagation?.();
       }}
       onKeyDown={handleKeyDown}
-      className="absolute bottom-9 left-0 z-50 w-72 sm:w-76 max-w-[min(300px,calc(100vw-2rem))] max-h-[340px] rounded-2xl border border-white/[0.08] bg-[#090d16]/98 backdrop-blur-2xl shadow-2xl shadow-black/95 animate-scale-up flex flex-col font-mono select-none overflow-hidden"
+      className={
+        fillContainer
+          ? "absolute bottom-full mb-1.5 inset-x-0 z-50 w-full max-h-[300px] rounded-2xl border border-white/[0.08] bg-[#090d16]/98 backdrop-blur-2xl shadow-2xl shadow-black/95 animate-scale-up flex flex-col font-mono select-none overflow-hidden"
+          : "absolute bottom-9 left-0 z-50 w-72 sm:w-76 max-w-[min(300px,calc(100vw-2rem))] max-h-[340px] rounded-2xl border border-white/[0.08] bg-[#090d16]/98 backdrop-blur-2xl shadow-2xl shadow-black/95 animate-scale-up flex flex-col font-mono select-none overflow-hidden"
+      }
     >
       {/* 1. Header: Compact title bar + Status + Count + Close */}
       <div className="px-2.5 pt-2.5 pb-2 border-b border-white/[0.06] flex items-center justify-between shrink-0">

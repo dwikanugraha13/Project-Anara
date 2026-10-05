@@ -294,7 +294,7 @@ export function DockControlsCluster({
     const modalities = getModelModalities(cur);
 
     return (
-      <div className="relative min-w-0 shrink" data-dropdown-root="true">
+      <div className={isCodeStudio ? "shrink-0 min-w-0" : "relative min-w-0 shrink"} data-dropdown-root="true">
         <button
           type="button"
           onClick={(e) => toggleDropdown("model", e)}
@@ -322,6 +322,7 @@ export function DockControlsCluster({
           interactionMode={interactionMode}
           reasoningEffort={reasoningEffort}
           onSelectReasoningEffort={onSelectReasoningEffort as any}
+          fillContainer={isCodeStudio}
         />
       </div>
     );
@@ -341,13 +342,14 @@ export function DockControlsCluster({
         }}
         modelName={formatModelDisplayName(cur?.name || cur?.id || activeModelId)}
         compact={isCompactPill}
+        fillContainer={isCodeStudio}
       />
     );
   };
 
   const renderApprovalModePill = (isCompactPill: boolean) => {
     if (interactionMode === "voice") return null;
-    return <ApprovalModePill compact={isCompactPill} />;
+    return <ApprovalModePill compact={isCompactPill} fillContainer={isCodeStudio} />;
   };
 
   const renderSendStopButton = (isCompactButton: boolean) => {
@@ -454,7 +456,7 @@ export function DockControlsCluster({
   };
 
   return (
-    <div ref={containerRef} className="w-full">
+    <div ref={containerRef} className="w-full relative">
       {/* ── 2-TIER LAYOUT (When bar is narrowed < 420px in Code Studio) ── */}
       {isNarrow ? (
         <div className="flex flex-col gap-1 w-full min-w-0 pt-0.5 animate-in fade-in duration-150">

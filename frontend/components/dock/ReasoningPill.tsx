@@ -19,6 +19,7 @@ export interface ReasoningPillProps {
   modelName?: string;
   supportedLevels?: ReasoningEffortLevel[];
   compact?: boolean;
+  fillContainer?: boolean;
 }
 
 export default function ReasoningPill({
@@ -30,6 +31,7 @@ export default function ReasoningPill({
   modelName = "Model",
   supportedLevels,
   compact = false,
+  fillContainer = false,
 }: ReasoningPillProps) {
   const [isOpen, setIsOpen] = useState(false);
   const pillRef = useRef<HTMLDivElement>(null);
@@ -144,7 +146,7 @@ export default function ReasoningPill({
     <div
       ref={pillRef}
       data-dropdown-root="true"
-      className="relative shrink-0 font-mono"
+      className={`${fillContainer ? "shrink-0 font-mono" : "relative shrink-0 font-mono"}`}
     >
       {/* Project Anara Minimal Reasoning Effort Pill */}
       <button
@@ -197,7 +199,11 @@ export default function ReasoningPill({
             e.nativeEvent?.stopImmediatePropagation?.();
           }}
           onKeyDown={handlePopoverKeyDown}
-          className="absolute bottom-9 left-0 z-50 w-64 p-1.5 rounded-xl bg-[#090d16]/98 border border-white/[0.08] backdrop-blur-xl shadow-2xl shadow-black/90 animate-scale-up space-y-1 font-mono select-none"
+          className={
+            fillContainer
+              ? "absolute bottom-full mb-1.5 inset-x-0 z-50 w-full p-1.5 rounded-xl bg-[#090d16]/98 border border-white/[0.08] backdrop-blur-xl shadow-2xl shadow-black/90 animate-scale-up space-y-1 font-mono select-none"
+              : "absolute bottom-9 left-0 z-50 w-64 p-1.5 rounded-xl bg-[#090d16]/98 border border-white/[0.08] backdrop-blur-xl shadow-2xl shadow-black/90 animate-scale-up space-y-1 font-mono select-none"
+          }
         >
           {/* Header */}
           <div className="px-2 py-1 border-b border-white/[0.06] flex items-center justify-between text-[10px] text-zinc-500 font-semibold uppercase tracking-wider">

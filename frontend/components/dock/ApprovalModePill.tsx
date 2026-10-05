@@ -7,9 +7,14 @@ import { BACKEND_URL } from "@/lib/apiClient";
 export interface ApprovalModePillProps {
   disabled?: boolean;
   compact?: boolean;
+  fillContainer?: boolean;
 }
 
-export default function ApprovalModePill({ disabled = false, compact = false }: ApprovalModePillProps) {
+export default function ApprovalModePill({
+  disabled = false,
+  compact = false,
+  fillContainer = false,
+}: ApprovalModePillProps) {
   const [isOpen, setIsOpen] = useState(false);
   const pillRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<"plan" | "auto" | "off">("auto");
@@ -126,7 +131,7 @@ export default function ApprovalModePill({ disabled = false, compact = false }: 
   };
 
   return (
-    <div className="relative shrink-0" ref={pillRef}>
+    <div className={`${fillContainer ? "shrink-0" : "relative shrink-0"}`} ref={pillRef}>
       <button
         type="button"
         disabled={disabled}
@@ -161,7 +166,8 @@ export default function ApprovalModePill({ disabled = false, compact = false }: 
         mode={mode}
         onChange={handleModeChange}
         anchored={true}
-        align="right"
+        align={fillContainer ? undefined : "right"}
+        fillContainer={fillContainer}
       />
     </div>
   );

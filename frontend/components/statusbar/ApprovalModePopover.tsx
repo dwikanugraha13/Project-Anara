@@ -18,6 +18,7 @@ export interface ApprovalModePopoverProps {
   onChange: (mode: "plan" | "auto" | "off") => void;
   anchored?: boolean;
   align?: "left" | "right";
+  fillContainer?: boolean;
   className?: string;
 }
 
@@ -82,6 +83,7 @@ export default function ApprovalModePopover({
   onChange,
   anchored = false,
   align = "right",
+  fillContainer = false,
   className,
 }: ApprovalModePopoverProps) {
   if (!isOpen) return null;
@@ -91,7 +93,11 @@ export default function ApprovalModePopover({
       role="dialog"
       aria-label="Approval Mode Popover"
       className={
-        anchored
+        fillContainer
+          ? `absolute bottom-full mb-1.5 inset-x-0 z-50 w-full p-1.5 rounded-xl bg-[#060913]/98 backdrop-blur-2xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.9)] text-slate-200 select-none animate-in fade-in zoom-in-95 duration-100 ${
+              className || ""
+            }`
+          : anchored
           ? `absolute bottom-9 ${align === "right" ? "right-0" : "left-0"} z-50 w-64 sm:w-72 max-w-[calc(100vw-2rem)] p-1.5 rounded-xl bg-[#060913]/98 backdrop-blur-2xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.9)] text-slate-200 select-none animate-in fade-in zoom-in-95 duration-100 ${
               className || ""
             }`
