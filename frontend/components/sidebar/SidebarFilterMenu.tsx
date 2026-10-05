@@ -1,6 +1,14 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+  useSyncExternalStore,
+} from "react";
+import { createPortal } from "react-dom";
 import {
   SidebarFilterState,
   SidebarGrouping,
@@ -17,6 +25,7 @@ export interface SidebarFilterMenuProps {
   onExpandAll?: () => void;
   onCollapseAll?: () => void;
   onResetDefaults?: () => void;
+  triggerRef?: React.RefObject<HTMLElement | null>;
 }
 
 type SubmenuKey = "grouping" | "ordering" | "show" | "filters";
@@ -30,15 +39,38 @@ export default function SidebarFilterMenu({
   onExpandAll,
   onCollapseAll,
   onResetDefaults,
+  triggerRef,
 }: SidebarFilterMenuProps) {
   const [activeSubmenu, setActiveSubmenu] = useState<SubmenuKey | null>(null);
   const [flyoutSide, setFlyoutSide] = useState<"right" | "left">("right");
   const menuRef = useRef<HTMLDivElement>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
+  const [coords, setCoords] = useState<{ top: number; right: number } | null>(null);
+
+  const updatePosition = useCallback(() => {
+    if (triggerRef?.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setCoords({
+        top: rect.bottom + 6,
+        right: Math.max(8, window.innerWidth - rect.right),
+      });
+    }
+  }, [triggerRef]);
+
+  useLayoutEffect(() => {
+    if (!isOpen || typeof window === "undefined") return;
+    updatePosition();
+  }, [isOpen, updatePosition]);
 
   // Position detection to prevent screen clipping
   useEffect(() => {
     if (!isOpen || typeof window === "undefined") return;
+    updatePosition();
     if (menuRef.current) {
       const rect = menuRef.current.getBoundingClientRect();
       if (rect.right + 230 > window.innerWidth) {
@@ -47,14 +79,29 @@ export default function SidebarFilterMenu({
         setFlyoutSide("right");
       }
     }
-  }, [isOpen]);
+  }, [isOpen, updatePosition]);
+
+  // Handle window resize and scroll
+  useEffect(() => {
+    if (!isOpen || !triggerRef?.current) return;
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [isOpen, triggerRef, updatePosition]);
 
   // Click outside and Escape key handling
   useEffect(() => {
     if (!isOpen) return;
 
     const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (triggerRef?.current && triggerRef.current.contains(target)) {
+        return;
+      }
+      if (menuRef.current && !menuRef.current.contains(target)) {
         onClose();
       }
     };
@@ -71,7 +118,7 @@ export default function SidebarFilterMenu({
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, triggerRef]);
 
   const handleSubmenuEnter = useCallback((key: SubmenuKey) => {
     if (closeTimerRef.current) {
@@ -150,10 +197,22 @@ export default function SidebarFilterMenu({
     setActiveSubmenu(null);
   };
 
-  return (
+  const menuContent = (
     <div
       ref={menuRef}
-      className="absolute right-0 top-full mt-1.5 z-50 w-52 py-1.5 rounded-xl bg-[#080c14]/95 border border-white/[0.08] backdrop-blur-xl shadow-[0_16px_36px_rgba(0,0,0,0.85),0_0_1px_rgba(255,255,255,0.12)] text-slate-200 text-xs font-sans select-none animate-in fade-in zoom-in-95 duration-100"
+      style={
+        coords
+          ? {
+              position: "fixed",
+              top: coords.top,
+              right: coords.right,
+              zIndex: 9999,
+            }
+          : undefined
+      }
+      className={`${
+        coords ? "" : "absolute right-0 top-full mt-1.5"
+      } z-50 w-52 py-1.5 rounded-xl bg-[#080c14]/95 border border-white/[0.08] backdrop-blur-xl shadow-[0_16px_36px_rgba(0,0,0,0.85),0_0_1px_rgba(255,255,255,0.12)] text-slate-200 text-xs font-sans select-none animate-in fade-in zoom-in-95 duration-100`}
     >
       {/* Popover Header */}
       <div className="px-3 py-1 text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold border-b border-white/[0.06] flex items-center justify-between">
@@ -570,4 +629,10 @@ export default function SidebarFilterMenu({
       </div>
     </div>
   );
+
+  if (triggerRef && isMounted && typeof document !== "undefined") {
+    return createPortal(menuContent, document.body);
+  }
+
+  return menuContent;
 }
