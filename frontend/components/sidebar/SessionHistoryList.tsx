@@ -99,7 +99,7 @@ export default function SessionHistoryList({
     );
     // Project category — folder icon
     return (
-      <svg className="w-3 h-3 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg className="w-3 h-3 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
       </svg>
     );
@@ -405,7 +405,7 @@ export default function SessionHistoryList({
             const isCollapsed = collapsedCategories[categoryKey] ?? false;
             const isExpanded = expandedCategories[categoryKey] ?? false;
             const totalCount = category.items.length;
-            const accentClass = category.category === "pinned" ? "text-cyan-400/90" : category.category === "home" ? "text-indigo-400/90" : "text-violet-400/90";
+            const accentClass = category.category === "pinned" ? "text-cyan-400/90" : category.category === "home" ? "text-indigo-400/90" : "text-amber-400/90";
             // Session pattern: preview SESSION_PREVIEW_COUNT, "Show all N sessions" to expand
             const visibleItems = isExpanded || isPinned ? category.items : category.items.slice(0, SESSION_PREVIEW_COUNT);
             const hiddenCount = totalCount - visibleItems.length;
