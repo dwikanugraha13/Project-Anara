@@ -184,7 +184,7 @@ function getTokenColor(type: HighlightToken["type"]): string {
     case "keyword":
       return "text-purple-400 font-semibold";
     case "function":
-      return "text-cyan-300 drop-shadow-[0_0_8px_rgba(34,211,238,0.2)]";
+      return "text-sky-300 font-medium";
     case "string":
       return "text-emerald-300";
     case "number":
@@ -204,13 +204,13 @@ function getTokenColor(type: HighlightToken["type"]): string {
     case "flag":
       return "text-amber-300";
     case "prompt":
-      return "text-cyan-400/90 font-bold select-none";
+      return "text-slate-400 font-bold select-none";
     case "diff-add":
       return "text-emerald-300 bg-emerald-500/10 block w-full px-1 rounded-xs";
     case "diff-del":
       return "text-rose-300 bg-rose-500/10 block w-full px-1 rounded-xs";
     case "diff-hunk":
-      return "text-cyan-400 font-bold bg-cyan-950/30 block w-full px-1 rounded-xs";
+      return "text-slate-400 font-mono bg-white/[0.04] border-y border-white/[0.06] block w-full px-1 rounded-xs";
     default:
       return "text-slate-200";
   }
@@ -341,10 +341,10 @@ function CodeBlock({
                   );
                 }
               }}
-              className="cursor-pointer flex items-center gap-1 px-2 py-0.5 rounded text-[10.5px] font-medium text-cyan-300 hover:text-white bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/30 transition-all shadow-[0_0_8px_rgba(34,211,238,0.15)] mr-1"
+              className="cursor-pointer flex items-center gap-1 px-2 py-0.5 rounded text-[10.5px] font-medium text-slate-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition-all mr-1"
               title="Open in Right Split View (Studio)"
             >
-              <svg className="w-3 h-3 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
               </svg>
               <span>Split View</span>
@@ -354,7 +354,7 @@ function CodeBlock({
             type="button"
             onClick={() => setLinesActive(!linesActive)}
             className={`cursor-pointer px-1.5 py-0.5 rounded text-[10.5px] font-mono transition-colors ${
-              linesActive ? "text-cyan-300 bg-cyan-950/40" : "text-slate-400 hover:text-slate-200"
+              linesActive ? "text-white bg-white/[0.08]" : "text-slate-400 hover:text-slate-200"
             }`}
             title="Toggle line numbers"
           >
@@ -364,7 +364,7 @@ function CodeBlock({
             type="button"
             onClick={() => setWrap(!wrap)}
             className={`cursor-pointer px-1.5 py-0.5 rounded text-[10.5px] transition-colors ${
-              wrap ? "text-cyan-300 bg-cyan-950/40" : "text-slate-400 hover:text-slate-200"
+              wrap ? "text-white bg-white/[0.08]" : "text-slate-400 hover:text-slate-200"
             }`}
             title="Toggle line wrap"
           >
@@ -426,7 +426,7 @@ function CodeBlock({
                     </span>
                   ))}
                   {isStreamingLeaf && isLastLine && (
-                    <span className="streaming-caret inline-block w-[2px] h-[1.15em] bg-cyan-400 animate-pulse ml-0.5 align-middle shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
+                    <span className="streaming-caret inline-block w-[2px] h-[1.15em] bg-white/80 animate-pulse ml-0.5 align-middle" />
                   )}
                 </span>
               </div>
@@ -443,7 +443,7 @@ function renderInlineText(text: string, isLast?: boolean, isStreaming?: boolean)
   if (!text) {
     if (isLast && isStreaming) {
       return (
-        <span className="inline-block w-2 h-4 bg-cyan-400 rounded-xs animate-pulse ml-1 align-text-bottom shadow-[0_0_8px_rgba(34,211,238,0.7)]" />
+        <span className="streaming-caret inline-block w-[2px] h-[1.15em] bg-white/80 animate-pulse ml-0.5 align-text-bottom" />
       );
     }
     return null;
@@ -471,7 +471,7 @@ function renderInlineText(text: string, isLast?: boolean, isStreaming?: boolean)
           href={linkHref}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-cyan-400 hover:text-cyan-300 underline underline-offset-2 decoration-cyan-500/40 hover:decoration-cyan-300 transition-colors inline-flex items-center gap-0.5"
+          className="text-slate-200 hover:text-white underline underline-offset-2 decoration-white/30 hover:decoration-white transition-colors inline-flex items-center gap-0.5"
         >
           {linkText}
           <svg className="w-2.5 h-2.5 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -527,7 +527,7 @@ function renderInlineText(text: string, isLast?: boolean, isStreaming?: boolean)
     <>
       {elements}
       {isLast && isStreaming && (
-        <span className="streaming-caret inline-block w-[2px] h-[1.15em] bg-cyan-400 animate-pulse ml-0.5 align-text-bottom shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
+        <span className="streaming-caret inline-block w-[2px] h-[1.15em] bg-white/80 animate-pulse ml-0.5 align-text-bottom" />
       )}
     </>
   );
