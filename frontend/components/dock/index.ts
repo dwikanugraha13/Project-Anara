@@ -6,6 +6,8 @@ export { default as AnaraMediaPlayer } from "./AnaraMediaPlayer";
 export type { MediaSession, AnaraMediaPlayerProps } from "./AnaraMediaPlayer";
 export { default as ReasoningPill } from "./ReasoningPill";
 export type { ReasoningPillProps } from "./ReasoningPill";
+export { default as ApprovalModePill } from "./ApprovalModePill";
+export type { ApprovalModePillProps } from "./ApprovalModePill";
 export * from "./DockPlanChecklist";
 export * from "./DockAudioWaveform";
 export * from "./DockAttachmentChips";

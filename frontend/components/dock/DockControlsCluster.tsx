@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import ModelSelectorDropdown, { AIModelInfo, isReasoningSupported } from "./ModelSelectorDropdown";
 import ReasoningPill from "./ReasoningPill";
+import ApprovalModePill from "./ApprovalModePill";
 import { getModelModalities, resolveSiblingTierModelId } from "@/lib/reasoningEffort";
 import { formatModelDisplayName } from "@/lib/modelFormat";
 import type { AssistantStatus } from "./BottomDock";
@@ -320,6 +321,11 @@ export function DockControlsCluster({
             />
           );
         })()}
+
+        {/* Dedicated Approval Mode Pill (Manual / Smart / Off) */}
+        {interactionMode !== "voice" && (
+          <ApprovalModePill />
+        )}
       </div>
 
       {/* Right Cluster: Quick Mic, Interrupt & Send Button */}

@@ -169,7 +169,7 @@ export default function ReasoningPill({
           }`}
         />
         <span className="font-semibold tracking-tight">
-          {isOff ? "Think: Off" : `Think: ${currentConfig.shortLabel}`}
+          {isOff ? "Off" : currentConfig.shortLabel}
         </span>
         <svg
           className={`w-3 h-3 text-zinc-500 transition-transform shrink-0 ${
