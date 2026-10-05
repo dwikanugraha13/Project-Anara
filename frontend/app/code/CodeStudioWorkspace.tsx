@@ -494,6 +494,7 @@ export function CodeStudioWorkspace({
           {/* Dedicated Agent Command & Prompt Input Dock */}
           <BottomDock
             embedded={true}
+            isCodeStudio={true}
             showAgentModeToggle={false}
             showInteractionModeToggle={false}
             inputMessage={inputMessage}

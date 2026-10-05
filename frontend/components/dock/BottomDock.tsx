@@ -70,6 +70,7 @@ export interface BottomDockProps {
   onAnswerQuestion?: (questionId: string, answers: any, dismissed?: boolean) => void;
   onHeightChange?: (height: number) => void;
   embedded?: boolean;
+  isCodeStudio?: boolean;
   showAgentModeToggle?: boolean;
   showInteractionModeToggle?: boolean;
   onApprovePlan?: (plan?: any) => void;
@@ -118,7 +119,8 @@ export default function BottomDock({
   onAnswerQuestion,
   onHeightChange,
   embedded = false,
-  showAgentModeToggle,
+  isCodeStudio = false,
+  showAgentModeToggle = false,
   showInteractionModeToggle,
   onApprovePlan,
   onRejectPlan,
@@ -725,7 +727,7 @@ export default function BottomDock({
                   setAttachedFiles([]);
                 }}
                 handleTextareaChange={handleTextareaChange}
-                placeholder={embedded ? "Ask Anara... ('/' or '@')" : undefined}
+                placeholder={isCodeStudio ? "Ask Anara... ('/' or '@')" : "Start with a goal... (type '/' for commands, '@' for files)"}
               />
             )}
           </div>
@@ -757,7 +759,8 @@ export default function BottomDock({
             isBusy={isBusy}
             canSend={canSend}
             onSend={() => handleFormSubmit()}
-            compact={embedded}
+            compact={isCodeStudio}
+            isCodeStudio={isCodeStudio}
           />
         </div>
       )}
