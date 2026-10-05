@@ -40,10 +40,10 @@ export interface DockControlsClusterProps {
 
 /**
  * DockControlsCluster — Responsive bottom action toolbar row.
- * - Dynamic width awareness: When the agent bar is wide, model button expands automatically,
- *   and reasoning & approval stay on the top line as default.
- * - When the agent bar is narrowed (< 430px in Code Studio), reasoning and approval mode
- *   drop down cleanly to the row below.
+ * - Sized snugly to content without stretched/oversized buttons.
+ * - When the agent bar in Code Studio is narrowed (< 420px), reasoning & approval pills
+ *   drop down to the row below cleanly.
+ * - When wide, all controls sit naturally on a single row as default.
  */
 export function DockControlsCluster({
   models,
@@ -142,8 +142,8 @@ export function DockControlsCluster({
     }
   };
 
-  // Condition to drop reasoning & approval to the bottom row
-  const isNarrow = isCodeStudio && containerWidth < 430;
+  // Condition to drop reasoning & approval to the bottom row in Code Studio
+  const isNarrow = isCodeStudio && containerWidth < 420;
 
   // ── Render Helpers ──
 
@@ -288,31 +288,24 @@ export function DockControlsCluster({
     );
   };
 
-  const renderModelSelector = (flexibleWidth: boolean) => {
+  const renderModelSelector = () => {
     const cur = findModelById(models, activeModelId) || { id: activeModelId, name: activeModelId, supports_reasoning: true };
     const displayName = formatModelDisplayName(cur?.name || cur?.id || activeModelId);
     const modalities = getModelModalities(cur);
 
     return (
-      <div
-        className={`relative min-w-0 ${
-          flexibleWidth
-            ? "flex-1 max-w-[320px]"
-            : "shrink-0 max-w-[200px] sm:max-w-[280px]"
-        }`}
-        data-dropdown-root="true"
-      >
+      <div className="relative min-w-0 shrink" data-dropdown-root="true">
         <button
           type="button"
           onClick={(e) => toggleDropdown("model", e)}
           title={`Active Model: ${cur?.id || activeModelId} (${modalities.map((m) => m.label).join(", ")})`}
-          className={`flex items-center gap-1.5 py-1 rounded-lg border text-[11px] font-medium font-mono transition-colors cursor-pointer select-none min-w-0 w-full justify-between px-2.5 ${
+          className={`inline-flex items-center gap-1.5 py-1 px-2.5 rounded-lg border text-[11px] font-medium font-mono transition-colors cursor-pointer select-none shrink-0 ${
             isModelDropdownOpen
               ? "bg-white/[0.08] border-white/20 text-white"
               : "bg-white/[0.03] border-white/[0.08] hover:border-white/[0.16] hover:bg-white/[0.06] text-zinc-300 hover:text-white"
           }`}
         >
-          <span className="truncate font-semibold tracking-tight min-w-0" suppressHydrationWarning>
+          <span className="truncate max-w-[130px] sm:max-w-[160px] font-semibold tracking-tight" suppressHydrationWarning>
             {displayName}
           </span>
           <svg className="w-3 h-3 text-zinc-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -462,14 +455,14 @@ export function DockControlsCluster({
 
   return (
     <div ref={containerRef} className="w-full">
-      {/* ── 2-TIER LAYOUT (Used when narrowed in Code Studio) ── */}
+      {/* ── 2-TIER LAYOUT (When bar is narrowed < 420px in Code Studio) ── */}
       {isNarrow ? (
-        <div className="flex flex-col gap-1.5 w-full min-w-0 pt-0.5 animate-in fade-in duration-150">
-          {/* Row 1: Attachment + Model Selector (widens flexibly) on Left, Send/Stop on Right */}
+        <div className="flex flex-col gap-1 w-full min-w-0 pt-0.5 animate-in fade-in duration-150">
+          {/* Row 1: Attachment + Model Selector on Left, Send/Stop on Right */}
           <div className="flex items-center justify-between gap-1.5 w-full min-w-0">
-            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 min-w-0">
               {renderAttachmentButton()}
-              {renderModelSelector(true)}
+              {renderModelSelector()}
             </div>
             <div className="shrink-0 flex items-center gap-1">
               {renderSendStopButton(true)}
@@ -485,11 +478,11 @@ export function DockControlsCluster({
       ) : (
         /* ── 1-TIER DEFAULT LAYOUT (When wide in Code Studio, or on Desktop) ── */
         <div className="flex items-center justify-between gap-2 pt-1 w-full animate-in fade-in duration-150">
-          {/* Left Cluster: [+] [Voice/Chat] + Model Selector (expands as bar widens) */}
-          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          {/* Left Cluster: [+] [Voice/Chat] + Model Selector (snug pill) */}
+          <div className="flex items-center gap-1.5 min-w-0">
             {renderAttachmentButton()}
             {renderInteractionMode()}
-            {renderModelSelector(true)}
+            {renderModelSelector()}
           </div>
 
           {/* Right Cluster: [Reasoning] [Approval] [Send/Stop] */}
