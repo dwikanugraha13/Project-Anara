@@ -116,6 +116,7 @@ export interface AgentSkillV2 {
   trigger_keywords: string[];
   status: "active" | "disabled" | "pending" | "rejected";
   enabled?: boolean;
+  usage_count?: number;
   learned_from_experience: boolean;
   created_at?: string;
   body?: string;
@@ -281,8 +282,10 @@ export interface GoogleStatus {
 
 export type BrainTabId =
   | "soul"
-  | "tools"
   | "skills"
+  | "tools"
+  | "connectors"
+  | "plugins"
   | "providers"
   | "integrations";
 

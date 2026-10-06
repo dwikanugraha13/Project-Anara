@@ -38,6 +38,15 @@ class SpeakerCalibrateRequest(BaseModel):
 class SkillToggleRequest(BaseModel):
     enabled: Optional[bool] = None
 
+class SkillContentUpdateRequest(BaseModel):
+    content: str
+
+class ToolsetToggleRequest(BaseModel):
+    enabled: Optional[bool] = None
+
+class PluginToggleRequest(BaseModel):
+    enabled: Optional[bool] = None
+
 class SkillHubInstallRequest(BaseModel):
     identifier: str
     name: Optional[str] = None
@@ -385,6 +394,105 @@ async def toggle_skill_v2_endpoint(slug: str, req: Optional[SkillToggleRequest] 
     if not updated:
         raise HTTPException(status_code=404, detail=f"Skill '{slug}' not found.")
     return {"status": "success", "skill": updated}
+
+@router.get("/api/brain/skills/v2/{slug}/content")
+async def get_skill_content_endpoint(slug: str):
+    """Returns raw SKILL.md content and manifest metadata for in-depth inspection and editing."""
+    from core.skill_library import skill_library
+    skill = skill_library.get_skill(slug)
+    if not skill or not os.path.isfile(skill.get("file_path", "")):
+        raise HTTPException(status_code=404, detail=f"Skill '{slug}' not found.")
+    try:
+        with open(skill["file_path"], "r", encoding="utf-8") as f:
+            raw_content = f.read()
+        return {
+            "status": "success",
+            "slug": slug,
+            "name": skill.get("name", slug),
+            "content": raw_content,
+            "file_path": skill["file_path"],
+            "skill": skill
+        }
+    except Exception as e:
+        logger.error(f"[BrainRouter] Read skill content error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/api/brain/skills/v2/{slug}/content")
+async def update_skill_content_endpoint(slug: str, req: SkillContentUpdateRequest):
+    """Persists updated SKILL.md markdown text atomically to disk."""
+    from pathlib import Path
+    from core.skill_library import skill_library, atomic_write_text
+    skill = skill_library.get_skill(slug)
+    if not skill or not skill.get("file_path"):
+        raise HTTPException(status_code=404, detail=f"Skill '{slug}' not found.")
+    try:
+        atomic_write_text(Path(skill["file_path"]), req.content)
+        skill_library._invalidate_cache()
+        updated = skill_library.get_skill(slug)
+        return {"status": "success", "skill": updated}
+    except Exception as e:
+        logger.error(f"[BrainRouter] Save skill content error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/api/brain/toolsets")
+async def get_toolsets_endpoint():
+    """Returns all 31 toolsets with live toggle states, member tools, and execution call counters."""
+    from tools.toolsets import get_toolsets_status
+    from core.session_manager import session_state_manager
+
+    toolsets = get_toolsets_status()
+    tool_counts: Dict[str, int] = {}
+    try:
+        with session_state_manager._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT tool_name, COUNT(*) FROM tool_execution_ledger GROUP BY tool_name")
+            for row in cursor.fetchall():
+                tool_counts[str(row[0])] = int(row[1])
+    except Exception as e:
+        logger.debug(f"[BrainRouter] Error fetching tool counts: {e}")
+
+    for ts in toolsets:
+        tools = ts.get("tools", [])
+        ts_calls = sum(tool_counts.get(t, 0) for t in tools)
+        ts["total_calls"] = ts_calls
+        ts["tool_calls"] = {t: tool_counts.get(t, 0) for t in tools}
+        ts["configured"] = True
+
+    return {"status": "success", "toolsets": toolsets, "total": len(toolsets)}
+
+@router.put("/api/brain/toolsets/{toolset_id}/toggle")
+async def toggle_toolset_endpoint(toolset_id: str, req: Optional[ToolsetToggleRequest] = None):
+    """Toggles or sets the enabled state of a specific toolset."""
+    from tools.toolsets import toggle_toolset
+    enabled = req.enabled if req else None
+    ok = toggle_toolset(toolset_id, enabled=enabled)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Toolset '{toolset_id}' not found.")
+    return {"status": "success", "toolset_id": toolset_id, "enabled": enabled}
+
+@router.get("/api/brain/connectors/catalog")
+async def get_connectors_catalog_endpoint():
+    """Returns the curated 65 MCP and SaaS Connectors catalog."""
+    from core.connectors_catalog import load_connectors_catalog
+    catalog = load_connectors_catalog()
+    return {"status": "success", "catalog": catalog, "total": len(catalog)}
+
+@router.get("/api/brain/plugins")
+async def get_plugins_endpoint():
+    """Returns registered modular plugins and active enablement states."""
+    from core.plugins import plugin_manager
+    plugins = plugin_manager.list_plugins()
+    return {"status": "success", "plugins": plugins, "total": len(plugins)}
+
+@router.put("/api/brain/plugins/{plugin_id}/toggle")
+async def toggle_plugin_endpoint(plugin_id: str, req: Optional[PluginToggleRequest] = None):
+    """Toggles modular plugin on or off."""
+    from core.plugins import plugin_manager
+    enabled = req.enabled if req else None
+    res = plugin_manager.toggle_plugin(plugin_id, enabled=enabled)
+    if not res:
+        raise HTTPException(status_code=404, detail=f"Plugin '{plugin_id}' not found.")
+    return {"status": "success", "plugin": res}
 
 @router.get("/api/brain/skills/hub/sources")
 async def get_skill_hub_sources_endpoint():

@@ -1,17 +1,16 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-import { BACKEND_URL, AgentSkillV2, CategoryIcon } from "../types";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { BACKEND_URL, AgentSkillV2 } from "../types";
 
 interface HubSkillItem {
   name: string;
-  slug: string;
+  slug?: string;
   description: string;
-  source: string;
+  source?: string;
+  source_name?: string;
   identifier: string;
-  trust_level?: string;
-  repo?: string;
-  path?: string;
+  category?: string;
   tags?: string[];
   is_installed?: boolean;
 }
@@ -19,30 +18,44 @@ interface HubSkillItem {
 interface HubSource {
   id: string;
   name: string;
-  count: number;
-  description: string;
+  skill_count?: number;
+  count?: number;
 }
+
+import {
+  MasterDetail,
+  ListColumn,
+  DetailColumn,
+  CapRow,
+  SortButton,
+  DetailPane,
+  ToolChip,
+} from "../shared/MasterDetail";
 
 export default function BrainSkillsTab() {
   const [activeTab, setActiveTab] = useState<"installed" | "hub">("installed");
   const [skills, setSkills] = useState<AgentSkillV2[]>([]);
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortDesc, setSortDesc] = useState(true);
   const [filterStatus, setFilterStatus] = useState<"all" | "active" | "disabled" | "pending">("all");
-  const [isAddSkillOpen, setIsAddSkillOpen] = useState(false);
-  const [newSkillName, setNewSkillName] = useState("");
-  const [newSkillCategory, setNewSkillCategory] = useState("coding");
-  const [newSkillDesc, setNewSkillDesc] = useState("");
-  const [newSkillTriggers, setNewSkillTriggers] = useState("");
-  const [newSkillSteps, setNewSkillSteps] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [togglingSlug, setTogglingSlug] = useState<string | null>(null);
 
-  // ── Skills Hub state ──
+  // Raw editor drawer state
+  const [isEditing, setIsEditing] = useState(false);
+  const [rawContent, setRawContent] = useState("");
+  const [isSavingContent, setIsSavingContent] = useState(false);
+  const [editNotice, setEditNotice] = useState<string | null>(null);
+
+  // Skills Hub state
   const [hubQuery, setHubQuery] = useState("");
   const [hubSource, setHubSource] = useState("all");
   const [hubSources, setHubSources] = useState<HubSource[]>([]);
   const [hubResults, setHubResults] = useState<HubSkillItem[]>([]);
   const [hubTotal, setHubTotal] = useState(0);
   const [isSearchingHub, setIsSearchingHub] = useState(false);
+  const [selectedHubItem, setSelectedHubItem] = useState<HubSkillItem | null>(null);
   const [installingIdentifier, setInstallingIdentifier] = useState<string | null>(null);
   const [installedNotice, setInstalledNotice] = useState<string | null>(null);
 
@@ -54,7 +67,8 @@ export default function BrainSkillsTab() {
         const data = await res.json();
         setSkills(data || []);
       }
-    } catch {
+    } catch (e) {
+      console.warn("[BrainSkills] Error fetching skills:", e);
     } finally {
       setIsLoading(false);
     }
@@ -74,7 +88,7 @@ export default function BrainSkillsTab() {
     setIsSearchingHub(true);
     try {
       const res = await fetch(
-        `${BACKEND_URL}/api/brain/skills/hub/search?q=${encodeURIComponent(query)}&source=${encodeURIComponent(source)}&limit=36`
+        `${BACKEND_URL}/api/brain/skills/hub/search?q=${encodeURIComponent(query)}&source=${encodeURIComponent(source)}&limit=40`
       );
       if (res.ok) {
         const data = await res.json();
@@ -105,16 +119,13 @@ export default function BrainSkillsTab() {
   }, [activeTab, hubSource, hubResults.length, searchHub]);
 
   const handleToggleSkill = async (slug: string, currentStatus: string) => {
-    const isCurrentlyActive = currentStatus === "active";
-    const nextStatus = isCurrentlyActive ? "disabled" : "active";
-    const nextEnabled = !isCurrentlyActive;
-
-    // Optimistic UI update
     setTogglingSlug(slug);
+    const newEnabled = currentStatus !== "active";
+    // Optimistic UI update
     setSkills((prev) =>
       prev.map((s) =>
         s.slug === slug
-          ? { ...s, status: nextStatus as any, enabled: nextEnabled }
+          ? { ...s, status: newEnabled ? "active" : "disabled", enabled: newEnabled }
           : s
       )
     );
@@ -123,10 +134,9 @@ export default function BrainSkillsTab() {
       const res = await fetch(`${BACKEND_URL}/api/brain/skills/v2/${slug}/toggle`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: nextEnabled }),
+        body: JSON.stringify({ enabled: newEnabled }),
       });
       if (!res.ok) {
-        // Revert on failure
         fetchSkills();
       }
     } catch {
@@ -142,42 +152,63 @@ export default function BrainSkillsTab() {
         method: "POST",
       });
       if (res.ok) {
-        setSkills((prev) =>
-          prev.map((s) => (s.slug === slug ? { ...s, status: "active", enabled: true } : s))
-        );
+        fetchSkills();
       }
     } catch {}
   };
 
-  const [deleteConfirm, setDeleteConfirm] = useState<{ slug: string; name: string } | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const handleDeleteSkill = (slug: string, name: string) => {
-    setDeleteConfirm({ slug, name });
-  };
-
-  const handleConfirmDelete = async () => {
-    if (!deleteConfirm) return;
-    const { slug } = deleteConfirm;
-    setDeleteConfirm(null);
+  const handleDeleteSkill = async (slug: string) => {
+    if (!confirm(`Are you sure you want to delete skill '${slug}'?`)) return;
     try {
       const res = await fetch(`${BACKEND_URL}/api/brain/skills/v2/${slug}`, {
         method: "DELETE",
       });
       if (res.ok) {
-        setSkills((prev) => prev.filter((s) => s.slug !== slug));
-      } else {
-        const err = await res.json().catch(() => ({ detail: "Failed to delete" }));
-        setErrorMessage(err.detail || "Failed to delete skill");
+        if (selectedSlug === slug) setSelectedSlug(null);
+        fetchSkills();
       }
-    } catch (e: any) {
-      setErrorMessage(`Failed to delete: ${e.message}`);
+    } catch {}
+  };
+
+  const handleOpenEditor = async (slug: string) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/brain/skills/v2/${slug}/content`);
+      if (res.ok) {
+        const data = await res.json();
+        setRawContent(data.content || "");
+        setIsEditing(true);
+      }
+    } catch (e) {
+      console.warn("Failed to read raw skill content:", e);
+    }
+  };
+
+  const handleSaveEditor = async () => {
+    if (!selectedSlug) return;
+    setIsSavingContent(true);
+    setEditNotice(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/brain/skills/v2/${selectedSlug}/content`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: rawContent }),
+      });
+      if (res.ok) {
+        setEditNotice("Skill saved successfully.");
+        fetchSkills();
+        setTimeout(() => setEditNotice(null), 3000);
+      } else {
+        setEditNotice("Failed to save skill.");
+      }
+    } catch (e) {
+      setEditNotice("Network error saving skill.");
+    } finally {
+      setIsSavingContent(false);
     }
   };
 
   const handleInstallHubSkill = async (item: HubSkillItem) => {
     setInstallingIdentifier(item.identifier);
-    setErrorMessage(null);
     try {
       const res = await fetch(`${BACKEND_URL}/api/brain/skills/hub/install`, {
         method: "POST",
@@ -185,706 +216,443 @@ export default function BrainSkillsTab() {
         body: JSON.stringify({
           identifier: item.identifier,
           name: item.name,
-          category: item.tags?.[0] || "community",
+          category: item.category,
         }),
       });
       if (res.ok) {
-        setHubResults((prev) =>
-          prev.map((r) =>
-            r.identifier === item.identifier ? { ...r, is_installed: true } : r
-          )
-        );
-        setInstalledNotice(`Skill '${item.name}' successfully installed.`);
-        setTimeout(() => setInstalledNotice(null), 4000);
+        setInstalledNotice(`Installed '${item.name}' successfully!`);
         fetchSkills();
-      } else {
-        const err = await res.json().catch(() => ({ detail: "Failed to download" }));
-        setErrorMessage(`Failed to install skill: ${err.detail || "Error"}`);
+        setTimeout(() => setInstalledNotice(null), 4000);
       }
-    } catch (e: any) {
-      setErrorMessage(`Failed to install: ${e.message}`);
+    } catch {
     } finally {
       setInstallingIdentifier(null);
     }
   };
 
-  const handleAddSkillSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newSkillName.trim() || !newSkillDesc.trim()) return;
-    try {
-      const triggers = newSkillTriggers
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      const steps = newSkillSteps
-        .split("\n")
-        .map((s) => s.trim())
-        .filter(Boolean);
-
-      const res = await fetch(`${BACKEND_URL}/api/agent/skills`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: newSkillName.trim(),
-          category: newSkillCategory,
-          description: newSkillDesc.trim(),
-          trigger_keywords: triggers,
-          procedure_steps: steps,
-        }),
+  // Filter & sort visible installed skills
+  const visibleSkills = useMemo(() => {
+    return skills
+      .filter((s) => {
+        if (filterStatus !== "all" && s.status !== filterStatus) return false;
+        if (!searchQuery.trim()) return true;
+        const q = searchQuery.toLowerCase();
+        return (
+          s.name.toLowerCase().includes(q) ||
+          s.category.toLowerCase().includes(q) ||
+          s.description.toLowerCase().includes(q) ||
+          (s.trigger_keywords && s.trigger_keywords.some((t) => t.toLowerCase().includes(q)))
+        );
+      })
+      .sort((a, b) => {
+        if (sortDesc) {
+          const countA = a.usage_count || 0;
+          const countB = b.usage_count || 0;
+          if (countA !== countB) return countB - countA;
+        }
+        return a.name.localeCompare(b.name);
       });
-      if (res.ok) {
-        setNewSkillName("");
-        setNewSkillDesc("");
-        setNewSkillTriggers("");
-        setNewSkillSteps("");
-        setIsAddSkillOpen(false);
-        fetchSkills();
-      }
-    } catch {}
-  };
+  }, [skills, filterStatus, searchQuery, sortDesc]);
 
-  const pendingCount = skills.filter((s) => s.status === "pending").length;
-  const activeCount = skills.filter((s) => s.status === "active").length;
-  const disabledCount = skills.filter((s) => s.status === "disabled").length;
-
-  const filteredSkills = skills.filter((s) => {
-    if (filterStatus === "active") return s.status === "active";
-    if (filterStatus === "disabled") return s.status === "disabled";
-    if (filterStatus === "pending") return s.status === "pending";
-    return true;
-  });
+  // Active selected skill
+  const activeSkill = useMemo(() => {
+    if (!selectedSlug && visibleSkills.length > 0) return visibleSkills[0];
+    return visibleSkills.find((s) => s.slug === selectedSlug) || visibleSkills[0] || null;
+  }, [selectedSlug, visibleSkills]);
 
   return (
-    <div className="space-y-6 font-sans select-text">
-      {/* Top Banner Navigation: Installed vs Skills Hub */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3.5 sm:p-4 rounded-xl bg-white/[0.025] border border-white/[0.08] shadow-lg">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-            <h3 className="text-xs sm:text-sm font-semibold text-white tracking-wide">
-              Anara Skill Ecosystem
-            </h3>
-            <span className="px-2 py-0.5 rounded-md text-[9px] font-mono uppercase bg-cyan-500/10 border border-cyan-400/20 text-cyan-300">
-              Universal Skills Catalog
-            </span>
-          </div>
-          <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-            Manage active runtime skills or download on-demand from the global community catalog.
-          </p>
-        </div>
-
-        {/* View Switcher Tabs & Actions */}
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="flex items-center p-0.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs font-mono">
-            <button
-              type="button"
-              onClick={() => setActiveTab("installed")}
-              className={`px-3 py-1.5 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
-                activeTab === "installed"
-                  ? "bg-white/[0.08] text-white font-medium border border-white/[0.14] shadow-sm"
-                  : "text-slate-400 hover:text-white"
-              }`}
+    <div className="h-full w-full flex flex-col overflow-hidden select-none font-sans">
+      <MasterDetail
+        resizeId="brain_skills"
+        pane={
+          isEditing && activeSkill ? (
+            <DetailPane
+              id="skill_editor"
+              title={`Editing ${activeSkill.name} (${activeSkill.file_path || "SKILL.md"})`}
+              onClose={() => setIsEditing(false)}
+              actions={
+                <div className="flex items-center gap-2">
+                  {editNotice && (
+                    <span className="text-[11px] font-mono text-cyan-300 mr-2">{editNotice}</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(false)}
+                    className="px-2.5 py-1 rounded-md text-xs font-mono text-slate-400 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveEditor}
+                    disabled={isSavingContent}
+                    className="px-3 py-1 rounded-md text-xs font-mono font-medium text-black bg-cyan-400 hover:bg-cyan-300 transition-colors cursor-pointer shadow-sm disabled:opacity-50"
+                  >
+                    {isSavingContent ? "Saving..." : "Save (Ctrl+S)"}
+                  </button>
+                </div>
+              }
             >
-              <span>Installed</span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] bg-white/10 text-slate-200">
-                {skills.length}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("hub")}
-              className={`px-3 py-1.5 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
-                activeTab === "hub"
-                  ? "bg-white/[0.08] text-white font-medium border border-white/[0.14] shadow-sm"
-                  : "text-slate-400 hover:text-white"
-              }`}
-            >
-              <span>Skills Hub</span>
-              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-400/30">
-                Hub
-              </span>
-            </button>
-          </div>
-
-          {activeTab === "installed" && (
-            <button
-              type="button"
-              onClick={() => setIsAddSkillOpen((v) => !v)}
-              className="px-3 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.12] text-slate-200 hover:text-white text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-[0.98]"
-              title="Create your own custom skill"
-            >
-              <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              <span>Create New</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Global Success Notification */}
-      {installedNotice && (
-        <div className="p-3.5 px-4 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center gap-3 text-emerald-200 text-xs font-mono animate-scale-up">
-          <span className="text-emerald-400 text-base">✓</span>
-          <span>{installedNotice}</span>
-        </div>
-      )}
-
-      {/* ═════════════════════════════════════════════════════════════════════ */}
-      {/* TAB 1: INSTALLED SKILLS VIEW                                          */}
-      {/* ═════════════════════════════════════════════════════════════════════ */}
-      {activeTab === "installed" && (
-        <>
-          {/* Pending Approval Notice Banner */}
-          {pendingCount > 0 && (
-            <div className="p-3.5 px-4 rounded-xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-between gap-3 text-amber-200 text-xs font-mono">
-              <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                <span>There are <b>{pendingCount} new skills</b> from autonomous learning awaiting your review.</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setFilterStatus("pending")}
-                className="px-2.5 py-1 rounded-lg bg-amber-500/30 hover:bg-amber-500/40 text-amber-100 font-bold text-[11px] transition-colors cursor-pointer"
-              >
-                View Pending
-              </button>
-            </div>
-          )}
-
-          {/* Status Filter Tabs */}
-          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-black/40 border border-white/10 w-fit text-xs font-mono">
-            <button
-              type="button"
-              onClick={() => setFilterStatus("all")}
-              className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
-                filterStatus === "all" ? "bg-white/15 text-white font-bold" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              All ({skills.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterStatus("active")}
-              className={`px-3 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
-                filterStatus === "active" ? "bg-emerald-500/20 text-emerald-200 font-bold border border-emerald-400/30" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span>Active ({activeCount})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterStatus("disabled")}
-              className={`px-3 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
-                filterStatus === "disabled" ? "bg-slate-700/50 text-slate-200 font-bold border border-white/20" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
-              <span>Inactive ({disabledCount})</span>
-            </button>
-            {pendingCount > 0 && (
-              <button
-                type="button"
-                onClick={() => setFilterStatus("pending")}
-                className={`px-3 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  filterStatus === "pending" ? "bg-amber-500/20 text-amber-200 font-bold border border-amber-400/30" : "text-slate-400 hover:text-white"
-                }`}
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                <span>Pending Review ({pendingCount})</span>
-              </button>
-            )}
-          </div>
-
-          {/* Form Add Skill Manual Modal */}
-          {isAddSkillOpen && (
-            <form onSubmit={handleAddSkillSubmit} className="p-5 rounded-2xl liquid-glass border border-white/20 space-y-3.5 animate-scale-up">
-              <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <span className="text-xs font-bold font-mono text-cyan-300 uppercase">Create Custom Skill (agentskills.io v2)</span>
-                <button type="button" onClick={() => setIsAddSkillOpen(false)} className="text-slate-400 hover:text-white text-xs cursor-pointer">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+              <textarea
+                value={rawContent}
+                onChange={(e) => setRawContent(e.target.value)}
+                placeholder="---\nname: my-skill\ndescription: ...\n---\n# Documentation"
+                className="w-full h-full p-4 bg-[#04060d] text-slate-200 font-mono text-xs leading-relaxed resize-none focus:outline-none custom-scrollbar select-text"
+              />
+            </DetailPane>
+          ) : null
+        }
+      >
+        {/* ── LEFT COLUMN (List of Skills or Hub Catalog) ── */}
+        <ListColumn
+          header={
+            <div className="space-y-2">
+              {/* Top Sub-Tab Switcher [Installed | Hub] */}
+              <div className="flex items-center p-0.5 rounded-lg bg-black/40 border border-white/[0.06]">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("installed")}
+                  className={`flex-1 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${
+                    activeTab === "installed"
+                      ? "bg-white/[0.08] text-white font-semibold shadow-sm"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Installed ({skills.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("hub")}
+                  className={`flex-1 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${
+                    activeTab === "hub"
+                      ? "bg-white/[0.08] text-white font-semibold shadow-sm"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Skills Hub (100k+)
                 </button>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="sm:col-span-2 space-y-1">
-                  <label className="text-[11px] font-mono text-slate-400">Skill Name</label>
-                  <input
-                    type="text"
-                    placeholder="Example: Excel Financial Report Analysis"
-                    value={newSkillName}
-                    onChange={(e) => setNewSkillName(e.target.value)}
-                    className="w-full px-3 py-1.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 font-sans"
-                    required
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-mono text-slate-400">Category</label>
-                  <select
-                    value={newSkillCategory}
-                    onChange={(e) => setNewSkillCategory(e.target.value)}
-                    className="w-full px-3 py-1.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white focus:outline-none focus:border-cyan-400 font-mono"
-                  >
-                    <option value="coding">Coding &amp; Software</option>
-                    <option value="architecture">Architecture</option>
-                    <option value="devops">DevOps &amp; Infra</option>
-                    <option value="research">Research &amp; Web</option>
-                    <option value="document">Documents &amp; PDF</option>
-                    <option value="communication">Communication</option>
-                    <option value="general">General</option>
-                  </select>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[11px] font-mono text-slate-400">Description</label>
-                <input
-                  type="text"
-                  placeholder="Describe what this skill does..."
-                  value={newSkillDesc}
-                  onChange={(e) => setNewSkillDesc(e.target.value)}
-                  className="w-full px-3 py-1.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400"
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[11px] font-mono text-slate-400">Trigger Keywords (comma separated)</label>
-                  <input
-                    type="text"
-                    placeholder="report, excel, revenue, finance"
-                    value={newSkillTriggers}
-                    onChange={(e) => setNewSkillTriggers(e.target.value)}
-                    className="w-full px-3 py-1.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 font-mono"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-mono text-slate-400">Procedure Steps (1 step per line)</label>
-                  <textarea
-                    rows={2}
-                    placeholder={"1. Read data file\n2. Compute metrics\n3. Generate summary report"}
-                    value={newSkillSteps}
-                    onChange={(e) => setNewSkillSteps(e.target.value)}
-                    className="w-full px-3 py-1 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 font-mono"
-                  />
-                </div>
-              </div>
-              <div className="flex justify-end gap-2 pt-1">
-                <button type="button" onClick={() => setIsAddSkillOpen(false)} className="px-3 py-1.5 rounded-xl text-xs text-slate-400 hover:text-white cursor-pointer">Cancel</button>
-                <button type="submit" className="px-4 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-400/40 text-xs font-semibold text-white transition-all cursor-pointer">Save Skill</button>
-              </div>
-            </form>
-          )}
 
-          {/* Grid Kartu Skills v2 */}
-          {filteredSkills.length === 0 ? (
-            <div className="p-8 text-center rounded-2xl liquid-glass border border-white/10 text-slate-400 text-xs font-mono">
-               No skills with this status.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredSkills.map((s) => {
-                const isPending = s.status === "pending";
-                const isActive = s.status === "active";
-                const isDisabled = s.status === "disabled";
-                const isToggling = togglingSlug === s.slug;
-
-                return (
-                  <div
-                    key={s.slug}
-                    className={`p-4 sm:p-5 rounded-xl border flex flex-col justify-between transition-all space-y-3.5 ${
-                      isPending
-                        ? "bg-amber-950/20 border-amber-500/40 shadow-[0_0_20px_rgba(251,191,36,0.12)]"
-                        : isDisabled
-                        ? "bg-white/[0.02] border-white/5 opacity-70 hover:opacity-90"
-                        : "bg-white/[0.025] hover:bg-white/[0.04] border-white/[0.08] hover:border-white/[0.15] shadow-sm"
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${
-                            isPending
-                              ? "bg-amber-500/20 border-amber-400/40 text-amber-300"
-                              : isDisabled
-                              ? "bg-slate-800/60 border-white/10 text-slate-400"
-                              : "bg-white/[0.05] border-white/10 text-cyan-300"
-                          }`}>
-                            <CategoryIcon category={s.category} className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h4 className={`text-sm font-semibold ${isDisabled ? "text-slate-300 line-through decoration-slate-500" : "text-white"}`}>
-                                {s.name}
-                              </h4>
-                              {s.learned_from_experience && (
-                                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-400/25">
-                                  Autonomous
-                                </span>
-                              )}
-                              {isPending && (
-                                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40 animate-pulse">
-                                  Pending Review
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-[10px] text-slate-500 font-mono">
-                              {s.category.toUpperCase()} • {s.slug}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Top Right Action: Toggle Switch or Approve */}
-                        {isPending ? (
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => handleApproveSkill(s.slug)}
-                              className="px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/40 text-emerald-200 cursor-pointer transition-all shadow-sm"
-                              title="Approve this skill to activate"
-                            >
-                              ✓ Approve
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteSkill(s.slug, s.name)}
-                              className="px-2 py-1 rounded-lg text-[10px] font-mono text-rose-300 hover:bg-rose-500/20 border border-rose-500/30 cursor-pointer transition-all"
-                              title="Reject & delete skill"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            {/* Toggle ON/OFF Switch */}
-                            <label className="flex items-center gap-2 cursor-pointer select-none" title={isActive ? "Disable this skill (save context)" : "Enable this skill"}>
-                              <span className={`text-[10px] font-mono font-semibold uppercase ${isActive ? "text-emerald-300" : "text-slate-500"}`}>
-                                {isActive ? "Active" : "Inactive"}
-                              </span>
-                              <div
-                                onClick={() => !isToggling && handleToggleSkill(s.slug, s.status)}
-                                className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-200 ease-in-out relative ${
-                                  isActive ? "bg-emerald-500" : "bg-slate-700"
-                                } ${isToggling ? "opacity-50" : ""}`}
-                              >
-                                <div
-                                  className={`w-4 h-4 rounded-full bg-white transition-transform duration-200 ease-in-out ${
-                                    isActive ? "translate-x-4" : "translate-x-0"
-                                  }`}
-                                />
-                              </div>
-                            </label>
-                          </div>
-                        )}
-                      </div>
-
-                      <p className="text-xs text-slate-300 mt-2.5 leading-relaxed">{s.description}</p>
-
-                      {s.trigger_keywords && s.trigger_keywords.length > 0 && (
-                        <div className="mt-2.5 flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[10px] font-mono text-slate-500">Triggers:</span>
-                          {s.trigger_keywords.map((kw, i) => (
-                            <span key={i} className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.06] text-[10px] font-mono text-slate-300">
-                              {kw}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+              {activeTab === "installed" ? (
+                <>
+                  {/* Search Bar & Sort */}
+                  <div className="flex items-center gap-1.5">
+                    <div className="relative flex-1 min-w-0">
+                      <svg
+                        className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      <input
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search skills..."
+                        className="w-full py-1 pl-8 pr-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-cyan-400/40 transition-colors"
+                      />
                     </div>
+                    <SortButton desc={sortDesc} onToggle={() => setSortDesc((v) => !v)} label="Usage" />
+                  </div>
 
-                    {s.body && (
-                      <div className="p-3 rounded-lg bg-black/60 border border-white/[0.08] space-y-1 text-[11px] font-mono text-slate-300 max-h-36 overflow-y-auto custom-scrollbar">
-                        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
-                          SKILL.md Definition:
-                        </span>
-                        <pre className="whitespace-pre-wrap font-mono text-[10.5px] leading-relaxed text-slate-300">
-                          {s.body}
-                        </pre>
-                      </div>
-                    )}
+                  {/* Filter Pills */}
+                  <div className="flex items-center gap-1 text-[10px] font-mono">
+                    {(["all", "active", "disabled", "pending"] as const).map((st) => (
+                      <button
+                        key={st}
+                        onClick={() => setFilterStatus(st)}
+                        className={`px-2 py-0.5 rounded capitalize transition-colors cursor-pointer ${
+                          filterStatus === st
+                            ? "bg-white/[0.1] text-white font-semibold"
+                            : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]"
+                        }`}
+                      >
+                        {st}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                /* Hub Search & Source Selector */
+                <div className="space-y-1.5">
+                  <div className="relative w-full">
+                    <svg
+                      className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input
+                      value={hubQuery}
+                      onChange={(e) => setHubQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") searchHub(hubQuery, hubSource);
+                      }}
+                      placeholder="Search 100k+ Skills Hub..."
+                      className="w-full py-1 pl-8 pr-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-cyan-400/40 transition-colors"
+                    />
+                  </div>
 
-                    <div className="flex items-center justify-between pt-1 border-t border-white/[0.06] text-[10px] font-mono text-slate-500">
-                      <span className="truncate max-w-[240px] flex items-center gap-1.5" title={s.file_path}>
-                        <svg className="w-3 h-3 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                        </svg>
-                        <span>skills/{s.slug}/SKILL.md</span>
+                  <div className="flex items-center gap-1.5">
+                    <select
+                      value={hubSource}
+                      onChange={(e) => {
+                        setHubSource(e.target.value);
+                        searchHub(hubQuery, e.target.value);
+                      }}
+                      className="flex-1 py-1 px-2 rounded-lg bg-black/40 border border-white/[0.08] text-[11px] font-mono text-slate-300 focus:outline-none"
+                    >
+                      <option value="all">All Repositories</option>
+                      {hubSources.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.count ? s.count.toLocaleString() : "catalog"})
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={() => searchHub(hubQuery, hubSource)}
+                      disabled={isSearchingHub}
+                      className="px-2.5 py-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-xs font-mono text-white transition-colors cursor-pointer"
+                    >
+                      {isSearchingHub ? "..." : "Search"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          }
+        >
+          {activeTab === "installed" ? (
+            visibleSkills.length === 0 ? (
+              <div className="p-6 text-center text-xs text-slate-500 font-mono">
+                {isLoading ? "Loading skills..." : "No skills found"}
+              </div>
+            ) : (
+              visibleSkills.map((s) => (
+                <CapRow
+                  key={s.slug}
+                  title={s.name}
+                  subtitle={
+                    <span>
+                      {s.category}
+                      {s.learned_from_experience && (
+                        <span className="ml-1 text-[9px] text-cyan-400">· learned</span>
+                      )}
+                    </span>
+                  }
+                  active={(activeSkill?.slug || "") === s.slug}
+                  enabled={s.status === "active"}
+                  meta={s.usage_count ? `×${s.usage_count}` : undefined}
+                  busy={togglingSlug === s.slug}
+                  onSelect={() => setSelectedSlug(s.slug)}
+                  onToggle={() => handleToggleSkill(s.slug, s.status)}
+                />
+              ))
+            )
+          ) : (
+            /* Skills Hub Results List */
+            hubResults.length === 0 ? (
+              <div className="p-6 text-center text-xs text-slate-500 font-mono">
+                {isSearchingHub ? "Searching Hub..." : "No skills found in Hub"}
+              </div>
+            ) : (
+              hubResults.map((item) => {
+                const isInstalled = skills.some((s) => s.slug === item.identifier || s.name === item.name);
+                const isSelected = selectedHubItem?.identifier === item.identifier;
+                return (
+                  <CapRow
+                    key={item.identifier}
+                    title={item.name}
+                    subtitle={
+                      <span>
+                        {item.tags?.[0] || "community"} · <span className="text-slate-500">{item.source || "hub"}</span>
                       </span>
-                      {!isPending && (
+                    }
+                    active={isSelected}
+                    enabled={isInstalled}
+                    onSelect={() => setSelectedHubItem(item)}
+                    action={
+                      isInstalled ? (
+                        <span className="text-[10px] font-mono text-emerald-400 font-semibold">Installed</span>
+                      ) : (
                         <button
                           type="button"
-                          onClick={() => handleDeleteSkill(s.slug, s.name)}
-                          className="px-2 py-0.5 rounded text-[10.5px] font-mono text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-all cursor-pointer flex items-center gap-1"
-                          title="Delete skill"
+                          onClick={() => handleInstallHubSkill(item)}
+                          disabled={installingIdentifier === item.identifier}
+                          className="px-2 py-0.5 rounded text-[10.5px] font-mono font-medium bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25 border border-cyan-400/30 transition-colors cursor-pointer"
                         >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                          <span>Delete</span>
+                          {installingIdentifier === item.identifier ? "..." : "Install"}
                         </button>
-                      )}
-                    </div>
-                  </div>
+                      )
+                    }
+                  />
                 );
-              })}
-            </div>
+              })
+            )
           )}
-        </>
-      )}
+        </ListColumn>
 
-      {/* ═════════════════════════════════════════════════════════════════════ */}
-      {/* TAB 2: SKILLS HUB (100,000+ KOMUNITAS) EXPLORER                      */}
-      {/* ═════════════════════════════════════════════════════════════════════ */}
-      {activeTab === "hub" && (
-        <div className="space-y-4">
-          {/* Hub Search & Source Filter Bar */}
-          <div className="p-4 rounded-2xl liquid-glass border border-white/10 space-y-3">
-            <div className="flex flex-col sm:flex-row gap-3">
-              {/* Search input */}
-              <div className="relative flex-1">
-                <svg className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  placeholder="Search community skills catalog (e.g. crypto, excel, blender, docker, seo, react)..."
-                  value={hubQuery}
-                  onChange={(e) => setHubQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") searchHub(hubQuery, hubSource);
-                  }}
-                  className="w-full pl-10 pr-4 py-2 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 font-sans"
-                />
+        {/* ── RIGHT COLUMN (Detail Inspector & Full Markdown View) ── */}
+        <DetailColumn
+          footer={
+            activeTab === "installed"
+              ? "Skill changes apply dynamically to all subsequent agent interactions."
+              : "Skills from the Hub are securely quarantined and vetted by Anara AST Sentinels."
+          }
+        >
+          {activeTab === "installed" && activeSkill ? (
+            <div className="space-y-5 animate-fade-in">
+              {/* Header Info */}
+              <div className="border-b border-white/[0.08] pb-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-bold text-white tracking-tight font-sans">
+                    {activeSkill.name}
+                  </h2>
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold uppercase tracking-wider ${
+                        activeSkill.status === "active"
+                          ? "bg-emerald-500/15 border border-emerald-400/30 text-emerald-300"
+                          : activeSkill.status === "pending"
+                          ? "bg-amber-500/15 border border-amber-400/30 text-amber-300"
+                          : "bg-slate-800 border border-white/10 text-slate-400"
+                      }`}
+                    >
+                      {activeSkill.status}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-white/[0.04] border border-white/[0.08] text-slate-300">
+                      {activeSkill.category}
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-300 mt-2 leading-relaxed font-sans">
+                  {activeSkill.description || "No description provided for this skill."}
+                </p>
+
+                {/* Actions Bar */}
+                <div className="flex items-center gap-2 mt-3.5">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEditor(activeSkill.slug)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-mono text-slate-200 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition-colors cursor-pointer"
+                  >
+                    <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                    <span>Edit SKILL.md</span>
+                  </button>
+
+                  {activeSkill.status === "pending" && (
+                    <button
+                      type="button"
+                      onClick={() => handleApproveSkill(activeSkill.slug)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-mono font-medium bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30 border border-emerald-400/30 transition-colors cursor-pointer"
+                    >
+                      ✓ Approve Skill
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteSkill(activeSkill.slug)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-mono text-rose-300 hover:text-rose-100 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-colors cursor-pointer ml-auto"
+                  >
+                    Delete Skill
+                  </button>
+                </div>
               </div>
 
-              {/* Source registry dropdown */}
-              <select
-                value={hubSource}
-                onChange={(e) => {
-                  setHubSource(e.target.value);
-                  searchHub(hubQuery, e.target.value);
-                }}
-                className="px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-xs text-cyan-300 focus:outline-none focus:border-cyan-400 font-mono shrink-0"
-              >
-                <option value="all">All Registries</option>
-                {hubSources.filter((s) => s.id !== "all").map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.count.toLocaleString()})
-                  </option>
-                ))}
-              </select>
-
-              {/* Search button */}
-              <button
-                type="button"
-                onClick={() => searchHub(hubQuery, hubSource)}
-                disabled={isSearchingHub}
-                className="px-4 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-400/40 text-cyan-200 text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
-              >
-                {isSearchingHub ? (
-                  <>
-                    <span className="w-3.5 h-3.5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
-                    <span>Searching...</span>
-                  </>
-                ) : (
-                  <span>Search Catalog</span>
-                )}
-              </button>
-            </div>
-
-            {/* Quick tags pills */}
-            <div className="flex items-center gap-1.5 flex-wrap pt-1 text-[11px] font-mono text-slate-400">
-              <span className="text-slate-500">Popular Searches:</span>
-              {["crypto", "docker", "blender", "excel", "security", "scraping", "github", "react", "fastapi"].map((tag) => (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => {
-                    setHubQuery(tag);
-                    searchHub(tag, hubSource);
-                  }}
-                  className="px-2 py-0.5 rounded-md bg-white/[0.04] hover:bg-white/[0.1] border border-white/10 text-slate-300 text-[10px] transition-all cursor-pointer"
-                >
-                  #{tag}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Search Result Summary */}
-          <div className="flex items-center justify-between text-xs font-mono text-slate-400 px-1">
-            <span>
-              Found <b className="text-white">{hubTotal.toLocaleString()}</b> skills in hub catalog.
-            </span>
-            <span className="text-[11px] text-slate-500">
-              Catalog updated on-demand &amp; verified
-            </span>
-          </div>
-
-          {/* Hub Results Grid */}
-          {isSearchingHub ? (
-            <div className="p-12 text-center rounded-2xl liquid-glass border border-white/10 text-slate-400 text-xs font-mono flex flex-col items-center justify-center gap-3">
-              <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
-              <span>Searching community skills catalog...</span>
-            </div>
-          ) : hubResults.length === 0 ? (
-            <div className="p-12 text-center rounded-2xl liquid-glass border border-white/10 text-slate-400 text-xs font-mono">
-              No skills found matching that keyword. Try different keywords or select &apos;All Registry&apos;.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {hubResults.map((item, idx) => {
-                const isInstalling = installingIdentifier === item.identifier;
-                const isInstalled = Boolean(item.is_installed);
-
-                return (
-                  <div
-                    key={`${item.identifier}-${idx}`}
-                    className="p-5 rounded-2xl liquid-glass border border-white/15 hover:border-cyan-400/30 transition-all flex flex-col justify-between space-y-3 shadow-md"
-                  >
-                    <div>
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h4 className="text-sm font-semibold text-white tracking-wide">
-                              {item.name}
-                            </h4>
-                            {/* Source Badge */}
-                            <span className={`px-2 py-0.5 rounded-md text-[9px] font-mono font-bold uppercase border ${
-                              item.source === "official"
-                                ? "bg-cyan-500/20 text-cyan-200 border-cyan-400/30"
-                                : item.source === "github"
-                                ? "bg-purple-500/20 text-purple-200 border-purple-400/30"
-                                : item.source === "skills.sh"
-                                ? "bg-emerald-500/20 text-emerald-200 border-emerald-400/30"
-                                : item.source === "clawhub"
-                                ? "bg-amber-500/20 text-amber-200 border-amber-400/30"
-                                : "bg-white/10 text-slate-300 border-white/15"
-                            }`}>
-                              {item.source}
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-slate-500 font-mono block mt-0.5 truncate max-w-[280px]" title={item.identifier}>
-                            {item.identifier}
-                          </span>
-                        </div>
-
-                        {/* Install Button */}
-                        <div className="shrink-0">
-                          {isInstalled ? (
-                            <span className="px-3 py-1 rounded-xl bg-emerald-500/10 text-emerald-300 border border-emerald-400/30 text-xs font-mono font-semibold flex items-center gap-1">
-              <span>Installed</span>
-                              <span>✓</span>
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleInstallHubSkill(item)}
-                              disabled={isInstalling}
-                              className="px-3.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-400/40 text-cyan-200 text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
-                            >
-                              {isInstalling ? (
-                                <>
-                                  <span className="w-3 h-3 border-2 border-cyan-300 border-t-transparent rounded-full animate-spin" />
-                                  <span>Installing...</span>
-                                </>
-                              ) : (
-                                <>
-                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                  </svg>
-                                  <span>Install</span>
-                                </>
-                              )}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      <p className="text-xs text-slate-300 mt-2.5 leading-relaxed line-clamp-3">
-                        {item.description || "No detailed description available for this skill."}
-                      </p>
-
-                      {item.tags && item.tags.length > 0 && (
-                        <div className="mt-2.5 flex items-center gap-1.5 flex-wrap">
-                          {item.tags.slice(0, 5).map((t, ti) => (
-                            <span key={ti} className="px-1.5 py-0.5 rounded bg-white/[0.04] border border-white/8 text-[9px] font-mono text-slate-400">
-                              #{t}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2 border-t border-white/5 text-[10px] font-mono text-slate-500">
-                      <span>Trust: {item.trust_level || "community"}</span>
-                      {item.repo && (
-                        <span className="truncate max-w-[180px]" title={item.repo}>
-                          Repo: {item.repo}
-                        </span>
-                      )}
+              {/* Frontmatter Metadata Table */}
+              <div className="rounded-xl border border-white/[0.08] bg-[#070b16]/70 p-3.5 space-y-2 font-mono text-xs">
+                <div className="flex items-start gap-3">
+                  <span className="w-24 shrink-0 font-medium text-slate-500 text-[11px]">Slug</span>
+                  <span className="text-slate-300 font-semibold text-[11px] select-text">{activeSkill.slug}</span>
+                </div>
+                {activeSkill.trigger_keywords && activeSkill.trigger_keywords.length > 0 && (
+                  <div className="flex items-start gap-3">
+                    <span className="w-24 shrink-0 font-medium text-slate-500 text-[11px]">Triggers</span>
+                    <div className="flex flex-wrap gap-1">
+                      {activeSkill.trigger_keywords.map((t, idx) => (
+                        <ToolChip key={idx}>{t}</ToolChip>
+                      ))}
                     </div>
                   </div>
-                );
-              })}
+                )}
+                {activeSkill.file_path && (
+                  <div className="flex items-start gap-3">
+                    <span className="w-24 shrink-0 font-medium text-slate-500 text-[11px]">Location</span>
+                    <span className="text-slate-400 text-[10.5px] truncate select-text" title={activeSkill.file_path}>
+                      {activeSkill.file_path}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Full Markdown Documentation Viewer */}
+              <div className="space-y-2">
+                <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
+                  SKILL.md Documentation
+                </div>
+                <div className="rounded-xl border border-white/[0.08] bg-[#050811]/90 p-4 font-mono text-xs text-slate-300 leading-relaxed overflow-x-auto select-text whitespace-pre-wrap max-h-[500px] custom-scrollbar shadow-inner">
+                  {activeSkill.body || "# " + activeSkill.name + "\n\n" + activeSkill.description}
+                </div>
+              </div>
+            </div>
+          ) : activeTab === "hub" && selectedHubItem ? (
+            /* Selected Hub Skill Detail */
+            <div className="space-y-5 animate-fade-in">
+              <div className="border-b border-white/[0.08] pb-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-bold text-white tracking-tight font-sans">
+                    {selectedHubItem.name}
+                  </h2>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-white/[0.04] border border-white/[0.08] text-slate-300">
+                    {selectedHubItem.tags?.[0] || "community"}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-2 leading-relaxed font-sans">
+                  {selectedHubItem.description || "Official community skill bundle."}
+                </p>
+
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={() => handleInstallHubSkill(selectedHubItem)}
+                    disabled={installingIdentifier === selectedHubItem.identifier}
+                    className="px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-cyan-400 text-black hover:bg-cyan-300 transition-colors cursor-pointer shadow-sm disabled:opacity-50"
+                  >
+                    {installingIdentifier === selectedHubItem.identifier ? "Installing..." : "+ Install to Anara Skills"}
+                  </button>
+                  {installedNotice && (
+                    <span className="ml-3 text-xs font-mono text-emerald-300">{installedNotice}</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/[0.08] bg-[#070b16]/70 p-3.5 space-y-2 font-mono text-xs">
+                <div className="flex items-start gap-3">
+                  <span className="w-24 shrink-0 font-medium text-slate-500 text-[11px]">Identifier</span>
+                  <span className="text-slate-300 text-[11px] select-text">{selectedHubItem.identifier}</span>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="w-24 shrink-0 font-medium text-slate-500 text-[11px]">Source</span>
+                  <span className="text-slate-300 text-[11px]">{selectedHubItem.source || "Community Hub"}</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="p-12 text-center text-xs text-slate-500 font-mono">
+              Select a skill from the list to inspect its documentation and configuration.
             </div>
           )}
-        </div>
-      )}
-
-      {/* In-app Error Banner */}
-      {errorMessage && (
-        <div className="fixed bottom-6 right-6 z-50 p-4 rounded-2xl bg-rose-950/90 border border-rose-500/40 text-rose-200 text-xs font-mono shadow-[0_0_30px_rgba(244,63,94,0.3)] backdrop-blur-xl flex items-center justify-between gap-4 max-w-md animate-fade-in">
-          <span>{errorMessage}</span>
-          <button
-            type="button"
-            onClick={() => setErrorMessage(null)}
-            className="text-rose-400 hover:text-white font-bold cursor-pointer"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
-      {/* In-app Delete Confirmation Modal */}
-      {deleteConfirm && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in select-none"
-        >
-          <div className="w-full max-w-sm p-5 rounded-2xl bg-slate-950/95 border border-white/20 shadow-[0_0_40px_rgba(0,0,0,0.8)] text-white space-y-4 font-sans">
-            <div className="flex items-center gap-2.5 text-rose-400 font-mono text-xs font-semibold">
-              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <span>Confirm Skill Deletion</span>
-            </div>
-            <p className="text-xs text-slate-300 leading-relaxed font-sans">
-              Permanently delete skill <b className="text-white font-mono">&apos;{deleteConfirm.name}&apos;</b> from Anara runtime disk?
-            </p>
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10 font-mono text-xs">
-              <button
-                type="button"
-                onClick={() => setDeleteConfirm(null)}
-                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDelete}
-                className="px-3.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 font-semibold transition-all cursor-pointer shadow-sm active:scale-95"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        </DetailColumn>
+      </MasterDetail>
     </div>
   );
 }

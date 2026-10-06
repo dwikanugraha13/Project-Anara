@@ -9,9 +9,11 @@ import {
   AnaraBrainProps,
 } from "./types";
 
-import BrainSoulTab from "./agent/BrainSoulTab";
-import BrainToolsTab from "./agent/BrainToolsTab";
 import BrainSkillsTab from "./agent/BrainSkillsTab";
+import BrainToolsTab from "./agent/BrainToolsTab";
+import BrainConnectorsTab from "./network/BrainConnectorsTab";
+import BrainPluginsTab from "./agent/BrainPluginsTab";
+import BrainSoulTab from "./agent/BrainSoulTab";
 import BrainProvidersTab from "./network/BrainProvidersTab";
 import BrainIntegrationsTab from "./network/BrainIntegrationsTab";
 
@@ -19,24 +21,34 @@ interface BrainNavTab {
   id: BrainTabId;
   label: string;
   icon: React.ReactNode;
-  badge?: number;
+  badge?: string | number;
 }
 
 const TAB_DESCRIPTIONS: Record<BrainTabId, { title: string; subtitle: string; category: string }> = {
+  skills: {
+    title: "Skills",
+    subtitle: "Procedural workflows, custom capabilities, and extensible community hub",
+    category: "Capabilities",
+  },
+  tools: {
+    title: "Tools",
+    subtitle: "31 Modular toolsets, execution instruments, and parameter schemas",
+    category: "Capabilities",
+  },
+  connectors: {
+    title: "Connectors",
+    subtitle: "65+ MCP and SaaS app integrations with sandboxed transport",
+    category: "Capabilities",
+  },
+  plugins: {
+    title: "Plugins",
+    subtitle: "Modular extension packages with sandbox lifecycle hooks",
+    category: "Capabilities",
+  },
   soul: {
     title: "Soul & Rules",
     subtitle: "Core directives, agent persona, user preferences, and persistent MEMORY.md",
-    category: "Autonomous Agent",
-  },
-  tools: {
-    title: "Tools & Automation",
-    subtitle: "Execution instruments, autonomous task scheduler, and subagent swarms",
-    category: "Autonomous Agent",
-  },
-  skills: {
-    title: "Skills Catalog",
-    subtitle: "Procedural workflows, custom capabilities, and extensible community hub",
-    category: "Autonomous Agent",
+    category: "Directives",
   },
   providers: {
     title: "Providers & Keys",
@@ -56,14 +68,14 @@ export default function AnaraBrain({
   onTriggerAnimation,
   activeSpeaker,
 }: AnaraBrainProps) {
-  const [activeTab, setActiveTab] = useState<BrainTabId>("soul");
+  const [activeTab, setActiveTab] = useState<BrainTabId>("skills");
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<BrainStats | null>(null);
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
   const [isConnected, setIsConnected] = useState(true);
   const isMountedRef = useRef(true);
 
-  const currentMeta = TAB_DESCRIPTIONS[activeTab] || TAB_DESCRIPTIONS.soul;
+  const currentMeta = TAB_DESCRIPTIONS[activeTab] || TAB_DESCRIPTIONS.skills;
 
   const fetchBrainData = useCallback(async () => {
     setLoading(true);
@@ -130,7 +142,7 @@ export default function AnaraBrain({
       className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-5 lg:p-6 bg-black/75 backdrop-blur-xl pointer-events-auto animate-fade-in select-none"
       onClick={onClose}
     >
-      {/* Restrained Ambient Radial Sheen (Zero GPU Thrashing, Pure Obsidian) */}
+      {/* Restrained Ambient Radial Sheen */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_0%,rgba(56,189,248,0.05),transparent_70%)] pointer-events-none" />
 
       {/* ── Main Framed Window (Liquid Glass Obsidian Studio) ── */}
@@ -143,25 +155,25 @@ export default function AnaraBrain({
 
         {/* ── SIDEBAR KIRI: Navigasi Terpusat ── */}
         <div className="w-full md:w-60 shrink-0 border-b md:border-b-0 md:border-r border-white/[0.08] bg-[#080d1a]/80 backdrop-blur-xl flex flex-col overflow-y-auto no-scrollbar p-3 space-y-4 select-none">
-          {/* Section 1: AUTONOMOUS AGENT */}
+          {/* Section 1: CAPABILITIES */}
           <div className="space-y-1">
             <span className="px-2.5 text-[11px] font-sans font-semibold tracking-wider text-slate-400 uppercase">
-              Autonomous Agent
+              Capabilities Hub
             </span>
             <div className="space-y-0.5 font-sans">
               {([
                 {
-                  id: "soul" as BrainTabId,
-                  label: "Soul & Rules",
+                  id: "skills" as BrainTabId,
+                  label: "Skills",
                   icon: (
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                   ),
                 },
                 {
                   id: "tools" as BrainTabId,
-                  label: "Tools & Automation",
+                  label: "Tools",
                   icon: (
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -170,11 +182,20 @@ export default function AnaraBrain({
                   ),
                 },
                 {
-                  id: "skills" as BrainTabId,
-                  label: "Skills Catalog",
+                  id: "connectors" as BrainTabId,
+                  label: "Connectors",
                   icon: (
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />
+                    </svg>
+                  ),
+                },
+                {
+                  id: "plugins" as BrainTabId,
+                  label: "Plugins",
+                  icon: (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                     </svg>
                   ),
                 },
@@ -203,7 +224,48 @@ export default function AnaraBrain({
             </div>
           </div>
 
-          {/* Section 2: AI GATEWAY & NETWORK */}
+          {/* Section 2: AGENT DIRECTIVES & PERSONA */}
+          <div className="space-y-1">
+            <span className="px-2.5 text-[11px] font-sans font-semibold tracking-wider text-slate-400 uppercase">
+              Agent Directives
+            </span>
+            <div className="space-y-0.5 font-sans">
+              {[
+                {
+                  id: "soul" as BrainTabId,
+                  label: "Soul & Rules",
+                  icon: (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                    </svg>
+                  ),
+                },
+              ].map((item) => {
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    className={`w-full group relative flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium border transition-all cursor-pointer select-none ${
+                      isActive
+                        ? "bg-white/[0.08] text-white border-white/[0.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]"
+                        : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]"
+                    }`}
+                  >
+                    {isActive && (
+                      <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r bg-cyan-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
+                    )}
+                    <div className="flex items-center gap-2.5 min-w-0 pl-1">
+                      <span className={`transition-colors duration-150 ${isActive ? "text-cyan-300" : "text-slate-400 group-hover:text-slate-300"}`}>{item.icon}</span>
+                      <span className="truncate">{item.label}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Section 3: AI GATEWAY & NETWORK */}
           <div className="space-y-1">
             <span className="px-2.5 text-[11px] font-sans font-semibold tracking-wider text-slate-400 uppercase">
               AI Gateway &amp; Network
@@ -304,21 +366,27 @@ export default function AnaraBrain({
             </div>
           </div>
 
-          {/* Main Content Scrollable Viewport with Hardware Layer Isolation */}
-          <div className="flex-1 overflow-y-auto p-5 sm:p-7 select-text custom-scrollbar [contain:content] [overscroll-behavior:contain] [transform:translateZ(0)]">
-            <div className={activeTab === "soul" ? "block h-full" : "hidden"}>
-              <BrainSoulTab />
-            </div>
-            <div className={activeTab === "tools" ? "block" : "hidden"}>
-              <BrainToolsTab />
-            </div>
-            <div className={activeTab === "skills" ? "block" : "hidden"}>
+          {/* Main Content Viewport */}
+          <div className="flex-1 min-h-0 overflow-hidden relative">
+            <div className={activeTab === "skills" ? "block h-full" : "hidden"}>
               <BrainSkillsTab />
             </div>
-            <div className={activeTab === "providers" ? "block" : "hidden"}>
+            <div className={activeTab === "tools" ? "block h-full" : "hidden"}>
+              <BrainToolsTab />
+            </div>
+            <div className={activeTab === "connectors" ? "block h-full" : "hidden"}>
+              <BrainConnectorsTab />
+            </div>
+            <div className={activeTab === "plugins" ? "block h-full" : "hidden"}>
+              <BrainPluginsTab />
+            </div>
+            <div className={activeTab === "soul" ? "block h-full overflow-y-auto p-5 sm:p-7 select-text custom-scrollbar" : "hidden"}>
+              <BrainSoulTab />
+            </div>
+            <div className={activeTab === "providers" ? "block h-full overflow-y-auto p-5 sm:p-7 select-text custom-scrollbar" : "hidden"}>
               <BrainProvidersTab onRefreshAll={fetchBrainData} />
             </div>
-            <div className={activeTab === "integrations" ? "block" : "hidden"}>
+            <div className={activeTab === "integrations" ? "block h-full overflow-y-auto p-5 sm:p-7 select-text custom-scrollbar" : "hidden"}>
               <BrainIntegrationsTab onRefreshAll={fetchBrainData} />
             </div>
           </div>
