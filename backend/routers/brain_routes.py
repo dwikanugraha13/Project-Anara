@@ -366,10 +366,10 @@ async def update_file_memory_endpoint(req: FileMemoryUpdateRequest):
     return {"status": "success" if ok else "error"}
 
 @router.get("/api/brain/skills/v2")
-async def list_skills_v2_endpoint(status: Optional[str] = None):
-    """Returns all folder-based skills in agentskills.io format."""
+async def list_skills_v2_endpoint(status: Optional[str] = None, all_platforms: bool = False):
+    """Returns folder-based skills in agentskills.io format matching host platform."""
     from core.skill_library import skill_library
-    return skill_library.list_skills(status_filter=status)
+    return skill_library.list_skills(status_filter=status, include_unsupported=all_platforms)
 
 @router.post("/api/brain/skills/v2/{slug}/approve")
 async def approve_skill_v2_endpoint(slug: str):

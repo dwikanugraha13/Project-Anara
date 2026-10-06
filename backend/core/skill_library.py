@@ -11,6 +11,7 @@ Standard:
 """
 import logging
 import os
+import sys
 from pathlib import Path
 import re
 import shutil
@@ -24,6 +25,23 @@ logger = logging.getLogger(__name__)
 
 from constants import get_anara_skills_dir, get_bundled_skills_dir
 from core.skills_sync import sync_bundled_skills
+
+PLATFORM_MAP = {"macos": "darwin", "linux": "linux", "windows": "win32"}
+
+
+def skill_matches_platform_list(platforms: Any) -> bool:
+    """Return True when platforms list is compatible with the host OS (Anara Standard)."""
+    if not platforms:
+        return True
+    if not isinstance(platforms, list):
+        platforms = [platforms]
+    current = sys.platform
+    for platform in platforms:
+        norm = str(platform).lower().strip()
+        mapped = PLATFORM_MAP.get(norm, norm)
+        if current.startswith(mapped):
+            return True
+    return False
 
 WINDOWS_RESERVED_NAMES = {
     "con", "prn", "aux", "nul",
@@ -266,6 +284,12 @@ class SkillLibraryManager:
             slug = os.path.basename(os.path.dirname(skill_md_path))
             status = str(meta.get("status", "active")).lower()
             usage_cnt = self.get_skill_usage(slug, meta.get("name"))
+            platforms = meta.get("platforms") or meta.get("platform")
+            if isinstance(platforms, str):
+                platforms = [platforms]
+            elif not isinstance(platforms, list):
+                platforms = None
+            is_supported = skill_matches_platform_list(platforms)
             return {
                 "slug": slug,
                 "name": meta.get("name", slug),
@@ -276,6 +300,8 @@ class SkillLibraryManager:
                 "required_credential_files": meta.get("required_credential_files", []),
                 "status": status,  # 'active' | 'disabled' | 'pending' | 'rejected'
                 "enabled": status == "active",
+                "platforms": platforms,
+                "supported_platform": is_supported,
                 "learned_from_experience": bool(meta.get("learned_from_experience", False)),
                 "created_at": meta.get("created_at", ""),
                 "usage_count": usage_cnt,
@@ -469,7 +495,7 @@ Use this skill when requested or when detecting tasks with keywords: {', '.join(
         except Exception:
             return 0.0
 
-    def list_skills(self, status_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_skills(self, status_filter: Optional[str] = None, include_unsupported: bool = False) -> List[Dict[str, Any]]:
         """Scans runtime skills directory with dynamic mtime signature caching (Anara Standard)."""
         if not os.path.isdir(self.root_dir):
             return []
@@ -492,14 +518,18 @@ Use this skill when requested or when detecting tasks with keywords: {', '.join(
                 self._cache_mtime = curr_sig
                 cached_results = list(self._skills_cache)
 
+        filtered_list = cached_results
+        if not include_unsupported:
+            filtered_list = [s for s in filtered_list if s.get("supported_platform", True)]
+
         if status_filter and status_filter != "all":
-            return [s for s in cached_results if s.get("status") == status_filter]
-        return cached_results
+            return [s for s in filtered_list if s.get("status") == status_filter]
+        return filtered_list
 
     def get_skill(self, name_or_slug: str) -> Optional[Dict[str, Any]]:
         """Retrieves a skill by name or slug."""
         clean = name_or_slug.strip().lower()
-        for s in self.list_skills():
+        for s in self.list_skills(include_unsupported=True):
             if s["slug"].lower() == clean or s["name"].lower() == clean or slugify(s["name"]) == clean:
                 return s
         return None
