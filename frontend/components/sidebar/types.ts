@@ -99,6 +99,7 @@ export interface ChatSessionSidebarProps {
   onOpenBrain?: () => void;
   onOpenMessaging?: () => void;
   onOpenScheduled?: () => void;
+  onOpenProviders?: () => void;
   onOpenArtifacts?: () => void;
   onOpenFileIDE?: (filePath: string, fileName: string) => void;
   onOpenFolder?: () => void;

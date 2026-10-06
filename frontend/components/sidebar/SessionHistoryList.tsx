@@ -29,6 +29,7 @@ interface SessionHistoryListProps {
   onOpenBrain?: () => void;
   onOpenMessaging?: () => void;
   onOpenScheduled?: () => void;
+  onOpenProviders?: () => void;
   onOpenArtifacts?: () => void;
   onOpenCode?: () => void;
   sessionType?: "chat" | "code";
@@ -47,7 +48,7 @@ interface SessionHistoryListProps {
 
 export default function SessionHistoryList({
   sessions, loading, activeSessionId, search, setSearch,
-  onSelectSession, onNewSession, onOpenBrain, onOpenMessaging, onOpenScheduled, onOpenArtifacts, onOpenCode: _onOpenCode, sessionType,
+  onSelectSession, onNewSession, onOpenBrain, onOpenMessaging, onOpenScheduled, onOpenProviders, onOpenArtifacts, onOpenCode: _onOpenCode, sessionType,
   onPatchSession, onDeleteSession, onForkSession,
   onDropPin, onDropUnpin,
   draggedSession, setDraggedSession, dragOverTarget, setDragOverTarget,
@@ -613,14 +614,14 @@ export default function SessionHistoryList({
           </button>
           <button
             type="button"
-            onClick={onOpenArtifacts}
+            onClick={onOpenProviders}
             className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-white/10 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
-            title="Artifacts Gallery & Outputs"
+            title="Providers & Models (Custom Providers, API Keys)"
           >
             <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
-            <span className="truncate font-medium">Artifacts</span>
+            <span className="truncate font-medium">Providers</span>
           </button>
         </div>
       </div>

@@ -5,9 +5,8 @@ import BrainSkillsTab from "@/components/brain/agent/BrainSkillsTab";
 import BrainToolsTab from "@/components/brain/agent/BrainToolsTab";
 import BrainConnectorsTab from "@/components/brain/network/BrainConnectorsTab";
 import BrainPluginsTab from "@/components/brain/agent/BrainPluginsTab";
-import BrainProvidersTab from "@/components/brain/network/BrainProvidersTab";
 
-export type CapabilityTabId = "skills" | "tools" | "connectors" | "plugins" | "providers";
+export type CapabilityTabId = "skills" | "tools" | "connectors" | "plugins";
 
 export interface CapabilitiesWorkspaceViewProps {
   onClose?: () => void;
@@ -73,18 +72,6 @@ export default function CapabilitiesWorkspaceView({
           >
             <span>Plugins</span>
           </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("providers")}
-            className={`px-3 py-1 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === "providers"
-                ? "bg-white/[0.08] text-white font-semibold border border-white/[0.14] shadow-sm"
-                : "text-slate-400 hover:text-white"
-            }`}
-          >
-            <span>Providers</span>
-          </button>
         </div>
 
         {/* Right Side: Close to Chat Button */}
@@ -114,9 +101,6 @@ export default function CapabilitiesWorkspaceView({
         </div>
         <div className={activeTab === "plugins" ? "block h-full" : "hidden"}>
           <BrainPluginsTab />
-        </div>
-        <div className={activeTab === "providers" ? "block h-full overflow-y-auto p-6 select-text custom-scrollbar" : "hidden"}>
-          <BrainProvidersTab />
         </div>
       </main>
     </div>
