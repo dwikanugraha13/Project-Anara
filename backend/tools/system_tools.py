@@ -757,6 +757,11 @@ async def _tool_skill_view(name: str, file_path: Optional[str] = None) -> Dict[s
             "message": f"Skill '{clean_name}' not found in Skill Library (agentskills.io)."
         }
 
+    try:
+        skill_library.increment_usage(skill.get("slug") or clean_name)
+    except Exception:
+        pass
+
     _emit_agent_event("agent_action_complete", {
         "tool_name": "skill_view",
         "action_title": f"Load Skill: {skill['name']}",

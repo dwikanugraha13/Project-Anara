@@ -1,8 +1,9 @@
 ---
+category: productivity
 name: powerpoint
 description: Create, read, edit .pptx decks with python-pptx.
 version: 1.1.0
-author: Nous Research
+author: Project Anara
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

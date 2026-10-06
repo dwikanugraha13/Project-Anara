@@ -1,8 +1,9 @@
 ---
+category: productivity
 name: google-workspace
 description: "Gmail, Calendar, Drive, Docs, Sheets via gws CLI or Python."
 version: 1.2.0
-author: Nous Research
+author: Project Anara
 license: MIT
 platforms: [linux, macos, windows]
 required_credential_files:
@@ -13,7 +14,7 @@ required_credential_files:
 metadata:
   anara:
     tags: [Google, Gmail, Calendar, Drive, Sheets, Docs, Contacts, Email, OAuth]
-    homepage: https://github.com/NousResearch/anara-agent
+    homepage: https://github.com/project-anara/anara-agent
     related_skills: [himalaya]
 ---
 
@@ -36,10 +37,15 @@ Gmail, Calendar, Drive, Contacts, Sheets, and Docs — through Anara-managed OAu
 The setup is fully non-interactive — you drive it step by step so it works
 on CLI, Telegram, Discord, or any platform.
 
+Run the setup script with Python from the Anara environment, not an unrelated
+system Python. `--install-deps` syncs Anara' declared Google extra through PM;
+after syncing, restart Anara and rerun the OAuth command. If Anara is not
+importable, use `anara setup` first rather than installing packages with pip.
+
 Define a shorthand first:
 
 ```bash
-GSETUP="python ${HERMES_HOME:-$HOME/.anara}/skills/productivity/google-workspace/scripts/setup.py"
+GSETUP="python ${ANARA_HOME:-$HOME/.anara}/skills/productivity/google-workspace/scripts/setup.py"
 ```
 
 ### Step 0: Check if already set up
@@ -170,7 +176,7 @@ Should print `AUTHENTICATED`. Setup is complete — token refreshes automaticall
 All commands go through the API script. Set `GAPI` as a shorthand:
 
 ```bash
-GAPI="python ${HERMES_HOME:-$HOME/.anara}/skills/productivity/google-workspace/scripts/google_api.py"
+GAPI="python ${ANARA_HOME:-$HOME/.anara}/skills/productivity/google-workspace/scripts/google_api.py"
 ```
 
 ### Gmail
@@ -276,8 +282,9 @@ $GAPI sheets append SHEET_ID "Sheet1!A:C" --values '[["new","row","data"]]'
 ### Docs
 
 ```bash
-# Read
+# Read (a tabbed Doc returns a "tabs" array; single-tab and legacy Docs also return "body")
 $GAPI docs get DOC_ID
+$GAPI docs get DOC_ID --tab TAB_ID     # read one tab of a tabbed Doc
 
 # Create a new Doc (optionally seeded with body text)
 $GAPI docs create --title "Meeting Notes"
@@ -285,6 +292,7 @@ $GAPI docs create --title "Draft" --body "First paragraph..."
 
 # Append text to the end of an existing Doc
 $GAPI docs append DOC_ID --text "Additional content to append"
+$GAPI docs append DOC_ID --tab TAB_ID --text "..."   # --tab required when the Doc has multiple tabs
 ```
 
 ## Output Format

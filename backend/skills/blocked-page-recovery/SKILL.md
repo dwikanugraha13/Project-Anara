@@ -1,4 +1,5 @@
 ---
+category: web
 name: blocked-page-recovery
 description: "Use when a fetch fails: 403/429, paywall, WAF, bot wall."
 version: 1.0.0
@@ -79,7 +80,7 @@ Rate-limits aggressively (429) and rotates domains, so iterate:
 
 ```bash
 for d in archive.ph archive.md archive.li archive.is; do
-  curl -sL --max-time 20 "https://$d/newest/{URL}" -o /tmp/page.html \
+  curl -sL --max-time 20 "https://$d/newest/{URL}" -o ~/.anara/cache/scratch/page.html \
     -w "%{http_code}" && break
 done
 ```

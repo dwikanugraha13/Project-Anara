@@ -1,4 +1,5 @@
 ---
+category: software-development
 name: plan
 description: Write a markdown plan to .anara/plans/; no execution.
 version: 2.0.0

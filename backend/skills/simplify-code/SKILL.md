@@ -1,8 +1,9 @@
 ---
+category: software-development
 name: simplify-code
 description: "Parallel 4-agent cleanup of recent code changes."
 version: 1.1.0
-author: Anara Agent (inspired by Claude Code /simplify)
+author: Anara Agent (inspired by Anara Coding Agent /simplify)
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -32,7 +33,7 @@ Trigger this skill when the user says any of:
 
 - "simplify" / "simplify my changes" / "simplify these changes"
 - "review my code" / "review my recent changes" / "clean up my changes"
-- "/simplify" (if they're carrying the Claude Code habit over)
+- "/simplify" (if they're carrying the Anara Coding Agent habit over)
 
 Optional modifiers the user may add — honor them:
 

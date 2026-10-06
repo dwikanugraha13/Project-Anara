@@ -1,4 +1,5 @@
 ---
+category: software-development
 name: github
 description: "GitHub via gh CLI: PRs, issues, reviews, repos, auth."
 version: 2.0.0

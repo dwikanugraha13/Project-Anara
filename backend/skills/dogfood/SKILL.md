@@ -1,4 +1,5 @@
 ---
+category: software-development
 name: dogfood
 description: "Exploratory QA of web apps: find bugs, evidence, reports."
 version: 1.0.0

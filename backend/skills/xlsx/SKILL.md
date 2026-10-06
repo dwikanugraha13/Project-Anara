@@ -1,8 +1,9 @@
 ---
+category: productivity
 name: xlsx
 description: Create, read, edit Excel .xlsx workbooks and CSVs.
 version: 1.1.0
-author: Nous Research
+author: Project Anara
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

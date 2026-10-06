@@ -1,4 +1,5 @@
 ---
+category: productivity
 name: nano-pdf
 description: "Edit text in existing PDFs via natural-language prompts."
 version: 1.0.0

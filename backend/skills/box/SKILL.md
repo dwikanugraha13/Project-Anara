@@ -1,4 +1,5 @@
 ---
+category: productivity
 name: box
 description: Box manages cloud files, sharing, search, and metadata.
 version: 1.0.0

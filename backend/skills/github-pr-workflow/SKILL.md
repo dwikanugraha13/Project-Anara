@@ -1,4 +1,5 @@
 ---
+category: github
 name: github-pr-workflow
 description: "GitHub PR lifecycle: branch, commit, open, CI, merge."
 version: 1.1.0
@@ -30,10 +31,10 @@ else
   AUTH="git"
   # Ensure we have a token for API calls
   if [ -z "$GITHUB_TOKEN" ]; then
-    if _anara_env="${HERMES_HOME:-$HOME/.anara}/.env"; [ -f "$_anara_env" ] && grep -q "^GITHUB_TOKEN=" "$_anara_env"; then
+    if _anara_env="${ANARA_HOME:-$HOME/.anara}/.env"; [ -f "$_anara_env" ] && grep -q "^GITHUB_TOKEN=" "$_anara_env"; then
       GITHUB_TOKEN=$(grep "^GITHUB_TOKEN=" "$_anara_env" | head -1 | cut -d= -f2 | tr -d '\n\r')
     elif grep -q "github.com" ~/.git-credentials 2>/dev/null; then
-      GITHUB_TOKEN=$(uv run python "${HERMES_HOME:-$HOME/.anara}/skills/github/github-auth/scripts/git-credential-token.py")
+      GITHUB_TOKEN=$(uv run python "${ANARA_HOME:-$HOME/.anara}/skills/github/github-auth/scripts/git-credential-token.py")
     fi
   fi
 fi

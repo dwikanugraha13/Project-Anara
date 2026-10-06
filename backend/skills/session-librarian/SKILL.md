@@ -1,4 +1,5 @@
 ---
+category: productivity
 name: session-librarian
 description: "Organize sessions by prompt: find, rename, archive, prune."
 version: 1.0.0

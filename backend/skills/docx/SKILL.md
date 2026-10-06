@@ -1,8 +1,9 @@
 ---
+category: productivity
 name: docx
 description: Create, read, edit, template, and review Word .docx files.
 version: 1.1.0
-author: Nous Research
+author: Project Anara
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

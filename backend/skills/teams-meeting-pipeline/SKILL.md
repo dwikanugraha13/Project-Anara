@@ -1,4 +1,5 @@
 ---
+category: productivity
 name: teams-meeting-pipeline
 description: Teams meeting summaries, job replay, Graph subscriptions.
 version: 1.1.0
@@ -44,7 +45,7 @@ Multilingual trigger examples (not exhaustive):
 
 ## Prerequisites
 
-Before using the pipeline, verify these are set in `${HERMES_HOME:-~/.anara}/.env`:
+Before using the pipeline, verify these are set in `${ANARA_HOME:-~/.anara}/.env`:
 
 ```bash
 MSGRAPH_TENANT_ID=...

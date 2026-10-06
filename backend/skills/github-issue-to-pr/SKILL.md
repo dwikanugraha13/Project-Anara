@@ -1,4 +1,5 @@
 ---
+category: github
 name: github-issue-to-pr
 description: "Carry a GitHub issue to a verified PR with honest CI state."
 version: 0.1.0

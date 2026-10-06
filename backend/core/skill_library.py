@@ -103,6 +103,7 @@ class SkillLibraryManager:
         self._root_dir = root_dir
         self._skills_cache: List[Dict[str, Any]] = []
         self._cache_mtime: float = 0.0
+        self._usage_cache: Optional[Dict[str, int]] = None
 
     @property
     def root_dir(self) -> str:
@@ -120,10 +121,132 @@ class SkillLibraryManager:
         with self._lock:
             self._cache_mtime = 0.0
             self._skills_cache.clear()
+            self._usage_cache = None
 
     def invalidate_cache(self):
         """Public alias for external cache invalidation (skills_hub parity)."""
         self._invalidate_cache()
+
+    def _load_usage_dict(self) -> Dict[str, int]:
+        """Loads usage counts from .usage.json in runtime or bundled skills directory (Anara Standard)."""
+        import json
+        usage_map: Dict[str, int] = {}
+        candidate_paths = [
+            Path(self.root_dir) / ".usage.json",
+            get_anara_skills_dir() / ".usage.json",
+            get_bundled_skills_dir() / ".usage.json",
+        ]
+        for c in candidate_paths:
+            if c.is_file():
+                try:
+                    with open(c, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    for k, val in data.items():
+                        count = 0
+                        if isinstance(val, dict):
+                            count = val.get("use_count") or val.get("usage_count") or val.get("view_count") or 0
+                        elif isinstance(val, (int, float)):
+                            count = int(val)
+                        clean_k = k.lower().strip()
+                        usage_map[clean_k] = max(usage_map.get(clean_k, 0), int(count))
+                        if ":" in clean_k:
+                            slug_only = clean_k.split(":")[-1]
+                            usage_map[slug_only] = max(usage_map.get(slug_only, 0), int(count))
+                    if usage_map:
+                        break
+                except Exception as e:
+                    logger.warning(f"[SkillLibrary] Error loading usage file {c}: {e}")
+
+        # Overlay from persistent database if legacy agent_skills table exists
+        try:
+            from memory import memory_engine
+            if hasattr(memory_engine, "get_all_agent_skills"):
+                db_skills = memory_engine.get_all_agent_skills(active_only=False)
+                for d in db_skills:
+                    cnt = d.get("usage_count", 0) or 0
+                    d_name = (d.get("name") or "").lower().strip()
+                    if d_name and cnt > usage_map.get(d_name, 0):
+                        usage_map[d_name] = cnt
+        except Exception:
+            pass
+
+        return usage_map
+
+    def get_skill_usage(self, slug: str, name: Optional[str] = None) -> int:
+        """Retrieves usage count for a skill slug or name."""
+        with self._lock:
+            if self._usage_cache is None:
+                self._usage_cache = self._load_usage_dict()
+            counts = self._usage_cache
+
+        slug_k = slug.lower().strip()
+        if slug_k in counts:
+            return counts[slug_k]
+        if name:
+            name_k = name.lower().strip()
+            if name_k in counts:
+                return counts[name_k]
+            name_slug = slugify(name)
+            if name_slug in counts:
+                return counts[name_slug]
+        return 0
+
+    def increment_usage(self, slug_or_name: str) -> int:
+        """Increments usage counter for a skill in .usage.json, memory database, and active cache."""
+        import json
+        clean = (slug_or_name or "").strip().lower()
+        if not clean:
+            return 0
+        with self._lock:
+            usage_path = Path(self.root_dir) / ".usage.json"
+            if not usage_path.is_file():
+                usage_path = get_anara_skills_dir() / ".usage.json"
+
+            data = {}
+            if usage_path.is_file():
+                try:
+                    with open(usage_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                except Exception:
+                    data = {}
+
+            target_key = clean
+            for k in data:
+                if k.lower() == clean or k.lower().endswith(f":{clean}"):
+                    target_key = k
+                    break
+
+            if target_key not in data:
+                data[target_key] = {"use_count": 0, "view_count": 0, "state": "active"}
+
+            entry = data[target_key]
+            if isinstance(entry, dict):
+                curr = entry.get("use_count", 0) + 1
+                entry["use_count"] = curr
+                entry["view_count"] = entry.get("view_count", 0) + 1
+                entry["last_used_at"] = datetime.now().isoformat()
+            else:
+                curr = int(entry) + 1
+                data[target_key] = curr
+
+            try:
+                atomic_write_text(usage_path, json.dumps(data, indent=2))
+                # Also mirror to bundled directory if distinct
+                bundled_usage = get_bundled_skills_dir() / ".usage.json"
+                if bundled_usage != usage_path and bundled_usage.parent.is_dir():
+                    atomic_write_text(bundled_usage, json.dumps(data, indent=2))
+            except Exception as e:
+                logger.warning(f"[SkillLibrary] Error saving usage count: {e}")
+
+            try:
+                from memory import memory_engine
+                if hasattr(memory_engine, "increment_agent_skill_usage"):
+                    memory_engine.increment_agent_skill_usage(clean)
+            except Exception:
+                pass
+
+            self._invalidate_cache()
+            return curr
 
     def parse_skill_file(self, skill_md_path: str) -> Optional[Dict[str, Any]]:
         """Parses frontmatter and body markdown from a SKILL.md file."""
@@ -142,6 +265,7 @@ class SkillLibraryManager:
 
             slug = os.path.basename(os.path.dirname(skill_md_path))
             status = str(meta.get("status", "active")).lower()
+            usage_cnt = self.get_skill_usage(slug, meta.get("name"))
             return {
                 "slug": slug,
                 "name": meta.get("name", slug),
@@ -154,6 +278,8 @@ class SkillLibraryManager:
                 "enabled": status == "active",
                 "learned_from_experience": bool(meta.get("learned_from_experience", False)),
                 "created_at": meta.get("created_at", ""),
+                "usage_count": usage_cnt,
+                "use_count": usage_cnt,
                 "body": raw_body.strip(),
                 "file_path": skill_md_path,
             }

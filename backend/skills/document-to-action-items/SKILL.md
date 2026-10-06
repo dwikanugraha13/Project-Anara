@@ -1,4 +1,5 @@
 ---
+category: productivity
 name: document-to-action-items
 description: "Extract cited obligations, deadlines, tasks from documents."
 version: 0.1.0

@@ -1,8 +1,9 @@
 ---
+category: productivity
 name: pdf
 description: "PDF files: create, read, merge, fill, OCR, edit text."
 version: 1.1.0
-author: Nous Research
+author: Project Anara
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

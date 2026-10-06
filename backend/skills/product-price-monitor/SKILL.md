@@ -1,4 +1,5 @@
 ---
+category: productivity
 name: product-price-monitor
 description: "Watch product, flight, or listing prices; alert on target."
 version: 0.1.0

@@ -1,4 +1,5 @@
 ---
+category: research
 name: grounded-citations
 description: "Ground answers and documents in cited, verifiable sources."
 version: 1.2.0
@@ -50,8 +51,8 @@ None beyond the standard toolset. `scripts/sources.py` is stdlib-only Python 3.
 Retrieval comes from whatever is configured: `web_search`, `web_extract`,
 `browser_navigate`, or `terminal` (curl, CLIs).
 
-Ledger location: `$HERMES_HOME/cache/citations/ledger.json` (profile-aware).
-Override per task with `--ledger <path>` or `HERMES_CITATION_LEDGER`.
+Ledger location: `$ANARA_HOME/cache/citations/ledger.json` (profile-aware).
+Override per task with `--ledger <path>` or `ANARA_CITATION_LEDGER`.
 
 ## How to Run
 
@@ -231,7 +232,7 @@ and read the `info: stats:` line to see the counts before picking a number.
 - **Citing the ledger in code/config artifacts.** Source comments belong in
   prose deliverables and doc headers, not inside generated code.
 - **Parallel subagents.** Each subagent has its own working directory; point
-  them all at one ledger with `--ledger` (or `HERMES_CITATION_LEDGER`) if their
+  them all at one ledger with `--ledger` (or `ANARA_CITATION_LEDGER`) if their
   outputs get merged, otherwise their ids will collide.
 - **Quoting from a snippet instead of the page.** Evidence quotes must come
   from the extracted page text, not a search-result description — `web_extract`

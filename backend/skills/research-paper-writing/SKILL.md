@@ -1,4 +1,5 @@
 ---
+category: research
 name: research-paper-writing
 title: Research Paper Writing Pipeline
 description: "Write ML papers for NeurIPS/ICML/ICLR: design→submit."
@@ -13,7 +14,6 @@ metadata:
     category: research
     related_skills: [arxiv, subagent-driven-development, plan]
     requires_toolsets: [terminal, files]
-
 ---
 
 # Research Paper Writing Pipeline
