@@ -63,6 +63,8 @@ export default function ChatSessionSidebar({
   onSelectSession,
   onNewSession,
   onOpenBrain,
+  onOpenMessaging,
+  onOpenScheduled,
   onOpenArtifacts,
   onOpenFileIDE,
   onOpenFolder,
@@ -616,6 +618,8 @@ export default function ChatSessionSidebar({
             }
           }}
           onOpenBrain={onOpenBrain}
+          onOpenMessaging={onOpenMessaging}
+          onOpenScheduled={onOpenScheduled}
           onOpenArtifacts={onOpenArtifacts}
           onOpenCode={() => {
             setActiveSidebarTab("editor");

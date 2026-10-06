@@ -32,6 +32,9 @@ const ReviewGitPane = dynamic(() => import("../sidebar/ReviewGitPane"), {
 
 const AnaraBrain = lazy(() => import("../brain/AnaraBrain"));
 const AnaraMediaPlayer = lazy(() => import("../dock/AnaraMediaPlayer"));
+import CapabilitiesWorkspaceView from "../capabilities/CapabilitiesWorkspaceView";
+import MessagingWorkspaceView from "../messaging/MessagingWorkspaceView";
+import ScheduledJobsWorkspaceView from "../scheduled/ScheduledJobsWorkspaceView";
 import { WorkbenchTitlebar } from "./WorkbenchTitlebar";
 import { WorkbenchContextPanes } from "./WorkbenchContextPanes";
 import { WorkbenchChatColumn } from "./WorkbenchChatColumn";
@@ -199,6 +202,7 @@ export default function AnaraWorkbench({
   latestTokenUsage,
 }: AnaraWorkbenchProps) {
   const [inputMessage, setInputMessage] = useState("");
+  const [activeWorkspaceView, setActiveWorkspaceView] = useState<"chat" | "capabilities" | "messaging" | "scheduled">("chat");
   const [isBrainDrawerOpen, setIsBrainDrawerOpen] = useState(false);
   const [isArtifactsModalOpen, setIsArtifactsModalOpen] = useState(false);
   const [agentMode, setAgentMode] = useState<"plan" | "build">("build");
@@ -567,12 +571,14 @@ export default function AnaraWorkbench({
   }, []);
 
   const handleNewSession = useCallback(() => {
+    setActiveWorkspaceView("chat");
     handleResetIDE();
     onNewSession?.();
   }, [handleResetIDE, onNewSession]);
 
   const handleSelectSession = useCallback(
     (id: number) => {
+      setActiveWorkspaceView("chat");
       handleResetIDE();
       onSelectSession?.(id);
     },
@@ -760,7 +766,9 @@ export default function AnaraWorkbench({
               connectionStatus={connectionStatus}
               onSelectSession={handleSelectSession}
               onNewSession={handleNewSession}
-              onOpenBrain={() => setIsBrainDrawerOpen(true)}
+              onOpenBrain={() => setActiveWorkspaceView("capabilities")}
+              onOpenMessaging={() => setActiveWorkspaceView("messaging")}
+              onOpenScheduled={() => setActiveWorkspaceView("scheduled")}
               onOpenArtifacts={() => setIsArtifactsModalOpen(true)}
               onOpenFileIDE={handleOpenFileIDE}
               onOpenFolder={handleFolderUpload}
@@ -785,15 +793,23 @@ export default function AnaraWorkbench({
             />
           </div>
 
-          {/* RIGHT PANEL: CHAT TIMELINE STREAM & INPUT PROMPT (Default Right Pane) */}
+          {/* RIGHT PANEL: CHAT TIMELINE STREAM OR WORKSPACE FULL VIEW */}
           <div className="flex-1 flex min-w-0 h-full relative overflow-hidden bg-[#060913]">
-            {/* Floating Selection Shield during Active Drag */}
-            {isResizingContextPane && (
-              <div className="absolute inset-0 z-50 cursor-col-resize select-none bg-transparent" />
-            )}
+            {activeWorkspaceView === "capabilities" ? (
+              <CapabilitiesWorkspaceView onClose={() => setActiveWorkspaceView("chat")} />
+            ) : activeWorkspaceView === "messaging" ? (
+              <MessagingWorkspaceView onClose={() => setActiveWorkspaceView("chat")} />
+            ) : activeWorkspaceView === "scheduled" ? (
+              <ScheduledJobsWorkspaceView onClose={() => setActiveWorkspaceView("chat")} />
+            ) : (
+              <>
+                {/* Floating Selection Shield during Active Drag */}
+                {isResizingContextPane && (
+                  <div className="absolute inset-0 z-50 cursor-col-resize select-none bg-transparent" />
+                )}
 
-            {/* CHAT TIMELINE STREAM & COMPOSER COLUMN (Modularized Component) */}
-            <WorkbenchChatColumn
+                {/* CHAT TIMELINE STREAM & COMPOSER COLUMN (Modularized Component) */}
+                <WorkbenchChatColumn
               isContextPaneOpen={isContextPaneOpen}
               setIsContextPaneOpen={setIsContextPaneOpen}
               activeIdeFile={activeIdeFile}
@@ -880,10 +896,12 @@ export default function AnaraWorkbench({
               activeSessionId={activeSessionId}
               handleOpenFileIDE={handleOpenFileIDE}
             />
-          </div>
-        </div>
+          </>
+        )}
       </div>
-    )}
+    </div>
+  </div>
+)}
 
       {/* ── VOICE MODE FLOATING HUD ── */}
       {interactionMode === "voice" && latestVisual && (
