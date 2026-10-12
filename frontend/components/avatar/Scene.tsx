@@ -369,6 +369,7 @@ export default function Scene({
           shadows={SHADOWS_CONFIG}
           gl={GL_CONFIG}
           dpr={[1, 1.5]}
+          frameloop={isVoiceMode ? "always" : "never"}
           onCreated={({ gl, scene, camera }) => {
             gl.debug.checkShaderErrors = false;
             if (typeof window !== "undefined") {

@@ -12,7 +12,11 @@ export function getBackendUrl(): string {
   }
   if (typeof window !== "undefined" && window.location) {
     const protocol = window.location.protocol === "https:" ? "https:" : "http:";
-    const host = window.location.hostname || "localhost";
+    let host = window.location.hostname || "127.0.0.1";
+    // Normalize localhost to 127.0.0.1 to avoid Windows 2000ms IPv6 [::1] DNS resolution hang
+    if (host === "localhost") {
+      host = "127.0.0.1";
+    }
 
     // Comprehensive RFC 1918, Carrier-Grade NAT (Tailscale 100.64.0.0/10), Loopback, and mDNS detection
     const isLocal =
@@ -41,7 +45,7 @@ export function getBackendUrl(): string {
     return port ? `${protocol}//${host}:${port}` : `${protocol}//${host}`;
   }
   const defaultPort = process.env.NEXT_PUBLIC_BACKEND_PORT || "8000";
-  return `http://localhost:${defaultPort}`;
+  return `http://127.0.0.1:${defaultPort}`;
 }
 
 export function getWebSocketUrl(): string {
@@ -54,7 +58,7 @@ export function getWebSocketUrl(): string {
     wsUrl = `${backendUrl.replace(/^https?:/, wsProtocol)}/ws`;
   } else {
     const defaultPort = process.env.NEXT_PUBLIC_BACKEND_PORT || "8000";
-    wsUrl = `ws://localhost:${defaultPort}/ws`;
+    wsUrl = `ws://127.0.0.1:${defaultPort}/ws`;
   }
 
   // Attach token from localStorage for remote gateway authentication
@@ -75,13 +79,13 @@ export const BACKEND_URL =
   typeof window !== "undefined"
     ? getBackendUrl()
     : process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/+$/, "") ||
-      `http://localhost:${process.env.NEXT_PUBLIC_BACKEND_PORT || "8000"}`;
+      `http://127.0.0.1:${process.env.NEXT_PUBLIC_BACKEND_PORT || "8000"}`;
 
 export const WS_URL =
   typeof window !== "undefined"
     ? getWebSocketUrl()
     : process.env.NEXT_PUBLIC_WS_URL ||
-      `ws://localhost:${process.env.NEXT_PUBLIC_BACKEND_PORT || "8000"}/ws`;
+      `ws://127.0.0.1:${process.env.NEXT_PUBLIC_BACKEND_PORT || "8000"}/ws`;
 
 export interface ApiRequestOptions extends RequestInit {
   timeout?: number;
@@ -560,6 +564,12 @@ export const anaraApi = {
 
   // ── Integrations ─────────────────────────────────────────────────────────
   integrations: {
+    getConnections: () => apiRequest<any>("/api/integrations/connections"),
+    saveConnection: (platformId: string, payload: any) =>
+      apiRequest<any>(`/api/integrations/connections/${platformId}`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
     getAllStatus: () => apiRequest<any>("/api/integrations/status"),
     getWhatsAppStatus: () => apiRequest<any>("/api/integrations/whatsapp/status"),
     getWhatsAppConfig: () => apiRequest<any>("/api/integrations/whatsapp/config"),

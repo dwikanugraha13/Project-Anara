@@ -8,10 +8,60 @@ and output compaction across all provider agent loops (Native & JSON ReAct).
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
+import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from core.logger import redact_tool_data
+
 logger = logging.getLogger("anara.tools.dispatch")
+
+CHECKPOINT_PATH = os.path.join(".anara", "state", "execution_checkpoint.json")
+
+
+def _record_execution_checkpoint(tool: str, args: Dict[str, Any], session_id: Optional[int] = None) -> None:
+    """Anara Standard Persist-Before-Execute Durability Invariant: writes mutating tool intent to disk prior to OS execution."""
+    try:
+        os.makedirs(os.path.dirname(CHECKPOINT_PATH), exist_ok=True)
+        checkpoint_data = {
+            "tool": tool,
+            "args": {k: str(v)[:200] for k, v in args.items()} if isinstance(args, dict) else {},
+            "session_id": session_id,
+            "timestamp": time.time(),
+            "status": "executing",
+        }
+        with open(CHECKPOINT_PATH, "w", encoding="utf-8") as f:
+            json.dump(checkpoint_data, f, indent=2)
+    except Exception as e:
+        logger.debug(f"[ToolDispatch] Checkpoint record notice: {e}")
+
+
+def _clear_execution_checkpoint(tool: str) -> None:
+    """Updates checkpoint to completed status upon safe termination of tool call."""
+    try:
+        if os.path.exists(CHECKPOINT_PATH):
+            checkpoint_data = {
+                "tool": tool,
+                "timestamp": time.time(),
+                "status": "completed",
+            }
+            with open(CHECKPOINT_PATH, "w", encoding="utf-8") as f:
+                json.dump(checkpoint_data, f, indent=2)
+    except Exception:
+        pass
+
+
+def get_last_execution_checkpoint() -> Optional[Dict[str, Any]]:
+    """Returns the most recent execution checkpoint if present on disk."""
+    try:
+        if os.path.exists(CHECKPOINT_PATH):
+            with open(CHECKPOINT_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return None
 
 
 async def dispatch_tool_call(
@@ -32,6 +82,20 @@ async def dispatch_tool_call(
 
     risk = get_tool_risk(name)
 
+    # Anara Child Safety Barrier: Delegated subagents cannot call blocked tools
+    try:
+        from core.subagent import is_delegated_child_context, is_tool_blocked_for_child
+        if is_delegated_child_context() and is_tool_blocked_for_child(name):
+            logger.warning(f"[ToolDispatch] Blocked tool '{name}' for child subagent (safety barrier).")
+            return {
+                "status": "error",
+                "tool": name,
+                "error": f"Child subagent is prohibited from using tool '{name}' (safety barrier).",
+                "output": f"Child subagent is prohibited from using tool '{name}' (safety barrier).",
+            }
+    except Exception as e_barrier:
+        logger.debug(f"[ToolDispatch] Child barrier check notice: {e_barrier}")
+
     # Validate file access if path-like argument
     if risk in ("mutating", "action") and name in ("write_file", "patch", "edit_file"):
         try:
@@ -49,16 +113,27 @@ async def dispatch_tool_call(
         except Exception as e:
             logger.debug(f"[ToolDispatch] Preflight sentinel notice: {e}")
 
+    # Anara Standard: Persist-Before-Execute Durability Checkpoint
+    checkpoint_active = False
+    if risk in ("mutating", "action"):
+        _record_execution_checkpoint(name, args, session_id=session_id)
+        checkpoint_active = True
+
     try:
-        return await _legacy_dispatch(name, args, read_only=read_only, mode=mode)
+        result = await _legacy_dispatch(name, args, read_only=read_only, mode=mode)
+        if checkpoint_active:
+            _clear_execution_checkpoint(name)
+        return redact_tool_data(result)
     except Exception as e_dispatch:
+        if checkpoint_active:
+            _clear_execution_checkpoint(name)
         logger.error(f"[ToolDispatch] Execution error on tool '{name}': {e_dispatch}")
-        return {
+        return redact_tool_data({
             "status": "error",
             "tool": name,
             "error": str(e_dispatch),
             "output": f"Tool execution failed: {type(e_dispatch).__name__}: {e_dispatch}"
-        }
+        })
 
 
 async def dispatch_batch_tool_calls(

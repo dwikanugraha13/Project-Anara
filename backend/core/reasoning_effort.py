@@ -27,6 +27,7 @@ def clamp_effort(requested: Optional[str], allowed: List[str]) -> str:
         "minimal": "low",
         "minimum": "low",
         "default": "medium",
+        "auto": "medium" if "medium" in allowed else (allowed[0] if allowed else "none"),
         "off": "none",
         "false": "none",
         "0": "none",

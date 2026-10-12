@@ -15,14 +15,19 @@ export function ToolChip({
   children,
   title,
   count,
+  onClick,
 }: {
   children: ReactNode;
   title?: string;
   count?: number | string;
+  onClick?: () => void;
 }) {
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] px-2 py-0.5 font-mono text-[11px] text-slate-300 border border-white/[0.07] shadow-sm select-none"
+      onClick={onClick}
+      className={`inline-flex items-center gap-1 rounded-md bg-white/[0.04] px-2 py-0.5 font-mono text-[11px] text-slate-300 border border-white/[0.07] shadow-sm select-none ${
+        onClick ? "cursor-pointer hover:bg-white/[0.08] hover:text-white transition-colors" : ""
+      }`}
       title={title}
     >
       <span>{children}</span>
@@ -35,9 +40,9 @@ export function ToolChip({
   );
 }
 
-const SPLIT_MIN_LEFT_PX = 200;
+const SPLIT_MIN_LEFT_PX = 320;
 const SPLIT_MIN_RIGHT_PX = 320;
-const DEFAULT_LEFT_PX = 270;
+const DEFAULT_LEFT_PX = 360;
 
 export interface MasterDetailProps {
   children: ReactNode;
@@ -58,10 +63,11 @@ export function MasterDetail({
       const saved = localStorage.getItem(`anara_md_split_${resizeId}`);
       if (saved) {
         const parsed = parseInt(saved, 10);
-        if (!isNaN(parsed) && parsed >= SPLIT_MIN_LEFT_PX) return parsed;
+        if (!isNaN(parsed) && parsed >= 320) return parsed;
+        return 360;
       }
     }
-    return defaultLeftWidth;
+    return 360;
   });
   const [dragging, setDragging] = useState(false);
 
@@ -131,7 +137,7 @@ export function MasterDetail({
         >
           <div
             className={`w-[1px] h-full mx-auto transition-colors ${
-              dragging ? "bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.8)]" : "bg-transparent group-hover/vsash:bg-white/20"
+              dragging ? "bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.8)]" : "bg-white/[0.08] group-hover/vsash:bg-cyan-400/50"
             }`}
           />
         </div>
@@ -158,7 +164,7 @@ export function ListColumn({
   return (
     <aside className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {header && <div className="shrink-0 p-2.5 border-b border-white/[0.06]">{header}</div>}
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2 space-y-0.5 custom-scrollbar font-sans">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2.5 py-2 space-y-1 custom-scrollbar font-sans">
         {children}
       </div>
     </aside>
@@ -176,8 +182,8 @@ export function DetailColumn({
 }) {
   return (
     <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6 custom-scrollbar font-sans">
-        <div className="mx-auto max-w-3xl space-y-5">{children}</div>
+      <div className="min-h-0 flex-1 overflow-hidden flex flex-col pl-10 pr-6 py-3.5 font-sans">
+        <div className="w-full h-full flex flex-col min-h-0 space-y-3">{children}</div>
       </div>
       {footer && (
         <div className="mx-auto w-full max-w-3xl shrink-0 px-6 pb-3 pt-1.5 text-right text-[11px] font-mono text-slate-500">
@@ -221,31 +227,31 @@ export function CapRow({
   return (
     <div
       onClick={onSelect}
-      className={`group/row flex w-full shrink-0 items-center justify-between rounded-lg px-2.5 transition-all cursor-pointer select-none border ${
-        subtitle ? "h-11" : "h-8"
+      className={`group/row flex w-full shrink-0 items-center justify-between rounded-md px-2 transition-all cursor-pointer select-none border ${
+        subtitle ? "h-9.5" : "h-7.5"
       } ${
         active
-          ? "bg-white/[0.08] border-white/[0.14] text-white shadow-sm"
-          : "border-transparent text-slate-300 hover:text-white hover:bg-white/[0.04]"
+          ? "bg-white/[0.08] border-white/[0.12] text-white shadow-sm"
+          : "border-transparent text-slate-300 hover:text-white hover:bg-white/[0.03]"
       }`}
     >
-      <div className="min-w-0 flex-1 flex flex-col justify-center pr-2">
+      <div className="min-w-0 flex-1 flex flex-col justify-center pr-3">
         <div className="flex items-center gap-1.5 min-w-0">
           <span
-            className={`truncate text-xs tracking-tight ${
-              enabled ? "font-semibold text-white" : "font-normal text-slate-400"
+            className={`truncate text-[12px] tracking-tight ${
+              enabled ? "font-medium text-slate-100" : "font-normal text-slate-400"
             }`}
           >
             {title}
           </span>
           {meta !== undefined && meta !== null && (
-            <span className="shrink-0 rounded bg-white/[0.05] px-1.5 py-0.2 font-mono text-[10px] text-slate-400 tabular-nums border border-white/[0.04]">
+            <span className="shrink-0 rounded bg-white/[0.05] px-1 py-px font-mono text-[9.5px] text-slate-400 tabular-nums border border-white/[0.04]">
               {meta}
             </span>
           )}
         </div>
         {subtitle && (
-          <div className="flex min-w-0 items-center gap-1 text-[10px] text-slate-500 font-sans truncate">
+          <div className="flex min-w-0 items-center gap-1 text-[10px] text-slate-400 font-sans truncate">
             {subtitle}
           </div>
         )}
@@ -257,7 +263,7 @@ export function CapRow({
         </div>
       ) : onToggle ? (
         <div
-          className="shrink-0"
+          className="shrink-0 flex items-center"
           onClick={(e) => {
             e.stopPropagation();
             if (!busy) onToggle(!enabled);
@@ -265,13 +271,13 @@ export function CapRow({
           title={toggleLabel || (enabled ? "Disable" : "Enable")}
         >
           <div
-            className={`w-8 h-4.5 rounded-full p-0.5 transition-colors duration-200 ease-in-out relative ${
+            className={`w-6.5 h-3.5 rounded-full p-0.5 transition-colors duration-200 ease-in-out relative cursor-pointer ${
               enabled ? "bg-emerald-500" : "bg-slate-700/80"
             } ${busy ? "opacity-50" : ""}`}
           >
             <div
-              className={`w-3.5 h-3.5 rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${
-                enabled ? "translate-x-3.5" : "translate-x-0"
+              className={`w-2.5 h-2.5 rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${
+                enabled ? "translate-x-3" : "translate-x-0"
               }`}
             />
           </div>

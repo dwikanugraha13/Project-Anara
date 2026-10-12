@@ -44,6 +44,23 @@ def _robust_parse_json(candidate_str: str) -> Optional[Any]:
     except Exception:
         pass
 
+    # Attempt 4: Unclosed truncated JSON recovery (Anara Standard)
+    try:
+        trimmed = s.rstrip()
+        unescaped_quotes = len(re.findall(r'(?<!\\)"', trimmed))
+        if unescaped_quotes % 2 != 0:
+            trimmed += '"'
+        open_braces = trimmed.count('{') - trimmed.count('}')
+        open_brackets = trimmed.count('[') - trimmed.count(']')
+        if open_brackets > 0 or open_braces > 0:
+            candidate_repaired = trimmed + (']' * max(0, open_brackets)) + ('}' * max(0, open_braces))
+            candidate_repaired = re.sub(r',\s*([\}\]])', r'\1', candidate_repaired)
+            val = json.loads(candidate_repaired)
+            if isinstance(val, (dict, list)):
+                return val
+    except Exception:
+        pass
+
     return None
 
 
@@ -90,7 +107,10 @@ def _format_empty_model_notice(prompt: str = "") -> str:
     Returns a clean, natural technical fallback notice when the model produces an empty turn,
     without brittle Unicode character range checks or robotic jargon.
     """
-    return "Belum ada respons teks yang dihasilkan pada giliran ini. Coba ulangi atau berikan instruksi yang lebih spesifik, Bro."
+    is_id = any(w in (prompt or "").lower() for w in ("apa", "gimana", "tolong", "bisa", "coba", "ini", "lu", "gue", "bro"))
+    if is_id:
+        return "Belum ada respons teks yang dihasilkan pada giliran ini. Coba ulangi instruksinya atau tanyakan aspek yang lebih spesifik, Bro."
+    return "No text response was generated for this turn. Please try repeating your request or providing more specific instructions."
 
 
 def _strip_think_blocks(text: str) -> str:
@@ -241,6 +261,16 @@ def _extract_and_parse_tool_calls(raw_out: str) -> Tuple[List[Dict[str, Any]], s
                 if earliest_tool_start is None or xm.start() < earliest_tool_start:
                     earliest_tool_start = xm.start()
                 _normalize_and_add(parsed)
+    else:
+        # Check for unclosed <tool_call>... at end of output (Truncated stream recovery)
+        unclosed_xml = re.search(r"<tool_call>\s*([\s\S]*)$", text, re.IGNORECASE)
+        if unclosed_xml:
+            cand = unclosed_xml.group(1).strip()
+            parsed = _robust_parse_json(cand)
+            if parsed is not None:
+                if earliest_tool_start is None or unclosed_xml.start() < earliest_tool_start:
+                    earliest_tool_start = unclosed_xml.start()
+                _normalize_and_add(parsed)
 
     # 2. Look for all markdown code blocks ```json ... ``` or ``` ... ```
     block_matches = list(re.finditer(r"```(?:json)?\s*([\s\S]*?)\s*```", text))
@@ -252,6 +282,16 @@ def _extract_and_parse_tool_calls(raw_out: str) -> Tuple[List[Dict[str, Any]], s
                 if parsed is not None:
                     if earliest_tool_start is None or bm.start() < earliest_tool_start:
                         earliest_tool_start = bm.start()
+                    _normalize_and_add(parsed)
+    else:
+        unclosed_block = re.search(r"```(?:json)?\s*([\s\S]*)$", text)
+        if unclosed_block:
+            cand = unclosed_block.group(1).strip()
+            if ('"action"' in cand and '"tool"' in cand) or ('"tool"' in cand and '{' in cand):
+                parsed = _robust_parse_json(cand)
+                if parsed is not None:
+                    if earliest_tool_start is None or unclosed_block.start() < earliest_tool_start:
+                        earliest_tool_start = unclosed_block.start()
                     _normalize_and_add(parsed)
 
     # 3. Look for bare JSON objects or array if no blocks matched

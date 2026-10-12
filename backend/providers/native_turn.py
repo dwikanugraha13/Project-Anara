@@ -34,10 +34,17 @@ class TurnUsage:
 @dataclass
 class NativeToolCall:
     """Represents a single native tool call emitted by an LLM."""
-    call_id: str
-    name: str
+    call_id: str = ""
+    name: str = ""
     arguments: Dict[str, Any] = field(default_factory=dict)
     raw_arguments: Optional[str] = None
+    id: Optional[str] = None
+
+    def __post_init__(self):
+        if self.id and not self.call_id:
+            self.call_id = self.id
+        elif self.call_id and not self.id:
+            self.id = self.call_id
 
     def to_dict(self) -> Dict[str, Any]:
         d: Dict[str, Any] = {

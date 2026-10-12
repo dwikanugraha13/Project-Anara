@@ -450,9 +450,16 @@ class ConvergenceDetector:
             except Exception:
                 pass
 
-            # If no test suite is detected in the workspace, do not block with stop-gate
+            # If no test suite is detected in the workspace, use fallback verification nudge (Hermes Parity)
             if not cmd_suggestion:
-                return None
+                from core.verification_stop import build_verify_on_stop_nudge
+                return build_verify_on_stop_nudge(
+                    changed_paths=verifiable_mutations,
+                    project_root=root_p,
+                    attempts=nudges,
+                    max_attempts=2,
+                    has_verified=bool(self.test_verified_count > 0 and self.last_test_passed)
+                )
 
             from core.prompt_loader import load_config_yaml
             rules = load_config_yaml("convergence/verifier_rules.yaml", default={})

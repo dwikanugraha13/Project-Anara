@@ -70,7 +70,9 @@ async def websocket_endpoint(websocket: WebSocket):
         return
 
     active_m = get_active_model_id()
-    live_model = active_m if ModelCapabilityRegistry.supports_voice(active_m) else "gemini-3.1-flash-live-preview"
+    live_model = "gemini-3.1-flash-live-preview"
+    if active_m and "/" not in active_m and ("live-preview" in active_m.lower() or "realtime" in active_m.lower()):
+        live_model = active_m
     api_key = key_manager.get_active_key()
     gemini_service: Optional[GeminiLiveService] = None
     gemini_task: Optional[asyncio.Task] = None
@@ -166,10 +168,9 @@ async def websocket_endpoint(websocket: WebSocket):
         try:
             sess = memory_engine.get_session(sid)
             is_placeholder = not sess or not sess.get("title") or sess["title"] in ("New Chat", "New Session", "New Conversation")
-            if sess and is_placeholder and (sess.get("message_count") or 0) >= 1:
-                asyncio.create_task(
-                    memory_engine.auto_title_session_async(key_manager.get_client(), sid)
-                )
+            if sess and is_placeholder:
+                from core.title_generator import maybe_auto_title
+                maybe_auto_title(sid, user_text)
         except Exception as e:
             logger.debug(f"[ChatSessions] auto-title skip: {e}")
         return row_id
@@ -392,7 +393,9 @@ async def websocket_endpoint(websocket: WebSocket):
         if fresh_key:
             if gemini_service is None:
                 active_m = get_active_model_id()
-                live_model = active_m if ModelCapabilityRegistry.supports_voice(active_m) else "gemini-3.1-flash-live-preview"
+                live_model = "gemini-3.1-flash-live-preview"
+                if active_m and "/" not in active_m and ("live-preview" in active_m.lower() or "realtime" in active_m.lower()):
+                    live_model = active_m
                 gemini_service = GeminiLiveService(api_key=fresh_key, active_speaker=current_speaker_name, model_id=live_model)
                 active_sessions[session_id] = gemini_service
                 gemini_task = asyncio.create_task(
@@ -615,12 +618,14 @@ async def websocket_endpoint(websocket: WebSocket):
                             await websocket.send_json(switch_payload)
                     elif msg_type == "new_session":
                         req_type = data.get("session_type") or data.get("sessionType") or "chat"
-                        req_title = data.get("title")
+                        req_title = data.get("title") or "New Session"
+                        req_workspace = data.get("workspace_path") or data.get("workspacePath")
                         created = await asyncio.to_thread(memory_engine.create_session,
                             speaker_name=current_speaker_name,
                             title=req_title,
                             session_type="code" if str(req_type).lower() == "code" else "chat",
                             channel="code" if str(req_type).lower() == "code" else "web",
+                            workspace_path=req_workspace,
                         )
                         active_session_id = created["id"]
                         anara_agent.set_active_session_id(active_session_id)

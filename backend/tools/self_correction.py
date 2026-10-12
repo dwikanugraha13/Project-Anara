@@ -66,13 +66,15 @@ class AnaraLoopBreaker:
         self,
         max_identical: int = 4,
         max_consecutive_errors: int = 5,
-        window_size: int = 16,
+        window_size: int = 64,
     ):
         self.max_identical = max_identical
         self.max_consecutive_errors = max_consecutive_errors
         self.call_history: deque[str] = deque(maxlen=window_size)
         self.tool_names: deque[str] = deque(maxlen=window_size)
         self.consecutive_errors: int = 0
+        self._last_results: Dict[str, str] = {}
+        self._call_counts: Dict[str, int] = {}
         self._lock = threading.RLock()
 
     def _hash_call(self, tool_name: str, args: Dict[str, Any]) -> str:
@@ -84,6 +86,36 @@ class AnaraLoopBreaker:
 
         payload = f"{tool_name.strip().lower()}:{serialized_args}"
         return hashlib.sha256(payload.encode("utf-8", errors="replace")).hexdigest()[:16]
+
+    def _detect_batch_cycle(self) -> Optional[Tuple[int, int, List[str]]]:
+        """
+        Detects repeating multi-call cycles (port of can1357/oh-my-pi#10521).
+        Checks periods 2..4 for at least 3 identical consecutive laps.
+        Returns: (period, laps, cycle_tool_names) if detected, else None.
+        """
+        history = list(self.call_history)
+        n = len(history)
+        for period in range(2, 5):  # periods 2, 3, 4
+            threshold_laps = 3  # at least 3 identical laps
+            if n < period * threshold_laps:
+                continue
+            laps = 1
+            while True:
+                base = n - period * (laps + 1)
+                if base < 0:
+                    break
+                lap_equal = (history[base : base + period] == history[n - period : n])
+                if not lap_equal:
+                    break
+                laps += 1
+            if laps >= threshold_laps:
+                tool_names_list = list(self.tool_names)
+                cycle_tools = tool_names_list[n - period : n]
+                # If all items are identical, defer to identical calls handler
+                if len(set(cycle_tools)) == 1:
+                    continue
+                return period, laps, cycle_tools
+        return None
 
     def record_and_check(self, tool_name: str, args: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
         """
@@ -109,11 +141,12 @@ class AnaraLoopBreaker:
                     logger.warning(f"[LoopBreaker] Identical call stall detected for tool '{clean_name}' ({self.max_identical}x).")
                     return True, msg
 
-            # 2. Check for alternating ping-pong cycles (A -> B -> A -> B -> A -> B)
-            if len(self.call_history) >= 6:
-                recent_6 = list(self.call_history)[-6:]
-                if recent_6[0] == recent_6[2] == recent_6[4] and recent_6[1] == recent_6[3] == recent_6[5] and recent_6[0] != recent_6[1]:
-                    t1, t2 = list(self.tool_names)[-2], list(self.tool_names)[-1]
+            # 2. Check for repeating multi-call cycles (periods 2..4, port of can1357/oh-my-pi#10521)
+            cycle = self._detect_batch_cycle()
+            if cycle:
+                period, laps, cycle_tools = cycle
+                if period == 2:
+                    t1, t2 = cycle_tools[0], cycle_tools[1]
                     from core.prompt_loader import load_prompt
                     msg = load_prompt(
                         "self_correction/loop_breaker_cycle",
@@ -122,8 +155,57 @@ class AnaraLoopBreaker:
                     ).strip()
                     logger.warning(f"[LoopBreaker] Ping-pong cycle detected between '{t1}' and '{t2}'.")
                     return True, msg
+                else:
+                    cycle_desc = " -> ".join(cycle_tools)
+                    msg = (
+                        f"[SYSTEM REFLECTION: BATCH CYCLE DETECTED]: Repeating batch cycle detected ({laps} laps of period {period}: {cycle_desc}). "
+                        "Stop repeating this tool sequence; synthesize your progress, explain what blocked you, or attempt an alternate strategy."
+                    )
+                    logger.warning(f"[LoopBreaker] Repeating batch cycle detected ({laps}x laps of period {period}: {cycle_desc}).")
+                    return True, msg
 
             return False, None
+
+    def check_or_stub_duplicate(
+        self,
+        tool_name: str,
+        args: Dict[str, Any],
+        result_str: str,
+        min_chars: int = 512,
+    ) -> str:
+        """
+        Port of can1357/oh-my-pi context conservation:
+        If an identical tool call produces an identical plain text result >= 512 chars,
+        subsequent calls return a reference stub instead of duplicating context tokens.
+        """
+        with self._lock:
+            if not isinstance(result_str, str) or len(result_str) < min_chars:
+                return result_str
+
+            clean_name = (tool_name or "").strip()
+            call_hash = self._hash_call(clean_name, args or {})
+            res_hash = hashlib.sha256(result_str.encode("utf-8", errors="replace")).hexdigest()[:16]
+
+            if self._last_results.get(call_hash) == res_hash:
+                self._call_counts[call_hash] = self._call_counts.get(call_hash, 1) + 1
+                if self._call_counts[call_hash] >= 2:
+                    stub = (
+                        f"[Duplicate result: {len(result_str):,} chars identical to previous {clean_name} call. "
+                        f"Content omitted to conserve token context. Refer to earlier output.]"
+                    )
+                    logger.info(f"[LoopBreaker] Duplicate large output stubbed for tool '{clean_name}' ({len(result_str)} chars).")
+                    return stub
+            else:
+                self._last_results[call_hash] = res_hash
+                self._call_counts[call_hash] = 1
+
+            return result_str
+
+    def notify_mutation(self) -> None:
+        """Clears cached duplicate results after a mutating action occurs."""
+        with self._lock:
+            self._last_results.clear()
+            self._call_counts.clear()
 
     def record_result(self, is_error: bool) -> Tuple[bool, Optional[str]]:
         """
@@ -145,36 +227,76 @@ class AnaraLoopBreaker:
             return False, None
 
     def reset(self) -> None:
-        """Resets the loop breaker history."""
+        """Resets the loop breaker history and duplicate result cache."""
         with self._lock:
             self.call_history.clear()
             self.tool_names.clear()
             self.consecutive_errors = 0
+            self._last_results.clear()
+            self._call_counts.clear()
 
 
 # ==============================================================================
 # 2. CONTEXT MICRO-COMPACTOR & ANCHOR SNIFFING
 # ==============================================================================
 
+# ── Full ECMA-48 ANSI Escape & Unicode Prompt-Smuggling Regexes (Hermes Parity) ──
+_ANSI_ESCAPE_RE = re.compile(
+    r"\x1b"
+    r"(?:"
+        r"\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]"     # CSI sequence
+        r"|\][\s\S]*?(?:\x07|\x1b\\)"                  # OSC (BEL or ST terminator)
+        r"|[PX^_][\s\S]*?(?:\x1b\\)"                   # DCS/SOS/PM/APC strings
+        r"|[\x20-\x2f]+[\x30-\x7e]"                    # nF escape sequences
+        r"|[\x30-\x7e]"                                 # Fp/Fe/Fs single-byte
+    r")"
+    r"|\x9b[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]"       # 8-bit CSI
+    r"|\x9d[\s\S]*?(?:\x07|\x9c)"                       # 8-bit OSC
+    r"|[\x80-\x9f]",                                    # Other 8-bit C1 controls
+    re.DOTALL,
+)
+_HAS_ESCAPE = re.compile(r"[\x1b\x80-\x9f]")
+_HAS_UNICODE_TAG = re.compile(r"[\U000E0000-\U000E007F]")
+_UNICODE_TAG_SUB_RE = re.compile(
+    r"(\U0001F3F4[\U000E0020-\U000E007E]+\U000E007F)"  # valid emoji tag seq (kept)
+    r"|[\U000E0000-\U000E007F]"                        # any other tag char (stripped)
+)
+
+
 class ContextMicroCompactor:
     """
     Pillar A: Compacts massive terminal logs & stack traces to prevent context window overflow.
     Strips progress bar noise, sniffs traceback anchors, and saves raw forensic dumps to disk.
+    Hermes Parity: strips ECMA-48 ANSI codes & invisible Unicode TAG injection sequences.
     """
 
     MAX_OUTPUT_LINES: int = 35
     MAX_OUTPUT_CHARS: int = 3500
 
     @classmethod
+    def strip_ansi(cls, text: str) -> str:
+        """Removes ECMA-48 ANSI escape sequences; clean text passes through unchanged."""
+        if not text or not _HAS_ESCAPE.search(text):
+            return text
+        return _ANSI_ESCAPE_RE.sub("", text)
+
+    @classmethod
+    def strip_unicode_tags(cls, text: str) -> str:
+        """Removes invisible Unicode TAG chars (ASCII smuggling prompt-injection channel)."""
+        if not text or not _HAS_UNICODE_TAG.search(text):
+            return text
+        return _UNICODE_TAG_SUB_RE.sub(lambda m: m.group(1) or "", text)
+
+    @classmethod
     def clean_terminal_noise(cls, text: str) -> str:
-        """Strips ANSI escapes, progress bar overrides, and carriage return noise."""
+        """Strips ANSI escapes, invisible Unicode tags, progress bar overrides, and carriage return noise."""
         if not text:
             return ""
 
         # Normalize CRLF first to avoid wiping valid lines on Windows
         s = text.replace(chr(13) + chr(10), "\n")
-        # Remove ANSI color/formatting escape codes
-        s = re.sub(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])", "", s)
+        # Remove ECMA-48 ANSI escapes and Unicode prompt-smuggling tags
+        s = cls.strip_unicode_tags(cls.strip_ansi(s))
         # Handle standalone carriage returns from CLI progress updates (keep latest line state)
         if chr(13) in s:
             s = re.sub(r"[^\n]*" + chr(13), "", s)

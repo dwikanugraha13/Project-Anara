@@ -6,6 +6,11 @@ import ReviewGitPane from "@/components/sidebar/ReviewGitPane";
 import WorkspaceTreeView from "@/components/sidebar/WorkspaceTreeView";
 import SessionHistoryList from "@/components/sidebar/SessionHistoryList";
 import SegmentedStudioTabs from "@/components/sidebar/SegmentedStudioTabs";
+import CapabilitiesWorkspaceView from "@/components/capabilities/CapabilitiesWorkspaceView";
+import ConnectionsWorkspaceView from "@/components/connections/ConnectionsWorkspaceView";
+import MessagingWorkspaceView from "@/components/messaging/MessagingWorkspaceView";
+import ScheduledJobsWorkspaceView from "@/components/scheduled/ScheduledJobsWorkspaceView";
+import ProvidersWorkspaceView from "@/components/providers/ProvidersWorkspaceView";
 import AnaraCodeIDE from "@/components/ide/AnaraCodeIDE";
 import WorkbenchTerminal from "@/components/ide/WorkbenchTerminal";
 import ChatTimeline from "@/components/chat/ChatTimeline";
@@ -67,7 +72,7 @@ export interface CodeStudioWorkspaceProps {
   activeThinkingText: string | null;
   handleApprovePlan: (data: any) => void;
   handleRejectPlan: () => void;
-  handleApproveAction?: (planId: string, scope: "once" | "session") => void;
+  handleApproveAction?: (planId: string, scope: "once" | "session" | "always") => void;
   handleRejectAction?: (planId: string) => void;
   handleAnswerQuestion: (qid: string, answers: any) => void;
   handleOpenFileIDE: (path: string, name: string) => void;
@@ -94,6 +99,7 @@ export interface CodeStudioWorkspaceProps {
   handleSelectReasoningEffort: (tier: ReasoningEffortLevel) => void;
   workspaceFilesList: Array<{ path: string; name: string; isDir?: boolean }>;
   activeUnansweredQuestion: any;
+  fetchModels?: (refresh?: boolean) => Promise<void> | void;
 }
 
 export function CodeStudioWorkspace({
@@ -165,7 +171,9 @@ export function CodeStudioWorkspace({
   handleSelectReasoningEffort,
   workspaceFilesList,
   activeUnansweredQuestion,
+  fetchModels,
 }: CodeStudioWorkspaceProps) {
+  const [activeWorkspaceView, setActiveWorkspaceView] = useState<"code" | "capabilities" | "messaging" | "connections" | "scheduled" | "providers">("code");
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [sessionSearch, setSessionSearch] = useState("");
   const [draggedSession, setDraggedSession] = useState<ChatSession | null>(null);
@@ -296,9 +304,18 @@ export function CodeStudioWorkspace({
                   setSearch={setSessionSearch}
                   sessionType="code"
                   onSelectSession={(id) => {
+                    setActiveWorkspaceView("code");
                     handleSelectSession?.(id);
                   }}
-                  onNewSession={handleNewSession}
+                  onNewSession={() => {
+                    setActiveWorkspaceView("code");
+                    handleNewSession();
+                  }}
+                  onOpenBrain={() => setActiveWorkspaceView((prev) => prev === "capabilities" ? "code" : "capabilities")}
+                  onOpenMessaging={() => setActiveWorkspaceView((prev) => prev === "messaging" || prev === "connections" ? "code" : "connections")}
+                  onOpenScheduled={() => setActiveWorkspaceView((prev) => prev === "scheduled" ? "code" : "scheduled")}
+                  onOpenProviders={() => setActiveWorkspaceView((prev) => prev === "providers" ? "code" : "providers")}
+                  activeWorkspaceView={activeWorkspaceView === "code" ? "chat" : activeWorkspaceView}
                   onPatchSession={handlePatchSession || (async () => {})}
                   onDeleteSession={handleDeleteSession || (() => {})}
                   onDropPin={handleDropPin}
@@ -370,13 +387,26 @@ export function CodeStudioWorkspace({
         </>
       )}
 
-      {/* ── PANE 2 (CENTER - MAIN): CodeMirror 6 Editor & Terminal Dock (FLEX-1) ── */}
+      {/* ── PANE 2 (CENTER - MAIN): CodeMirror 6 Editor & Terminal Dock or Full Workspace View (FLEX-1) ── */}
       <div
         style={{ transition: "none" }}
         className="flex-1 min-w-0 h-full flex flex-col overflow-hidden bg-[#070b16] relative studio-pane"
       >
-        {/* Main Editor Surface */}
-        <div className="flex-1 min-h-[140px] w-full flex flex-col overflow-hidden relative">
+        {activeWorkspaceView === "capabilities" ? (
+          <CapabilitiesWorkspaceView onClose={() => setActiveWorkspaceView("code")} />
+        ) : activeWorkspaceView === "providers" ? (
+          <ProvidersWorkspaceView
+            onClose={() => setActiveWorkspaceView("code")}
+            onRefreshAll={() => fetchModels?.(true)}
+          />
+        ) : activeWorkspaceView === "messaging" || activeWorkspaceView === "connections" ? (
+          <ConnectionsWorkspaceView onClose={() => setActiveWorkspaceView("code")} />
+        ) : activeWorkspaceView === "scheduled" ? (
+          <ScheduledJobsWorkspaceView onClose={() => setActiveWorkspaceView("code")} />
+        ) : (
+          <>
+            {/* Main Editor Surface */}
+            <div className="flex-1 min-h-[140px] w-full flex flex-col overflow-hidden relative">
           {activeIdeFile && activeIdeFile.isOpen ? (
             <Suspense fallback={null}>
               <AnaraCodeIDE
@@ -502,6 +532,8 @@ export function CodeStudioWorkspace({
             />
           </Suspense>
         </div>
+        </>
+      )}
       </div>
 
       {/* Resizer Splitter 2: Center Editor ↔ Right Agent (1px Razor-Thin White Hairline) */}

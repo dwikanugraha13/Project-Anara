@@ -4,7 +4,7 @@
  * default capability inference, and local persistence.
  */
 
-export type ReasoningEffortLevel = "off" | "low" | "medium" | "high" | "max" | "ultra" | "budget";
+export type ReasoningEffortLevel = "auto" | "off" | "low" | "medium" | "high" | "max" | "ultra" | "budget";
 
 export interface ReasoningEffortConfig {
   label: string;
@@ -14,6 +14,12 @@ export interface ReasoningEffortConfig {
 }
 
 export const REASONING_EFFORT_CONFIG: Record<ReasoningEffortLevel, ReasoningEffortConfig> = {
+  auto: {
+    label: "Auto",
+    shortLabel: "Auto",
+    description: "Intelligently scales thinking depth based on prompt complexity",
+    tokenBadge: "Dynamic ~0K-32K",
+  },
   off: {
     label: "Off",
     shortLabel: "Off",
@@ -58,7 +64,7 @@ export const REASONING_EFFORT_CONFIG: Record<ReasoningEffortLevel, ReasoningEffo
   },
 };
 
-export const REASONING_LEVELS: ReasoningEffortLevel[] = ["off", "low", "medium", "high", "budget", "max", "ultra"];
+export const REASONING_LEVELS: ReasoningEffortLevel[] = ["auto", "off", "low", "medium", "high", "budget", "max", "ultra"];
 
 export interface MinimalModelInfo {
   id: string;
@@ -135,7 +141,7 @@ export function getModelSupportedReasoningLevels(model?: MinimalModelInfo | null
     const unique = Array.from(new Set(mapped)).filter((lvl): lvl is ReasoningEffortLevel =>
       REASONING_LEVELS.includes(lvl)
     );
-    if (unique.length > 0) return unique;
+    if (unique.length > 0) return ["auto", ...unique];
   }
 
   const mid = (model.id || "").toLowerCase();
@@ -143,36 +149,36 @@ export function getModelSupportedReasoningLevels(model?: MinimalModelInfo | null
 
   // Astra / Frontier ultra reasoning
   if (mid.includes("astra") || mid.includes("ultra") || mid.includes("gpt-6") || name.includes("astra")) {
-    return ["off", "low", "medium", "high", "max", "ultra"];
+    return ["auto", "off", "low", "medium", "high", "max", "ultra"];
   }
 
   // OpenAI o1, o3, o4 native (OpenAI wire only accepts low, medium, high)
   if (/(?:^|[-_./\s])(o[134]|o[134]-mini)(?:[-_./\s]|$)/i.test(mid)) {
-    return ["low", "medium", "high"];
+    return ["auto", "low", "medium", "high"];
   }
 
   // DeepSeek R1 native
   if (mid.includes("r1") || mid.includes("deepseek-reasoner")) {
-    return ["off", "high", "max"];
+    return ["auto", "off", "high", "max"];
   }
 
   // Google Gemini & Perplexity Sonar officially top out at High
   if (mid.includes("gemini") || mid.includes("sonar") || name.includes("gemini")) {
-    return ["off", "low", "medium", "high"];
+    return ["auto", "off", "low", "medium", "high"];
   }
 
   // Anthropic Claude 3.7+ / Extended thinking with explicit budget
   if (mid.includes("claude-3-7") || mid.includes("claude-3.7") || mid.includes("claude") || name.includes("claude")) {
-    return ["off", "low", "medium", "high", "budget", "max"];
+    return ["auto", "off", "low", "medium", "high", "budget", "max"];
   }
 
   // Extended ultra-tier reasoning models
   if (mid.includes("opus-4") || mid.includes("sonnet-4") || mid.includes("ultra")) {
-    return ["off", "low", "medium", "high", "budget", "max", "ultra"];
+    return ["auto", "off", "low", "medium", "high", "budget", "max", "ultra"];
   }
 
   // Default reasoning tiers (general reasoning models)
-  return ["off", "low", "medium", "high", "max"];
+  return ["auto", "off", "low", "medium", "high", "max"];
 }
 
 /**
@@ -405,20 +411,10 @@ export function isReasoningSupported(model?: MinimalModelInfo | null): boolean {
 }
 
 /**
- * Returns the default effort level for a given model.
+ * Returns the default effort level for a given model. Default is 'auto' (Anara Parity).
  */
-export function getDefaultEffortForModel(modelId: string): ReasoningEffortLevel {
-  const lower = (modelId || "").toLowerCase();
-  if (lower.includes("-high") || lower.includes("deepseek-r1") || lower.includes("o1") || lower.includes("o3")) {
-    return "high";
-  }
-  if (lower.includes("-low")) {
-    return "low";
-  }
-  if (lower.includes("-medium")) {
-    return "medium";
-  }
-  return "medium";
+export function getDefaultEffortForModel(_modelId?: string): ReasoningEffortLevel {
+  return "auto";
 }
 
 export const TIER_SUFFIX_REGEX = /[-_:](low|medium|high|ultra|max|budget|thinking|thought|reasoning)(?::[a-z0-9_-]+)?$/i;
@@ -429,40 +425,51 @@ export function getBaseSlug(id: string): string {
 
 /**
  * Retrieves the saved reasoning effort for a specific model from localStorage.
+ * Falls back to global last-set effort across sessions/reboots, then to 'auto'.
  */
-export function getSavedReasoningEffortForModel(modelId: string): ReasoningEffortLevel {
-  if (typeof window === "undefined" || !modelId) return "medium";
+export function getSavedReasoningEffortForModel(modelId?: string): ReasoningEffortLevel {
+  if (typeof window === "undefined") return "auto";
   try {
-    const stored = localStorage.getItem("anara_model_reasoning_efforts");
-    if (stored) {
-      const map = JSON.parse(stored);
-      if (map) {
-        const base = getBaseSlug(modelId);
-        if (map[modelId] && REASONING_LEVELS.includes(map[modelId])) {
-          return map[modelId];
-        }
-        if (map[base] && REASONING_LEVELS.includes(map[base])) {
-          return map[base];
+    if (modelId) {
+      const stored = localStorage.getItem("anara_model_reasoning_efforts");
+      if (stored) {
+        const map = JSON.parse(stored);
+        if (map) {
+          const base = getBaseSlug(modelId);
+          if (map[modelId] && REASONING_LEVELS.includes(map[modelId])) {
+            return map[modelId];
+          }
+          if (map[base] && REASONING_LEVELS.includes(map[base])) {
+            return map[base];
+          }
         }
       }
+    }
+    // Check global last-set reasoning effort across reboots / restarts
+    const globalLast = localStorage.getItem("anara_reasoning_effort") as ReasoningEffortLevel;
+    if (globalLast && REASONING_LEVELS.includes(globalLast)) {
+      return globalLast;
     }
   } catch {}
   return getDefaultEffortForModel(modelId);
 }
 
 /**
- * Persists the reasoning effort for a specific model to localStorage.
+ * Persists the reasoning effort for a specific model and global session to localStorage.
+ * Guarantees that user selections ('high', 'ultra', etc.) persist across reboots.
  */
 export function saveReasoningEffortForModel(modelId: string, level: ReasoningEffortLevel): void {
-  if (typeof window === "undefined" || !modelId) return;
+  if (typeof window === "undefined") return;
   try {
-    const stored = localStorage.getItem("anara_model_reasoning_efforts");
-    const map = stored ? JSON.parse(stored) : {};
-    const base = getBaseSlug(modelId);
-    map[modelId] = level;
-    map[base] = level;
-    localStorage.setItem("anara_model_reasoning_efforts", JSON.stringify(map));
-    // Also save legacy single key for backwards compatibility
+    if (modelId) {
+      const stored = localStorage.getItem("anara_model_reasoning_efforts");
+      const map = stored ? JSON.parse(stored) : {};
+      const base = getBaseSlug(modelId);
+      map[modelId] = level;
+      map[base] = level;
+      localStorage.setItem("anara_model_reasoning_efforts", JSON.stringify(map));
+    }
+    // Always persist global active effort so it survives laptop power-off & app restart
     localStorage.setItem("anara_reasoning_effort", level);
   } catch {}
 }

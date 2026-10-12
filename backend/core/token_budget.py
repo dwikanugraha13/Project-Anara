@@ -490,6 +490,7 @@ class TokenBudgetTracker:
         self.context_window, self.max_output = get_model_context_window(model_id)
         self.input_budget = get_input_budget(model_id)
         self._step_token_history: List[int] = []
+        self._last_preflight_pressure: Optional[int] = None
 
         logger.debug(
             f"[TokenBudget] Initialized: model={model_id}, "
@@ -675,6 +676,81 @@ class TokenBudgetTracker:
             )
 
         return compacted
+
+    def evaluate_preflight_pressure(
+        self,
+        messages: List[Dict[str, Any]],
+        system_instruction: str = "",
+        tool_schemas: Optional[List[Any]] = None,
+        min_output_runway: int = 1024,
+    ) -> Dict[str, Any]:
+        """
+        Hermes Parity Preflight Gate pressure evaluation (agent/turn_preflight_gate.py).
+        Calculates total assembled request tokens before calling the LLM API.
+        """
+        msg_tokens = self.current_usage(messages)
+        sys_tokens = count_tokens(system_instruction) if system_instruction else 0
+        schema_tokens = (len(tool_schemas) * 45) if tool_schemas else 0
+        total_pressure = msg_tokens + sys_tokens + schema_tokens + min_output_runway
+        threshold = int(self.input_budget * 0.85) if self.input_budget > 0 else 8000
+
+        warrants_compression = total_pressure >= threshold
+        return {
+            "warrants_compression": warrants_compression,
+            "total_pressure": total_pressure,
+            "threshold": threshold,
+            "msg_tokens": msg_tokens,
+            "sys_tokens": sys_tokens,
+            "schema_tokens": schema_tokens,
+            "min_output_runway": min_output_runway,
+            "input_budget": self.input_budget,
+        }
+
+    def run_preflight_gate(
+        self,
+        messages: List[Dict[str, Any]],
+        system_instruction: str = "",
+        tool_schemas: Optional[List[Any]] = None,
+        min_output_runway: int = 1024,
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Runs the pre-API pressure gate.
+        If pressure warrants compaction:
+          - checks if previous compaction made sufficient progress (>= 5% reduction)
+          - triggers compaction if warranted
+          - blocks redundant passes if insufficient progress
+        Returns (success: bool, status_reason: Optional[str]).
+        """
+        assessment = self.evaluate_preflight_pressure(
+            messages,
+            system_instruction=system_instruction,
+            tool_schemas=tool_schemas,
+            min_output_runway=min_output_runway,
+        )
+
+        if not assessment["warrants_compression"]:
+            self._last_preflight_pressure = None
+            return True, "within_budget"
+
+        curr_pressure = assessment["total_pressure"]
+        threshold = assessment["threshold"]
+
+        # Insufficient progress guard (Hermes _compression_warrants_another_preflight_pass parity)
+        if self._last_preflight_pressure is not None and curr_pressure >= threshold:
+            delta = self._last_preflight_pressure - curr_pressure
+            progress_ratio = delta / self._last_preflight_pressure if self._last_preflight_pressure > 0 else 0
+            if progress_ratio < 0.05:
+                logger.warning(
+                    f"[PreflightGate] Compression made insufficient progress: "
+                    f"~{self._last_preflight_pressure:,} -> ~{curr_pressure:,} tokens. "
+                    f"Skipping redundant preflight passes to prevent loop."
+                )
+                return True, "insufficient_progress_skipped"
+
+        # Record pressure before compaction
+        self._last_preflight_pressure = curr_pressure
+        compacted = self.compact_messages_if_needed(messages)
+        return True, "compacted" if compacted else "no_op"
 
     def get_diagnostics(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
         """Returns diagnostic info for telemetry/debugging."""

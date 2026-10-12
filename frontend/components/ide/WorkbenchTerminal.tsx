@@ -19,6 +19,7 @@ export interface WorkbenchTerminalProps {
   logs?: string[];
   activeTask?: string;
   onExecuteCommand?: (cmd: string) => void;
+  onAskAnara?: (prompt: string) => void;
   onClose?: () => void;
   embedded?: boolean;
   isVisible?: boolean;
@@ -54,15 +55,32 @@ interface TerminalInstanceProps {
   isActive: boolean;
   isVisible: boolean;
   logs?: string[];
+  pendingCommand?: string | null;
+  onCommandConsumed?: () => void;
+  onStatusUpdate?: (status: { connected: boolean; pid?: number; conpty?: boolean }) => void;
+  onAskAnara?: (prompt: string) => void;
+  restartSignal?: number;
 }
 
-function TerminalInstance({ tab, isActive, isVisible, logs = [] }: TerminalInstanceProps) {
+function TerminalInstance({
+  tab,
+  isActive,
+  isVisible,
+  logs = [],
+  pendingCommand,
+  onCommandConsumed,
+  onStatusUpdate,
+  onAskAnara,
+  restartSignal = 0,
+}: TerminalInstanceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [pid, setPid] = useState<number | null>(null);
+  const [isConpty, setIsConpty] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -103,7 +121,7 @@ function TerminalInstance({ tab, isActive, isVisible, logs = [] }: TerminalInsta
     } catch {}
 
     // Resolve WebSocket URL
-    const rawBackend = process.env.NEXT_PUBLIC_BACKEND_URL || (typeof window !== "undefined" ? getBackendUrl() : "http://localhost:8000");
+    const rawBackend = process.env.NEXT_PUBLIC_BACKEND_URL || (typeof window !== "undefined" ? getBackendUrl() : "http://127.0.0.1:8000");
     const wsBase = rawBackend.replace(/^http/, "ws");
     const wsUrl = `${wsBase}/ws/terminal/${tab.id}?shell=${tab.shell}&cwd=${encodeURIComponent(tab.cwd || "")}`;
 
@@ -116,6 +134,18 @@ function TerminalInstance({ tab, isActive, isVisible, logs = [] }: TerminalInsta
 
     ws.onmessage = (evt) => {
       if (typeof evt.data === "string") {
+        if (evt.data.startsWith("{") && evt.data.endsWith("}")) {
+          try {
+            const parsed = JSON.parse(evt.data);
+            if (parsed.type === "ready") {
+              setIsConnected(true);
+              setPid(parsed.pid || null);
+              setIsConpty(Boolean(parsed.conpty));
+              onStatusUpdate?.({ connected: true, pid: parsed.pid, conpty: Boolean(parsed.conpty) });
+              return;
+            }
+          } catch {}
+        }
         try {
           term.write(evt.data);
         } catch {}
@@ -130,11 +160,13 @@ function TerminalInstance({ tab, isActive, isVisible, logs = [] }: TerminalInsta
 
     ws.onerror = () => {
       setIsConnected(false);
+      onStatusUpdate?.({ connected: false });
       term.writeln("\x1b[38;2;244;63;94m[anara-terminal] Shell connection offline. Connecting fallback...\x1b[0m");
     };
 
     ws.onclose = () => {
       setIsConnected(false);
+      onStatusUpdate?.({ connected: false });
       term.writeln("\x1b[90m[anara-terminal] Process terminated.\x1b[0m");
     };
 
@@ -196,6 +228,9 @@ function TerminalInstance({ tab, isActive, isVisible, logs = [] }: TerminalInsta
       resizeTimer = setTimeout(() => {
         try {
           fitAddon.fit();
+          if (ws.readyState === WebSocket.OPEN && term.cols && term.rows) {
+            ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+          }
         } catch {}
       }, 50);
     });
@@ -208,7 +243,16 @@ function TerminalInstance({ tab, isActive, isVisible, logs = [] }: TerminalInsta
       ws.close();
       term.dispose();
     };
-  }, [tab.id, tab.shell, tab.cwd]);
+  }, [tab.id, tab.shell, tab.cwd, restartSignal]);
+
+  // Execute pending command dispatched from parent toolbar
+  useEffect(() => {
+    if (pendingCommand && wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "input", data: `${pendingCommand}
+\n` }));
+      onCommandConsumed?.();
+    }
+  }, [pendingCommand, onCommandConsumed]);
 
   // Re-fit canvas on visibility restore (Keep-Alive Parity)
   useEffect(() => {
@@ -405,6 +449,7 @@ export default function WorkbenchTerminal({
   logs = [],
   activeTask,
   onExecuteCommand,
+  onAskAnara,
   onClose,
   embedded = false,
   isVisible = true,
@@ -415,12 +460,36 @@ export default function WorkbenchTerminal({
   ]);
   const [activeTabId, setActiveTabId] = useState<string>("term-1");
   const [isShellMenuOpen, setIsShellMenuOpen] = useState(false);
+  const [pendingCommand, setPendingCommand] = useState<string | null>(null);
+  const [statusMap, setStatusMap] = useState<Record<string, { connected: boolean; pid?: number; conpty?: boolean }>>({});
+  const [restartSignals, setRestartSignals] = useState<Record<string, number>>({});
   const tabCounterRef = useRef<number>(2);
+
+  const [availableShells, setAvailableShells] = useState<{ id: string; name: string }[]>([
+    { id: "powershell", name: "PowerShell" },
+    { id: "bash", name: "Git Bash" },
+    { id: "cmd", name: "CMD" },
+  ]);
+
+  // Discover real installed shells from backend API
+  useEffect(() => {
+    try {
+      fetch(`${getBackendUrl()}/api/agent/terminal/shells`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.shells && Array.isArray(data.shells) && data.shells.length > 0) {
+            setAvailableShells(data.shells);
+          }
+        })
+        .catch(() => {});
+    } catch {}
+  }, []);
 
   // Add new terminal tab
   const handleAddTab = (shell = "powershell") => {
     const id = `term-${Date.now()}`;
-    const shellName = shell === "bash" ? "Git Bash" : shell === "cmd" ? "CMD" : "PowerShell";
+    const shellObj = availableShells.find((s) => s.id === shell);
+    const shellName = shellObj ? shellObj.name : shell === "bash" ? "Git Bash" : shell === "cmd" ? "CMD" : "PowerShell";
     const name = `${shellName} ${tabCounterRef.current++}`;
     setTabs((prev) => [...prev, { id, name, shell, cwd }]);
     setActiveTabId(id);
@@ -442,6 +511,9 @@ export default function WorkbenchTerminal({
       setActiveTabId(nextActive.id);
     }
   };
+
+  const activeTab = tabs.find((t) => t.id === activeTabId);
+  const activeStatus = statusMap[activeTabId];
 
   return (
     <div
@@ -501,33 +573,24 @@ export default function WorkbenchTerminal({
 
             {isShellMenuOpen && (
               <div
-                className="absolute top-7 left-0 z-50 w-36 p-1 rounded-xl bg-[#0e1219]/95 border border-white/15 backdrop-blur-xl shadow-2xl text-[11px] font-mono space-y-0.5"
+                className="absolute top-7 left-0 z-50 w-40 p-1 rounded-xl bg-[#0e1219]/95 border border-white/15 backdrop-blur-xl shadow-2xl text-[11px] font-mono space-y-0.5"
                 onClick={(e) => e.stopPropagation()}
               >
-                <button
-                  type="button"
-                  onClick={() => handleAddTab("powershell")}
-                  className="w-full text-left px-2 py-1 rounded hover:bg-white/10 text-slate-300 hover:text-white flex items-center gap-1.5 cursor-pointer"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                  <span>PowerShell</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAddTab("bash")}
-                  className="w-full text-left px-2 py-1 rounded hover:bg-white/10 text-slate-300 hover:text-white flex items-center gap-1.5 cursor-pointer"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                  <span>Git Bash</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAddTab("cmd")}
-                  className="w-full text-left px-2 py-1 rounded hover:bg-white/10 text-slate-300 hover:text-white flex items-center gap-1.5 cursor-pointer"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  <span>CMD</span>
-                </button>
+                {availableShells.map((sh) => (
+                  <button
+                    key={sh.id}
+                    type="button"
+                    onClick={() => handleAddTab(sh.id)}
+                    className="w-full text-left px-2 py-1 rounded hover:bg-white/10 text-slate-300 hover:text-white flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        sh.id === "bash" ? "bg-amber-400" : sh.id === "cmd" ? "bg-emerald-400" : "bg-cyan-400"
+                      }`}
+                    />
+                    <span className="truncate">{sh.name}</span>
+                  </button>
+                ))}
               </div>
             )}
           </div>
@@ -541,8 +604,6 @@ export default function WorkbenchTerminal({
               <span className="truncate">{activeTask}</span>
             </div>
           )}
-
-          <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" title="PTY Ready" />
 
           {onClose && (
             <button
@@ -560,6 +621,81 @@ export default function WorkbenchTerminal({
         </div>
       </div>
 
+      {/* ── Quick Command Presets & Agent Integration Toolbar ── */}
+      <div className="flex items-center justify-between px-3 py-1 bg-[#060913] border-b border-white/[0.06] text-[10.5px] select-none shrink-0 overflow-x-auto no-scrollbar gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-slate-500 font-sans uppercase tracking-wider text-[9px] mr-0.5">Preset:</span>
+          <button
+            type="button"
+            onClick={() => setPendingCommand("git status")}
+            className="px-2 py-0.5 rounded bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-300 border border-white/[0.06] transition-colors cursor-pointer"
+          >
+            git status
+          </button>
+          <button
+            type="button"
+            onClick={() => setPendingCommand(activeTab?.shell === "bash" ? "python run_tests.py" : "cmd.exe /c \"backend\\venv\\Scripts\\python.exe run_tests.py\"")}
+            className="px-2 py-0.5 rounded bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-300 border border-white/[0.06] transition-colors cursor-pointer"
+          >
+            run tests
+          </button>
+          <button
+            type="button"
+            onClick={() => setPendingCommand("clear")}
+            className="px-2 py-0.5 rounded bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-cyan-300 border border-white/[0.06] transition-colors cursor-pointer"
+          >
+            clear
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {onAskAnara && (
+            <button
+              type="button"
+              onClick={() => {
+                onAskAnara("Diagnose the active terminal session or recent test/build output.");
+              }}
+              className="px-2 py-0.5 rounded bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 transition-all cursor-pointer flex items-center gap-1 font-semibold"
+              title="Ask Anara to analyze terminal"
+            >
+              <svg className="w-3 h-3 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              <span>Ask Anara</span>
+            </button>
+          )}
+
+          {/* Restart Shell Session */}
+          <button
+            type="button"
+            onClick={() => {
+              setRestartSignals((prev) => ({ ...prev, [activeTabId]: (prev[activeTabId] || 0) + 1 }));
+            }}
+            className="p-1 px-1.5 rounded bg-white/[0.03] hover:bg-white/[0.08] text-slate-400 hover:text-white border border-white/[0.06] transition-colors cursor-pointer flex items-center gap-1"
+            title="Restart Active Shell Session"
+          >
+            <span>↺</span>
+            <span className="text-[9.5px]">Reset</span>
+          </button>
+
+          {/* Live Status Indicator */}
+          <div className="flex items-center gap-1.5 pl-1.5 border-l border-white/[0.08]">
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                activeStatus?.connected
+                  ? "bg-emerald-400 shadow-[0_0_8px_#34d399]"
+                  : "bg-amber-400 animate-pulse"
+              }`}
+            />
+            <span className="text-[10px] text-slate-400 font-mono">
+              {activeStatus?.connected
+                ? `${activeTab?.name} ${activeStatus.pid ? `[PID ${activeStatus.pid}]` : ""} ${activeStatus.conpty ? "(ConPTY)" : ""}`
+                : "Connecting..."}
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* ── Absolute-Stacked Isolated Terminal Hosts (Keep-Alive Lifecycle) ── */}
       <div className="flex-1 min-h-0 relative p-1.5 overflow-hidden bg-[#060913]">
         {tabs.map((tab) => (
@@ -573,6 +709,11 @@ export default function WorkbenchTerminal({
               isActive={tab.id === activeTabId}
               isVisible={isVisible}
               logs={tab.id === activeTabId ? logs : undefined}
+              pendingCommand={tab.id === activeTabId ? pendingCommand : null}
+              onCommandConsumed={() => setPendingCommand(null)}
+              onStatusUpdate={(st) => setStatusMap((prev) => ({ ...prev, [tab.id]: st }))}
+              onAskAnara={onAskAnara}
+              restartSignal={restartSignals[tab.id] || 0}
             />
           </div>
         ))}

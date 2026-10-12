@@ -36,6 +36,9 @@ class WorkspaceSentinel:
         r"\bremove-item\b.*-(?:recurse|r)\b.*(?:\*|\.[\/\\]\*|\s\.)",
         r"\bremove-item\b\s+(?:\*|\.[\/\\]\*)\s+.*-(?:recurse|r)\b",
         r"\bgit\s+clean\s+-[fdx]{1,4}\b",
+        r"\bgit\s+reset\s+--(?:hard|merge|keep)\b",
+        r"\bgit\s+checkout\s+-[fF]\b",
+        r"\bgit\s+restore\s+.*--(?:worktree|staged|source)\b",
         r"\bfind\s+\.\s+-delete\b",
     ]
 
@@ -88,6 +91,22 @@ class WorkspaceSentinel:
         cmd_clean = (command or "").strip()
         if not cmd_clean:
             return True, None
+
+        # Quote-aware check (port of can1357/oh-my-pi#7553):
+        # Read-only inspection tools (echo, cat, grep, findstr) where destructive patterns
+        # appear purely inside quoted strings or literal arguments without compound shell operators
+        # should not trigger false positive mass wipe blocks.
+        try:
+            from core.approval_guard import has_compound_shell_operator
+            if not has_compound_shell_operator(cmd_clean):
+                parts = cmd_clean.split(None, 1)
+                first_bin = os.path.basename(parts[0]).lower() if parts else ""
+                if first_bin.endswith((".exe", ".cmd", ".bat")):
+                    first_bin = os.path.splitext(first_bin)[0]
+                if first_bin in ("echo", "cat", "grep", "findstr", "head", "tail", "type"):
+                    return True, None
+        except Exception:
+            pass
 
         cmd_lower = cmd_clean.lower()
         for pattern in self.DESTRUCTIVE_SHELL_PATTERNS:

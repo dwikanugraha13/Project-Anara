@@ -590,14 +590,61 @@ button:not([role="tab"]):not([data-no-scale]):active,
   background: rgba(34, 211, 238, 0.45) !important;
 }
 
-/* ── Streaming Text Gradient Flow Animation ─────────────────────────────── */
-@keyframes streaming-gradient-flow {
-  0% { background-position: 0% 50%; }
-  100% { background-position: 200% 50%; }
+/* ── Hermes-Parity Liquid Shimmer & Streaming Flow Engine ────────────────── */
+@keyframes tw-shimmer-flow {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
+@keyframes stream-beacon-pulse {
+  0% {
+    opacity: 0.35;
+    transform: scaleY(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: scaleY(1.05);
+  }
+}
+
+/* Universal shimmer utility for live tool labels & reasoning status */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(203, 213, 225, 0.45) 0%,
+    rgba(255, 255, 255, 0.98) 50%,
+    rgba(203, 213, 225, 0.45) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: tw-shimmer-flow 2.4s linear infinite;
+  display: inline-block;
+}
+
+/* Streamed typography: calm, solid, and high-clarity matching Hermes Desktop & Oh My Pi standards */
+.streaming-shimmer-text,
 .streaming-text-gradient {
   color: #f1f5f9;
+  background: none;
+  -webkit-text-fill-color: initial;
+}
+
+.streaming-beacon {
+  display: inline-block;
+  width: 1.5px;
+  height: 1.1em;
+  margin-left: 2px;
+  vertical-align: middle;
+  border-radius: 9999px;
+  background: #22d3ee;
+  opacity: 0.9;
+  pointer-events: none;
 }
 
 /* Code block streaming entrance */
@@ -612,15 +659,15 @@ button:not([role="tab"]):not([data-no-scale]):active,
 }
 
 .streaming-code-block {
-  animation:
-    code-stream-enter 180ms cubic-bezier(0.16, 1, 0.3, 1) both,
-    code-stream-glow 1.8s ease-in-out 180ms infinite alternate;
+  /* Clean static code container matching desktop standard */
+  animation: none;
 }
 
 /* Streaming code block bottom fade (content still arriving) */
 .streaming-code-fade {
-  -webkit-mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 1.5rem), rgba(0,0,0,0.64) 100%);
-  mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 1.5rem), rgba(0,0,0,0.64) 100%);
+  /* Clean crisp code */
+  mask-image: none;
+  -webkit-mask-image: none;
 }
 
 /* Arc-style animated border for active streaming message */
@@ -638,24 +685,31 @@ button:not([role="tab"]):not([data-no-scale]):active,
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .shimmer,
+  .streaming-shimmer-text,
   .streaming-text-gradient {
-    animation: none;
-    -webkit-text-fill-color: unset;
-    background: none;
+    animation: none !important;
+    -webkit-text-fill-color: unset !important;
+    background: none !important;
+    color: #f8fafc !important;
+  }
+  .streaming-beacon {
+    animation: none !important;
+    opacity: 0.8 !important;
   }
   .streaming-text-gradient strong,
   .streaming-text-gradient em,
   .streaming-text-gradient a,
   .streaming-text-gradient del,
   .streaming-text-gradient span:not(.streaming-caret) {
-    -webkit-text-fill-color: unset;
-    background: initial;
+    -webkit-text-fill-color: unset !important;
+    background: initial !important;
   }
   .streaming-code-block {
-    animation: none;
+    animation: none !important;
   }
   .streaming-arc-border::before {
-    animation: none;
+    animation: none !important;
   }
 }
 

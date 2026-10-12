@@ -210,16 +210,22 @@ def format_model_display_name(raw: Optional[str], include_tier: bool = False) ->
         if "gemma-2-27b" in lower: return "Gemma 2 27B"
         if "gemma-2" in lower: return "Gemma 2"
 
-        # ── Claude Family ──
-        if "claude-sonnet-4.5" in lower: return "Claude Sonnet 4.5"
-        if "claude-sonnet-4" in lower: return "Claude Sonnet 4"
-        if "claude-opus-4" in lower: return "Claude Opus 4"
-        if "claude-haiku-4.5" in lower: return "Claude Haiku 4.5"
-        if "claude-fable-5.1" in lower: return "Claude Fable 5.1"
-        if "claude-3-7-sonnet" in lower or "claude-3.7-sonnet" in lower: return "Claude 3.7 Sonnet"
-        if "claude-3-5-sonnet" in lower or "claude-3.5-sonnet" in lower: return "Claude 3.5 Sonnet"
-        if "claude-3-5-haiku" in lower or "claude-3.5-haiku" in lower: return "Claude 3.5 Haiku"
-        if "claude-3-opus" in lower: return "Claude 3 Opus"
+        # ── Claude Family (Dynamic Family & Version Resolution) ──
+        if "claude" in lower:
+            c_norm = re.sub(r'(\d)-(?=\d)', r'\1.', lower)
+            m_rev = re.search(r'claude-(sonnet|opus|haiku|fable)-(\d+(?:\.\d+)?)', c_norm)
+            if m_rev:
+                return f"Claude {m_rev.group(1).capitalize()} {m_rev.group(2)}"
+            m_pre = re.search(r'claude-(\d+(?:\.\d+)?)-(sonnet|opus|haiku|fable)', c_norm)
+            if m_pre:
+                return f"Claude {m_pre.group(1)} {m_pre.group(2).capitalize()}"
+            m_fam_only = re.search(r'claude-(sonnet|opus|haiku|fable)', c_norm)
+            if m_fam_only:
+                return f"Claude {m_fam_only.group(1).capitalize()}"
+            m_ver_fam = re.search(r'claude-(\d+(?:\.\d+)?)', c_norm)
+            if m_ver_fam:
+                return f"Claude {m_ver_fam.group(1)}"
+            return "Claude"
 
         # ── OpenAI Family ──
         if "gpt-6-astra" in lower: return "GPT-6 Astra"

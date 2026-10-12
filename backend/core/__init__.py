@@ -154,6 +154,15 @@ _EXPORTS: dict[str, str] = {
     "new_session_key": ".session_ids",
     "is_valid_session_key": ".session_ids",
     "SESSION_KEY_PATTERN": ".session_ids",
+    # toolset_providers
+    "get_toolset_config": ".toolset_providers",
+    "set_active_provider": ".toolset_providers",
+    "set_provider_env": ".toolset_providers",
+    "get_toolset_models": ".toolset_providers",
+    "set_active_model": ".toolset_providers",
+    "canonical_toolset_name": ".toolset_providers",
+    "TOOLSET_PROVIDERS": ".toolset_providers",
+    "TOOLSET_MODELS_CATALOG": ".toolset_providers",
 }
 
 __all__ = sorted(_EXPORTS.keys())

@@ -195,3 +195,87 @@ def check_command_safety(command: str, approval_mode: str) -> dict | None:
         }
 
     return None
+
+
+# ── Quote-Aware Shell Metacharacter Analyzer (port of can1357/oh-my-pi#7553) ──
+_SHELL_CONTROL_CHARS = frozenset("\n\r;&|<>`$()")
+_REINTERPRETED_ARGUMENT_RE = re.compile(
+    r"(?:^|[ \t])(?:-[^-\s]*[ce]|--(?:command|eval))(?:[= \t]|$)",
+    re.IGNORECASE,
+)
+
+
+def has_compound_shell_operator(command: str) -> bool:
+    """Return True when a command is compound or contains unquoted shell control operators.
+
+    Quote-aware (port of can1357/oh-my-pi#7553):
+    Metacharacters inside single quotes or behind a backslash are literal arguments
+    (e.g. `cargo bench -- '^layer3/write/(a|b)$'` or `grep "a|b;c"`), not shell syntax.
+    Still compound: `$` or backtick inside DOUBLE quotes (active expansion),
+    and any quoted/escaped control character when the command also carries a
+    `-c`/`-e`/`--command`/`--eval`-style option that hands quoted text to another interpreter.
+    """
+    command = command or ""
+    quote = None  # None | "'" | '"'
+    has_reinterpretable = False
+    i = 0
+    n = len(command)
+    while i < n:
+        ch = command[i]
+        if ch == "\\" and quote != "'":
+            nxt = command[i + 1] if i + 1 < n else ""
+            if nxt in _SHELL_CONTROL_CHARS:
+                has_reinterpretable = True
+            i += 2
+            continue
+        if quote is not None:
+            if ch == quote:
+                quote = None
+            elif quote == '"' and ch in ("`", "$"):
+                return True  # expansion is active inside double quotes
+            elif ch in _SHELL_CONTROL_CHARS:
+                has_reinterpretable = True
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch == "$":
+            # Unquoted $ is compound when it opens a substitution $(...)
+            if i + 1 < n and command[i + 1] == "(":
+                return True
+        elif ch in _SHELL_CONTROL_CHARS and ch not in "()":
+            return True
+        i += 1
+
+    # An unterminated quote means we cannot reason about the command shape safely
+    if quote is not None:
+        return True
+    if has_reinterpretable and _REINTERPRETED_ARGUMENT_RE.search(command):
+        return True
+    return False
+
+
+def command_matches_allowlist(command: str, allowlist: list[str] | set[str]) -> bool:
+    """True when allowlist holds this exact command text or a matching glob.
+
+    Quote-aware (port of can1357/oh-my-pi#7553): refuses compound commands or
+    quoted interpreter payloads before matching against allowlist globs.
+    """
+    import fnmatch
+    cmd = (command or "").strip()
+    if not cmd or not allowlist:
+        return False
+    if has_compound_shell_operator(cmd):
+        return False
+    # If the command has an interpreter option (-c, -e, --eval, --command), reject glob allowlist matching
+    # unless the exact pattern explicitly specifies the interpreter option
+    has_reinterpretable = bool(_REINTERPRETED_ARGUMENT_RE.search(cmd))
+    for pat in allowlist:
+        pat = (pat or "").strip()
+        if not pat:
+            continue
+        if pat == cmd:
+            return True
+        if fnmatch.fnmatchcase(cmd, pat):
+            if has_reinterpretable and not _REINTERPRETED_ARGUMENT_RE.search(pat):
+                continue
+            return True
+    return False

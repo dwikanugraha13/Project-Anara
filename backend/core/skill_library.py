@@ -290,6 +290,25 @@ class SkillLibraryManager:
             elif not isinstance(platforms, list):
                 platforms = None
             is_supported = skill_matches_platform_list(platforms)
+
+            # Determine provenance & whether it is a learned/local skill
+            keys = set(meta.keys())
+            has_full_metadata = bool(keys & {"version", "author", "license", "platforms"})
+            is_learned = (
+                not has_full_metadata
+                or bool(meta.get("learned_from_experience"))
+                or meta.get("provenance") == "agent"
+            )
+            provenance = "agent" if is_learned else meta.get("provenance", "bundled")
+
+            anara_meta = {}
+            if isinstance(meta.get("metadata"), dict):
+                anara_meta = meta["metadata"].get("anara") or {}
+
+            tags = anara_meta.get("tags") or meta.get("trigger_keywords") or []
+            if not isinstance(tags, list):
+                tags = [str(tags)]
+
             return {
                 "slug": slug,
                 "name": meta.get("name", slug),
@@ -302,7 +321,15 @@ class SkillLibraryManager:
                 "enabled": status == "active",
                 "platforms": platforms,
                 "supported_platform": is_supported,
-                "learned_from_experience": bool(meta.get("learned_from_experience", False)),
+                "learned_from_experience": is_learned,
+                "is_learned": is_learned,
+                "provenance": provenance,
+                "version": meta.get("version"),
+                "author": meta.get("author"),
+                "license": meta.get("license"),
+                "tags": tags,
+                "setup": meta.get("setup"),
+                "metadata": meta,
                 "created_at": meta.get("created_at", ""),
                 "usage_count": usage_cnt,
                 "use_count": usage_cnt,
@@ -615,6 +642,41 @@ Use this skill when requested or when detecting tasks with keywords: {', '.join(
         if ok:
             self._invalidate_cache()
         return ok
+
+    def archive_skill(self, slug: str) -> bool:
+        """Archives a learned skill by moving its folder to .archive/ storage."""
+        clean_slug = (slug or "").strip().lower()
+        if not clean_slug or clean_slug in {".", "~"}:
+            return False
+
+        skill_meta = self.get_skill(clean_slug)
+        if not skill_meta:
+            return False
+
+        file_path = skill_meta.get("file_path")
+        if not file_path or not os.path.isfile(file_path):
+            return False
+
+        skill_dir = Path(file_path).parent
+        archive_dir = Path(self.root_dir) / ".archive" / skill_dir.name
+        archive_dir.parent.mkdir(parents=True, exist_ok=True)
+
+        if archive_dir.exists():
+            shutil.rmtree(archive_dir)
+        shutil.move(str(skill_dir), str(archive_dir))
+
+        backend_skills_dir = Path(__file__).resolve().parent.parent / "skills"
+        b_src = backend_skills_dir / skill_dir.name
+        if b_src.is_dir() and b_src.resolve() != skill_dir.resolve():
+            b_dst = backend_skills_dir / ".archive" / skill_dir.name
+            b_dst.parent.mkdir(parents=True, exist_ok=True)
+            if b_dst.exists():
+                shutil.rmtree(b_dst)
+            shutil.move(str(b_src), str(b_dst))
+
+        self._invalidate_cache()
+        logger.info(f"[SkillLibrary] Archived skill {clean_slug} to .archive/")
+        return True
 
     def reject_skill(self, slug: str, delete_folder: bool = True) -> bool:
         """Rejects and optionally deletes a skill folder with root protection (Anara Standard)."""

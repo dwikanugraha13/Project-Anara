@@ -221,11 +221,14 @@ class CommandSandbox:
             )
             out_text = (stdout or "").strip()
             err_text = (stderr or "").strip()
-            full_output = f"{out_text}\n{err_text}".strip() if err_text else out_text
+            raw_output = f"{out_text}\n{err_text}".strip() if err_text else out_text
+
+            from tools.self_correction import ContextMicroCompactor
+            sanitized_output = ContextMicroCompactor.clean_terminal_noise(raw_output).strip()
 
             return {
                 "status": "success" if proc.returncode == 0 else "error",
-                "output": full_output,
+                "output": sanitized_output,
                 "exit_code": proc.returncode,
                 "sandboxed": True,
                 "timed_out": False,

@@ -4,6 +4,7 @@ import React from "react";
 import dynamic from "next/dynamic";
 import type { AnaraCodeIDEProps } from "../ide/AnaraCodeIDE";
 import type { GitStatusData } from "../sidebar/types";
+import { EmbeddedPreviewBrowser } from "./EmbeddedPreviewBrowser";
 
 const AnaraCodeIDE = dynamic<AnaraCodeIDEProps>(() => import("../ide/AnaraCodeIDE"), {
   ssr: false,
@@ -22,8 +23,11 @@ export interface WorkbenchContextPanesProps {
   setIsContextPaneOpen: React.Dispatch<React.SetStateAction<boolean>>;
   contextPaneRef: React.RefObject<HTMLDivElement | null>;
   contextPaneWidth: number;
-  contextTab: "editor" | "terminal" | "review";
-  setContextTab: (tab: "editor" | "terminal" | "review") => void;
+  contextTab: "preview" | "editor" | "terminal" | "review";
+  setContextTab: (tab: "preview" | "editor" | "terminal" | "review") => void;
+  previewUrl?: string;
+  previewFilePath?: string;
+  previewFileName?: string;
   activeIdeFile: {
     isOpen: boolean;
     fileName: string;
@@ -59,6 +63,9 @@ export function WorkbenchContextPanes({
   contextPaneWidth,
   contextTab,
   setContextTab,
+  previewUrl,
+  previewFilePath,
+  previewFileName,
   activeIdeFile,
   setActiveIdeFile,
   gitStatus,
@@ -85,6 +92,17 @@ export function WorkbenchContextPanes({
       {/* Context Pane Zone Header */}
       <div className="h-[34px] px-3 bg-[#060913] border-b border-white/[0.08] flex items-center justify-between shrink-0 select-none">
         <div className="flex items-center gap-1.5 font-mono text-xs">
+          <button
+            type="button"
+            onClick={() => setContextTab("preview")}
+            className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all ${
+              contextTab === "preview"
+                ? "bg-white/10 text-cyan-300 font-semibold"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            Browser / Preview
+          </button>
           <button
             type="button"
             onClick={() => setContextTab("editor")}
@@ -119,7 +137,7 @@ export function WorkbenchContextPanes({
             type="button"
             onClick={() => {
               setContextTab("terminal");
-              setIsTerminalOpen(true);
+              setIsTerminalOpen(false);
             }}
             className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all ${
               contextTab === "terminal"
@@ -147,6 +165,24 @@ export function WorkbenchContextPanes({
 
       {/* Keep-Alive Pane Zones */}
       <div className="flex-1 min-h-0 relative overflow-hidden flex flex-col">
+        {/* Browser / Live HTML Preview Container (Anara Desktop Parity) */}
+        <div
+          className="h-full w-full"
+          style={{ display: contextTab === "preview" ? "flex" : "none" }}
+        >
+          <EmbeddedPreviewBrowser
+            url={previewUrl}
+            filePath={previewFilePath || (activeIdeFile.fileName.endsWith(".html") ? activeIdeFile.filePath : undefined)}
+            fileName={previewFileName || activeIdeFile.fileName}
+            sessionId={activeSessionId}
+            onClose={() => setIsContextPaneOpen(false)}
+            onOpenFileInEditor={(p, n) => {
+              handleOpenFileIDE(p, n || p.split("/").pop() || "file");
+              setContextTab("editor");
+            }}
+          />
+        </div>
+
         {/* Editor Container */}
         <div
           className="flex-1 min-h-0 w-full flex flex-col"
@@ -176,11 +212,12 @@ export function WorkbenchContextPanes({
 
           {/* Docked Split Terminal */}
           {isTerminalOpen && (
-            <div className="h-56 border-t border-white/[0.08] shrink-0 flex flex-col">
+            <div className="h-60 border-t border-white/[0.08] shrink-0 flex flex-col">
               <WorkbenchTerminal
                 embedded={true}
                 isVisible={isTerminalOpen && contextTab === "editor"}
                 onClose={() => setIsTerminalOpen(false)}
+                onAskAnara={onSendText ? (prompt) => onSendText(prompt, "plan") : undefined}
                 cwd={typeof window !== "undefined" ? localStorage.getItem("anara_ide_workspace_key") || undefined : undefined}
               />
             </div>
@@ -207,12 +244,15 @@ export function WorkbenchContextPanes({
           className="h-full w-full"
           style={{ display: contextTab === "terminal" ? "flex" : "none" }}
         >
-          <WorkbenchTerminal
-            embedded={true}
-            isVisible={contextTab === "terminal"}
-            onClose={() => setContextTab("editor")}
-            cwd={typeof window !== "undefined" ? localStorage.getItem("anara_ide_workspace_key") || undefined : undefined}
-          />
+          {contextTab === "terminal" && (
+            <WorkbenchTerminal
+              embedded={true}
+              isVisible={contextTab === "terminal"}
+              onClose={() => setContextTab("editor")}
+              onAskAnara={onSendText ? (prompt) => onSendText(prompt, "plan") : undefined}
+              cwd={typeof window !== "undefined" ? localStorage.getItem("anara_ide_workspace_key") || undefined : undefined}
+            />
+          )}
         </div>
       </div>
     </div>

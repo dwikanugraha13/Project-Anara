@@ -262,7 +262,7 @@ export default function AnaraCodeIDE({
     // Stale-on-disk conflict guard
     if (!isForce) {
       try {
-        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || (typeof window !== "undefined" ? getBackendUrl() : "http://localhost:8000");
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || (typeof window !== "undefined" ? getBackendUrl() : "http://127.0.0.1:8000");
         const checkRes = await fetch(`${backendUrl}/api/agent/workspace/file-content?path=${encodeURIComponent(filePath)}`);
         if (checkRes.ok) {
           const diskData = await checkRes.json();

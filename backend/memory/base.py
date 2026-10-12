@@ -225,6 +225,7 @@ class BaseMemoryEngine:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     session_key TEXT,
                     title TEXT,
+                    title_source TEXT DEFAULT NULL,
                     speaker_name TEXT,
                     message_count INTEGER DEFAULT 0,
                     is_archived INTEGER DEFAULT 0,
@@ -249,6 +250,8 @@ class BaseMemoryEngine:
             existing_cols = {row[1] for row in cursor.fetchall()}
             if "session_key" not in existing_cols:
                 cursor.execute("ALTER TABLE chat_sessions ADD COLUMN session_key TEXT")
+            if "title_source" not in existing_cols:
+                cursor.execute("ALTER TABLE chat_sessions ADD COLUMN title_source TEXT DEFAULT NULL")
             cursor.execute("""
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_sessions_key
                 ON chat_sessions(session_key) WHERE session_key IS NOT NULL;
@@ -267,6 +270,17 @@ class BaseMemoryEngine:
                         except Exception:
                             parsed_dt = None
                     cursor.execute("UPDATE chat_sessions SET session_key = ? WHERE id = ?", (new_session_key(parsed_dt), sid))
+
+            # One-time migration: sanitize legacy channel placeholder titles (e.g. 'Telegram Chat (User)...')
+            cursor.execute("""
+                UPDATE chat_sessions
+                SET title = COALESCE(
+                    (SELECT user_text FROM conversations c WHERE c.session_id = chat_sessions.id AND user_text IS NOT NULL AND user_text != '' ORDER BY c.id ASC LIMIT 1),
+                    'New Session'
+                ),
+                title_source = 'derived'
+                WHERE title LIKE 'Telegram Chat (%' OR title LIKE 'Whatsapp Chat (%' OR title LIKE 'Cli Chat (%' OR title = 'Anara CLI Session'
+            """)
 
             # 8. Acoustic Emotion History (Emotion-Aware Anara)
             cursor.execute("""
@@ -507,6 +521,10 @@ class BaseMemoryEngine:
                 pass
             try:
                 cursor.execute("ALTER TABLE chat_sessions ADD COLUMN session_mode TEXT DEFAULT 'conversational'")
+            except Exception:
+                pass
+            try:
+                cursor.execute("ALTER TABLE chat_sessions ADD COLUMN title_source TEXT DEFAULT NULL")
             except Exception:
                 pass
             try:

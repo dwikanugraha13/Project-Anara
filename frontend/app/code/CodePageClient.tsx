@@ -61,11 +61,22 @@ export default function CodePageClient({
   // Streaming queue: coalesces deltas and flushes to React state at ~30fps
   const codeStreamingFlush = useCallback((accumulatedText: string) => {
     setTranscript((prev) => {
-      const lastIdx = prev.length - 1;
-      const last = prev[lastIdx];
-      if (last && last.speaker === "output") {
-        return [...prev.slice(0, lastIdx), { ...last, text: accumulatedText, isStreaming: true }];
+      // Find the last output item in the current turn to update in-place (do not jump over tools)
+      let targetIdx = -1;
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (prev[i].speaker === "input") break;
+        if (prev[i].visualType === "agent_action") break;
+        if (prev[i].speaker === "output" && (!prev[i].visualType || prev[i].visualType === "none")) {
+          targetIdx = i;
+          break;
+        }
       }
+      if (targetIdx !== -1) {
+        const target = prev[targetIdx];
+        const updated = { ...target, text: accumulatedText, isStreaming: true };
+        return [...prev.slice(0, targetIdx), updated, ...prev.slice(targetIdx + 1)];
+      }
+      // No existing output item — create one
       return [...prev, { speaker: "output" as const, text: accumulatedText, isStreaming: true, startTime: Date.now() }];
     });
   }, []);
@@ -137,7 +148,7 @@ export default function CodePageClient({
   const isIdeHydratedRef = useRef(false);
 
   // ── Reasoning Effort State ──
-  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffortLevel>("medium");
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffortLevel>("auto");
 
   useEffect(() => {
     try {
@@ -356,7 +367,7 @@ export default function CodePageClient({
     loadGitStatus(activeSessionId);
   }, [activeSessionId, sessionRefreshKey, loadSessions, loadWorkspaceTree, loadGitStatus]);
 
-  // ── Real-time Event Listener for Workspace Mutations ──
+  // ── Real-time Event Listener for Workspace & Session Mutations ──
   useEffect(() => {
     const handleBrainSync = (e: Event) => {
       const detail = (e as CustomEvent).detail;
@@ -370,10 +381,21 @@ export default function CodePageClient({
         loadWorkspaceTree(activeSessionId);
         loadGitStatus(activeSessionId);
       }
+      if (
+        detail.event === "session_created" ||
+        detail.event === "session_updated" ||
+        detail.event === "session_deleted" ||
+        detail.event === "session_switched" ||
+        detail.event === "title_updated" ||
+        detail.event === "auto_title" ||
+        detail.table === "chat_sessions"
+      ) {
+        loadSessions();
+      }
     };
     window.addEventListener("anara-brain-sync", handleBrainSync);
     return () => window.removeEventListener("anara-brain-sync", handleBrainSync);
-  }, [activeSessionId, loadWorkspaceTree, loadGitStatus]);
+  }, [activeSessionId, loadSessions, loadWorkspaceTree, loadGitStatus]);
 
   // ── Workspace Folder Actions ──
   const handlePickLocalFolder = useCallback(async (targetPath?: string) => {
@@ -577,16 +599,29 @@ export default function CodePageClient({
         }
 
         if (visualType && visualType !== "none") {
-          // Only update last tool card if it is the completion event of the currently running action
+          // Reconcile consecutive agent actions of the same tool, preserving file paths and rich details
           if (
             visualType === "agent_action" &&
             last &&
             last.visualType === "agent_action" &&
-            last.agentActionData?.eventType === "agent_action_start" &&
-            agentActionData?.eventType === "agent_action_complete" &&
             last.agentActionData?.toolName === agentActionData?.toolName
           ) {
-            return [...prev.slice(0, lastIdx), { ...last, ...newEntry }];
+            const mergedActionData = {
+              ...last.agentActionData,
+              ...agentActionData,
+              filePath: agentActionData?.filePath || last.agentActionData?.filePath,
+              filename: agentActionData?.filename || last.agentActionData?.filename,
+              command: agentActionData?.command || last.agentActionData?.command,
+              rawResult: agentActionData?.rawResult || last.agentActionData?.rawResult,
+              content: agentActionData?.content || last.agentActionData?.content,
+              summary: (agentActionData?.summary && agentActionData.summary !== "Done")
+                ? agentActionData.summary
+                : last.agentActionData?.summary || agentActionData?.summary || "Done",
+              detail: agentActionData?.detail || last.agentActionData?.detail,
+              actionTitle: agentActionData?.actionTitle || last.agentActionData?.actionTitle,
+              eventType: agentActionData?.eventType || last.agentActionData?.eventType,
+            };
+            return [...prev.slice(0, lastIdx), { ...last, ...newEntry, agentActionData: mergedActionData }];
           }
           return [...prev, newEntry];
         }
@@ -613,6 +648,31 @@ export default function CodePageClient({
     },
     onAgentAction: (payload) => {
       setTranscript((prev) => {
+        const lastIdx = prev.length - 1;
+        const last = prev[lastIdx];
+        if (
+          last &&
+          last.speaker === "output" &&
+          last.visualType === "agent_action" &&
+          last.agentActionData?.toolName === payload.toolName
+        ) {
+          const mergedActionData = {
+            ...last.agentActionData,
+            ...payload,
+            filePath: payload.filePath || last.agentActionData?.filePath,
+            filename: payload.filename || last.agentActionData?.filename,
+            command: payload.command || last.agentActionData?.command,
+            rawResult: payload.rawResult || last.agentActionData?.rawResult,
+            content: payload.content || last.agentActionData?.content,
+            summary: (payload.summary && payload.summary !== "Done")
+              ? payload.summary
+              : last.agentActionData?.summary || payload.summary || "Done",
+            detail: payload.detail || last.agentActionData?.detail,
+            actionTitle: payload.actionTitle || last.agentActionData?.actionTitle,
+            eventType: payload.eventType || last.agentActionData?.eventType,
+          };
+          return [...prev.slice(0, lastIdx), { ...last, agentActionData: mergedActionData }];
+        }
         const newEntry: TranscriptItem = {
           speaker: "output",
           text: "",
@@ -622,16 +682,6 @@ export default function CodePageClient({
           modelId: activeModelId,
           startTime: Date.now(),
         };
-        const lastIdx = prev.length - 1;
-        const last = prev[lastIdx];
-        if (
-          last &&
-          last.speaker === "output" &&
-          last.visualType === "agent_action" &&
-          last.agentActionData?.toolName === payload.toolName
-        ) {
-          return [...prev.slice(0, lastIdx), { ...last, ...newEntry }];
-        }
         if (last && last.speaker === "output" && !last.text && (!last.visualType || last.visualType === "none")) {
           return [...prev.slice(0, lastIdx), newEntry];
         }
@@ -792,7 +842,8 @@ export default function CodePageClient({
       if (roster && Array.isArray(roster)) setSpeakerRoster(roster);
     },
     onAgentThinking: (t: string) => {
-      setActiveThinkingText(t && t.trim().length > 0 ? t : null);
+      if (!t) return;
+      setActiveThinkingText((prev) => (prev ? prev + t : t));
     },
     onInteractiveQuestion: (payload) => {
       setActiveThinkingText(null);
@@ -911,7 +962,6 @@ export default function CodePageClient({
     // Eager-clear stale workspace state BEFORE switching session (Anara Parity)
     setWorkspaceTree(null);
     setGitStatus(null);
-    setTranscript([]);
     setActiveSessionId(id);
     localStorage.setItem("anara_active_session_id", String(id));
     if (typeof window !== "undefined") {
@@ -975,6 +1025,7 @@ export default function CodePageClient({
     }
     const effectiveMode: "plan" | "build" = mode || (activeApproval === "plan" ? "plan" : agentMode);
 
+    setActiveThinkingText(null);
     setTranscript((prev) => [
       ...prev,
       { speaker: "input", text: trimmed },
@@ -1074,10 +1125,10 @@ export default function CodePageClient({
   );
 
   const handleApproveAction = useCallback(
-    (planId: string, scope: "once" | "session") => {
+    (planId: string, scope: "once" | "session" | "always") => {
       sendJSON({
         type: "text_input",
-        text: "Yes, approve and execute.",
+        text: scope === "always" ? "Yes, always allow and execute." : "Yes, approve and execute.",
         channel: "code",
         platform: "code",
         agent_mode: "build",
@@ -1247,6 +1298,7 @@ export default function CodePageClient({
         handleSelectReasoningEffort={handleSelectReasoningEffort}
         workspaceFilesList={workspaceFilesList}
         activeUnansweredQuestion={activeUnansweredQuestion}
+        fetchModels={fetchModels}
       />
 
       {/* ── Anara Brain Modal Drawer ── */}

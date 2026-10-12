@@ -91,9 +91,6 @@ class AgentRunner:
                     await self.websocket.send_json({"type": "error", "data": err_msg})
                     return
 
-            if text and re.match(r'^\s*\{.*"type"\s*:', text):
-                return
-
             if not text:
                 return
 
@@ -190,7 +187,7 @@ class AgentRunner:
             else:
                 from providers.constants import extract_model_tier
                 m_tier = extract_model_tier(selected_model)
-                req_reasoning_effort = m_tier if m_tier else "off"
+                req_reasoning_effort = m_tier if m_tier else "auto"
             chat_diagnostics["active_requests"] += 1
             chat_diagnostics["last_stage"] = f"generating with {selected_model}"
             chat_diagnostics["last_updated"] = _time.time()
@@ -198,71 +195,158 @@ class AgentRunner:
             accumulated_text = ""
             accumulated_chunks: List[str] = []
 
-            from providers.think_scrubber import StreamingThinkScrubber
-            ws_scrubber = StreamingThinkScrubber()
+            session_lock = session_state_manager.get_session_lock(str(sid))
+            await session_lock.acquire()
 
+            from core import subagent_manager
+
+            def _subagent_listener(evt):
+                try:
+                    asyncio.create_task(self.websocket.send_json({
+                        **evt,
+                        "sessionId": sid,
+                        "session_id": sid,
+                    }))
+                except Exception:
+                    pass
+
+            subagent_manager.register_listener(_subagent_listener)
             try:
+                # Signal turn begin
+                await self.websocket.send_json({
+                    "type": "message.start",
+                    "sessionId": sid,
+                    "session_id": sid,
+                })
+
+                req_editor_context = data.get("editor_context") or data.get("editorContext")
+
                 async for event in runner.execute_turn_stream(
                     user_message=text,
                     requested_mode=agent_mode,
                     model_id=selected_model,
                     interaction_mode=req_interaction_mode,
                     reasoning_effort=req_reasoning_effort,
+                    editor_context=req_editor_context,
                 ):
                     if event.type == "chunk" and event.content:
-                        clean_delta = ws_scrubber.feed(event.content)
-                        if ws_scrubber.last_hidden:
-                            await self.websocket.send_json({
-                                "type": "agent_thinking",
-                                "text": ws_scrubber.last_hidden,
-                                "sessionId": sid,
-                                "session_id": sid,
-                            })
-                        if clean_delta:
-                            accumulated_text += clean_delta
-                            accumulated_chunks.append(clean_delta)
-                            await self.websocket.send_json({
-                                "type": "transcript_partial",
-                                "speaker": "output",
-                                "delta": clean_delta,
-                                "text": accumulated_text,
-                                "is_final": False,
-                                "sessionId": sid,
-                                "session_id": sid,
-                            })
-                    elif event.type == "thought" and (event.thought or event.content):
+                        clean_delta = event.content
+                        accumulated_text += clean_delta
+                        accumulated_chunks.append(clean_delta)
                         await self.websocket.send_json({
-                            "type": "agent_thinking",
-                            "text": event.thought or event.content,
+                            "type": "message.delta",
+                            "speaker": "output",
+                            "text": clean_delta,
+                            "delta": clean_delta,
+                            "accumulated_text": accumulated_text,
+                            "is_final": False,
                             "sessionId": sid,
                             "session_id": sid,
                         })
-                    elif event.type == "tool_start":
+                    elif event.type == "thought" and (event.thought or event.content):
+                        thought_val = event.thought or event.content
+                        await self.websocket.send_json({
+                            "type": "reasoning.delta",
+                            "text": thought_val,
+                            "delta": thought_val,
+                            "sessionId": sid,
+                            "session_id": sid,
+                        })
+                    elif event.type == "interim_text" and event.content:
+                        # Interim assistant commentary emitted before tool invocation
+                        await self.websocket.send_json({
+                            "type": "message.interim",
+                            "text": event.content,
+                            "sessionId": sid,
+                            "session_id": sid,
+                        })
+                        await self.websocket.send_json({
+                            "type": "transcript",
+                            "data": event.content,
+                            "speaker": "output",
+                            "is_interim": True,
+                            "is_final": True,
+                            "sessionId": sid,
+                            "session_id": sid,
+                        })
+                    elif event.type == "ttsr_intervention":
+                        # Time-Traveling Stream Rule Course Correction (Oh My Pi Parity)
+                        await self.websocket.send_json({
+                            "type": "stream_rule_intervention",
+                            "message": event.content,
+                            "metadata": event.metadata or {},
+                            "sessionId": sid,
+                            "session_id": sid,
+                        })
+                    elif event.type in ("tool_start", "tool_call"):
                         t_name = event.tool_name or "tool"
+                        c_id = getattr(event, "call_id", None) or (event.metadata.get("call_id") if isinstance(event.metadata, dict) else None)
                         if t_name not in tools_used:
                             tools_used.append(t_name)
                         await self.websocket.send_json({
                             "type": "tool_progress",
                             "tool_name": t_name,
+                            "call_id": c_id,
                             "status": "running",
                             "summary": f"Executing {t_name}...",
                             "icon": "terminal" if "command" in t_name or "shell" in t_name else "file",
                             "sessionId": sid,
                             "session_id": sid,
                         })
+                        await self.websocket.send_json({
+                            "type": "tool.start",
+                            "name": t_name,
+                            "tool_name": t_name,
+                            "call_id": c_id,
+                            "tool_call_id": c_id,
+                            "args": event.tool_args or {},
+                            "tool_args": event.tool_args or {},
+                            "sessionId": sid,
+                            "session_id": sid,
+                        })
                     elif event.type == "tool_result":
                         t_name = event.tool_name or "tool"
+                        c_id = getattr(event, "call_id", None) or (event.metadata.get("call_id") if isinstance(event.metadata, dict) else None)
+                        is_err = bool(
+                            getattr(event, "is_error", False)
+                            or (isinstance(event.metadata, dict) and event.metadata.get("is_error"))
+                            or (isinstance(event.tool_result, dict) and event.tool_result.get("is_error"))
+                        )
                         if t_name not in tools_used:
                             tools_used.append(t_name)
                         await self.websocket.send_json({
                             "type": "tool_progress",
                             "tool_name": t_name,
-                            "status": "done",
-                            "summary": str(event.tool_result)[:160] if event.tool_result else "Done",
+                            "call_id": c_id,
+                            "status": "error" if is_err else "done",
+                            "summary": str(event.tool_result)[:160] if event.tool_result else ("Error" if is_err else "Done"),
                             "icon": "terminal" if "command" in t_name or "shell" in t_name else "file",
                             "sessionId": sid,
                             "session_id": sid,
                         })
+                        await self.websocket.send_json({
+                            "type": "tool.complete",
+                            "name": t_name,
+                            "tool_name": t_name,
+                            "call_id": c_id,
+                            "tool_call_id": c_id,
+                            "result": event.tool_result,
+                            "summary": str(event.tool_result)[:160] if event.tool_result else ("Error" if is_err else "Done"),
+                            "is_error": is_err,
+                            "sessionId": sid,
+                            "session_id": sid,
+                        })
+                        if isinstance(event.tool_result, dict) and event.tool_result.get("diff"):
+                            await self.websocket.send_json({
+                                "type": "diff.update",
+                                "filename": event.tool_result.get("filename"),
+                                "file_path": event.tool_result.get("file_path"),
+                                "diff": event.tool_result.get("diff"),
+                                "added_lines": event.tool_result.get("added_lines"),
+                                "deleted_lines": event.tool_result.get("deleted_lines"),
+                                "sessionId": sid,
+                                "session_id": sid,
+                            })
                     elif event.type == "need_approval":
                         from providers.payload_parser import _strip_think_blocks
                         approval_text = _strip_think_blocks(event.content or "").strip() or "Action requires confirmation before execution."
@@ -335,6 +419,14 @@ class AgentRunner:
                         logger.debug(f"[Emotion] analyze error: {em_err}")
 
                 try:
+                    await self.websocket.send_json({
+                        "type": "message.complete",
+                        "text": reply_text or "",
+                        "status": "completed",
+                        "tools_used": tools_used,
+                        "sessionId": sid,
+                        "session_id": sid,
+                    })
                     await self.websocket.send_json({"type": "turn_complete"})
                 except Exception:
                     pass
@@ -351,6 +443,12 @@ class AgentRunner:
                 except Exception:
                     pass
                 return
+            finally:
+                try:
+                    subagent_manager.unregister_listener(_subagent_listener)
+                except Exception:
+                    pass
+                session_lock.release()
 
         except asyncio.CancelledError:
             logger.info("[Text Chat] Turn cancelled by client interrupt.")

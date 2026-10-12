@@ -220,6 +220,44 @@ async def get_agent_workspace_file_content(path: str, session_id: Optional[Union
         "content": content
     }
 
+@router.get("/api/agent/workspace/raw-preview")
+async def get_agent_workspace_raw_preview(path: str, session_id: Optional[Union[int, str]] = None):
+    """Serves raw file content with native MIME type for live browser preview iframe (Anara Desktop Parity)."""
+    import mimetypes
+    from fastapi.responses import Response
+
+    target_dir = anara_agent.get_session_dir(session_id)
+    clean_p = path.lstrip("/\\")
+    full_p = os.path.join(target_dir, clean_p)
+    if not os.path.exists(full_p) or not os.path.isfile(full_p):
+        candidates = [clean_p, os.path.expanduser(clean_p)]
+        for c in candidates:
+            if c and os.path.exists(c) and os.path.isfile(c):
+                full_p = c
+                break
+
+    if not os.path.exists(full_p) or not os.path.isfile(full_p):
+        raise HTTPException(status_code=404, detail=f"File not found: {path}")
+
+    # Sandbox Path Confinement Guard
+    from core.workspace_sentinel import workspace_sentinel
+    is_safe, denial_reason = workspace_sentinel.validate_file_access(full_p, action="read", workspace_root=target_dir)
+    if not is_safe:
+        raise HTTPException(status_code=403, detail=f"Access denied: {denial_reason}")
+
+    mime_type, _ = mimetypes.guess_type(full_p)
+    if not mime_type:
+        mime_type = "text/plain; charset=utf-8"
+    elif mime_type.startswith("text/") or mime_type in ("application/javascript", "application/json"):
+        mime_type += "; charset=utf-8"
+
+    try:
+        with open(full_p, "rb") as f:
+            data = f.read()
+        return Response(content=data, media_type=mime_type)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading preview file: {e}")
+
 @router.post("/api/agent/workspace/save-file")
 async def save_agent_workspace_file(req: SaveWorkspaceFileRequest):
     """Saves user-edited code directly to disk and broadcasts updates."""

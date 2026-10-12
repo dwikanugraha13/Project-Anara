@@ -17,14 +17,24 @@ import logging
 import os
 import shutil
 import subprocess
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger("anara.terminal")
 router = APIRouter(tags=["Terminal"])
 
-# Active terminal sessions registry { terminal_id: asyncio.subprocess.Process }
-_active_terminals: Dict[str, asyncio.subprocess.Process] = {}
+# ConPTY support detection on Windows
+HAS_WINPTY = False
+if os.name == "nt":
+    try:
+        from winpty import PtyProcess  # type: ignore
+        HAS_WINPTY = True
+    except ImportError:
+        HAS_WINPTY = False
+
+# Active terminal sessions registry { terminal_id: process_handle }
+_active_terminals: Dict[str, Any] = {}
 
 def get_available_shells() -> List[Dict[str, str]]:
     """Detects available terminal shells installed on the system."""
@@ -39,15 +49,22 @@ def get_available_shells() -> List[Dict[str, str]]:
     if os.path.exists(win_ps):
         shells.append({"id": "powershell", "name": "Windows PowerShell", "path": win_ps})
         
-    # 2. Git Bash / MSYS2 Bash
+    # 2. Git Bash / MSYS2 Bash (filter out dummy System32 WSL stub)
     bash_candidates = [
-        shutil.which("bash.exe"),
-        shutil.which("bash"),
         "C:\\Program Files\\Git\\bin\\bash.exe",
         "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
         os.path.expandvars("%LOCALAPPDATA%\\Programs\\Git\\bin\\bash.exe"),
+        os.path.expandvars("%LOCALAPPDATA%\\hermes\\tools\\git-2.53.0+3-win32-x64\\usr\\bin\\bash.exe"),
+        shutil.which("bash.exe"),
+        shutil.which("bash"),
     ]
-    bash_path = next((p for p in bash_candidates if p and os.path.exists(p)), None)
+    bash_path = None
+    for p in bash_candidates:
+        if p and os.path.exists(p):
+            if "system32" in p.lower():
+                continue
+            bash_path = p
+            break
     if bash_path:
         shells.append({"id": "bash", "name": "Git Bash", "path": bash_path})
         
@@ -64,7 +81,7 @@ def get_available_shells() -> List[Dict[str, str]]:
 @router.get("/api/agent/terminal/shells")
 async def list_terminal_shells():
     """Lists all detected available shells for terminal tab initialization."""
-    return {"shells": get_available_shells()}
+    return {"shells": get_available_shells(), "conpty_active": HAS_WINPTY}
 
 @router.websocket("/ws/terminal/{terminal_id}")
 async def terminal_websocket_endpoint(websocket: WebSocket, terminal_id: str):
@@ -77,15 +94,19 @@ async def terminal_websocket_endpoint(websocket: WebSocket, terminal_id: str):
     # Query parameters
     params = websocket.query_params
     shell_id = params.get("shell", "powershell")
+    cols = int(params.get("cols", 80) or 80)
+    rows = int(params.get("rows", 24) or 24)
     
-    # Validated CWD: default strictly to User Home (C:\Users\<user> or ~) if no active workspace
-    from pathlib import Path
+    # Validated CWD: default strictly to User Home or active project directory
     user_home = str(Path.home())
     req_cwd = (params.get("cwd") or "").strip()
     if req_cwd and os.path.isdir(req_cwd):
         cwd = os.path.abspath(req_cwd)
     else:
-        cwd = user_home
+        try:
+            cwd = os.getcwd() if os.path.isdir(os.getcwd()) else user_home
+        except Exception:
+            cwd = user_home
     
     # Resolve shell command
     available = {s["id"]: s["path"] for s in get_available_shells()}
@@ -99,11 +120,122 @@ async def terminal_websocket_endpoint(websocket: WebSocket, terminal_id: str):
     elif "cmd.exe" in executable.lower():
         cmd_args.extend(["/K"])
 
+    # Branch: Native ConPTY (Windows with pywinpty) vs Standard Subprocess Pipe
+    if HAS_WINPTY and os.name == "nt":
+        await _handle_winpty_session(websocket, terminal_id, cmd_args, cwd, cols, rows)
+    else:
+        await _handle_subprocess_session(websocket, terminal_id, cmd_args, cwd)
+
+
+async def _handle_winpty_session(
+    websocket: WebSocket,
+    terminal_id: str,
+    cmd_args: List[str],
+    cwd: str,
+    cols: int,
+    rows: int,
+):
+    """Handles an interactive terminal session backed by Windows ConPTY (pywinpty)."""
+    from winpty import PtyProcess  # type: ignore
+
+    loop = asyncio.get_running_loop()
+    pty_proc: Optional[PtyProcess] = None
+    read_task: Optional[asyncio.Task] = None
+
+    try:
+        pty_proc = PtyProcess.spawn(
+            cmd_args,
+            cwd=cwd,
+            dimensions=(max(5, rows), max(10, cols)),
+        )
+        _active_terminals[terminal_id] = pty_proc
+        logger.info(f"[Terminal ConPTY] Session started: {terminal_id} ({cmd_args[0]}) [PID {pty_proc.pid}] in {cwd}")
+
+        # Send ready control frame
+        await websocket.send_text(json.dumps({
+            "type": "ready",
+            "pid": pty_proc.pid,
+            "conpty": True,
+            "cols": cols,
+            "rows": rows,
+            "cwd": cwd,
+        }))
+
+        async def _stream_pty_output():
+            while pty_proc and pty_proc.isalive():
+                try:
+                    chunk = await loop.run_in_executor(None, pty_proc.read, 1024)
+                    if not chunk:
+                        break
+                    await websocket.send_text(chunk)
+                except EOFError:
+                    break
+                except Exception as e:
+                    logger.debug(f"[Terminal ConPTY {terminal_id}] Read stopped: {e}")
+                    break
+
+        read_task = asyncio.create_task(_stream_pty_output())
+
+        while True:
+            msg = await websocket.receive_text()
+            if not msg:
+                continue
+
+            if msg.startswith("{") and msg.endswith("}"):
+                try:
+                    payload = json.loads(msg)
+                    msg_type = payload.get("type")
+                    if msg_type == "input":
+                        data_str = payload.get("data", "")
+                        if pty_proc and pty_proc.isalive():
+                            pty_proc.write(data_str)
+                    elif msg_type == "resize":
+                        new_cols = int(payload.get("cols", cols) or cols)
+                        new_rows = int(payload.get("rows", rows) or rows)
+                        if pty_proc and pty_proc.isalive():
+                            try:
+                                pty_proc.setwinsize(max(5, new_rows), max(10, new_cols))
+                            except Exception:
+                                pass
+                    elif msg_type == "kill":
+                        if pty_proc and pty_proc.isalive():
+                            pty_proc.terminate()
+                        break
+                    continue
+                except json.JSONDecodeError:
+                    pass
+
+            if pty_proc and pty_proc.isalive():
+                pty_proc.write(msg)
+
+    except WebSocketDisconnect:
+        logger.info(f"[Terminal ConPTY] Client disconnected: {terminal_id}")
+    except Exception as err:
+        logger.warning(f"[Terminal ConPTY {terminal_id}] Session error: {err}")
+    finally:
+        if read_task and not read_task.done():
+            read_task.cancel()
+        _active_terminals.pop(terminal_id, None)
+        if pty_proc:
+            try:
+                if pty_proc.isalive():
+                    pty_proc.terminate()
+            except Exception:
+                pass
+        logger.info(f"[Terminal ConPTY] Cleaned up session: {terminal_id}")
+
+
+async def _handle_subprocess_session(
+    websocket: WebSocket,
+    terminal_id: str,
+    cmd_args: List[str],
+    cwd: str,
+):
+    """Fallback standard subprocess pipe session for non-ConPTY environments."""
     proc: Optional[asyncio.subprocess.Process] = None
     read_task: Optional[asyncio.Task] = None
 
     try:
-        # Start persistent interactive shell subprocess with piped standard I/O
         proc = await asyncio.create_subprocess_exec(
             *cmd_args,
             cwd=cwd,
@@ -112,10 +244,17 @@ async def terminal_websocket_endpoint(websocket: WebSocket, terminal_id: str):
             stderr=asyncio.subprocess.STDOUT,
         )
         _active_terminals[terminal_id] = proc
-        logger.info(f"[Terminal] Session started: {terminal_id} ({executable}) in {cwd} [PID {proc.pid}]")
+        logger.info(f"[Terminal Pipe] Session started: {terminal_id} ({cmd_args[0]}) [PID {proc.pid}] in {cwd}")
 
-        # Sub-task: Read stdout/stderr from process and stream to client WebSocket
-        async def _stream_output():
+        # Send ready control frame
+        await websocket.send_text(json.dumps({
+            "type": "ready",
+            "pid": proc.pid,
+            "conpty": False,
+            "cwd": cwd,
+        }))
+
+        async def _stream_pipe_output():
             assert proc is not None and proc.stdout is not None
             decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
             try:
@@ -123,24 +262,21 @@ async def terminal_websocket_endpoint(websocket: WebSocket, terminal_id: str):
                     chunk = await proc.stdout.read(1024)
                     if not chunk:
                         break
-                    # Send decoded text with incremental decoding to prevent slicing multi-byte chars
                     text = decoder.decode(chunk)
                     if text:
                         await websocket.send_text(text)
             except asyncio.CancelledError:
                 pass
             except Exception as e:
-                logger.debug(f"[Terminal {terminal_id}] Output stream stopped: {e}")
+                logger.debug(f"[Terminal Pipe {terminal_id}] Output stopped: {e}")
 
-        read_task = asyncio.create_task(_stream_output())
+        read_task = asyncio.create_task(_stream_pipe_output())
 
-        # Main Loop: Receive keystrokes/data from client WebSocket and pipe to process stdin
         while True:
             msg = await websocket.receive_text()
             if not msg:
                 continue
 
-            # Check if JSON payload (control frame) or raw keystroke string
             if msg.startswith("{") and msg.endswith("}"):
                 try:
                     payload = json.loads(msg)
@@ -159,23 +295,19 @@ async def terminal_websocket_endpoint(websocket: WebSocket, terminal_id: str):
                                     proc.kill()
                             except Exception:
                                 pass
-                            break
-                    elif msg_type == "resize":
-                        # Handled if ConPTY native support is present
-                        pass
+                        break
                     continue
                 except json.JSONDecodeError:
                     pass
 
-            # Raw string fallback
             if proc and proc.stdin:
                 proc.stdin.write(msg.encode("utf-8"))
                 await proc.stdin.drain()
 
     except WebSocketDisconnect:
-        logger.info(f"[Terminal] Client disconnected: {terminal_id}")
+        logger.info(f"[Terminal Pipe] Client disconnected: {terminal_id}")
     except Exception as err:
-        logger.warning(f"[Terminal {terminal_id}] Session error: {err}")
+        logger.warning(f"[Terminal Pipe {terminal_id}] Session error: {err}")
     finally:
         if read_task and not read_task.done():
             read_task.cancel()
@@ -189,4 +321,4 @@ async def terminal_websocket_endpoint(websocket: WebSocket, terminal_id: str):
                 await proc.wait()
             except Exception:
                 pass
-        logger.info(f"[Terminal] Cleaned up session: {terminal_id}")
+        logger.info(f"[Terminal Pipe] Cleaned up session: {terminal_id}")

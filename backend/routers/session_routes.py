@@ -18,9 +18,10 @@ logger = logging.getLogger("anara.routers.sessions")
 router = APIRouter(tags=["Chat Sessions"])
 
 class SessionCreateRequest(BaseModel):
-    title: Optional[str] = "New Chat"
+    title: Optional[str] = "New Session"
     speaker_name: Optional[str] = None
     session_type: Optional[str] = "chat"
+    workspace_path: Optional[str] = None
 
 class SessionPatchRequest(BaseModel):
     title: Optional[str] = None
@@ -44,11 +45,12 @@ async def list_sessions(speaker: Optional[str] = None, session_type: Optional[st
 async def create_session_endpoint(req: SessionCreateRequest):
     """Starts a brand-new conversation thread for either chat or code environment."""
     clean_type = "code" if req.session_type == "code" else "chat"
-    default_title = "New Project" if clean_type == "code" else "New Chat"
+    default_title = "New Project" if clean_type == "code" else "New Session"
     session = memory_engine.create_session(
         speaker_name=req.speaker_name,
         title=req.title or default_title,
-        session_type=clean_type
+        session_type=clean_type,
+        workspace_path=req.workspace_path
     )
     return {"status": "success", "session": session}
 
@@ -86,6 +88,14 @@ async def fork_session_endpoint(session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="Original session not found or could not be forked")
     return {"status": "success", "session": session}
+
+@router.post("/api/chat/sessions/{session_id}/undo")
+async def undo_session_turn_endpoint(session_id: str, n: int = 1):
+    """Anara Enterprise Rewind: Rewinds the active session by N turns."""
+    res = memory_engine.rewind_turns(session_id, n=n)
+    if not res:
+        raise HTTPException(status_code=404, detail="No prior user turns to rewind in this session")
+    return {"status": "success", **res}
 
 @router.delete("/api/chat/sessions/{session_id}")
 async def delete_session_endpoint(session_id: str):
@@ -164,3 +174,30 @@ async def clear_session_plan_endpoint(session_id: str):
     """Clears the pending plan for a session."""
     memory_engine.clear_session_pending_plan(session_id)
     return {"status": "success", "session_id": session_id}
+
+
+# ── Audio Dictation / Speech-to-Text Endpoint (Anara Standard) ──
+
+class AudioTranscribeRequest(BaseModel):
+    audio_base64: str
+    format: Optional[str] = "webm"
+    mime_type: Optional[str] = "audio/webm"
+
+@router.post("/api/audio/transcribe")
+async def transcribe_audio_endpoint(req: AudioTranscribeRequest):
+    """Transcribes client-recorded microphone audio into text (Anara Standard)."""
+    if not req.audio_base64:
+        raise HTTPException(status_code=400, detail="Missing audio_base64 data")
+    try:
+        import base64
+        audio_bytes = base64.b64decode(req.audio_base64)
+        from cognition.audio import transcribe_audio_bytes
+        text = await transcribe_audio_bytes(
+            audio_bytes,
+            mime=req.mime_type or "audio/webm",
+            clean_fmt=req.format or "webm"
+        )
+        return {"status": "success", "transcript": (text or "").strip()}
+    except Exception as e:
+        logger.warning(f"[AudioTranscribe] Transcription error: {e}")
+        return {"status": "error", "transcript": "", "error": str(e)}

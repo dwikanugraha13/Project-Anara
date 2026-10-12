@@ -27,6 +27,7 @@ const DEFAULT_SLASH_COMMANDS: TriggerItem[] = [
   { id: "cmd-build", category: "Modes", label: "/build", value: "/build ", detail: "Switch to autonomous Execution mode", icon: "mode" },
   { id: "cmd-voice", category: "Modes", label: "/voice", value: "/voice", detail: "Switch to 3D Avatar Voice mode", icon: "mode" },
   { id: "cmd-chat", category: "Modes", label: "/chat", value: "/chat", detail: "Switch to standard Chat mode", icon: "mode" },
+  { id: "cmd-undo", category: "Commands", label: "/undo", value: "/undo", detail: "Rewind conversation turn & restore prompt", icon: "command" },
   { id: "cmd-clear", category: "Commands", label: "/clear", value: "/clear", detail: "Clear active conversation transcript", icon: "command" },
   { id: "cmd-compact", category: "Commands", label: "/compact", value: "/compact", detail: "Summarize & compact active session context", icon: "command" },
   { id: "cmd-git", category: "Commands", label: "/git", value: "/git status", detail: "Inspect Git workspace branch & diffs", icon: "command" },

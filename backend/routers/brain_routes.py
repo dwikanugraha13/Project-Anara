@@ -2,6 +2,7 @@
 Brain Database, Memory, Notes, Speakers, and System Status Routes for Project Anara.
 """
 import base64
+import json
 import logging
 import os
 from typing import Optional, List, Dict, Any
@@ -44,7 +45,45 @@ class SkillContentUpdateRequest(BaseModel):
 class ToolsetToggleRequest(BaseModel):
     enabled: Optional[bool] = None
 
+class ToolsetProviderSelectRequest(BaseModel):
+    provider: str
+    capability: Optional[str] = None
+    profile: Optional[str] = None
+
+class ToolsetModelSelectRequest(BaseModel):
+    model: str
+    provider: Optional[str] = None
+    profile: Optional[str] = None
+
+class ToolsetEnvRequest(BaseModel):
+    env_vars: Dict[str, str]
+    profile: Optional[str] = None
+
 class PluginToggleRequest(BaseModel):
+    enabled: Optional[bool] = None
+    target: Optional[str] = "agent"
+
+class PluginInstallRequest(BaseModel):
+    identifier: str
+    branch: Optional[str] = None
+    name: Optional[str] = None
+
+class McpServerAddRequest(BaseModel):
+    name: str
+    command: Optional[str] = ""
+    args: Optional[List[str]] = []
+    url: Optional[str] = None
+    env: Optional[Dict[str, str]] = {}
+    headers: Optional[Dict[str, str]] = {}
+    cwd: Optional[str] = ""
+    transport: Optional[str] = "stdio"
+    auth: Optional[str] = "none"
+
+class McpRawConfigRequest(BaseModel):
+    raw_json: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
+
+class McpServerToggleRequest(BaseModel):
     enabled: Optional[bool] = None
 
 class SkillHubInstallRequest(BaseModel):
@@ -385,6 +424,15 @@ async def delete_skill_v2_endpoint(slug: str):
     ok = skill_library.reject_skill(slug, delete_folder=True)
     return {"status": "success" if ok else "error"}
 
+@router.post("/api/brain/skills/v2/{slug}/archive")
+async def archive_skill_v2_endpoint(slug: str):
+    """Archives a learned skill by moving its folder to .archive/ storage."""
+    from core.skill_library import skill_library
+    ok = skill_library.archive_skill(slug)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Skill '{slug}' could not be archived.")
+    return {"status": "success", "slug": slug, "archived": True}
+
 @router.patch("/api/brain/skills/v2/{slug}/toggle")
 async def toggle_skill_v2_endpoint(slug: str, req: Optional[SkillToggleRequest] = None):
     """Toggles active/disabled status of a folder-based skill."""
@@ -470,6 +518,52 @@ async def toggle_toolset_endpoint(toolset_id: str, req: Optional[ToolsetToggleRe
         raise HTTPException(status_code=404, detail=f"Toolset '{toolset_id}' not found.")
     return {"status": "success", "toolset_id": toolset_id, "enabled": enabled}
 
+@router.get("/api/brain/toolsets/{name}/config")
+@router.get("/api/tools/toolsets/{name}/config")
+async def get_toolset_config_endpoint(name: str, profile: Optional[str] = None):
+    """Returns provider matrix, readiness statuses, and live configuration for a toolset."""
+    from core.toolset_providers import get_toolset_config
+    return get_toolset_config(name, profile=profile)
+
+@router.put("/api/brain/toolsets/{name}/provider")
+@router.put("/api/tools/toolsets/{name}/provider")
+async def set_toolset_provider_endpoint(name: str, req: ToolsetProviderSelectRequest):
+    """Persists an active provider selection for a toolset."""
+    from core.toolset_providers import set_active_provider
+    try:
+        return set_active_provider(name, req.provider, capability=req.capability, profile=req.profile)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.put("/api/brain/toolsets/{name}/env")
+@router.put("/api/tools/toolsets/{name}/env")
+async def set_toolset_env_endpoint(name: str, req: ToolsetEnvRequest):
+    """Persists environment variables / API keys for a toolset."""
+    from core.toolset_providers import set_provider_env
+    try:
+        return set_provider_env(name, req.env_vars, profile=req.profile)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/api/brain/toolsets/{name}/models")
+@router.get("/api/tools/toolsets/{name}/models")
+async def get_toolset_models_endpoint(name: str, provider: Optional[str] = None, profile: Optional[str] = None):
+    """Returns the selectable model catalog for a toolset backend."""
+    from core.toolset_providers import get_toolset_models
+    return get_toolset_models(name, provider=provider, profile=profile)
+
+@router.put("/api/brain/toolsets/{name}/model")
+@router.put("/api/tools/toolsets/{name}/model")
+async def set_toolset_model_endpoint(name: str, req: ToolsetModelSelectRequest):
+    """Persists a backend model selection for a toolset."""
+    from core.toolset_providers import set_active_model
+    try:
+        return set_active_model(name, req.model, provider=req.provider, profile=req.profile)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @router.get("/api/brain/connectors/catalog")
 async def get_connectors_catalog_endpoint():
     """Returns the curated 65 MCP and SaaS Connectors catalog."""
@@ -484,21 +578,82 @@ async def get_plugins_endpoint():
     plugins = plugin_manager.list_plugins()
     return {"status": "success", "plugins": plugins, "total": len(plugins)}
 
+@router.get("/api/brain/plugins/catalog")
+async def get_plugin_catalog_endpoint():
+    """Returns installable modular plugin catalog."""
+    from core.plugins import plugin_manager
+    catalog = plugin_manager.get_catalog()
+    return {"status": "success", "catalog": catalog, "total": len(catalog)}
+
 @router.put("/api/brain/plugins/{plugin_id}/toggle")
 async def toggle_plugin_endpoint(plugin_id: str, req: Optional[PluginToggleRequest] = None):
-    """Toggles modular plugin on or off."""
+    """Toggles modular plugin on or off for desktop, agent, or both."""
     from core.plugins import plugin_manager
     enabled = req.enabled if req else None
-    res = plugin_manager.toggle_plugin(plugin_id, enabled=enabled)
+    target = (req.target or "agent") if req else "agent"
+    res = plugin_manager.toggle_plugin(plugin_id, target=target, enabled=enabled)
     if not res:
         raise HTTPException(status_code=404, detail=f"Plugin '{plugin_id}' not found.")
     return {"status": "success", "plugin": res}
+
+@router.post("/api/brain/plugins/open-folder")
+async def open_plugins_folder_endpoint():
+    """Reveals %LOCALAPPDATA%\\anara\\plugins in the native desktop file manager."""
+    from core.plugins import plugin_manager
+    res = plugin_manager.open_plugins_folder()
+    return res
+
+@router.post("/api/brain/plugins/rescan")
+async def rescan_plugins_endpoint():
+    """Rescans plugin directory and returns refreshed plugin list."""
+    from core.plugins import plugin_manager
+    plugins = plugin_manager.rescan_plugins()
+    return {"status": "success", "plugins": plugins, "total": len(plugins)}
+
+@router.post("/api/brain/plugins/install")
+async def install_plugin_endpoint(req: PluginInstallRequest):
+    """Installs a plugin package from catalog or Git repository."""
+    from core.plugins import plugin_manager
+    try:
+        res = plugin_manager.install_plugin(req.identifier, branch=req.branch, name=req.name)
+        return {"status": "success", "plugin": res}
+    except Exception as e:
+        logger.error(f"[PluginRouter] Install error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.delete("/api/brain/plugins/{plugin_id}")
+async def uninstall_plugin_endpoint(plugin_id: str):
+    """Uninstalls a user or git plugin package."""
+    from core.plugins import plugin_manager
+    try:
+        ok = plugin_manager.uninstall_plugin(plugin_id)
+        return {"status": "success", "plugin_id": plugin_id, "uninstalled": ok}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/api/brain/skills/hub/sources")
 async def get_skill_hub_sources_endpoint():
     """Returns catalog sources available in the 100k+ Skills Hub."""
     from core.skills_hub import get_available_sources
     return get_available_sources()
+
+@router.get("/api/brain/skills/hub/official")
+async def list_official_skills_endpoint():
+    """Returns the official optional-skills catalog ready to install matching desktop standard."""
+    from core.optional_skills import list_official_optional_skills
+    skills = list_official_optional_skills()
+    return {"status": "success", "skills": skills, "total": len(skills)}
+
+@router.get("/api/brain/skills/hub/preview")
+async def preview_skill_hub_endpoint(identifier: str):
+    """Returns full SKILL.md preview, metadata card, and files for an uninstalled catalog skill."""
+    from core.optional_skills import get_official_skill_preview
+    preview = get_official_skill_preview(identifier)
+    if not preview:
+        raise HTTPException(status_code=404, detail=f"Skill '{identifier}' preview not found.")
+    return {"status": "success", **preview}
 
 @router.get("/api/brain/skills/hub/search")
 async def search_skill_hub_endpoint(
@@ -513,9 +668,18 @@ async def search_skill_hub_endpoint(
 
 @router.post("/api/brain/skills/hub/install")
 async def install_skill_hub_endpoint(req: SkillHubInstallRequest):
-    """Installs a skill on-demand from the Skills Hub into runtime skills."""
-    from core.skills_hub import install_skill_from_hub
+    """Installs a skill on-demand from the optional catalog or Skills Hub into runtime skills."""
+    ident = (req.identifier or "").strip()
     try:
+        if ident.startswith("official/") or "/" not in ident:
+            from core.optional_skills import install_official_skill
+            try:
+                res = install_official_skill(ident)
+                return {"status": "success", **res}
+            except Exception:
+                pass
+
+        from core.skills_hub import install_skill_from_hub
         res = install_skill_from_hub(
             identifier=req.identifier,
             custom_name=req.name,
@@ -534,6 +698,7 @@ async def get_mcp_servers_endpoint():
         from integrations.mcp.manager import mcp_manager
         status = mcp_manager.get_status()
         configs = mcp_manager.load_mcp_server_configs()
+        disabled = mcp_manager.get_disabled_servers()
         merged = {}
         for s_name, cfg in configs.items():
             st = status.get(s_name, {})
@@ -542,7 +707,9 @@ async def get_mcp_servers_endpoint():
                 "command": cfg.get("command", ""),
                 "args": cfg.get("args", []),
                 "url": cfg.get("url", ""),
+                "env": cfg.get("env", {}),
                 "transport": "http" if cfg.get("url") else "stdio",
+                "enabled": s_name not in disabled,
                 "connected": st.get("connected", False),
                 "tools_count": st.get("tools_count", 0),
                 "tools": st.get("tools", []),
@@ -551,6 +718,84 @@ async def get_mcp_servers_endpoint():
     except Exception as e:
         logger.error(f"[BrainRouter] MCP status error: {e}")
         return {"status": "success", "servers": {}, "total_servers": 0}
+
+@router.post("/api/brain/mcp/servers")
+async def add_mcp_server_endpoint(req: McpServerAddRequest):
+    """Adds a new Model Context Protocol (MCP) server configuration."""
+    from integrations.mcp.manager import mcp_manager
+    name = (req.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Server name is required.")
+    cfg = {
+        "command": req.command or "",
+        "args": req.args or [],
+        "url": req.url or "",
+        "env": req.env or {},
+    }
+    if req.headers:
+        cfg["headers"] = req.headers
+    if req.cwd:
+        cfg["cwd"] = req.cwd
+    if req.auth and req.auth != "none":
+        cfg["auth"] = req.auth
+    ok = await mcp_manager.add_server(name, cfg, auto_connect=True)
+    return {"status": "success", "server_name": name, "connected": ok}
+
+@router.get("/api/brain/mcp/raw-config")
+async def get_mcp_raw_config_endpoint():
+    """Returns the raw mcp.json configuration."""
+    from integrations.mcp.manager import mcp_manager
+    raw_str = mcp_manager.get_raw_mcp_json()
+    try:
+        parsed = json.loads(raw_str)
+    except Exception:
+        parsed = {}
+    return {"status": "success", "raw": raw_str, "parsed": parsed}
+
+@router.put("/api/brain/mcp/raw-config")
+@router.post("/api/brain/mcp/raw-config")
+async def save_mcp_raw_config_endpoint(req: McpRawConfigRequest):
+    """Saves raw mcp.json content directly to backend."""
+    from integrations.mcp.manager import mcp_manager
+    raw_text = req.raw_json
+    if not raw_text and req.config is not None:
+        raw_text = json.dumps(req.config, indent=2)
+    if not raw_text:
+        raise HTTPException(status_code=400, detail="raw_json or config is required.")
+    try:
+        servers = await mcp_manager.save_raw_mcp_json(raw_text)
+        return {"status": "success", "total_servers": len(servers)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.delete("/api/brain/mcp/servers/{server_name}")
+async def delete_mcp_server_endpoint(server_name: str):
+    """Removes a configured MCP server and disconnects it."""
+    from integrations.mcp.manager import mcp_manager
+    ok = await mcp_manager.remove_server(server_name)
+    return {"status": "success", "server_name": server_name, "removed": ok}
+
+@router.put("/api/brain/mcp/servers/{server_name}/toggle")
+async def toggle_mcp_server_endpoint(server_name: str, req: Optional[McpServerToggleRequest] = None):
+    """Toggles an MCP server on or off."""
+    from integrations.mcp.manager import mcp_manager
+    enabled = req.enabled if req else None
+    new_state = await mcp_manager.toggle_server(server_name, enabled=enabled)
+    return {"status": "success", "server_name": server_name, "enabled": new_state}
+
+@router.post("/api/brain/mcp/servers/{server_name}/connect")
+async def connect_single_mcp_server_endpoint(server_name: str):
+    """Connects or reconnects a single MCP server."""
+    from integrations.mcp.manager import mcp_manager
+    ok = await mcp_manager.connect_server(server_name)
+    return {"status": "success", "server_name": server_name, "connected": ok}
+
+@router.post("/api/brain/mcp/servers/{server_name}/disconnect")
+async def disconnect_single_mcp_server_endpoint(server_name: str):
+    """Disconnects a single MCP server and unregisters its tools."""
+    from integrations.mcp.manager import mcp_manager
+    ok = await mcp_manager.disconnect_server(server_name)
+    return {"status": "success", "server_name": server_name, "disconnected": ok}
 
 
 @router.post("/api/brain/mcp/servers/connect")

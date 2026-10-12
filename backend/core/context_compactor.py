@@ -168,6 +168,7 @@ class ContextCompactor:
             return ""
 
         head_block = ""
+        pinned_block = ""
         if protect_head_n > 0 and len(cleaned) > verbatim_turns:
             head_items = cleaned[:protect_head_n]
             head_lines = [f"• Goal: {h.get('user_text', '').strip()}" for h in head_items if h.get('user_text')]
@@ -181,17 +182,31 @@ class ContextCompactor:
                 u = (h.get("user_text") or "").strip()
                 a = (h.get("ai_text") or "").strip()
                 turns_str.append(f"User: {u}\nAnara: {a}")
-            return f"{head_block}RECENT CONVERSATION:\n" + "\n---\n".join(turns_str) + "\n\n"
+            return f"{head_block}{pinned_block}RECENT CONVERSATION:\n" + "\n---\n".join(turns_str) + "\n\n"
 
         # Split into older turns and recent verbatim turns
         older_turns = cleaned[:-verbatim_turns]
         recent_turns = cleaned[-verbatim_turns:]
 
-        # Build structured capsule from older turns honoring max_summary_tokens budget
+        # Hermes-Parity Context Pinning: Preserve pinned turns verbatim outside summary capsule
+        from core.context_pin import is_item_pinned
+        pinned_older = [h for h in older_turns if is_item_pinned(h)]
+        unpinned_older = [h for h in older_turns if not is_item_pinned(h)]
+
+        pinned_block = ""
+        if pinned_older:
+            pinned_str = []
+            for h in pinned_older:
+                u = (h.get("user_text") or "").strip()
+                a = (h.get("ai_text") or "").strip()
+                pinned_str.append(f"• [PINNED] User: {u}\n  Anara: {a}")
+            pinned_block = "[PINNED TURNS (PRESERVED ACROSS COMPACTION)]:\n" + "\n".join(pinned_str) + "\n\n"
+
+        # Build structured capsule from unpinned older turns honoring max_summary_tokens budget
         capsule_lines = []
         chars_budget = max(1200, max_summary_tokens * 4)
         accumulated_chars = 0
-        for h in reversed(older_turns):
+        for h in reversed(unpinned_older):
             u = (h.get("user_text") or "").strip()
             a = (h.get("ai_text") or "").strip()
             turn_capsule = []
@@ -221,6 +236,21 @@ class ContextCompactor:
 
         capsule_header = "[SESSION SUMMARY CAPSULE]:\n" + "\n".join(capsule_lines) + "\n\n"
 
+        # Pi Parity Cumulative File State Tracking (CompactionDetails)
+        file_state_block = ""
+        try:
+            import os
+            from tools.fs_tools import get_session_tracked_files
+            tracked = get_session_tracked_files()
+            read_files = tracked.get("read_files", [])
+            modified_files = tracked.get("modified_files", [])
+            if read_files or modified_files:
+                rf_str = ", ".join([os.path.basename(f) for f in read_files[:10]]) or "none"
+                mf_str = ", ".join([os.path.basename(f) for f in modified_files[:10]]) or "none"
+                file_state_block = f"[CUMULATIVE FILE STATE]:\n• Inspected Files: {rf_str}\n• Modified Files: {mf_str}\n\n"
+        except Exception:
+            pass
+
         # Render recent turns verbatim
         recent_lines = []
         for h in recent_turns:
@@ -228,7 +258,7 @@ class ContextCompactor:
             a = (h.get("ai_text") or "").strip()
             recent_lines.append(f"User: {u}\nAnara: {a}")
 
-        return f"{head_block}{capsule_header}RECENT CONVERSATION:\n" + "\n---\n".join(recent_lines) + "\n\n"
+        return f"{head_block}{pinned_block}{file_state_block}{capsule_header}RECENT CONVERSATION:\n" + "\n---\n".join(recent_lines) + "\n\n"
 
     @classmethod
     def estimate_history_tokens(cls, history: List[Dict[str, Any]]) -> int:

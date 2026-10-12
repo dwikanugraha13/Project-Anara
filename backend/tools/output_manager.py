@@ -62,7 +62,7 @@ def compact_tool_output(
     dump_file = TOOL_LOGS_DIR / f"{safe_label}_{dump_id}.log"
     try:
         _atomic_write_dump(dump_file, text)
-        log_notice = f"Full log ({len(text):,} chars) saved to: {dump_file}"
+        log_notice = f"Full log ({len(text):,} chars) saved to: {dump_file}. Use read_file to inspect the full content."
     except Exception:
         log_notice = f"Total chars: {len(text):,}"
 

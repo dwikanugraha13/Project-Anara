@@ -1,6 +1,6 @@
 """
-toolsets.py — Anara Standard 31 Toolsets Matrix & Modular Governance for Project Anara.
-Groups Anara's tools into 31 cohesive, togglable toolsets with persistent status in SQLite.
+toolsets.py — Anara Standard 25 Desktop Toolsets Matrix & Modular Governance for Project Anara.
+Groups Anara's tools into 25 cohesive, togglable standard desktop toolsets with persistent status in SQLite and full legacy alias backward-compatibility.
 """
 
 import json
@@ -10,214 +10,21 @@ from typing import Dict, List, Any, Optional, Set
 
 logger = logging.getLogger(__name__)
 
-# Complete 31-Toolset Taxonomy for Project Anara
+# Complete 25 Standard Desktop Toolsets Matrix for Project Anara
 ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
-    "clarifying_questions": {
-        "id": "clarifying_questions",
-        "title": "Clarifying Questions",
-        "description": "Interactive multi-step questionnaire cards (Wizard) for clarifying ambiguous user tasks.",
-        "icon": "help-circle",
-        "category": "intelligence",
-        "default_enabled": True,
-        "tools": ["interactive_question"]
-    },
-    "web_search_scraping": {
-        "id": "web_search_scraping",
+    "web": {
+        "id": "web",
         "title": "Web Search & Scraping",
-        "description": "Real-time web search (DuckDuckGo/Brave) and clean Markdown content extraction.",
+        "description": "Web research and content extraction tools (search and scraping).",
         "icon": "globe",
         "category": "exploration",
         "default_enabled": True,
-        "tools": ["web_search", "fetch_webpage"]
+        "tools": ["web_search", "web_extract"],
     },
-    "file_operations": {
-        "id": "file_operations",
-        "title": "File Operations",
-        "description": "Workspace file operations (read, write, edit, search, glob, scan).",
-        "icon": "folder",
-        "category": "coding",
-        "default_enabled": True,
-        "tools": [
-            "read_local_file",
-            "write_local_file",
-            "edit_file",
-            "glob_find_files",
-            "grep_search_code",
-            "list_directory",
-            "scan_workspace_folder",
-            "switch_workspace",
-            "extract_code_outline"
-        ]
-    },
-    "terminal_processes": {
-        "id": "terminal_processes",
-        "title": "Terminal & Processes",
-        "description": "Sandboxed terminal command execution (PowerShell/Bash) and persistent background daemon management.",
-        "icon": "terminal",
-        "category": "system",
-        "default_enabled": True,
-        "tools": [
-            "execute_cli_command",
-            "process_manage"
-        ]
-    },
-    "memory_hot": {
-        "id": "memory_hot",
-        "title": "Memory (Working RAM)",
-        "description": "Short and mid-term working memory management (MEMORY.md and USER.md) with add, replace, and remove operations.",
-        "icon": "cpu",
-        "category": "memory",
-        "default_enabled": True,
-        "tools": ["memory", "manage_memory_and_todos"]
-    },
-    "session_search": {
-        "id": "session_search",
-        "title": "Session Search",
-        "description": "Full-text search across past conversations and sessions stored in SQLite database.",
-        "icon": "history",
-        "category": "memory",
-        "default_enabled": True,
-        "tools": ["session_search"]
-    },
-    "skills_engine": {
-        "id": "skills_engine",
-        "title": "Skills Engine",
-        "description": "Learn, inspect, and load technical procedures from the skill repository (agentskills.io format).",
-        "icon": "book-open",
-        "category": "intelligence",
-        "default_enabled": True,
-        "tools": [
-            "learn_and_save_skill",
-            "skill_view"
-        ]
-    },
-    "task_delegation": {
-        "id": "task_delegation",
-        "title": "Task Delegation",
-        "description": "Autonomous task delegation to independent worker subagents.",
-        "icon": "users",
-        "category": "system",
-        "default_enabled": True,
-        "tools": ["delegate_subagent"]
-    },
-    "digital_artifacts": {
-        "id": "digital_artifacts",
-        "title": "Digital Artifacts & ZIP",
-        "description": "Generate downloadable documents (DOCX, PDF, CSV, Excel, TXT, MD) and manage ZIP archives.",
-        "icon": "file-archive",
-        "category": "coding",
-        "default_enabled": True,
-        "tools": [
-            "generate_file_artifact",
-            "create_zip_archive",
-            "extract_zip_archive",
-            "rezip_archive",
-            "read_zip_contents"
-        ]
-    },
-    "messaging_telegram": {
-        "id": "messaging_telegram",
-        "title": "Messaging: Telegram",
-        "description": "Read and send messages, notifications, and status updates via Telegram bot.",
-        "icon": "send",
-        "category": "communication",
-        "default_enabled": True,
-        "tools": ["telegram_read_messages", "telegram_send_message"]
-    },
-    "messaging_whatsapp": {
-        "id": "messaging_whatsapp",
-        "title": "Messaging: WhatsApp",
-        "description": "Read and send messages via local WhatsApp Web Baileys bridge.",
-        "icon": "message-circle",
-        "category": "communication",
-        "default_enabled": True,
-        "tools": ["whatsapp_read_messages", "whatsapp_send_message"]
-    },
-    "messaging_discord": {
-        "id": "messaging_discord",
-        "title": "Messaging: Discord",
-        "description": "Read and send messages to Discord server channels.",
-        "icon": "message-square",
-        "category": "communication",
-        "default_enabled": True,
-        "tools": ["discord_read_messages", "discord_send_message"]
-    },
-    "messaging_slack": {
-        "id": "messaging_slack",
-        "title": "Messaging: Slack",
-        "description": "Read and send messages to Slack workspace channels.",
-        "icon": "hash",
-        "category": "communication",
-        "default_enabled": True,
-        "tools": ["slack_read_messages", "slack_send_message"]
-    },
-    "document_delivery": {
-        "id": "document_delivery",
-        "title": "Document Delivery",
-        "description": "Auto-dispatch digital documents (PDF, DOCX, ZIP, code) directly to WhatsApp or Telegram chats.",
-        "icon": "share-2",
-        "category": "communication",
-        "default_enabled": True,
-        "tools": ["send_document_file"]
-    },
-    "google_workspace": {
-        "id": "google_workspace",
-        "title": "Google Workspace",
-        "description": "Read incoming Gmail messages and inspect Google Calendar schedules.",
-        "icon": "mail",
-        "category": "communication",
-        "default_enabled": True,
-        "tools": ["gmail_read_inbox", "calendar_get_schedule"]
-    },
-    "system_desktop": {
-        "id": "system_desktop",
-        "title": "System & Desktop",
-        "description": "Launch and control desktop applications and system functions.",
-        "icon": "monitor",
-        "category": "system",
-        "default_enabled": True,
-        "tools": ["system_control"]
-    },
-    "visual_hud": {
-        "id": "visual_hud",
-        "title": "Visual HUD Projection",
-        "description": "Project interactive visualizations, knowledge schematic cards, and code terminals to user HUD.",
-        "icon": "layout",
-        "category": "multimedia",
-        "default_enabled": True,
-        "tools": ["project_hud"]
-    },
-    "avatar_3d": {
-        "id": "avatar_3d",
-        "title": "Avatar 3D & Gestures",
-        "description": "Drive 3D avatar animations, gestures, and expressions on screen.",
-        "icon": "smile",
-        "category": "multimedia",
-        "default_enabled": True,
-        "tools": ["trigger_avatar_animation"]
-    },
-    "custom_webhooks": {
-        "id": "custom_webhooks",
-        "title": "Custom Webhooks",
-        "description": "Dispatch automated HTTP payloads to external webhooks (Discord, Zapier, n8n).",
-        "icon": "webhook",
-        "category": "system",
-        "default_enabled": True,
-        "tools": ["custom_webhook"]
-    },
-    "code_execution": {
-        "id": "code_execution",
-        "title": "Code Execution (REPL)",
-        "description": "Evaluate Python and Node.js code snippets in an isolated sandboxed REPL.",
-        "icon": "play",
-        "category": "coding",
-        "default_enabled": True,
-        "tools": ["execute_code"]
-    },
-    "browser_automation": {
-        "id": "browser_automation",
+    "browser": {
+        "id": "browser",
         "title": "Browser Automation",
-        "description": "Automate web navigation, interaction, clicks, typing, and screenshots via Playwright.",
+        "description": "Browser automation for web interaction (navigate, click, type, scroll, exec).",
         "icon": "compass",
         "category": "exploration",
         "default_enabled": True,
@@ -225,124 +32,299 @@ ANARA_TOOLSETS: Dict[str, Dict[str, Any]] = {
             "browser_navigate",
             "browser_click",
             "browser_type",
-            "browser_snapshot",
-            "browser_screenshot",
-            "browser_close",
             "browser_scroll",
-            "browser_press",
-            "browser_back"
-        ]
+            "browser_exec",
+        ],
     },
-    "spotify_music": {
-        "id": "spotify_music",
-        "title": "Spotify & Audio Player",
-        "description": "Search and control Spotify audio and background playlist playback.",
-        "icon": "music",
-        "category": "multimedia",
-        "default_enabled": True,
-        "tools": [
-            "spotify_search",
-            "spotify_playback"
-        ]
-    },
-    "home_assistant": {
-        "id": "home_assistant",
-        "title": "Home Assistant & IoT",
-        "description": "Smart home automation and IoT device control via Home Assistant.",
-        "icon": "home",
+    "terminal": {
+        "id": "terminal",
+        "title": "Terminal & Processes",
+        "description": "Terminal/command execution and persistent process management tools.",
+        "icon": "terminal",
         "category": "system",
         "default_enabled": True,
-        "tools": [
-            "ha_list_entities",
-            "ha_get_state",
-            "ha_call_service"
-        ]
+        "tools": ["terminal", "process_manage"],
     },
-    "image_generation": {
-        "id": "image_generation",
-        "title": "Image Generation",
-        "description": "Creative AI image generation via Pollinations Flux and DALL-E.",
-        "icon": "image",
-        "category": "multimedia",
+    "file": {
+        "id": "file",
+        "title": "File Operations",
+        "description": "File manipulation tools: read, write, patch (with fuzzy matching), and search.",
+        "icon": "folder",
+        "category": "coding",
         "default_enabled": True,
-        "tools": ["image_generate"]
+        "tools": ["read_file", "write_file", "patch", "search_files"],
     },
-    "video_generation": {
-        "id": "video_generation",
-        "title": "Video Generation",
-        "description": "AI video generation from descriptive prompts or reference images.",
-        "icon": "video",
-        "category": "multimedia",
+    "code_execution": {
+        "id": "code_execution",
+        "title": "Code Execution (REPL)",
+        "description": "Run Python scripts and code snippets that call tools programmatically.",
+        "icon": "play",
+        "category": "coding",
         "default_enabled": True,
-        "tools": ["video_generate"]
-    },
-    "voice_biometrics": {
-        "id": "voice_biometrics",
-        "title": "Voice Biometrics & Wake Word",
-        "description": "Voiceprint biometrics identification and hands-free wake word detection.",
-        "icon": "mic",
-        "category": "intelligence",
-        "default_enabled": True,
-        "tools": [
-            "voice_biometrics_manage",
-            "wake_word_manage"
-        ]
-    },
-    "cron_scheduler": {
-        "id": "cron_scheduler",
-        "title": "Cron Scheduler",
-        "description": "Schedule autonomous background tasks by time interval or cron expressions.",
-        "icon": "clock",
-        "category": "system",
-        "default_enabled": True,
-        "tools": ["cronjob_manage"]
-    },
-    "kanban_management": {
-        "id": "kanban_management",
-        "title": "Kanban Multi-Agent Board",
-        "description": "Multi-agent Kanban task board coordination (To Do, In Progress, Review, Blocked, Done).",
-        "icon": "clipboard",
-        "category": "system",
-        "default_enabled": True,
-        "tools": [
-            "kanban_create_task",
-            "kanban_list_tasks",
-            "kanban_update_task",
-            "kanban_request_review"
-        ]
-    },
-    "mcp_protocol": {
-        "id": "mcp_protocol",
-        "title": "Model Context Protocol (MCP)",
-        "description": "External Model Context Protocol (MCP) server connection management (stdio and HTTP/SSE).",
-        "icon": "cpu",
-        "category": "intelligence",
-        "default_enabled": True,
-        "tools": ["mcp_manage"]
-    },
-    "computer_use": {
-        "id": "computer_use",
-        "title": "Computer Use (OS Desktop)",
-        "description": "OS-level desktop automation (screenshots, mouse click, drag, keyboard typing and hotkeys).",
-        "icon": "monitor",
-        "category": "system",
-        "default_enabled": True,
-        "tools": ["computer_use", "take_screenshot"]
+        "tools": ["execute_code"],
     },
     "vision": {
         "id": "vision",
-        "title": "Vision & Video Analysis",
-        "description": "Deep image OCR, diagram inspection, and video analysis tools.",
+        "title": "Vision / Image Analysis",
+        "description": "Image analysis and visual understanding tools.",
         "icon": "eye",
         "category": "multimedia",
         "default_enabled": True,
-        "tools": ["vision_analyze", "video_analyze"]
-    }
+        "tools": ["vision_analyze"],
+    },
+    "video": {
+        "id": "video",
+        "title": "Video Analysis",
+        "description": "Video analysis and understanding tools (requires video-capable model).",
+        "icon": "video",
+        "category": "multimedia",
+        "default_enabled": False,
+        "tools": ["video_analyze"],
+    },
+    "image_gen": {
+        "id": "image_gen",
+        "title": "Image Generation",
+        "description": "Creative generation tools (AI image generation).",
+        "icon": "image",
+        "category": "multimedia",
+        "default_enabled": True,
+        "tools": ["image_generate"],
+    },
+    "video_gen": {
+        "id": "video_gen",
+        "title": "Video Generation",
+        "description": "AI video generation (text/image/reference) and editing tools.",
+        "icon": "film",
+        "category": "multimedia",
+        "default_enabled": False,
+        "tools": ["video_generate", "xai_video_edit", "xai_video_extend"],
+    },
+    "x_search": {
+        "id": "x_search",
+        "title": "X (Twitter) Search",
+        "description": "Search X (Twitter) posts and threads via xAI built-in search tool.",
+        "icon": "twitter",
+        "category": "exploration",
+        "default_enabled": False,
+        "tools": ["x_search"],
+    },
+    "tts": {
+        "id": "tts",
+        "title": "Text-to-Speech",
+        "description": "Text-to-speech audio synthesis (Edge TTS, ElevenLabs, OpenAI, xAI).",
+        "icon": "volume-2",
+        "category": "multimedia",
+        "default_enabled": True,
+        "tools": ["text_to_speech"],
+    },
+    "stt": {
+        "id": "stt",
+        "title": "Speech-to-Text",
+        "description": "Voice transcription (gateway voice messages + voice mode).",
+        "icon": "mic",
+        "category": "multimedia",
+        "default_enabled": True,
+        "tools": ["voice_transcribe"],
+    },
+    "skills": {
+        "id": "skills",
+        "title": "Skills Engine",
+        "description": "Access, create, edit, and manage skill documents with specialized instructions.",
+        "icon": "book-open",
+        "category": "intelligence",
+        "default_enabled": True,
+        "tools": ["skills_list", "skill_view", "skill_manage"],
+    },
+    "todo": {
+        "id": "todo",
+        "title": "Task Planning",
+        "description": "Task planning and tracking for multi-step work.",
+        "icon": "check-square",
+        "category": "system",
+        "default_enabled": True,
+        "tools": ["todo_list"],
+    },
+    "kanban": {
+        "id": "kanban",
+        "title": "Kanban Board",
+        "description": "Kanban task board coordination and multi-agent workflow cards.",
+        "icon": "clipboard",
+        "category": "system",
+        "default_enabled": False,
+        "tools": ["kanban_board", "kanban_card"],
+    },
+    "memory": {
+        "id": "memory",
+        "title": "Memory Engine",
+        "description": "Persistent memory across sessions (personal notes + user profile).",
+        "icon": "cpu",
+        "category": "memory",
+        "default_enabled": True,
+        "tools": ["memory"],
+    },
+    "session_search": {
+        "id": "session_search",
+        "title": "Session Search",
+        "description": "Search and recall past conversations with summarization.",
+        "icon": "history",
+        "category": "memory",
+        "default_enabled": True,
+        "tools": ["session_search"],
+    },
+    "connections": {
+        "id": "connections",
+        "title": "Remote Connections",
+        "description": "Remote connector discovery, execution, and account authorization.",
+        "icon": "link",
+        "category": "connectivity",
+        "default_enabled": True,
+        "tools": ["manage_connections"],
+    },
+    "clarify": {
+        "id": "clarify",
+        "title": "Clarifying Questions",
+        "description": "Ask the user clarifying questions (multiple-choice or open-ended).",
+        "icon": "help-circle",
+        "category": "intelligence",
+        "default_enabled": True,
+        "tools": ["clarify"],
+    },
+    "delegation": {
+        "id": "delegation",
+        "title": "Task Delegation",
+        "description": "Spawn subagents with isolated context for complex subtasks.",
+        "icon": "users",
+        "category": "system",
+        "default_enabled": True,
+        "tools": ["delegate_task"],
+    },
+    "cronjob": {
+        "id": "cronjob",
+        "title": "Cron Jobs",
+        "description": "Cronjob management tool - create, list, update, pause, resume, run scheduled tasks.",
+        "icon": "clock",
+        "category": "system",
+        "default_enabled": True,
+        "tools": ["cronjob_manage"],
+    },
+    "spotify": {
+        "id": "spotify",
+        "title": "Spotify",
+        "description": "Native Spotify playback, search, playlist, and library controls.",
+        "icon": "music",
+        "category": "multimedia",
+        "default_enabled": True,
+        "tools": ["spotify_playback", "spotify_search"],
+    },
+    "computer_use": {
+        "id": "computer_use",
+        "title": "Computer Use (Desktop)",
+        "description": "Background desktop control via OS automation (screenshots, mouse, keyboard).",
+        "icon": "monitor",
+        "category": "system",
+        "default_enabled": True,
+        "tools": ["computer_use"],
+    },
+    "context_engine": {
+        "id": "context_engine",
+        "title": "Context Engine",
+        "description": "Runtime tools exposed by the active context engine.",
+        "icon": "cpu",
+        "category": "intelligence",
+        "default_enabled": True,
+        "tools": [],
+    },
+    "yuanbao": {
+        "id": "yuanbao",
+        "title": "Yuanbao",
+        "description": "Yuanbao platform tools - group info, member queries, DM, stickers.",
+        "icon": "message-square",
+        "category": "communication",
+        "default_enabled": False,
+        "tools": [
+            "yb_query_group_info",
+            "yb_query_group_members",
+            "yb_send_dm",
+            "yb_search_sticker",
+            "yb_send_sticker",
+        ],
+    },
+}
+
+# ── Legacy Aliases Matrix for Backward Compatibility ──────────────────────────
+LEGACY_TOOLSET_ALIASES: Dict[str, str] = {
+    # Core legacy names
+    "file_operations": "file",
+    "terminal_processes": "terminal",
+    "web_search_scraping": "web",
+    "image_generation": "image_gen",
+    "video_generation": "video_gen",
+    "text_to_speech": "tts",
+    "speech_to_text": "stt",
+    "memory_hot": "memory",
+    "skills_engine": "skills",
+    "clarifying_questions": "clarify",
+    "task_delegation": "delegation",
+    # Legacy taxonomy aliases
+    "browser_automation": "browser",
+    "spotify_music": "spotify",
+    "cron_scheduler": "cronjob",
+    "kanban_management": "kanban",
+    "search": "web",
+    "web_search": "web",
+    "video_analysis": "video",
+    "vision_analysis": "vision",
+    "computer_use_desktop": "computer_use",
+    "os_desktop": "computer_use",
+    "desktop_control": "computer_use",
 }
 
 
+def resolve_toolset_name(name: str) -> str:
+    """Resolves any toolset name or legacy alias to its canonical Anara toolset identifier."""
+    clean = (name or "").strip().lower()
+    return LEGACY_TOOLSET_ALIASES.get(clean, clean)
+
+
+def get_toolset(toolset_id: str) -> Optional[Dict[str, Any]]:
+    """Returns toolset specification by ID or legacy alias."""
+    canonical_id = resolve_toolset_name(toolset_id)
+    return ANARA_TOOLSETS.get(canonical_id)
+
+
+def is_toolset_enabled(toolset_id: str) -> bool:
+    """Returns whether a specific toolset is enabled (supports legacy aliases)."""
+    from memory import memory_engine
+
+    clean_id = (toolset_id or "").strip().lower()
+    canonical_id = resolve_toolset_name(clean_id)
+    if canonical_id not in ANARA_TOOLSETS:
+        return False
+
+    setting_val = memory_engine.get_app_setting("toolsets_enabled_map")
+    saved_map = {}
+    if setting_val:
+        try:
+            saved_map = json.loads(setting_val)
+        except Exception:
+            saved_map = {}
+
+    is_enabled = saved_map.get(canonical_id)
+    if is_enabled is None and clean_id != canonical_id:
+        is_enabled = saved_map.get(clean_id)
+    if is_enabled is None:
+        for alias, canon in LEGACY_TOOLSET_ALIASES.items():
+            if canon == canonical_id and alias in saved_map:
+                is_enabled = saved_map[alias]
+                break
+    if is_enabled is None:
+        is_enabled = ANARA_TOOLSETS[canonical_id].get("default_enabled", True)
+
+    return bool(is_enabled)
+
+
 def get_toolsets_status() -> List[Dict[str, Any]]:
-    """Returns all 31 toolsets with their live enabled/disabled toggle states."""
+    """Returns all 25 standard desktop toolsets with their live enabled/disabled toggle states."""
     from memory import memory_engine
 
     setting_val = memory_engine.get_app_setting("toolsets_enabled_map")
@@ -361,23 +343,42 @@ def get_toolsets_status() -> List[Dict[str, Any]]:
 
     result = []
     for ts_id, ts in ANARA_TOOLSETS.items():
-        is_enabled = saved_map.get(ts_id, ts.get("default_enabled", True))
+        is_enabled = saved_map.get(ts_id)
+        if is_enabled is None:
+            for alias, canon in LEGACY_TOOLSET_ALIASES.items():
+                if canon == ts_id and alias in saved_map:
+                    is_enabled = saved_map[alias]
+                    break
+        if is_enabled is None:
+            is_enabled = ts.get("default_enabled", True)
+
         item = dict(ts)
-        dyn_tools = mapping.get(ts_id) or ts.get("tools", [])
-        item["tools"] = dyn_tools
+        tools = list(ts.get("tools", []))
+
+        # Merge dynamic tools only if toolset has no predefined canonical tools
+        if not tools:
+            candidate_keys = [ts_id] + [a for a, c in LEGACY_TOOLSET_ALIASES.items() if c == ts_id]
+            for ck in candidate_keys:
+                if ck in mapping:
+                    for t in mapping[ck]:
+                        if t not in tools:
+                            tools.append(t)
+
+        item["tools"] = tools
         item["enabled"] = bool(is_enabled)
-        item["tool_count"] = len(dyn_tools)
+        item["tool_count"] = len(tools)
         result.append(item)
 
     return result
 
 
 def toggle_toolset(toolset_id: str, enabled: Optional[bool] = None) -> bool:
-    """Toggles or sets the enabled state of a specific toolset."""
+    """Toggles or sets the enabled state of a specific toolset, supporting legacy aliases."""
     from memory import memory_engine
 
     clean_id = (toolset_id or "").strip().lower()
-    if clean_id not in ANARA_TOOLSETS:
+    canonical_id = resolve_toolset_name(clean_id)
+    if canonical_id not in ANARA_TOOLSETS:
         return False
 
     setting_val = memory_engine.get_app_setting("toolsets_enabled_map")
@@ -388,12 +389,24 @@ def toggle_toolset(toolset_id: str, enabled: Optional[bool] = None) -> bool:
         except Exception:
             saved_map = {}
 
-    current_state = saved_map.get(clean_id, ANARA_TOOLSETS[clean_id].get("default_enabled", True))
+    current_state = saved_map.get(canonical_id)
+    if current_state is None and clean_id != canonical_id:
+        current_state = saved_map.get(clean_id)
+    if current_state is None:
+        for alias, canon in LEGACY_TOOLSET_ALIASES.items():
+            if canon == canonical_id and alias in saved_map:
+                current_state = saved_map[alias]
+                break
+    if current_state is None:
+        current_state = ANARA_TOOLSETS[canonical_id].get("default_enabled", True)
+
     new_state = (not current_state) if enabled is None else bool(enabled)
-    saved_map[clean_id] = new_state
+    saved_map[canonical_id] = new_state
+    if clean_id != canonical_id:
+        saved_map[clean_id] = new_state
 
     memory_engine.set_app_setting("toolsets_enabled_map", json.dumps(saved_map))
-    logger.info(f"[Toolsets] Toggled toolset '{clean_id}' -> {'ENABLED' if new_state else 'DISABLED'}")
+    logger.info(f"[Toolsets] Toggled toolset '{canonical_id}' (via '{clean_id}') -> {'ENABLED' if new_state else 'DISABLED'}")
     return True
 
 
@@ -412,21 +425,49 @@ def get_enabled_tool_names() -> Set[str]:
     try:
         from tools.registry import registry
         mapping = registry.get_toolsets_mapping()
+        alias_resolver = getattr(registry, "resolve_name", lambda n: n)
+        tool_aliases = getattr(registry, "_aliases", {})
     except Exception:
         mapping = {}
+        alias_resolver = lambda n: n
+        tool_aliases = {}
 
     enabled_tools: Set[str] = set()
     for ts_id, ts in ANARA_TOOLSETS.items():
-        is_enabled = saved_map.get(ts_id, ts.get("default_enabled", True))
+        is_enabled = saved_map.get(ts_id)
+        if is_enabled is None:
+            for alias, canon in LEGACY_TOOLSET_ALIASES.items():
+                if canon == ts_id and alias in saved_map:
+                    is_enabled = saved_map[alias]
+                    break
+        if is_enabled is None:
+            is_enabled = ts.get("default_enabled", True)
+
         if is_enabled:
-            dyn_tools = mapping.get(ts_id) or ts.get("tools", [])
-            for t in dyn_tools:
+            tools = list(ts.get("tools", []))
+            candidate_keys = [ts_id] + [a for a, c in LEGACY_TOOLSET_ALIASES.items() if c == ts_id]
+            for ck in candidate_keys:
+                if ck in mapping:
+                    for t in mapping[ck]:
+                        if t not in tools:
+                            tools.append(t)
+
+            for t in tools:
                 enabled_tools.add(t)
+                resolved = alias_resolver(t)
+                if resolved:
+                    enabled_tools.add(resolved)
+
+    for alias_name, target_name in tool_aliases.items():
+        if target_name in enabled_tools:
+            enabled_tools.add(alias_name)
+        elif alias_name in enabled_tools:
+            enabled_tools.add(target_name)
 
     return enabled_tools
 
 
-# ── Hermes Coding Posture & Surface Toolsets (_HERMES_CORE_TOOLS Parity) ──
+# ── Anara Coding Posture & Surface Toolsets (Core Tools Parity) ──
 # Universal toolset: file I/O, terminal, search, memory, agent primitives, and OS desktop control (CUA).
 CODING_TOOLS: Set[str] = {
     "read_local_file",
@@ -448,6 +489,8 @@ CODING_TOOLS: Set[str] = {
     "delegate_subagent",
     "computer_use",
     "take_screenshot",
+    "skill_view",
+    "learn_and_save_skill",
 }
 ESSENTIAL_CODING_TOOLS = CODING_TOOLS
 
@@ -569,6 +612,16 @@ class PlatformToolRegistry:
                     if is_match:
                         for t in ts_def.get("tools", []):
                             active_tools.add(t)
+                        try:
+                            from tools.registry import registry
+                            mapping = registry.get_toolsets_mapping()
+                            candidate_keys = [ts_id] + [a for a, c in LEGACY_TOOLSET_ALIASES.items() if c == ts_id]
+                            for ck in candidate_keys:
+                                if ck in mapping:
+                                    for t in mapping[ck]:
+                                        active_tools.add(t)
+                        except Exception:
+                            pass
             except Exception:
                 pass
 
@@ -644,6 +697,16 @@ class PlatformToolRegistry:
                     if is_match:
                         for t in ts_def.get("tools", []):
                             active_tools.add(t)
+                        try:
+                            from tools.registry import registry
+                            mapping = registry.get_toolsets_mapping()
+                            candidate_keys = [ts_id] + [a for a, c in LEGACY_TOOLSET_ALIASES.items() if c == ts_id]
+                            for ck in candidate_keys:
+                                if ck in mapping:
+                                    for t in mapping[ck]:
+                                        active_tools.add(t)
+                        except Exception:
+                            pass
             except Exception:
                 pass
 
@@ -659,6 +722,14 @@ class PlatformToolRegistry:
         if read_only:
             from tools.catalog import READ_ONLY_TOOL_NAMES
             active_tools = {t for t in active_tools if t in READ_ONLY_TOOL_NAMES}
+
+        # 6. Anara Child Safety Barrier: Subagents cannot access blocked tools
+        try:
+            from core.subagent import is_delegated_child_context, is_tool_blocked_for_child
+            if p_key == "subagent" or is_delegated_child_context():
+                active_tools = {t for t in active_tools if not is_tool_blocked_for_child(t)}
+        except Exception:
+            pass
 
         logger.info(
             f"[Toolsets] Anara Posture active ({p_key}): {len(active_tools)} tools loaded "

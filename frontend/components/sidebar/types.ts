@@ -2,7 +2,7 @@ import { getBackendUrl } from "@/lib/apiClient";
 
 export const BACKEND_URL = (
   process.env.NEXT_PUBLIC_BACKEND_URL ||
-  (typeof window !== "undefined" ? getBackendUrl() : "http://localhost:8000")
+  (typeof window !== "undefined" ? getBackendUrl() : "http://127.0.0.1:8000")
 ).replace(/\/+$/, "");
 
 export const DEFAULT_SIDEBAR_WIDTH = 260;
@@ -94,13 +94,16 @@ export interface ChatSessionSidebarProps {
   speakerRoster?: string[];
   isConnected?: boolean;
   connectionStatus?: string;
-  onSelectSession: (id: number) => void;
+  onSelectSession: (id: number, title?: string | null) => void;
   onNewSession: () => void;
   onOpenBrain?: () => void;
   onOpenMessaging?: () => void;
+  onOpenConnections?: () => void;
   onOpenScheduled?: () => void;
   onOpenProviders?: () => void;
   onOpenArtifacts?: () => void;
+  activeWorkspaceView?: "chat" | "capabilities" | "messaging" | "connections" | "scheduled" | "providers";
+  isArtifactsOpen?: boolean;
   onOpenFileIDE?: (filePath: string, fileName: string) => void;
   onOpenFolder?: () => void;
   refreshKey?: number;

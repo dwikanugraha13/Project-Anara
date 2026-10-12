@@ -124,6 +124,12 @@ def get_bundled_skills_dir() -> Path:
     return backend_dir / "skills"
 
 
+def get_optional_skills_dir() -> Path:
+    """Returns in-tree repository optional skills catalog directory."""
+    backend_dir = Path(__file__).resolve().parent
+    return backend_dir / "optional-skills"
+
+
 def get_anara_checkpoints_dir(subdir: str = "") -> Path:
     """Returns persistent checkpoints directory under ANARA_HOME."""
     cp = get_anara_home() / "checkpoints"

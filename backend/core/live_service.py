@@ -36,7 +36,10 @@ class GeminiLiveService:
         from core.key_manager import key_manager
         self.api_key = api_key or key_manager.get_active_key()
         self.active_speaker = active_speaker
-        self.model_id = (model_id or os.getenv("GEMINI_MODEL", "gemini-3.1-flash-live-preview")).replace("models/", "")
+        raw_mid = (model_id or os.getenv("GEMINI_MODEL", "gemini-3.1-flash-live-preview")).replace("models/", "").strip()
+        if "/" in raw_mid or not any(k in raw_mid.lower() for k in ("live-preview", "realtime")):
+            raw_mid = "gemini-3.1-flash-live-preview"
+        self.model_id = raw_mid
         self.client = genai.Client(api_key=self.api_key) if self.api_key else None
         self.session = None
         self._send_queue: asyncio.Queue = asyncio.Queue(maxsize=40)
@@ -158,9 +161,12 @@ class GeminiLiveService:
                     self.client = genai.Client(api_key=new_key)
                     logger.warning(f"[GeminiLive] Quota/Auth error — rotated API key, reconnecting in {reconnect_delay}s: {e}")
                 else:
-                    # Normal connection aborts (1008, The operation was aborted, ConnectionClosed, idle timeout):
-                    # Do NOT rotate key or penalize healthy keys with cooldown
-                    if any(x in err for x in ["1008", "1011", "1012", "ConnectionClosed", "ping timeout", "The operation was aborted"]):
+                    if "policy violation" in err.lower():
+                        logger.error(f"[GeminiLive] Policy violation: model '{self.model_id}' rejected. Halting live loop.")
+                        self._is_running = False
+                        break
+                    # Normal connection aborts (The operation was aborted, ConnectionClosed, idle timeout):
+                    if any(x in err for x in ["1011", "1012", "ConnectionClosed", "ping timeout", "The operation was aborted"]):
                         logger.info(f"[GeminiLive] Session closed ({err[:50]}), reconnecting in {reconnect_delay}s...")
                     else:
                         logger.warning(f"[GeminiLive] Session error: {e}. Reconnecting in {reconnect_delay}s...")

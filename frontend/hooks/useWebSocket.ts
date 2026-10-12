@@ -262,18 +262,22 @@ export function useWebSocket({
                 }
                 break;
 
-              case "transcript_partial": {
+              case "message.start":
+                armWatchdog();
+                break;
+
+              case "message.delta": {
                 armWatchdog();
                 // Zero-dropped chunks: support delta, text, or data without falsy-dropping empty strings
+                const delta = msg.delta !== undefined ? msg.delta : typeof msg.data === "string" ? msg.data : undefined;
                 const chunkText =
                   msg.text !== undefined
                     ? msg.text
-                    : msg.delta !== undefined
-                    ? msg.delta
+                    : delta !== undefined
+                    ? delta
                     : typeof msg.data === "string"
                     ? msg.data
                     : "";
-                const delta = msg.delta !== undefined ? msg.delta : typeof msg.data === "string" ? msg.data : undefined;
                 const rawSid = msg.sessionId ?? msg.session_id;
                 const turnSid = rawSid !== undefined && rawSid !== null && !isNaN(Number(rawSid)) ? Number(rawSid) : undefined;
                 if (cb.onTranscript && (chunkText !== undefined || delta !== undefined)) {
@@ -284,6 +288,28 @@ export function useWebSocket({
                     visualType: msg.visualType,
                     isPartial: true,
                     isStreaming: true,
+                    sessionId: turnSid,
+                  });
+                }
+                break;
+              }
+
+              case "transcript_partial": {
+                // Deduplication guard: ignore redundant transcript_partial as message.delta handles streaming
+                break;
+              }
+
+              case "message.interim": {
+                const interimText = msg.text !== undefined ? msg.text : typeof msg.data === "string" ? msg.data : "";
+                const rawSid = msg.sessionId ?? msg.session_id;
+                const turnSid = rawSid !== undefined && rawSid !== null && !isNaN(Number(rawSid)) ? Number(rawSid) : undefined;
+                if (cb.onTranscript && interimText) {
+                  cb.onTranscript({
+                    text: interimText,
+                    speaker: "output",
+                    isInterim: true,
+                    isFinal: true,
+                    isStreaming: false,
                     sessionId: turnSid,
                   });
                 }
@@ -335,9 +361,15 @@ export function useWebSocket({
                 break;
               }
 
+              case "tool.start":
               case "agent_action_start":
+              case "tool.complete":
               case "agent_action_complete":
-                if (cb.onTranscript && msg.action_title) {
+                if (cb.onTranscript) {
+                  const tName = msg.tool_name || msg.name || "tool";
+                  const isComplete = msg.type === "tool.complete" || msg.type === "agent_action_complete";
+                  const eventType = isComplete ? "agent_action_complete" : "agent_action_start";
+                  const actionTitle = msg.action_title || `${isComplete ? "Completed" : "Executing"} ${tName}`;
                   const rawActionSid = msg.sessionId ?? msg.session_id;
                   const actionSid = rawActionSid !== undefined && rawActionSid !== null && !isNaN(Number(rawActionSid)) ? Number(rawActionSid) : undefined;
                   cb.onTranscript({
@@ -346,14 +378,14 @@ export function useWebSocket({
                     visualType: "agent_action",
                     sessionId: actionSid,
                     agentActionData: {
-                      eventType: msg.type,
-                      toolName: msg.tool_name,
-                      actionTitle: msg.action_title,
-                      detail: msg.detail,
-                      summary: msg.summary,
-                      rawResult: msg.raw_result,
-                      icon: msg.icon || "file",
-                      filePath: msg.file_path,
+                      eventType,
+                      toolName: tName,
+                      actionTitle,
+                      detail: msg.detail || msg.summary || "",
+                      summary: msg.summary || msg.detail || "",
+                      rawResult: msg.raw_result || msg.result,
+                      icon: msg.icon || (tName.includes("cli") || tName.includes("terminal") || tName.includes("shell") ? "terminal" : "file"),
+                      filePath: msg.file_path || (msg.args?.file_path || msg.tool_args?.file_path),
                       filename: msg.filename,
                       content: msg.content,
                       sizeKb: msg.size_kb,
@@ -363,17 +395,45 @@ export function useWebSocket({
                       exitCode: msg.exit_code,
                       durationMs: msg.duration_ms,
                       durationText: msg.duration_text,
-                      command: msg.command,
+                      command: msg.command || (msg.args?.command || msg.tool_args?.command),
                     },
                   });
                 }
-                if (msg.type === "agent_action_complete" && msg.tool_name === "write_local_file" && typeof window !== "undefined") {
+                if ((msg.type === "agent_action_complete" || msg.type === "tool.complete") && (msg.tool_name === "write_local_file" || msg.name === "write_local_file") && typeof window !== "undefined") {
                   window.dispatchEvent(new CustomEvent("anara-brain-sync", {
                     detail: { event: "workspace_file_created", file: { path: msg.file_path, name: msg.filename, content: msg.content, size_kb: msg.size_kb } }
                   }));
                 }
+                if (typeof window !== "undefined" && (msg.type === "tool.complete" || msg.type === "agent_action_complete") && (msg.name === "edit_file" || msg.tool_name === "edit_file")) {
+                  const resObj = msg.result && typeof msg.result === "object" ? msg.result : undefined;
+                  window.dispatchEvent(new CustomEvent("anara-diff-stream", {
+                    detail: {
+                      filePath: msg.file_path || resObj?.file_path,
+                      filename: msg.filename || resObj?.filename,
+                      diff: msg.raw_result || resObj?.diff,
+                      added: msg.added || resObj?.added_lines,
+                      deleted: msg.deleted || resObj?.deleted_lines,
+                    }
+                  }));
+                }
                 break;
 
+              case "diff.update":
+              case "diff.stream":
+                if (typeof window !== "undefined") {
+                  window.dispatchEvent(new CustomEvent("anara-diff-stream", {
+                    detail: {
+                      filePath: msg.data?.file_path || msg.file_path,
+                      filename: msg.data?.filename || msg.filename,
+                      diff: msg.data?.diff || msg.diff || msg.data,
+                      added: msg.data?.added_lines,
+                      deleted: msg.data?.deleted_lines,
+                    }
+                  }));
+                }
+                break;
+
+              case "reasoning.delta":
               case "agent_thinking":
                 if (cb.onAgentThinking) {
                   const thinkingContent = msg.text !== undefined ? msg.text : (msg.data !== undefined ? msg.data : "");
@@ -415,6 +475,7 @@ export function useWebSocket({
                 cb.onInterrupted?.();
                 break;
 
+              case "message.complete":
               case "turn_complete":
                 disarmWatchdog();
                 cb.onTurnComplete?.();
@@ -529,6 +590,20 @@ export function useWebSocket({
                 break;
               }
 
+              case "session_title_updated": {
+                const rawSid = msg.sessionId ?? (msg as any).session_id ?? (msg as any).id;
+                const numSid = typeof rawSid === "number" ? rawSid : rawSid && !isNaN(Number(rawSid)) ? Number(rawSid) : 0;
+                const newTitle = msg.title || (msg as any).session_title;
+                if (typeof window !== "undefined") {
+                  window.dispatchEvent(
+                    new CustomEvent("anara-brain-sync", {
+                      detail: { event: "session_title_updated", sessionId: numSid, title: newTitle, source: (msg as any).source },
+                    })
+                  );
+                }
+                break;
+              }
+
               case "tool_progress": {
                 const toolName =
                   msg.tool_name ||
@@ -600,7 +675,7 @@ export function useWebSocket({
                 if (typeof window !== "undefined" && numSid > 0) {
                   window.dispatchEvent(
                     new CustomEvent("anara-brain-sync", {
-                      detail: { event: "session_switched", sessionId: numSid, sessionKey: rawSkey, sessionType: stype },
+                      detail: { event: "session_switched", sessionId: numSid, sessionKey: rawSkey, sessionType: stype, title: msg.title ?? null },
                     })
                   );
                 }

@@ -13,7 +13,9 @@ from contextlib import contextmanager
 from enum import Enum
 import json
 import logging
+import re
 import sqlite3
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -193,6 +195,9 @@ class SessionStateManager:
         self._interrupted_sessions: set[str] = set()
         self._recently_expired: Dict[str, tuple[PendingAction, float]] = {}
         self._session_locks: Dict[str, asyncio.Lock] = {}
+        self._steering_messages: Dict[str, List[str]] = {}
+        self._follow_up_queue: Dict[str, List[str]] = {}
+        self._queue_lock = threading.Lock()
 
         # Initialize SQLite persistence & rehydrate unexpired actions on startup
         self._init_db()
@@ -661,15 +666,65 @@ class SessionStateManager:
             "channel_id": channel_id,
         }
 
+    # ── PI-PARITY DUAL-QUEUE: IN-FLIGHT STEERING VS FOLLOW-UP QUEUE ──
+
+    def is_session_busy(self, channel: str, channel_id: str) -> bool:
+        """Returns True if there is an active, running asyncio Task for this session."""
+        key = self._make_key(channel, channel_id)
+        task = self._active_tasks.get(key)
+        return task is not None and not task.done()
+
+    def push_steering_message(self, channel: str, channel_id: str, message: str) -> None:
+        """Queues an in-flight steering directive to alter trajectory at the next turn/step boundary."""
+        key = self._make_key(channel, channel_id)
+        with self._queue_lock:
+            self._steering_messages.setdefault(key, []).append(message)
+        logger.info(f"[SessionManager] Enqueued in-flight steering message for {key}: {message[:60]}")
+
+    def pop_steering_message(self, channel: str, channel_id: str) -> Optional[str]:
+        """Pops the next pending steering message if any exists."""
+        key = self._make_key(channel, channel_id)
+        with self._queue_lock:
+            q = self._steering_messages.get(key)
+            if q:
+                return q.pop(0)
+        return None
+
+    def has_steering_message(self, channel: str, channel_id: str) -> bool:
+        key = self._make_key(channel, channel_id)
+        with self._queue_lock:
+            return bool(self._steering_messages.get(key))
+
+    def push_follow_up(self, channel: str, channel_id: str, message: str) -> None:
+        """Queues a subsequent task to be dispatched cleanly after the active run completes."""
+        key = self._make_key(channel, channel_id)
+        with self._queue_lock:
+            self._follow_up_queue.setdefault(key, []).append(message)
+        logger.info(f"[SessionManager] Enqueued follow-up message for {key}: {message[:60]}")
+
+    def pop_follow_up(self, channel: str, channel_id: str) -> Optional[str]:
+        """Pops the next follow-up task when the active run settles."""
+        key = self._make_key(channel, channel_id)
+        with self._queue_lock:
+            q = self._follow_up_queue.get(key)
+            if q:
+                return q.pop(0)
+        return None
+
+    def has_follow_up(self, channel: str, channel_id: str) -> bool:
+        key = self._make_key(channel, channel_id)
+        with self._queue_lock:
+            return bool(self._follow_up_queue.get(key))
+
     # ── PERSIST-BEFORE-EXECUTE TOOL EXECUTION LEDGER (Anara Standard) ──
 
     def persist_tool_call_start(
         self,
         session_id: Any,
-        channel: str,
-        channel_id: str,
-        tool_name: str,
-        tool_args: Dict[str, Any],
+        channel: str = "web",
+        channel_id: str = "0",
+        tool_name: str = "",
+        tool_args: Optional[Dict[str, Any]] = None,
         call_id: Optional[str] = None,
     ) -> str:
         """
@@ -679,6 +734,7 @@ class SessionStateManager:
         """
         cid = call_id or f"call_{uuid.uuid4().hex[:12]}"
         now = time.time()
+        safe_args = tool_args or {}
         try:
             with self._get_conn() as conn:
                 conn.execute("""
@@ -696,7 +752,7 @@ class SessionStateManager:
                     channel,
                     str(channel_id),
                     tool_name,
-                    json.dumps(tool_args, ensure_ascii=False),
+                    json.dumps(safe_args, ensure_ascii=False),
                     now
                 ))
                 conn.commit()
@@ -801,6 +857,20 @@ class SessionStateManager:
             "is_approval": is_approval,
             "pending": pending
         }
+
+
+_STEERING_PATTERNS = re.compile(
+    r"^(?:ralat|bukan|jangan|stop|tunggu|wait|no|don't|actually|instead|ganti|pakai|use|cancel\s+that|perbaiki)\b",
+    re.IGNORECASE
+)
+
+
+def classify_in_flight_message(text: str) -> str:
+    """Pi Parity: Classifies message arriving while task is active into 'steering' vs 'follow_up'."""
+    clean = text.strip() if text else ""
+    if _STEERING_PATTERNS.search(clean):
+        return "steering"
+    return "follow_up"
 
 
 # Global singleton session manager

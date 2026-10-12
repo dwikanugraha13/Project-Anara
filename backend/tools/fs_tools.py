@@ -66,6 +66,114 @@ def _resolve_local_file_path(path: str) -> Optional[str]:
     return None
 
 
+# ==============================================================================
+# Session Read / Write Tracking (Parity with Hermes tools/file_tools_read_tracking.py)
+# Prevents blind file overwriting before reading and guards existing code logic
+# ==============================================================================
+_SESSION_READ_FILES: Set[str] = set()
+_SESSION_WRITTEN_FILES: Set[str] = set()
+
+
+def mark_file_read(path: str) -> None:
+    try:
+        _SESSION_READ_FILES.add(os.path.normcase(os.path.abspath(path)))
+    except Exception:
+        pass
+
+
+def mark_file_written(path: str) -> None:
+    try:
+        norm = os.path.normcase(os.path.abspath(path))
+        _SESSION_WRITTEN_FILES.add(norm)
+        _SESSION_READ_FILES.add(norm)
+    except Exception:
+        pass
+
+
+def has_file_been_read(path: str) -> bool:
+    try:
+        norm = os.path.normcase(os.path.abspath(path))
+        return norm in _SESSION_READ_FILES or norm in _SESSION_WRITTEN_FILES
+    except Exception:
+        return True
+
+
+def reset_session_file_tracking() -> None:
+    """Helper for testing or session reset."""
+    _SESSION_READ_FILES.clear()
+    _SESSION_WRITTEN_FILES.clear()
+
+
+def get_session_tracked_files() -> Dict[str, List[str]]:
+    """Pi CompactionDetails parity: Returns lists of all files inspected and modified in the current session."""
+    return {
+        "read_files": sorted(list(_SESSION_READ_FILES)),
+        "modified_files": sorted(list(_SESSION_WRITTEN_FILES)),
+    }
+
+
+def _generate_compact_symbols_outline(code_text: str, ext: str, max_symbols: int = 25) -> str:
+    """Generates a compact symbol and line-number outline for large source code files."""
+    ext = (ext or "").lower()
+    symbols: List[str] = []
+
+    if ext == ".py":
+        import ast
+        try:
+            tree = ast.parse(code_text)
+            for node in tree.body:
+                if isinstance(node, ast.ClassDef):
+                    methods = [sub.name for sub in node.body if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef))]
+                    m_str = f" ({len(methods)} methods)" if methods else ""
+                    symbols.append(f"• class {node.name} (lines {node.lineno}-{getattr(node, 'end_lineno', node.lineno)}){m_str}")
+                    for sub in node.body[:6]:
+                        if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            symbols.append(f"    - def {sub.name}() -> line {sub.lineno}")
+                elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    symbols.append(f"• def {node.name}() -> line {node.lineno}")
+        except Exception:
+            pass
+
+    if not symbols and ext in (".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java", ".py"):
+        lines = code_text.splitlines()
+        for idx, line in enumerate(lines, 1):
+            s = line.strip()
+            m = re.match(r"^(?:export\s+)?(?:async\s+)?(?:function|class|interface|type|fn|func|def)\s+([a-zA-Z0-9_]+)", s)
+            if m:
+                symbols.append(f"• {m.group(1)} -> line {idx}")
+            if len(symbols) >= max_symbols:
+                break
+
+    if not symbols:
+        return ""
+    return "\n".join(symbols[:max_symbols])
+
+
+_SPECULATIVE_PREFETCH_STORE: Dict[str, Tuple[float, float, str]] = {}
+
+
+def speculative_prefetch_file(file_path: str) -> bool:
+    """
+    Speculatively pre-reads a local file into memory cache before model finishes JSON turn.
+    Parity with Oh My Pi (speculation/host.ts).
+    """
+    try:
+        norm = os.path.normcase(os.path.abspath(file_path))
+        if os.path.isfile(norm):
+            mtime = os.path.getmtime(norm)
+            if norm in _SPECULATIVE_PREFETCH_STORE:
+                c_mtime, c_time, _ = _SPECULATIVE_PREFETCH_STORE[norm]
+                if c_mtime == mtime and time.time() - c_time < 15.0:
+                    return True
+            with open(norm, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+            _SPECULATIVE_PREFETCH_STORE[norm] = (mtime, time.time(), content)
+            return True
+    except Exception:
+        pass
+    return False
+
+
 async def _tool_read_local_file(file_path: str, offset: Optional[int] = None, limit: Optional[int] = None) -> Dict[str, Any]:
     """
     Reads a local text/document/PDF/DOCX/code file safely.
@@ -109,16 +217,51 @@ async def _tool_read_local_file(file_path: str, offset: Optional[int] = None, li
             }
 
         ext = os.path.splitext(target_file)[1].lower()
+        from core.binary_guard import is_binary_file, get_binary_file_notice
         if ext == ".pdf":
             content = _extract_text_from_pdf(target_file)
         elif ext in [".docx", ".doc"]:
             content = _extract_text_from_docx(target_file) or "[Word Document: Text content extracted]"
+        elif is_binary_file(target_file):
+            size_b = os.path.getsize(target_file) if os.path.exists(target_file) else None
+            notice = get_binary_file_notice(target_file, size_bytes=size_b)
+            return {
+                "status": "binary_file",
+                "is_error": False,
+                "file_name": os.path.basename(target_file),
+                "message": notice,
+                "content": notice,
+            }
         else:
-            with open(target_file, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read()
+            norm_key = os.path.normcase(os.path.abspath(target_file))
+            content = None
+            if norm_key in _SPECULATIVE_PREFETCH_STORE:
+                c_mtime, c_time, cached_c = _SPECULATIVE_PREFETCH_STORE[norm_key]
+                try:
+                    cur_mtime = os.path.getmtime(target_file)
+                    if cur_mtime == c_mtime and time.time() - c_time < 15.0:
+                        content = cached_c
+                except Exception:
+                    pass
+
+            if content is None:
+                with open(target_file, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+                try:
+                    _SPECULATIVE_PREFETCH_STORE[norm_key] = (os.path.getmtime(target_file), time.time(), content)
+                except Exception:
+                    pass
 
         lines = content.splitlines(keepends=True)
         total_lines = len(lines)
+
+        from tools.hashline_engine import compute_file_tag
+        file_tag = compute_file_tag(content)
+        try:
+            rel_display = os.path.relpath(target_file, os.getcwd()).replace("\\", "/")
+        except Exception:
+            rel_display = os.path.basename(target_file)
+        tag_header = f"[{rel_display}#{file_tag}]\n"
 
         if offset is not None or limit is not None:
             start_line = max(1, int(offset)) if offset and int(offset) > 0 else 1
@@ -127,35 +270,41 @@ async def _tool_read_local_file(file_path: str, offset: Optional[int] = None, li
             end_idx = min(total_lines, start_idx + max_lines)
             slice_lines = lines[start_idx:end_idx]
             numbered_content = "".join([f"{start_line + i}: {line}" for i, line in enumerate(slice_lines)])
-            display_content = numbered_content
-            summary_msg = f"Read lines {start_line}-{end_idx} of {total_lines} total lines."
+            display_content = tag_header + numbered_content
+            summary_msg = f"Read lines {start_line}-{end_idx} of {total_lines} total lines [tag #{file_tag}]."
         else:
             if total_lines > 250:
                 numbered_content = "".join([f"{i + 1}: {line}" for i, line in enumerate(lines[:250])])
-                display_content = numbered_content + f"\n\n[... truncated {total_lines - 250} more lines. Use offset={251} to read further ...]"
-                summary_msg = f"Read first 250 lines of {total_lines} total lines."
+                outline_str = _generate_compact_symbols_outline(content, ext)
+                outline_footer = f"\n\n[OUTLINE DIRECTORY (Symbols & Lines)]:\n{outline_str}" if outline_str else ""
+                display_content = tag_header + numbered_content + f"\n\n[... truncated {total_lines - 250} more lines. Use offset={251} to read further ...]{outline_footer}"
+                summary_msg = f"Read first 250 lines of {total_lines} total lines [tag #{file_tag}]."
             else:
                 numbered_content = "".join([f"{i + 1}: {line}" for i, line in enumerate(lines)])
-                display_content = numbered_content
-                summary_msg = f"Read all {total_lines} lines."
+                display_content = tag_header + numbered_content
+                summary_msg = f"Read all {total_lines} lines [tag #{file_tag}]."
 
+        norm_target_file = target_file.replace("\\", "/")
         _emit_agent_event("agent_action_complete", {
             "tool_name": "read_local_file",
             "action_title": "Read",
             "detail": action_detail,
             "filename": os.path.basename(path),
-            "file_path": target_file,
+            "file_path": norm_target_file,
             "summary": summary_msg,
             "raw_result": display_content[:800],
             "icon": "file"
         })
 
+        mark_file_read(target_file)
+
         return {
             "status": "success",
             "file_name": os.path.basename(target_file),
-            "file_path": target_file,
+            "file_path": norm_target_file,
             "extension": ext,
             "total_lines": total_lines,
+            "file_tag": file_tag,
             "content": display_content
         }
     except Exception as e:
@@ -165,21 +314,33 @@ async def _tool_read_local_file(file_path: str, offset: Optional[int] = None, li
 
 async def _tool_edit_file(
     file_path: str,
-    old_string: str,
-    new_string: str,
-    replace_all: bool = False
+    old_string: Optional[str] = None,
+    new_string: Optional[str] = None,
+    replace_all: bool = False,
+    patch: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Selectively edits an existing code or document file in-place by exact or fuzzy string replacement."""
+    """Selectively edits an existing code or document file in-place by exact or fuzzy string replacement or line-anchored hashline patches."""
     path = (file_path or "").strip().strip('"\'')
     if not path:
         return {"status": "error", "message": "file_path parameter cannot be empty."}
-    if not old_string:
-        return {"status": "error", "message": "old_string parameter cannot be empty."}
+
+    from tools.hashline_engine import is_hashline_syntax, apply_hashline_patch
+
+    hashline_payload = None
+    if patch and is_hashline_syntax(patch):
+        hashline_payload = patch
+    elif old_string and is_hashline_syntax(old_string):
+        hashline_payload = old_string
+    elif new_string and is_hashline_syntax(new_string):
+        hashline_payload = new_string
+
+    if not hashline_payload and not old_string:
+        return {"status": "error", "message": "Either old_string or a valid hashline patch parameter must be provided."}
 
     _emit_agent_event("agent_action_start", {
         "tool_name": "edit_file",
         "action_title": "Edit File",
-        "detail": f"File: {os.path.basename(path)}",
+        "detail": f"File: {os.path.basename(path)}" + (" [Hashline]" if hashline_payload else ""),
         "icon": "edit"
     })
 
@@ -199,12 +360,27 @@ async def _tool_edit_file(
         with open(target_file, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
 
-        new_content, matched_old, err = _perform_fuzzy_replace(content, old_string, new_string, replace_all=replace_all)
-        if err or new_content is None:
-            return {
-                "status": "error",
-                "message": f"{err or 'Replacement failed'} in file '{os.path.basename(target_file)}'."
-            }
+        if hashline_payload:
+            new_content, err, h_stats = apply_hashline_patch(content, hashline_payload, file_path=target_file)
+            if err or new_content is None:
+                return {
+                    "status": "error",
+                    "message": f"{err or 'Hashline patch failed'} in file '{os.path.basename(target_file)}'."
+                }
+            added = h_stats["added_lines"]
+            deleted = h_stats["deleted_lines"]
+        else:
+            if not old_string:
+                return {"status": "error", "message": "old_string cannot be empty for string replacement."}
+            target_new = new_string if new_string is not None else ""
+            new_content, matched_old, err = _perform_fuzzy_replace(content, old_string, target_new, replace_all=replace_all)
+            if err or new_content is None:
+                return {
+                    "status": "error",
+                    "message": f"{err or 'Replacement failed'} in file '{os.path.basename(target_file)}'."
+                }
+            added = len(target_new.splitlines())
+            deleted = len(old_string.splitlines())
 
         # Atomic replacement to eliminate risk of empty file on crash
         tmp_target = f"{target_file}.tmp_{os.getpid()}_{int(time.time() * 1000)}"
@@ -213,9 +389,13 @@ async def _tool_edit_file(
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp_target, target_file)
+        mark_file_written(target_file)
 
         # Ground-Truth Read-Back Verification (Anara Standard)
-        read_back = workspace_sentinel.verify_read_back(target_file, expected_snippet=new_string[:80] if len(new_string) > 5 else new_string)
+        expected_check = ""
+        if not hashline_payload and new_string:
+            expected_check = new_string[:80] if len(new_string) > 5 else new_string
+        read_back = workspace_sentinel.verify_read_back(target_file, expected_snippet=expected_check)
         if not read_back.get("verified"):
             logger.warning(f"[WorkspaceSentinel] Post-edit read-back warning for '{target_file}': {read_back.get('error')}")
 
@@ -230,11 +410,6 @@ async def _tool_edit_file(
         if not diff_str:
             diff_str = f"Modified {os.path.basename(target_file)}"
 
-        old_lines = old_string.splitlines()
-        new_lines = new_string.splitlines()
-
-        added = len(new_lines)
-        deleted = len(old_lines)
         size_kb = round(len(new_content.encode("utf-8")) / 1024, 2)
         filename = os.path.basename(target_file)
 
@@ -243,14 +418,15 @@ async def _tool_edit_file(
             message=f"edit {filename} (+{added} -{deleted} lines)"
         )
 
-        rel_dir = os.path.dirname(target_file)
+        rel_dir = os.path.dirname(target_file).replace("\\", "/")
+        norm_target_file = target_file.replace("\\", "/")
         _emit_agent_event("agent_action_complete", {
             "tool_name": "edit_file",
             "action_title": f"Edit {filename} (+{added} -{deleted})",
             "detail": f"{filename} {rel_dir}",
             "summary": f"+{added} -{deleted}" + (f" [{git_commit_sha}]" if git_commit_sha else ""),
             "raw_result": diff_str[:3000],
-            "file_path": target_file,
+            "file_path": norm_target_file,
             "filename": filename,
             "file_ext": os.path.splitext(target_file)[1],
             "content": new_content,
@@ -263,7 +439,7 @@ async def _tool_edit_file(
         })
 
         _emit_agent_event("workspace_file_created", {
-            "file_path": target_file,
+            "file_path": norm_target_file,
             "filename": filename,
             "file_ext": os.path.splitext(target_file)[1],
             "content": new_content,
@@ -282,7 +458,7 @@ async def _tool_edit_file(
                     trace_id=f"tr_{filename}",
                     payload={
                         "action": "edit",
-                        "file_path": target_file,
+                        "file_path": norm_target_file,
                         "filename": filename,
                         "diff": diff_str[:5000],
                         "added_lines": added,
@@ -295,15 +471,23 @@ async def _tool_edit_file(
         except (RuntimeError, Exception):
             pass
 
+        # Hermes-Parity: In-Process Post-Write Syntax Lint Gate with Differential Delta Filtering
+        from tools.inproc_linter import lint_code_syntax
+        lint_err = lint_code_syntax(target_file, new_content, pre_content=content)
+        extra_notice = ""
+        if lint_err:
+            extra_notice = f"\n[LINT WARNING]: {lint_err['message']}. Please review and correct this syntax issue in your next step."
+
         return {
             "status": "success",
-            "file_path": target_file,
+            "file_path": norm_target_file,
             "filename": filename,
             "added_lines": added,
             "deleted_lines": deleted,
             "checkpoint_id": checkpoint_id,
             "git_commit": git_commit_sha,
-            "message": f"File '{filename}' updated successfully (+{added} -{deleted} lines)" + (f" [commit {git_commit_sha}]." if git_commit_sha else "."),
+            "lint_warning": lint_err.get("message") if lint_err else None,
+            "message": f"File '{filename}' updated successfully (+{added} -{deleted} lines)" + (f" [commit {git_commit_sha}]." if git_commit_sha else ".") + extra_notice,
             "diff": diff_str[:1000]
         }
     except Exception as e:
@@ -311,7 +495,7 @@ async def _tool_edit_file(
         return {"status": "error", "message": f"Failed to edit file: {e}"}
 
 
-async def _tool_write_local_file(file_path: str, content: str) -> Dict[str, Any]:
+async def _tool_write_local_file(file_path: str, content: str, overwrite: bool = False, **kwargs) -> Dict[str, Any]:
     """Creates or updates a file locally on the computer (Desktop or workspace)."""
     raw_path = (file_path or "").strip().strip('"\'')
     if not raw_path:
@@ -371,6 +555,37 @@ async def _tool_write_local_file(file_path: str, content: str) -> Dict[str, Any]
             target_path = os.path.join(active_f, clean_sub)
 
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        file_already_exists = os.path.exists(target_path)
+
+        # 1. Hermes Parity: Binary Document & Asset Protection Guard
+        from core.binary_guard import check_binary_write_prohibited
+        is_prohib, reason = check_binary_write_prohibited(target_path, exists=file_already_exists)
+        if is_prohib:
+            return {"status": "error", "message": reason}
+
+        # 2. Hermes Parity: Read-Before-Write Baseline (Blind Overwrite Guard)
+        if file_already_exists and os.path.getsize(target_path) > 100:
+            if not has_file_been_read(target_path) and not bool(overwrite):
+                existing_size = os.path.getsize(target_path)
+                return {
+                    "status": "error",
+                    "error_type": "UnreadExistingFileOverwriteWarning",
+                    "message": (
+                        f"Refusing to overwrite existing file '{os.path.basename(target_path)}' ({existing_size} bytes). "
+                        "This file has not been read in this session. Blindly overwriting it may accidentally erase existing code. "
+                        "Please read the file first using 'read_local_file' or use 'edit_file' for surgical edits. "
+                        "To force a complete overwrite, pass overwrite=True."
+                    ),
+                }
+
+        existing_pre_content = None
+        if file_already_exists:
+            try:
+                with open(target_path, "r", encoding="utf-8", errors="replace") as f_prev:
+                    existing_pre_content = f_prev.read()
+            except Exception:
+                pass
+
         anara_agent.ensure_git_repo(None)
         tmp_target = f"{target_path}.tmp_{os.getpid()}_{int(time.time() * 1000)}"
         with open(tmp_target, "w", encoding="utf-8") as f:
@@ -378,6 +593,7 @@ async def _tool_write_local_file(file_path: str, content: str) -> Dict[str, Any]
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp_target, target_path)
+        mark_file_written(target_path)
 
         # Ground-Truth Read-Back Verification (Anara Standard)
         read_back = workspace_sentinel.verify_read_back(target_path, expected_snippet=content[:80] if len(content) > 5 else content)
@@ -393,11 +609,12 @@ async def _tool_write_local_file(file_path: str, content: str) -> Dict[str, Any]
             message=f"write {filename} ({size_kb} KB)"
         )
 
+        norm_target_path = target_path.replace("\\", "/")
         _emit_agent_event("agent_action_complete", {
             "tool_name": "write_local_file",
             "action_title": "File Saved",
             "summary": f"{filename} ({size_kb} KB)" + (f" [{git_commit_sha}]" if git_commit_sha else ""),
-            "file_path": target_path,
+            "file_path": norm_target_path,
             "filename": filename,
             "file_ext": file_ext,
             "content": content,
@@ -409,7 +626,7 @@ async def _tool_write_local_file(file_path: str, content: str) -> Dict[str, Any]
         })
 
         _emit_agent_event("workspace_file_created", {
-            "file_path": target_path,
+            "file_path": norm_target_path,
             "filename": filename,
             "file_ext": file_ext,
             "content": content,
@@ -428,7 +645,7 @@ async def _tool_write_local_file(file_path: str, content: str) -> Dict[str, Any]
                     trace_id=f"tr_{filename}",
                     payload={
                         "action": "write",
-                        "file_path": target_path,
+                        "file_path": norm_target_path,
                         "filename": filename,
                         "size_kb": size_kb,
                         "git_commit": git_commit_sha,
@@ -438,10 +655,18 @@ async def _tool_write_local_file(file_path: str, content: str) -> Dict[str, Any]
         except (RuntimeError, Exception):
             pass
 
+        # Hermes-Parity: In-Process Post-Write Syntax Lint Gate with Differential Delta Filtering
+        from tools.inproc_linter import lint_code_syntax
+        lint_err = lint_code_syntax(target_path, content, pre_content=existing_pre_content)
+        extra_notice = ""
+        if lint_err:
+            extra_notice = f"\n[LINT WARNING]: {lint_err['message']}. Please review and correct this syntax issue in your next step."
+
         return {
             "status": "success",
-            "message": f"File written successfully to '{target_path}'" + (f" [commit {git_commit_sha}]." if git_commit_sha else "."),
-            "file_path": target_path,
+            "message": f"File written successfully to '{norm_target_path}'" + (f" [commit {git_commit_sha}]." if git_commit_sha else ".") + extra_notice,
+            "lint_warning": lint_err.get("message") if lint_err else None,
+            "file_path": norm_target_path,
             "checkpoint_id": checkpoint_id,
             "git_commit": git_commit_sha,
             "size_bytes": len(content.encode('utf-8'))
@@ -723,6 +948,11 @@ async def _tool_glob_find_files(pattern: str, path: Optional[str] = None) -> Dic
     except asyncio.TimeoutError:
         matches = []
         logger.debug(f"[fs_tools] glob search timed out for pattern '{pat}' in '{root_dir}'")
+
+    # Speculative Tool Prefetching: Pre-warm memory cache for top matches
+    for m_path in matches[:5]:
+        full_m = os.path.join(root_dir, m_path) if not os.path.isabs(m_path) else m_path
+        speculative_prefetch_file(full_m)
 
     summary_msg = f"Found {len(matches)} files matching pattern '{pat}'."
     _emit_agent_event("agent_action_complete", {

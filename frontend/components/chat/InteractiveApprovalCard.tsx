@@ -8,8 +8,9 @@ export interface InteractiveApprovalCardProps {
   commandPreview?: string;
   rationale?: string;
   riskLevel?: "low" | "medium" | "high" | "critical";
-  onApprove?: (planId: string, scope: "once" | "session") => void;
+  onApprove?: (planId: string, scope: "once" | "session" | "always") => void;
   onReject?: (planId: string) => void;
+  queueCount?: number;
 }
 
 /**
@@ -18,6 +19,7 @@ export interface InteractiveApprovalCardProps {
  * Implements conversational gate approval with 3 clean actions:
  * - "Approve Once": Authorizes this single tool call execution (HotKey: Enter).
  * - "Allow for Session": Grants continuous permission for this tool within active session.
+ * - "Always Allow": Whitelists and permanently authorizes this action.
  * - "Reject": Halts the mutation safely (HotKey: Esc).
  */
 export function InteractiveApprovalCard({
@@ -28,8 +30,9 @@ export function InteractiveApprovalCard({
   riskLevel = "medium",
   onApprove,
   onReject,
+  queueCount,
 }: InteractiveApprovalCardProps) {
-  const [decided, setDecided] = useState<"once" | "session" | "deny" | null>(null);
+  const [decided, setDecided] = useState<"once" | "session" | "always" | "deny" | null>(null);
   const [copied, setCopied] = useState(false);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
@@ -93,13 +96,28 @@ export function InteractiveApprovalCard({
       : "bg-white/[0.06] text-slate-300 border-white/10";
 
   return (
-    <div className="my-2.5 w-full max-w-3xl select-none font-sans text-xs">
+    <div className="relative my-2.5 w-full max-w-3xl select-none font-sans text-xs">
+      {/* CardStack Layering Effect */}
+      {queueCount && queueCount > 1 ? (
+        <>
+          <div className="absolute -bottom-1.5 inset-x-2 h-4 rounded-xl border border-white/[0.05] bg-[#040711]/80 -z-10 shadow-lg pointer-events-none" />
+          <div className="absolute -bottom-3 inset-x-4 h-4 rounded-xl border border-white/[0.03] bg-[#020408]/60 -z-20 shadow-md pointer-events-none" />
+        </>
+      ) : null}
+
       <div className="rounded-xl border border-white/[0.08] bg-[#060913]/90 p-3.5 shadow-2xl backdrop-blur-2xl transition-all">
         {/* Header */}
         <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
           <div className="flex items-center gap-2">
             <span className="flex h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-            <span className="font-semibold text-white tracking-wide">Action Requires Approval</span>
+            <span className="font-semibold text-white tracking-wide">
+              Action Requires Approval
+              {queueCount && queueCount > 1 ? (
+                <span className="ml-1.5 text-[11px] font-mono text-slate-400 font-normal">
+                  (1 of {queueCount})
+                </span>
+              ) : null}
+            </span>
           </div>
           <span className={`rounded-md border px-2 py-0.5 text-[10px] font-mono font-medium uppercase ${riskBadgeClass}`}>
             {riskLevel}
@@ -166,8 +184,22 @@ export function InteractiveApprovalCard({
                   restoreFocus();
                 }}
                 className="rounded-lg border border-white/[0.08] bg-white/[0.05] px-3 py-1 text-[11px] font-medium text-slate-200 transition-colors hover:bg-white/[0.1] hover:text-white cursor-pointer"
+                title="Allow for the rest of this session"
               >
                 Allow for Session
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setDecided("always");
+                  onApprove?.(planId, "always");
+                  restoreFocus();
+                }}
+                className="rounded-lg border border-white/[0.08] bg-white/[0.05] px-3 py-1 text-[11px] font-medium text-slate-200 transition-colors hover:bg-emerald-500/15 hover:text-emerald-300 hover:border-emerald-400/30 cursor-pointer"
+                title="Always allow this action across all sessions"
+              >
+                Always Allow
               </button>
 
               <button

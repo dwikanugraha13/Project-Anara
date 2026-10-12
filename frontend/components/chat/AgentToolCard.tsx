@@ -19,7 +19,19 @@ export { GlobResultView } from "./GlobResultView";
 export { AgentActionCard, type DiffLineItem } from "./AgentActionCard";
 export { ToolRunGroupCard, ExplorationGroupCard } from "./ToolRunGroupCard";
 export { TodoChecklistCard } from "./TodoChecklistCard";
-export { SubagentCard } from "./SubagentCard";
+export {
+  SubagentCard,
+  DelegateRowView,
+  StatusBadge,
+  statusGlyph,
+  useElapsedSeconds,
+  formatElapsed,
+  formatDurationSeconds,
+  delegateRowsFromCall,
+  mergeDelegateRows,
+  type DelegateRow,
+  type DelegateRowStatus,
+} from "./SubagentCard";
 export { ToolRunTicker } from "./ToolRunTicker";
 
 // Re-export shared utilities

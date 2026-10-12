@@ -85,3 +85,23 @@ def test_prompt_assembler_hybrid_session_rendering():
         with memory_engine._get_connection() as conn:
             conn.execute("DELETE FROM chat_sessions WHERE id = ?", (sid,))
             conn.commit()
+
+
+def test_prompt_assembler_ambient_editor_context():
+    rendered = PromptAssembler.assemble(
+        mode="plan",
+        speaker_name="Agnan",
+        is_chat_mode=True,
+        channel="web_studio",
+        editor_context={
+            "file_path": "frontend/components/sidebar/ReviewGitPane.tsx",
+            "cursor_line": 88,
+            "selected_text": "const [orderMode, setOrderMode] = useState<string>('smart');"
+        }
+    )
+
+    assert "[ACTIVE EDITOR CONTEXT (AMBIENT IDE STATE)]:" in rendered
+    assert "ReviewGitPane.tsx" in rendered
+    assert "Cursor Line: 88" in rendered
+    assert "orderMode" in rendered
+

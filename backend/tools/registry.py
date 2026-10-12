@@ -193,6 +193,63 @@ class ToolRegistry:
             mapping.setdefault(t.toolset, []).append(name)
         return mapping
 
+    def search_tools(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """
+        Progressive Tool Disclosure (Hermes Parity):
+        Searches available tools by keyword match across name, description, category, and toolset.
+        """
+        q = (query or "").strip().lower()
+        if not q:
+            return []
+        tokens = q.split()
+        matches = []
+        with self._lock:
+            tools_snapshot = list(self._tools.values())
+        for t in tools_snapshot:
+            score = 0
+            name_lower = t.name.lower()
+            desc_lower = t.description.lower()
+            cat_lower = t.category.lower()
+            toolset_lower = t.toolset.lower()
+            for token in tokens:
+                if token in name_lower:
+                    score += 3
+                if token in desc_lower:
+                    score += 1
+                if token in cat_lower or token in toolset_lower:
+                    score += 1
+            if score > 0:
+                matches.append((score, t))
+        matches.sort(key=lambda x: x[0], reverse=True)
+        return [
+            {
+                "name": t.name,
+                "description": t.description,
+                "category": t.category,
+                "toolset": t.toolset,
+                "risk": t.risk,
+            }
+            for _, t in matches[:limit]
+        ]
+
+    def describe_tools(self, names: List[str]) -> List[Dict[str, Any]]:
+        """
+        Progressive Tool Disclosure (Hermes Parity):
+        Returns detailed parameter schema for requested tool names.
+        """
+        results = []
+        for raw_name in names:
+            tool = self.get_tool(raw_name)
+            if tool:
+                results.append({
+                    "name": tool.name,
+                    "description": tool.description,
+                    "category": tool.category,
+                    "parameters": tool.parameters,
+                    "risk": tool.risk,
+                })
+        return results
+
     async def dispatch(self, name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         """Executes a tool by looking up its handler dynamically (Zero if-elif ladder, Hermes worker parity)."""
         tool = self.get_tool(name)

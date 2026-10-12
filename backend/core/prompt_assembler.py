@@ -131,6 +131,7 @@ class PromptAssembler:
         session_id: Optional[Any] = None,
         model_id: str = "",
         reasoning_effort: Optional[str] = None,
+        editor_context: Optional[Dict[str, Any]] = None,
     ) -> str:
         # Slot 1: Identity & Core Personality
         from cognition import get_soul_prompt
@@ -393,6 +394,24 @@ class PromptAssembler:
         elif ch_clean:
             slot_channel += f"[ACTIVE PLATFORM INTERFACE: {ch_clean.upper()}]"
 
+        # Slot 8: Ambient Passive Editor Context (IDE-in-the-loop)
+        slot8_editor = ""
+        if editor_context and isinstance(editor_context, dict):
+            ed_path = editor_context.get("file_path") or editor_context.get("filePath")
+            ed_line = editor_context.get("cursor_line") or editor_context.get("cursorLine")
+            ed_sel = editor_context.get("selected_text") or editor_context.get("selectedText")
+            if ed_path:
+                lines_ed = [
+                    "[ACTIVE EDITOR CONTEXT (AMBIENT IDE STATE)]:",
+                    f"- Active Open File: `{ed_path}`"
+                ]
+                if ed_line:
+                    lines_ed.append(f"- Cursor Line: {ed_line}")
+                if ed_sel and str(ed_sel).strip():
+                    lines_ed.append(f"- Active Text Selection:\n```\n{str(ed_sel).strip()[:1000]}\n```")
+                lines_ed.append("Use this ambient context when the user asks questions referring to 'this file', 'this line', or 'this function'.")
+                slot8_editor = "\n".join(lines_ed).strip()
+
         # Anara 3-Tier Prefix Caching Architecture:
         # Tier 1 — Stable Prefix (Tokens 0..N remain byte-identical across turns): Identity, Mode, Tools
         # Tier 2 — Semi-Static Context: Active Platform Interface, Workspace Snapshot & Rules, Skills Manifest
@@ -400,6 +419,8 @@ class PromptAssembler:
         slots = [slot1_identity, slot2_mode, slot3_tools]
         if slot_channel:
             slots.append(slot_channel)
+        if slot8_editor:
+            slots.append(slot8_editor)
         if slot7_project:
             slots.append(slot7_project)
         if slot6_skills:

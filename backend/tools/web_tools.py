@@ -61,7 +61,8 @@ async def _is_safe_public_url(url: str) -> tuple[bool, Optional[str]]:
 
 
 async def _tool_web_search(query: str) -> Dict[str, Any]:
-    """Searches the live web via DuckDuckGo HTML index for real-time answers."""
+    """Searches the live web and academic sources (arXiv, OpenAlex, Wikipedia) for real-time answers."""
+    import certifi
     q = (query or "").strip()
     if not q:
         return {"status": "error", "message": "Search query cannot be empty."}
@@ -73,55 +74,106 @@ async def _tool_web_search(query: str) -> Dict[str, Any]:
         "icon": "globe"
     })
 
-    url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(q)}"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "*",
-    }
-
     snippets = []
-    try:
-        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
-            res = await client.post(url, headers=headers, data={"q": q})
-            if res.status_code == 200:
-                results = re.findall(
-                    r'<a class="result__snippet[^>]*>(.*?)</a>',
-                    res.text,
-                    re.DOTALL
-                )
-                for r in results[:4]:
-                    clean = re.sub(r"<[^>]+>", "", r).strip()
-                    clean = clean.replace("&quot;", '"').replace("&#x27;", "'").replace("&amp;", "&")
-                    if clean and len(clean) > 20:
-                        snippets.append(clean)
-    except Exception as e:
-        logger.warning(f"[AgentTools] Web search error: {e}")
+    ca_cert = certifi.where()
 
-    if not snippets:
+    # 1. Academic & Research Specialized Retrieval (arXiv & OpenAlex)
+    is_academic = any(k in q.lower() for k in (
+        "paper", "jurnal", "journal", "survey", "arxiv", "research", "bench",
+        "benchmark", "eval", "algorithm", "llm", "agent", "deep learning", "ai", "study"
+    ))
+
+    if is_academic:
+        # arXiv Query
+        try:
+            import xml.etree.ElementTree as ET
+            clean_q = urllib.parse.quote_plus(q)
+            arxiv_url = f"https://export.arxiv.org/api/query?search_query=all:{clean_q}&start=0&max_results=3"
+            async with httpx.AsyncClient(verify=ca_cert, timeout=6.0) as client:
+                ar_res = await client.get(arxiv_url)
+                if ar_res.status_code == 200:
+                    root = ET.fromstring(ar_res.text)
+                    ns = {"atom": "http://www.w3.org/2005/Atom"}
+                    for entry in root.findall("atom:entry", ns):
+                        t_node = entry.find("atom:title", ns)
+                        s_node = entry.find("atom:summary", ns)
+                        l_node = entry.find("atom:id", ns)
+                        t_str = t_node.text.strip().replace("\n", " ") if t_node is not None else ""
+                        s_str = s_node.text.strip().replace("\n", " ")[:240] if s_node is not None else ""
+                        l_str = l_node.text.strip() if l_node is not None else ""
+                        if t_str:
+                            snippets.append(f"📄 **[{t_str}]({l_str})** (arXiv)\n  {s_str}...")
+        except Exception as e_ar:
+            logger.debug(f"[AgentTools] arXiv search notice: {e_ar}")
+
+        # OpenAlex Query (Peer-reviewed journals, ACL, IEEE, Nature, etc.)
+        try:
+            oa_url = f"https://api.openalex.org/works?search={urllib.parse.quote_plus(q)}&per-page=3"
+            headers_oa = {"User-Agent": "AnaraAcademicAgent/1.0 (mailto:agent@project-anara.local)"}
+            async with httpx.AsyncClient(verify=ca_cert, timeout=6.0) as client:
+                oa_res = await client.get(oa_url, headers=headers_oa)
+                if oa_res.status_code == 200:
+                    oa_data = oa_res.json()
+                    for work in oa_data.get("results", []):
+                        t_str = work.get("title")
+                        doi_str = work.get("doi") or work.get("id")
+                        year_str = work.get("publication_year")
+                        venue_str = work.get("primary_location", {}).get("source", {}).get("display_name") or "Journal"
+                        if t_str:
+                            snippets.append(f"📚 **{t_str}** ({year_str})\n  Venue: {venue_str} | DOI: {doi_str}")
+        except Exception as e_oa:
+            logger.debug(f"[AgentTools] OpenAlex search notice: {e_oa}")
+
+    # 2. General Web Index (Wikipedia API - Highly Reliable & Direct)
+    if len(snippets) < 3:
         try:
             wiki_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={urllib.parse.quote(q)}&format=json&utf8="
             wiki_headers = {
                 "User-Agent": "AnaraAgent/1.0 (https://project-anara.local; contact@anara.local)",
                 "Accept": "application/json"
             }
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(verify=ca_cert, timeout=5.0) as client:
                 w_res = await client.get(wiki_url, headers=wiki_headers)
                 if w_res.status_code == 200:
                     w_data = w_res.json()
                     for item in w_data.get("query", {}).get("search", [])[:3]:
+                        title = item.get("title", "")
                         snip = re.sub(r"<[^>]+>", "", item.get("snippet", "")).strip()
+                        snip = snip.replace("&quot;", '"').replace("&#x27;", "'").replace("&amp;", "&")
                         if snip:
-                            snippets.append(f"[{item.get('title')}] {snip}")
+                            link = f"https://en.wikipedia.org/wiki/{urllib.parse.quote(title.replace(' ', '_'))}"
+                            snippets.append(f"🌐 **[{title}]({link})**\n  {snip}")
+        except Exception as e_wiki:
+            logger.debug(f"[AgentTools] Wikipedia fallback notice: {e_wiki}")
+
+    # 3. DuckDuckGo HTML Fallback (if reachable)
+    if len(snippets) < 3:
+        try:
+            ddg_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(q)}"
+            ddg_headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            }
+            async with httpx.AsyncClient(verify=ca_cert, timeout=4.0, follow_redirects=True) as client:
+                res = await client.post(ddg_url, headers=ddg_headers, data={"q": q})
+                if res.status_code == 200:
+                    results = re.findall(r'<a class="result__snippet[^>]*>(.*?)</a>', res.text, re.DOTALL)
+                    for r in results[:3]:
+                        clean = re.sub(r"<[^>]+>", "", r).strip()
+                        clean = clean.replace("&quot;", '"').replace("&#x27;", "'").replace("&amp;", "&")
+                        if clean and len(clean) > 20:
+                            snippets.append(clean)
         except Exception:
             pass
 
-    result_text = "\n---\n".join(snippets) if snippets else "No specific web results found."
-    
+    result_text = "\n\n---\n\n".join(snippets) if snippets else "No specific web results found."
+    summary_text = f"Found {len(snippets)} results for '{q}'" if snippets else f"No web results found for '{q}'"
+
     _emit_agent_event("agent_action_complete", {
         "tool_name": "web_search",
         "action_title": "Web Search Results",
-        "summary": result_text[:200] + "..." if len(result_text) > 200 else result_text,
+        "summary": summary_text,
+        "detail": f"Query: '{q}'",
         "raw_result": result_text,
         "icon": "globe"
     })
@@ -129,7 +181,11 @@ async def _tool_web_search(query: str) -> Dict[str, Any]:
     return {
         "status": "success" if snippets else "no_results",
         "query": q,
-        "search_results": result_text
+        "summary": summary_text,
+        "message": summary_text,
+        "detail": f"Query: '{q}'",
+        "search_results": result_text,
+        "raw_result": result_text,
     }
 
 

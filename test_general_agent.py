@@ -38,6 +38,27 @@ BACKEND_DIR = os.path.join(ROOT_DIR, "backend")
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+# Hermes Parity: Ephemeral ANARA_HOME seeded from canonical DB so test runs NEVER pollute user's live anara_brain.db
+_CANONICAL_DB = None
+try:
+    from constants import get_anara_db_path
+    _CANONICAL_DB = get_anara_db_path()
+except Exception:
+    pass
+
+_TEST_TEMP_HOME = tempfile.mkdtemp(prefix="anara_test_home_")
+os.environ["ANARA_HOME"] = _TEST_TEMP_HOME
+os.environ["ANARA_TESTING"] = "1"
+
+if _CANONICAL_DB and os.path.isfile(_CANONICAL_DB):
+    try:
+        shutil.copy2(_CANONICAL_DB, os.path.join(_TEST_TEMP_HOME, "anara_brain.db"))
+    except Exception:
+        pass
+
+from providers.accounts import set_active_model_id
+set_active_model_id("9router/ag/gemini-3.8-flash")
+
 from tools import (
     TOOL_RISK_CLASSIFICATION,
     READ_ONLY_TOOL_NAMES,
@@ -156,7 +177,7 @@ async def run_all_tests():
     record_test("USER.md is readable", len(user) > 0, f"{len(user)} chars")
     record_test("MEMORY.md is readable", len(mem) > 0, f"{len(mem)} chars")
 
-    # Autonomous Agent Memory Actions (Hermes Parity)
+    # Autonomous Agent Memory Actions (Anara Standard)
     fact_val = f"staging port {uuid.uuid4().hex[:4]} aktif"
     add_res = file_memory.execute_memory_action(action="add", target="memory", content=fact_val)
     record_test("Memory tool: execute_memory_action('add') succeeds", add_res.get("status") == "success")
@@ -244,6 +265,16 @@ async def run_all_tests():
     wa_res = await process_channel_request(wa_req)
     record_test("WhatsApp safe turn responds directly", wa_res.plan_pending is False and wa_res.mode == "conversational")
 
+    # Clean up ephemeral test sessions created during multi-channel gateway tests
+    try:
+        from memory import memory_engine
+        for s in memory_engine.get_sessions(include_archived=True, limit=50):
+            title = s.get("title", "")
+            if any(prefix in title for prefix in ("Telegram Bot", "WhatsApp Webhook", "WhatsApp webhook")):
+                memory_engine.delete_session(s["id"])
+    except Exception:
+        pass
+
     # ─────────────────────────────────────────────────────────────────────────
     # DOMAIN 6: AUTONOMOUS ENGINE & TRUST-LEVEL POLICY ENFORCEMENT
     # ─────────────────────────────────────────────────────────────────────────
@@ -310,9 +341,12 @@ async def run_all_tests():
     from core.sandbox import get_sanitized_environment, check_command_safety, command_sandbox
 
     # Test environment sanitization
-    os.environ["TEST_SECRET_API_KEY"] = "sk-supersecretkey123456"
+    os.environ["TEST_SECRET_API_KEY"] = "«redacted:sk-…»"
     sanitized_env = get_sanitized_environment()
-    record_test("Sandbox cleanses sensitive environment keys", sanitized_env.get("TEST_SECRET_API_KEY") == "[SANDBOX_SCRUBBED]")
+    record_test(
+        "Sandbox cleanses sensitive environment keys",
+        sanitized_env.get("TEST_SECRET_API_KEY") in ("[SANDBOX_SCRUBBED]", None) and "«redacted:sk-…»" not in str(sanitized_env)
+    )
     record_test("Sandbox preserves essential system variables", "PATH" in sanitized_env and "TEMP" in sanitized_env)
 
     # Test dangerous host commands
@@ -331,7 +365,7 @@ async def run_all_tests():
     print("\n--- 9. Testing Content Moderation & Prompt Injection Defense (FR-20) ---")
     from core.security import check_prompt_injection, is_authorized_approver
 
-    record_test("Defense permits technical security analysis (Hermes Parity)", check_prompt_injection("Bagaimana mitigasi serangan DDoS dan deteksi malware ransomware?")[0] is True)
+    record_test("Defense permits technical security analysis (Anara Standard)", check_prompt_injection("Bagaimana mitigasi serangan DDoS dan deteksi malware ransomware?")[0] is True)
     record_test("Defense permits architectural prompt inquiry", check_prompt_injection("Jelaskan arsitektur prompt engineering sistem ini")[0] is True)
     record_test("Defense blocks binary/control character injection", check_prompt_injection("\x00\x01\x02Malicious binary payload")[0] is False)
     record_test("Defense permits normal coding instruction", check_prompt_injection("Tolong buatkan fungsi binary search di Python")[0] is True)
@@ -358,5 +392,9 @@ async def run_all_tests():
 
 
 if __name__ == "__main__":
-    code = asyncio.run(run_all_tests())
+    try:
+        code = asyncio.run(run_all_tests())
+    finally:
+        if os.path.exists(_TEST_TEMP_HOME):
+            shutil.rmtree(_TEST_TEMP_HOME, ignore_errors=True)
     sys.exit(code)

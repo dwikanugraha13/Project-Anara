@@ -9,6 +9,8 @@ import { TriggerItem } from "./DockTriggerPopover";
 import type { ToolProgressPayload } from "@/hooks/useWebSocket";
 import { usePromptHistory } from "./usePromptHistory";
 import { useComposerQueue } from "@/hooks/useComposerQueue";
+import { useVoiceDictation } from "@/hooks/useVoiceDictation";
+import { VoiceActivityBar } from "./VoiceActivityBar";
 import { DockStatusStack } from "./DockStatusStack";
 import { DockControlsCluster } from "./DockControlsCluster";
 import { DockComposerInput } from "./DockComposerInput";
@@ -152,6 +154,27 @@ export default function BottomDock({
   // Modular prompt history ring hook
   const { pushHistory, navigateHistory, resetHistoryIndex } = usePromptHistory();
 
+  // Voice Dictation (Speech to text in chat composer - Anara Standard)
+  const {
+    status: dictationStatus,
+    isDictating,
+    elapsedSeconds: dictationElapsed,
+    level: dictationLevel,
+    toggleDictation,
+    stopDictation,
+    cancelDictation,
+  } = useVoiceDictation({
+    onTranscriptUpdate: (newText) => {
+      setInputMessage(newText);
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+        textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 240)}px`;
+        textareaRef.current.focus();
+      }
+    },
+    lang: "id-ID",
+  });
+
   const isBusy =
     status === "thinking" ||
     status === "speaking" ||
@@ -235,6 +258,10 @@ export default function BottomDock({
       pushHistory(inputMessage.trim());
     }
     resetHistoryIndex();
+
+    if (isDictating) {
+      stopDictation();
+    }
 
     if (activeSessionId) {
       try {
@@ -688,6 +715,14 @@ export default function BottomDock({
             </div>
           )}
 
+          {/* Live Voice Activity Strip (Anara Standard: Dictating / Transcribing) */}
+          <VoiceActivityBar
+            status={dictationStatus}
+            elapsedSeconds={dictationElapsed}
+            level={dictationLevel}
+            onCancel={cancelDictation}
+          />
+
           {/* Input Area / Voice Waveform */}
           <div className={`w-full flex items-center gap-2 ${isInputExpanded ? "flex-1 min-h-0 overflow-hidden" : "min-h-[26px]"}`}>
             {interactionMode === "voice" && !inputMessage.trim() && attachedFiles.length === 0 ? (
@@ -727,7 +762,13 @@ export default function BottomDock({
                   setAttachedFiles([]);
                 }}
                 handleTextareaChange={handleTextareaChange}
-                placeholder={isCodeStudio ? "Ask Anara... ('/' or '@')" : "Ask Anara... (type '/' for commands, '@' for files)"}
+                placeholder={
+                  isDictating
+                    ? "Listening... speak now (speech-to-text)..."
+                    : isCodeStudio
+                    ? "Ask Anara... ('/' or '@')"
+                    : "Ask Anara... (type '/' for commands, '@' for files)"
+                }
               />
             )}
           </div>
@@ -759,6 +800,9 @@ export default function BottomDock({
             isBusy={isBusy}
             canSend={canSend}
             onSend={() => handleFormSubmit()}
+            isDictating={isDictating}
+            dictationStatus={dictationStatus}
+            onToggleDictate={() => toggleDictation(inputMessage)}
             compact={isCodeStudio}
             isCodeStudio={isCodeStudio}
           />

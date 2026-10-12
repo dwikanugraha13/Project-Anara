@@ -76,6 +76,13 @@ def test_model_capabilities_universal():
     assert ModelCapabilityRegistry.supports_vision("qwen-vl-max")
     assert ModelCapabilityRegistry.supports_vision("claude-3-opus")
 
+    from providers.constants import format_model_display_name
+    assert format_model_display_name("ag/claude-sonnet-4-6") == "Claude Sonnet 4.6"
+    assert format_model_display_name("ag/claude-opus-4-6-thinking") == "Claude Opus 4.6"
+    assert format_model_display_name("ag/claude-opus-4-5") == "Claude Opus 4.5"
+    assert format_model_display_name("claude-sonnet-4.6") == "Claude Sonnet 4.6"
+    assert format_model_display_name("claude-3-7-sonnet") == "Claude 3.7 Sonnet"
+
 
 def test_smart_output_truncation():
     from tools.output_manager import compact_tool_output, compact_tool_payload
@@ -1603,6 +1610,7 @@ def test_subsystem_5_workspace_sentinel_and_ground_truth():
 def test_pilar_1_subagent_delegation_engine():
     """Verify Pilar 1: Sub-Agent Delegation Engine (Fork-and-Join, Task Isolation, Anti-Fork-Bomb)."""
     import asyncio
+    import json
     from core.subagent import subagent_manager, SubagentState, SubagentResult
     from tools.catalog import dispatch_tool_call
 
@@ -1655,6 +1663,117 @@ def test_pilar_1_subagent_delegation_engine():
         )
         assert tool_res["status"] == "success"
         assert "task_id" in tool_res
+
+        # 5. Canonical schema: tasks array with goal, context, images, output_schema
+        schema_contract = {
+            "type": "object",
+            "properties": {
+                "verdict": {"type": "string"},
+                "passed_count": {"type": "integer"}
+            },
+            "required": ["verdict", "passed_count"]
+        }
+        async def schema_worker(task):
+            return json.dumps({"verdict": "pass", "passed_count": 42})
+
+        canonical_batch = [
+            {
+                "goal": "Verify unit tests for module alpha",
+                "context": "backend/tests/test_module.py",
+                "output_schema": schema_contract,
+                "images": ["assets/test_screenshot.png"]
+            }
+        ]
+        batch_out = await subagent_manager.handle_delegate_call(
+            tasks=canonical_batch,
+            worker_coro_factory=schema_worker,
+        )
+        assert batch_out["status"] == "success"
+        assert batch_out["mode"] == "batch"
+        assert len(batch_out["results"]) == 1
+        res_item = batch_out["results"][0]
+        assert res_item["schema_valid"] is True
+        assert res_item["status"] == "completed"
+
+        # 6. Action parameter: 'list', 'steer', 'stop'
+        async def slow_worker(task):
+            for _ in range(50):
+                await asyncio.sleep(0.02)
+                if task.interrupt_requested:
+                    break
+            return "Slow worker finished."
+
+        spawn_res = await subagent_manager.handle_delegate_call(
+            goal="Long running background analysis",
+            action="spawn",
+            background=True,
+            worker_coro_factory=slow_worker,
+        )
+        assert spawn_res["status"] == "success"
+        sa_id = spawn_res["task_id"]
+
+        # Action: 'list'
+        list_res = await subagent_manager.handle_delegate_call(action="list")
+        assert list_res["status"] == "success"
+        assert list_res["action"] == "list"
+        assert any(item["task_id"] == sa_id for item in list_res["subagents"])
+
+        # Action: 'steer'
+        steer_res = await subagent_manager.handle_delegate_call(
+            action="steer",
+            subagent_id=sa_id,
+            message="Prioritize security checks over performance",
+        )
+        assert steer_res["status"] == "success"
+        assert steer_res["action"] == "steer"
+        assert steer_res["status_detail"] == "queued"
+
+        # Action: 'stop'
+        stop_res = await subagent_manager.handle_delegate_call(
+            action="stop",
+            subagent_id=sa_id,
+        )
+        assert stop_res["status"] == "success"
+        assert stop_res["action"] == "stop"
+        assert stop_res["status_detail"] == "interrupt_requested"
+
+        # 7. Concurrency Controls (Exceeding max_concurrent_children)
+        too_many_tasks = [{"goal": f"Task number {i} analysis"} for i in range(15)]
+        excess_res = await subagent_manager.handle_delegate_call(tasks=too_many_tasks)
+        assert excess_res["status"] == "error"
+        assert "Too many tasks" in excess_res["message"]
+
+        # 8. Child Safety Barriers: Child cannot recursively delegate, clarify, use memory, cronjob
+        from core.subagent import delegated_child_context, is_tool_blocked_for_child
+        with delegated_child_context(role="leaf", depth=1):
+            assert is_tool_blocked_for_child("delegate_task") is True
+            assert is_tool_blocked_for_child("delegate_subagent") is True
+            assert is_tool_blocked_for_child("interactive_question") is True
+            assert is_tool_blocked_for_child("clarify") is True
+            assert is_tool_blocked_for_child("memory") is True
+            assert is_tool_blocked_for_child("manage_memory_and_todos") is True
+            assert is_tool_blocked_for_child("cronjob") is True
+            assert is_tool_blocked_for_child("cronjob_manage") is True
+            assert is_tool_blocked_for_child("read_local_file") is False
+
+            # Verify dispatch_tool_call rejects blocked tools in child context
+            blocked_call_res = await dispatch_tool_call("memory", {"action": "write", "content": "leak"})
+            assert blocked_call_res["status"] == "error"
+            assert "safety barrier" in blocked_call_res["error"]
+
+            # Verify orchestrator role within depth budget can delegate
+            with delegated_child_context(role="orchestrator", depth=1):
+                assert is_tool_blocked_for_child("delegate_task") is False
+                assert is_tool_blocked_for_child("memory") is True
+
+        # 9. anara_tools loopback delegation barrier
+        import tools.anara_tools as at
+        with delegated_child_context(role="leaf", depth=1):
+            try:
+                at.delegate_task(goal="Recursive attempt from code REPL")
+                assert False, "Should have raised PermissionError"
+            except PermissionError as pe:
+                assert "Child subagent is prohibited" in str(pe)
 
     asyncio.run(run_subagent_tests())
 

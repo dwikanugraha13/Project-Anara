@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { WorkbenchTitlebar } from "./WorkbenchTitlebar";
+import { WorkbenchTitlebar, type OpenSessionTab } from "./WorkbenchTitlebar";
 import ChatTimeline from "@/components/chat/ChatTimeline";
 import BottomDock from "@/components/dock/BottomDock";
 import type { GitStatusData } from "@/components/sidebar/types";
@@ -12,6 +12,9 @@ import type { AssistantStatus, TranscriptItem } from "./types";
 export interface WorkbenchChatColumnProps {
   isContextPaneOpen: boolean;
   setIsContextPaneOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  openSessionTabs?: OpenSessionTab[];
+  onSelectSessionTab?: (id: number) => void;
+  onCloseSessionTab?: (id: number) => void;
   activeIdeFile: {
     isOpen: boolean;
     fileName: string;
@@ -23,10 +26,14 @@ export interface WorkbenchChatColumnProps {
   };
   transcript: TranscriptItem[];
   activeSessionId: number | null;
+  sessionTitle?: string;
+  previewTitle?: string;
+  onClosePreview?: () => void;
+  onCloseEditor?: () => void;
   handleNewSession: () => void;
   setIsBrainDrawerOpen: (open: boolean) => void;
-  contextTab: "editor" | "review" | "terminal";
-  setContextTab: (tab: "editor" | "review" | "terminal") => void;
+  contextTab: "editor" | "review" | "terminal" | "preview";
+  setContextTab: (tab: "editor" | "review" | "terminal" | "preview") => void;
   fetchGitStatus: () => Promise<void> | void;
   gitStatus: GitStatusData | null;
   setIsTerminalOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -38,7 +45,7 @@ export interface WorkbenchChatColumnProps {
   setFooterDockHeight: (h: number) => void;
   onApprovePlan?: (planData: any) => void;
   onRejectPlan?: (planData?: any) => void;
-  onApproveAction?: (planId: string, scope: "once" | "session") => void;
+  onApproveAction?: (planId: string, scope: "once" | "session" | "always") => void;
   onRejectAction?: (planId: string) => void;
   activeThinkingText?: string | null;
   onAnswerQuestion?: (questionId: string, answers: any, dismissed?: boolean) => void;
@@ -74,9 +81,16 @@ export interface WorkbenchChatColumnProps {
 export function WorkbenchChatColumn({
   isContextPaneOpen,
   setIsContextPaneOpen,
+  openSessionTabs,
+  onSelectSessionTab,
+  onCloseSessionTab,
   activeIdeFile,
   transcript,
   activeSessionId,
+  sessionTitle,
+  previewTitle,
+  onClosePreview,
+  onCloseEditor,
   handleNewSession,
   setIsBrainDrawerOpen,
   contextTab,
@@ -133,6 +147,10 @@ export function WorkbenchChatColumn({
     >
       {/* Unified Desktop Titlebar Band (Modularized Component) */}
       <WorkbenchTitlebar
+        sessionTitle={sessionTitle}
+        openSessionTabs={openSessionTabs}
+        onSelectSessionTab={onSelectSessionTab}
+        onCloseSessionTab={onCloseSessionTab}
         activeIdeFile={activeIdeFile}
         transcript={transcript}
         activeSessionId={activeSessionId}
@@ -145,6 +163,9 @@ export function WorkbenchChatColumn({
         fetchGitStatus={fetchGitStatus}
         gitStatus={gitStatus}
         setIsTerminalOpen={setIsTerminalOpen}
+        previewTitle={previewTitle}
+        onClosePreview={onClosePreview}
+        onCloseEditor={onCloseEditor}
       />
 
       {/* Scrollable message timeline fills remaining vertical space */}

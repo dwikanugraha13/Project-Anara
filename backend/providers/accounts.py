@@ -144,6 +144,35 @@ def get_provider_key(provider: str) -> Optional[str]:
     return None
 
 
+def mark_provider_key_cooldown(provider: str, api_key: Optional[str] = None, cooldown_seconds: float = 60.0) -> None:
+    """
+    Puts a provider account or key into temporary cooldown (Hermes Credential Pool parity).
+    Triggered when 429 rate limit or 503 transient overload occurs.
+    Rotates the active key index and persists cooldown to SQLite ai_accounts.
+    """
+    from memory import memory_engine
+    prov = provider.strip().lower()
+
+    if prov == "gemini":
+        from core import key_manager
+        if api_key:
+            key_manager.mark_key_rate_limited(api_key, cooldown_seconds=cooldown_seconds)
+
+    accounts = memory_engine.get_ai_accounts(prov)
+    for a in accounts:
+        if not api_key or a.get("api_key") == api_key:
+            memory_engine.set_ai_account_cooldown(a["id"], cooldown_seconds=cooldown_seconds)
+            logger.info(
+                f"[CredentialPool] Armed cooldown for provider '{prov}' key (account #{a['id']}) "
+                f"for {cooldown_seconds:.1f}s."
+            )
+
+    # Invalidate cache so next call resolves the next healthy key in round-robin
+    with _DYNAMIC_CACHE_LOCK:
+        _DYNAMIC_CACHE.pop(prov, None)
+
+
+
 def is_provider_configured(provider: str) -> bool:
     """Checks if a provider has active credentials and is not disconnected."""
     from memory import memory_engine
@@ -289,7 +318,10 @@ def get_fallback_model_id() -> str:
         from config import cfg_get
         conf = cfg_get("model.fallback")
         if conf and str(conf).strip():
-            return str(conf).strip()
+            c_str = str(conf).strip()
+            p_prefix = c_str.split("/")[0] if "/" in c_str else c_str
+            if is_provider_configured(p_prefix):
+                return c_str
     except Exception:
         pass
 

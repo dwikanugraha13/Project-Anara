@@ -11,6 +11,7 @@ import { AnaraVoiceBubble } from "./AnaraVoiceBubble";
 import FindBar from "./FindBar";
 import type { TranscriptItem, AssistantStatus } from "../workbench/AnaraWorkbench";
 import type { ToolProgressPayload } from "@/hooks/useWebSocket";
+import type { SubagentTaskData } from "../hud/types";
 
 export interface ChatTimelineProps {
   transcript: TranscriptItem[];
@@ -23,7 +24,7 @@ export interface ChatTimelineProps {
   footerDockHeight?: number;
   onApprovePlan?: (plan?: any) => void;
   onRejectPlan?: () => void;
-  onApproveAction?: (planId: string, scope: "once" | "session") => void;
+  onApproveAction?: (planId: string, scope: "once" | "session" | "always") => void;
   onRejectAction?: (planId: string) => void;
   onOpenFile?: (path: string, fileName?: string) => void;
   onOpenReviewTab?: () => void;
@@ -32,6 +33,27 @@ export interface ChatTimelineProps {
   onSelectPrompt?: (prompt: string) => void;
   onEditPrompt?: (index: number, newText: string) => void;
   onAnswerQuestion?: (questionId: string, answers: any, dismissed?: boolean) => void;
+  onOpenSession?: (sessionId: string) => void;
+}
+
+// ── REPLY MESSAGE CONTEXT PARSER (Anara Standard) ─────────
+function parseReplyMessage(text: string): {
+  isReply: boolean;
+  sender?: string;
+  quotedText?: string;
+  actualText: string;
+} {
+  if (!text) return { isReply: false, actualText: "" };
+  const match = text.match(
+    /^\[(?:REPLY_TO_MESSAGE from|Replying to(?: your previous message)?(?:\s*from)?)\s*:?\s*([^\]]*?)\]:?\s*\n*(?:["“]([\s\S]*?)["”]|'([\s\S]*?)')\s*\n+([\s\S]*)$/i
+  );
+  if (match) {
+    const sender = (match[1] || "Anara").trim();
+    const quotedText = (match[2] ?? match[3] ?? "").trim();
+    const actualText = (match[4] ?? "").trim();
+    return { isReply: true, sender, quotedText, actualText };
+  }
+  return { isReply: false, actualText: text };
 }
 
 export default function ChatTimeline({
@@ -54,6 +76,7 @@ export default function ChatTimeline({
   onSelectPrompt,
   onEditPrompt,
   onAnswerQuestion,
+  onOpenSession,
 }: ChatTimelineProps) {
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -66,6 +89,12 @@ export default function ChatTimeline({
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editText, setEditText] = useState<string>("");
+
+  const pendingApprovalCount = useMemo(() => {
+    return transcript.filter(
+      (t) => t.visualType === "approval" && !t.text.includes("✓ Approved") && !t.text.includes("✗ Rejected")
+    ).length;
+  }, [transcript]);
 
   // In-Conversation Find Bar State (Ctrl+F)
   const [isFindOpen, setIsFindOpen] = useState(false);
@@ -127,7 +156,7 @@ export default function ChatTimeline({
     const el = scrollContainerRef.current;
     if (!el) return;
     const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const near = distanceToBottom < 150;
+    const near = distanceToBottom < 200;
     setIsNearBottom(near);
     if (near) {
       isFollowingRef.current = true;
@@ -147,7 +176,7 @@ export default function ChatTimeline({
         setIsNearBottom(false);
       } else if (e.deltaY > 0) {
         const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-        if (distanceToBottom < 80) {
+        if (distanceToBottom < 200) {
           isFollowingRef.current = true;
           setIsNearBottom(true);
           setHasUnread(false);
@@ -222,6 +251,7 @@ export default function ChatTimeline({
   // Streaming follow: Follow active stream without trapping user scroll or interrupting text selection
   const lastItemText = transcript[transcript.length - 1]?.text || "";
   const lastItemLen = lastItemText.length;
+  const thinkingLen = activeThinkingText?.length || 0;
   useEffect(() => {
     const hasSelection = Boolean(typeof window !== "undefined" && window.getSelection()?.toString()?.trim());
     if (hasSelection) return;
@@ -229,7 +259,7 @@ export default function ChatTimeline({
     if (isFollowingRef.current && isNearBottom && scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
     }
-  }, [transcript.length, lastItemLen, isNearBottom]);
+  }, [transcript.length, lastItemLen, thinkingLen, isNearBottom]);
 
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -277,12 +307,15 @@ export default function ChatTimeline({
       const item = transcript[i];
       if (item.visualType === "agent_action" && item.agentActionData) {
         const tool = (item.agentActionData.toolName || "").toLowerCase();
-        // Standalone card tools (file edits with diffs) render as dedicated cards
+        // Standalone card tools (file edits with diffs, subagent delegations) render as dedicated cards
         const isDiffCard =
           (tool.includes("patch") || tool.includes("write") || tool.includes("edit")) &&
           Boolean(item.agentActionData.rawResult || item.agentActionData.content || item.agentActionData.checkpointId);
 
-        if (isDiffCard) {
+        const isDelegationCard =
+          tool.includes("delegate") || tool.includes("subagent");
+
+        if (isDiffCard || isDelegationCard) {
           flushRun(false);
           blocks.push({ kind: "item", item, idx: i });
         } else {
@@ -557,10 +590,41 @@ export default function ChatTimeline({
                           </div>
                         ) : (
                           <>
-                            <div className="relative max-w-[85%] sm:max-w-[75%] px-4 py-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.06] border border-white/[0.09] hover:border-white/[0.15] text-slate-100 text-[13.5px] leading-relaxed select-text backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.35)] transition-all font-sans">
+                            <div className="relative max-w-[85%] sm:max-w-[75%] px-4 py-2.5 rounded-2xl bg-[#080d1a]/95 hover:bg-[#0c1224]/95 border border-white/[0.12] hover:border-white/[0.18] text-slate-100 text-[13.5px] leading-relaxed select-text backdrop-blur-2xl shadow-[0_4px_20px_rgba(0,0,0,0.35)] transition-all font-sans text-left">
                               {/* Top specular hairline */}
                               <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none rounded-t-2xl" />
-                              <p className="whitespace-pre-wrap">{item.text}</p>
+                              {(() => {
+                                const reply = parseReplyMessage(item.text);
+                                if (!reply.isReply) {
+                                  return <p className="whitespace-pre-wrap">{item.text}</p>;
+                                }
+                                return (
+                                  <div className="flex flex-col gap-1.5">
+                                    {/* Compact Quoted Reply Badge (Anara Standard) */}
+                                    <div className="rounded-xl border border-white/[0.08] bg-black/45 p-2 backdrop-blur-md select-text">
+                                      <div className="flex items-center justify-between gap-2 mb-1 border-b border-white/[0.05] pb-0.5">
+                                        <div className="flex items-center gap-1.5 text-[10px] font-mono text-cyan-400">
+                                          <svg className="w-3 h-3 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a5 5 0 015 5v2m0 0l-3-3m3 3l3-3" />
+                                          </svg>
+                                          <span className="font-semibold tracking-wider uppercase text-slate-300">
+                                            Reply to {reply.sender}
+                                          </span>
+                                        </div>
+                                        <span className="px-1.5 py-px rounded-full bg-white/[0.06] text-[9px] font-mono text-slate-400 border border-white/[0.06] shrink-0">
+                                          1 message
+                                        </span>
+                                      </div>
+                                      <p className="text-[11.5px] text-slate-300/85 italic leading-relaxed pl-2 border-l-2 border-cyan-400/50 line-clamp-2">
+                                        "{reply.quotedText}"
+                                      </p>
+                                    </div>
+                                    <p className="whitespace-pre-wrap text-[13.5px] text-slate-100 font-sans leading-relaxed">
+                                      {reply.actualText}
+                                    </p>
+                                  </div>
+                                );
+                              })()}
                             </div>
 
                             {/* User Bubble Hover Actions (Edit & Copy) */}
@@ -633,6 +697,7 @@ export default function ChatTimeline({
                           riskLevel={item.approvalData.riskLevel}
                           onApprove={onApproveAction}
                           onReject={onRejectAction ? (planId) => onRejectAction(planId) : undefined}
+                          queueCount={pendingApprovalCount}
                         />
                       </div>
                     );
@@ -642,13 +707,43 @@ export default function ChatTimeline({
                   if ((item.visualType === "subagent" || item.subagentData) && item.subagentData) {
                     return (
                       <div key={idx} className="w-full my-1 px-1 animate-fade-in">
-                        <SubagentCard data={item.subagentData} onOpenFile={onOpenFile} />
+                        <SubagentCard data={item.subagentData} onOpenFile={onOpenFile} onOpenSession={onOpenSession} />
                       </div>
                     );
                   }
 
-                  // ── Action item (Diff card, shell command, task list) ──
+                  // ── Action item (Diff card, shell command, task list, or subagent card) ──
                   if (item.visualType === "agent_action" && item.agentActionData) {
+                    const tName = (item.agentActionData.toolName || "").toLowerCase();
+                    if (tName.includes("delegate") || tName.includes("subagent")) {
+                      const args = item.agentActionData.toolArgs || {};
+                      const subGoal = args.goal || args.title || item.agentActionData.detail || "Delegated Mission";
+                      const subStatus = item.agentActionData.status === "done" ? "completed" : (item.agentActionData.status || "completed");
+                      const syntheticSubagentData: SubagentTaskData = {
+                        delegationId: `del_${idx}`,
+                        goal: subGoal,
+                        status: subStatus as any,
+                        tasks: [
+                          {
+                            id: `task_${idx}`,
+                            taskId: `task_${idx}`,
+                            goal: subGoal,
+                            model: args.model || item.modelId,
+                            status: subStatus as any,
+                            depth: 1,
+                            startedAt: Date.now(),
+                            activity: [item.agentActionData.actionTitle || "Executed subagent mission"],
+                            summary: item.agentActionData.summary || "Completed",
+                            findings: typeof item.agentActionData.rawResult === "string" ? item.agentActionData.rawResult : JSON.stringify(item.agentActionData.rawResult, null, 2),
+                          }
+                        ]
+                      };
+                      return (
+                        <div key={idx} className="w-full my-1 px-1 animate-fade-in">
+                          <SubagentCard data={syntheticSubagentData} onOpenFile={onOpenFile} onOpenSession={onOpenSession} />
+                        </div>
+                      );
+                    }
                     return (
                       <div key={idx} className="w-full my-1 px-1 animate-fade-in">
                         <AgentToolCard action={item.agentActionData} sessionId={activeSessionId} onOpenFile={onOpenFile} />
@@ -695,8 +790,8 @@ export default function ChatTimeline({
                       }`}
                     >
                       <div className="w-full text-slate-200">
-                        {/* 1. Reasoning / Thought Process Disclosure (if present) */}
-                        {currentThinking && (
+                        {/* 1. Reasoning / Thought Process Disclosure (Hermes Desktop Parity) */}
+                        {(currentThinking || (isWaitingForFirstToken && !liveToolProgress)) && (
                           <div className="w-full mb-2">
                             <ThinkingCard
                               text={currentThinking}
@@ -727,30 +822,8 @@ export default function ChatTimeline({
                           </div>
                         )}
 
-                        {/* 2. In-flight Tool or Initial Wait Indicator (only when active, waiting for first token, and NO thinking card) */}
-                        {isWaitingForFirstToken && !currentThinking ? (
-                          <div className="w-full max-w-full">
-                            {liveToolProgress ? (
-                              <ToolRunTicker
-                                activeItemText={`Executing ${liveToolProgress.toolName}...`}
-                                totalCount={1}
-                                isRunning={true}
-                              >
-                                <span>{liveToolProgress.toolName}</span>
-                              </ToolRunTicker>
-                            ) : (
-                              <div className="py-1 text-xs text-slate-400 font-mono select-none flex items-center gap-1.5 opacity-[0.67]">
-                                <span className="grid size-3.5 shrink-0 place-items-center">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-                                </span>
-                                <span className="text-slate-400 text-[11.5px]">Thinking...</span>
-                              </div>
-                            )}
-                          </div>
-                        ) : null}
-
-                        {/* 3. In-flight tool progress when thinking is already showing */}
-                        {isWaitingForFirstToken && currentThinking && liveToolProgress ? (
+                        {/* 2. In-flight Tool Progress Indicator */}
+                        {isWaitingForFirstToken && liveToolProgress && (
                           <div className="w-full max-w-full mb-2">
                             <ToolRunTicker
                               activeItemText={`Executing ${liveToolProgress.toolName}...`}
@@ -760,7 +833,7 @@ export default function ChatTimeline({
                               <span>{liveToolProgress.toolName}</span>
                             </ToolRunTicker>
                           </div>
-                        ) : null}
+                        )}
 
                         {/* 4. Streaming or Final Markdown Content (with zero thought tag leak) */}
                         {(() => {

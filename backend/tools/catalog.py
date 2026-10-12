@@ -265,6 +265,22 @@ async def _raw_dispatch_tool_call(
     """Routes an incoming function_call dynamically via ToolRegistry (Zero if-elif ladder, Anara Standard)."""
     args = _normalize_tool_args(name, args)
     canonical = registry.resolve_name(name)
+
+    # Anara Child Safety Barrier: Delegated subagents cannot call blocked tools
+    try:
+        from core.subagent import is_delegated_child_context, is_tool_blocked_for_child
+        if is_delegated_child_context() and is_tool_blocked_for_child(canonical):
+            logger.warning(f"[ToolDispatch] Blocked tool '{canonical}' for child subagent (safety barrier).")
+            return {
+                "status": "error",
+                "tool": canonical,
+                "error": f"Child subagent is prohibited from using tool '{canonical}' (safety barrier).",
+                "message": f"Child subagent is prohibited from using tool '{canonical}' (safety barrier).",
+                "output": f"Child subagent is prohibited from using tool '{canonical}' (safety barrier).",
+            }
+    except Exception as e_barrier:
+        logger.debug(f"[ToolDispatch] Child barrier check notice: {e_barrier}")
+
     effective_mode = mode if mode else ("plan" if read_only else "build")
     logger.info(f"[AnaraAgent] Dispatching tool '{name}' (canonical={canonical}) with args: {args} (mode={effective_mode})")
 

@@ -27,6 +27,50 @@ export interface ReviewGitPaneProps {
   activeFilePath?: string;
 }
 
+type FileImportanceTier = "core" | "test" | "support";
+
+function classifyFile(path: string): { tier: FileImportanceTier; score: number } {
+  const lower = path.toLowerCase().replace(/\\/g, "/");
+  const name = lower.split("/").pop() || lower;
+
+  // 1. Support / Artifact / Lockfiles / Minified / Fixtures
+  if (
+    name.includes("lock") ||
+    name.endsWith(".lock") ||
+    name.endsWith(".min.js") ||
+    name.endsWith(".min.css") ||
+    name.endsWith(".map") ||
+    name.endsWith(".snap") ||
+    name.endsWith(".svg") ||
+    name.endsWith(".png") ||
+    name.endsWith(".ico") ||
+    name.endsWith(".jsonc") ||
+    lower.includes("fixtures/") ||
+    lower.includes("snapshots/") ||
+    lower.startsWith(".next/") ||
+    lower.startsWith("dist/") ||
+    lower.startsWith("build/")
+  ) {
+    return { tier: "support", score: 0 };
+  }
+
+  // 2. Test files
+  if (
+    lower.includes("/tests/") ||
+    lower.includes("/__tests__/") ||
+    lower.includes("/test/") ||
+    name.startsWith("test_") ||
+    name.endsWith("_test.py") ||
+    name.includes(".test.") ||
+    name.includes(".spec.")
+  ) {
+    return { tier: "test", score: 50 };
+  }
+
+  // 3. Core logic / source files
+  return { tier: "core", score: 100 };
+}
+
 export default function ReviewGitPane({
   gitStatus,
   onRefreshGit,
@@ -41,8 +85,9 @@ export default function ReviewGitPane({
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [diffText, setDiffText] = useState<string | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
+  const [orderMode, setOrderMode] = useState<"smart" | "list" | "status">("smart");
 
-  const backendUrl = typeof window !== "undefined" ? getBackendUrl() : "http://localhost:8000";
+  const backendUrl = typeof window !== "undefined" ? getBackendUrl() : "http://127.0.0.1:8000";
 
   const fetchDiffForFile = useCallback(
     async (filePath: string) => {
@@ -71,6 +116,24 @@ export default function ReviewGitPane({
     },
     [backendUrl, sessionId, selectedFilePath, diffText]
   );
+
+  // Real-time live token diff streamer integration
+  useEffect(() => {
+    const handleDiffStream = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const detail = customEvent.detail;
+      if (detail && detail.filePath && detail.diff) {
+        setSelectedFilePath(detail.filePath);
+        setDiffText(String(detail.diff));
+      }
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("anara-diff-stream", handleDiffStream);
+      return () => {
+        window.removeEventListener("anara-diff-stream", handleDiffStream);
+      };
+    }
+  }, []);
 
   // Stage single or all files
   const handleStage = async (path?: string) => {
@@ -140,6 +203,36 @@ export default function ReviewGitPane({
   const files = gitStatus?.files || [];
   const hasChanges = files.length > 0;
 
+  const sortedFiles = React.useMemo(() => {
+    const list = [...files];
+    if (orderMode === "smart") {
+      return list.sort((a, b) => {
+        const clsA = classifyFile(a.path);
+        const clsB = classifyFile(b.path);
+        if (clsA.score !== clsB.score) {
+          return clsB.score - clsA.score; // core (100) > test (50) > support (0)
+        }
+        const churnA = (a.insertions || 0) + (a.deletions || 0);
+        const churnB = (b.insertions || 0) + (b.deletions || 0);
+        if (churnA !== churnB) {
+          return churnB - churnA; // high churn first
+        }
+        return a.path.localeCompare(b.path);
+      });
+    }
+    if (orderMode === "list") {
+      return list.sort((a, b) => a.path.localeCompare(b.path));
+    }
+    // "status"
+    const statusPriority: Record<string, number> = { M: 1, A: 2, "??": 3, U: 3, D: 4 };
+    return list.sort((a, b) => {
+      const pA = statusPriority[a.status] || 9;
+      const pB = statusPriority[b.status] || 9;
+      if (pA !== pB) return pA - pB;
+      return a.path.localeCompare(b.path);
+    });
+  }, [files, orderMode]);
+
   return (
     <div className="flex-1 min-h-0 flex flex-col h-full bg-[#060913] text-slate-200 select-none font-mono">
       {/* ── Header: Branch, Diff Metrics, Stage All, Discard All ── */}
@@ -160,6 +253,23 @@ export default function ReviewGitPane({
 
         {/* Global Toolbar Actions */}
         <div className="flex items-center gap-1">
+          {/* Smart Diff Order Layout Switcher */}
+          <button
+            type="button"
+            onClick={() => {
+              setOrderMode((prev) => (prev === "smart" ? "list" : prev === "list" ? "status" : "smart"));
+            }}
+            className={`px-1.5 py-0.5 rounded text-[10px] font-sans font-medium transition-all flex items-center gap-1 cursor-pointer border ${
+              orderMode === "smart"
+                ? "bg-cyan-500/10 text-cyan-300 border-cyan-400/30"
+                : orderMode === "list"
+                ? "bg-white/5 text-slate-300 border-white/10"
+                : "bg-amber-500/10 text-amber-300 border-amber-400/30"
+            }`}
+            title={`Layout order: ${orderMode.toUpperCase()} (Click to cycle Smart -> List -> Status)`}
+          >
+            <span>{orderMode === "smart" ? "Smart" : orderMode === "list" ? "List" : "Status"}</span>
+          </button>
           <button
             type="button"
             onClick={() => handleStage()}
@@ -248,19 +358,21 @@ export default function ReviewGitPane({
             <span className="text-[10px] text-slate-600 mt-1">Working tree clean</span>
           </div>
         ) : (
-          files.map((file) => {
+          sortedFiles.map((file) => {
             const isSelected = selectedFilePath === file.path || activeFilePath === file.path;
             const isUntracked = file.status === "??" || file.status === "U";
             const isModified = file.status.includes("M");
             const isDeleted = file.status.includes("D");
             const isAdded = file.status.includes("A");
+            const fileTier = orderMode === "smart" ? classifyFile(file.path).tier : "core";
+            const isDimmed = orderMode === "smart" && fileTier === "support";
 
             return (
               <div
                 key={file.path}
                 className={`group flex items-center justify-between px-2 py-1.5 rounded-lg transition-colors cursor-pointer ${
                   isSelected ? "bg-white/10 text-white" : "hover:bg-white/[0.04] text-slate-300"
-                }`}
+                } ${isDimmed ? "opacity-50 hover:opacity-100" : ""}`}
                 onClick={() => {
                   fetchDiffForFile(file.path);
                   onSelectDiffFile?.(file.path);

@@ -93,8 +93,9 @@ async def wa_messages_endpoint(unread_only: bool = False, limit: int = 15):
 
 @router.post("/api/integrations/whatsapp/send")
 async def wa_send_endpoint(req: WhatsAppSendRequest):
-    """Sends a WhatsApp text message."""
-    return await send_whatsapp_message(req.phone_number, req.message)
+    """Sends a WhatsApp text message via platform adapter (formatting + chunking)."""
+    from integrations.manager import channel_manager
+    return await channel_manager.send_message("whatsapp", req.phone_number, req.message)
 
 @router.get("/api/integrations/whatsapp/config")
 async def wa_get_config_endpoint():
@@ -200,11 +201,22 @@ async def wa_webhook_endpoint(payload: WhatsAppWebhookPayload):
 
         target_chat_id = payload.jid if (payload.isGroup and payload.jid) else payload.phone
         cancel_reply = f"🛑 *Agent task halted via /stop.*{detail_str}"
-        await send_whatsapp_message(target_chat_id, cancel_reply)
+        from integrations.manager import channel_manager
+        await channel_manager.send_message("whatsapp", target_chat_id, cancel_reply)
         return {"status": "cancelled", "interrupt_info": interrupt_info}
 
     target_chat_id = payload.jid if (payload.isGroup and payload.jid) else payload.phone
     human_sender_id = payload.participant or payload.phone
+
+    # ── Inbound Webhook Deduplication Gate (Anara Enterprise) ──
+    from integrations.dedup import inbound_deduplicator
+    if payload.id and inbound_deduplicator.is_duplicate(payload.id):
+        logger.info(f"[WAWebhook] Dropped duplicate message by id '{payload.id}' from {human_sender_id}")
+        return {"status": "ignored", "reason": "duplicate_message_id"}
+
+    if inbound_deduplicator.is_content_duplicate(human_sender_id, clean_text, window_seconds=5.0):
+        logger.info(f"[WAWebhook] Dropped duplicate content replay from {human_sender_id}")
+        return {"status": "ignored", "reason": "duplicate_content_replay"}
 
     wa_attachments = []
     if safe_local_path:
@@ -236,7 +248,8 @@ async def wa_webhook_endpoint(payload: WhatsAppWebhookPayload):
 
     async def _send_prog(msg: str):
         try:
-            await send_whatsapp_message(target_chat_id, msg)
+            from integrations.manager import channel_manager
+            await channel_manager.send_message("whatsapp", target_chat_id, msg)
         except Exception:
             pass
 
@@ -270,7 +283,8 @@ async def wa_webhook_endpoint(payload: WhatsAppWebhookPayload):
 
         should_send_text = (voice_mode != "only") or not voice_sent or is_command_or_ui
         if res.text and should_send_text:
-            await send_whatsapp_message(target_chat_id, res.text)
+            from integrations.manager import channel_manager
+            await channel_manager.send_message("whatsapp", target_chat_id, res.text)
         return {"status": "processed", "plan_pending": res.plan_pending}
     except Exception as e:
         logger.error(f"[WAWebhook] Error processing message: {e}")
@@ -377,3 +391,182 @@ async def google_send_email_endpoint(req: EmailSendRequest):
     if chr(13) in req.subject or chr(10) in req.subject:
         raise HTTPException(status_code=400, detail="CRLF injection in email subject is forbidden.")
     return await send_email(clean_to, req.subject, req.body)
+
+
+# ── Unified Connections Endpoints ──
+
+class ConnectionSaveRequest(BaseModel):
+    config: Optional[Dict[str, Any]] = None
+    enabled: Optional[bool] = True
+
+
+@router.get("/api/integrations/connections")
+async def get_connections_endpoint():
+    """
+    Unified Endpoint: Retrieves connection statuses and configurations
+    across all platforms (Telegram, WhatsApp, Google Workspace, Spotify, etc.)
+    for the Connections Workspace.
+    """
+    tg_task = asyncio.create_task(get_telegram_status())
+    wa_task = asyncio.create_task(get_whatsapp_status())
+    g_task = asyncio.create_task(get_google_status())
+    wa_cfg_task = asyncio.to_thread(memory_engine.get_app_setting, "whatsapp_allowed_numbers")
+
+    tg_st, wa_st, g_st, wa_allowed = await asyncio.gather(
+        tg_task, wa_task, g_task, wa_cfg_task, return_exceptions=True
+    )
+
+    tg_status = tg_st if isinstance(tg_st, dict) else {"status": "disconnected"}
+    wa_status = wa_st if isinstance(wa_st, dict) else {"status": "disconnected"}
+    g_status = g_st if isinstance(g_st, dict) else {"status": "disconnected"}
+    wa_allowed_str = wa_allowed if isinstance(wa_allowed, str) else ""
+
+    is_tg_connected = tg_status.get("status") == "connected"
+    is_wa_connected = bool(wa_status.get("user")) and (wa_status.get("status") in ("connected", None))
+    is_g_connected = g_status.get("status") == "connected"
+
+    connections = [
+        {
+            "id": "telegram",
+            "name": "Telegram",
+            "category": "chat",
+            "status": "connected" if is_tg_connected else "disconnected",
+            "enabled": is_tg_connected or bool(tg_status.get("is_configured")),
+            "config": {
+                "token": "••••••••••••••••" if tg_status.get("bot") or tg_status.get("is_configured") else "",
+                "chat_id": tg_status.get("default_chat_id") or "",
+                "admin_ids": tg_status.get("admin_ids") or "",
+            },
+            "meta": tg_status,
+        },
+        {
+            "id": "whatsapp",
+            "name": "WhatsApp",
+            "category": "chat",
+            "status": "connected" if is_wa_connected else (wa_status.get("status") or "disconnected"),
+            "enabled": is_wa_connected,
+            "config": {
+                "bridge_url": "http://127.0.0.1:3001",
+                "allowed_numbers": wa_allowed_str or "",
+            },
+            "meta": wa_status,
+        },
+        {
+            "id": "google",
+            "name": "Google Workspace",
+            "category": "collaboration",
+            "status": "connected" if is_g_connected else "disconnected",
+            "enabled": is_g_connected,
+            "config": {
+                "email": g_status.get("email") or "",
+            },
+            "meta": g_status,
+        },
+        {
+            "id": "spotify",
+            "name": "Spotify Desktop",
+            "category": "media",
+            "status": "connected",
+            "enabled": True,
+            "config": {},
+            "meta": {"status": "connected", "type": "desktop_native"},
+        },
+        {
+            "id": "discord",
+            "name": "Discord",
+            "category": "chat",
+            "status": "disconnected",
+            "enabled": False,
+            "config": {},
+            "meta": {"status": "disconnected"},
+        },
+        {
+            "id": "slack",
+            "name": "Slack",
+            "category": "chat",
+            "status": "disconnected",
+            "enabled": False,
+            "config": {},
+            "meta": {"status": "disconnected"},
+        },
+    ]
+
+    return {"connections": connections}
+
+
+@router.post("/api/integrations/connections/{platform_id}")
+async def save_connection_endpoint(platform_id: str, req: ConnectionSaveRequest):
+    """
+    Unified Endpoint: Saves configuration and toggles enabled state for a specific connection platform.
+    """
+    clean_id = (platform_id or "").lower().strip()
+    cfg = req.config or {}
+    enabled = req.enabled if req.enabled is not None else True
+
+    if clean_id == "telegram":
+        token = cfg.get("token") or cfg.get("bot_token")
+        chat_id = cfg.get("chat_id") or cfg.get("default_chat_id")
+        admin_ids = cfg.get("admin_ids") or cfg.get("telegram_admin_ids")
+
+        token_to_save = None
+        if token and "••" not in str(token):
+            token_to_save = str(token).strip()
+
+        if token_to_save or chat_id is not None or admin_ids is not None:
+            await asyncio.to_thread(
+                save_telegram_config,
+                token=token_to_save,
+                default_chat_id=str(chat_id).strip() if chat_id else None,
+                admin_ids=str(admin_ids).strip() if admin_ids else None,
+            )
+
+        if enabled:
+            from integrations.telegram import start_telegram_polling_daemon, get_stored_telegram_token
+            if get_stored_telegram_token():
+                start_telegram_polling_daemon()
+        else:
+            from integrations.telegram import stop_telegram_polling_daemon
+            stop_telegram_polling_daemon()
+
+        status = await get_telegram_status()
+        return {"status": "success", "platform": clean_id, "connection": status}
+
+    elif clean_id == "whatsapp":
+        allowed = cfg.get("allowed_numbers")
+        if allowed is not None:
+            await asyncio.to_thread(memory_engine.set_app_setting, "whatsapp_allowed_numbers", str(allowed).strip())
+
+        if not enabled:
+            await logout_whatsapp()
+
+        status = await get_whatsapp_status()
+        return {"status": "success", "platform": clean_id, "connection": status}
+
+    elif clean_id == "google":
+        email = cfg.get("email")
+        if email:
+            clean_email = str(email).strip()
+            if not re.match(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", clean_email):
+                raise HTTPException(status_code=400, detail="Invalid email address format.")
+            await asyncio.to_thread(save_google_config, clean_email)
+
+        if not enabled:
+            await asyncio.to_thread(disconnect_google)
+
+        status = await get_google_status()
+        return {"status": "success", "platform": clean_id, "connection": status}
+
+    else:
+        import json
+        await asyncio.to_thread(
+            memory_engine.set_app_setting,
+            f"connection_{clean_id}",
+            json.dumps({"config": cfg, "enabled": enabled})
+        )
+        return {
+            "status": "success",
+            "platform": clean_id,
+            "enabled": enabled,
+            "config": cfg,
+        }
+

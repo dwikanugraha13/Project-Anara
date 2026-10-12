@@ -47,6 +47,7 @@ class TurnEvent:
     thought: Optional[str] = None
     is_error: bool = False
     plan_id: Optional[str] = None
+    call_id: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -110,6 +111,7 @@ class AnaraExecutionRunner:
         model_id: Optional[str] = None,
         interaction_mode: str = "chat",
         reasoning_effort: Optional[str] = None,
+        editor_context: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[TurnEvent, None]:
         """
         Executes a single multi-step ReAct turn and yields TurnEvents in real-time.
@@ -136,6 +138,30 @@ class AnaraExecutionRunner:
         self.session_id = effective_sid
         self.is_interrupted = False
         session_state_manager.clear_interrupted(self.platform, str(effective_sid))
+
+        # Auto-titling Turn Prologue: Instant Derived Title + Async Model Upgrade (Anara Parity)
+        try:
+            from core.title_generator import maybe_auto_title
+            maybe_auto_title(effective_sid, clean_text)
+        except Exception as e:
+            logger.debug(f"[ExecutionRunner] Turn prologue auto-title notice: {e}")
+
+        # Sharpshooter Friction-Gated Project Memory (Anara Parity with Oh My Pi)
+        try:
+            from core.sharpshooter import maybe_record_friction_decision
+            maybe_record_friction_decision(clean_text, session_id=str(effective_sid))
+        except Exception as e:
+            logger.debug(f"[ExecutionRunner] Sharpshooter friction gate notice: {e}")
+
+        # Hermes-Parity: Pre-Flight Context Grounding (@file:, @folder:, @diff, @staged)
+        try:
+            from core.context_references import expand_context_references
+            grounded_text, grounding_refs = expand_context_references(clean_text)
+            if grounding_refs:
+                logger.info(f"[ExecutionRunner] Pre-flight grounded {len(grounding_refs)} context references in session #{effective_sid}")
+                clean_text = grounded_text
+        except Exception as e:
+            logger.debug(f"[ExecutionRunner] Pre-flight context grounding notice: {e}")
 
         # 2. Check Pending Actions State Machine (Anara Autonomous Parity)
         pending = session_state_manager.get_pending(self.platform, str(effective_sid))
@@ -211,6 +237,7 @@ class AnaraExecutionRunner:
             session_id=effective_sid,
             model_id=selected_model,
             reasoning_effort=reasoning_effort,
+            editor_context=editor_context,
         )
 
         from memory.memory_nudge import memory_nudge_manager
@@ -231,6 +258,21 @@ class AnaraExecutionRunner:
                     type="thought",
                     content=evt.get("thought", ""),
                     thought=evt.get("thought", ""),
+                ))
+                return
+
+            if evt.get("type") == "interim_text":
+                event_queue.put_nowait(TurnEvent(
+                    type="interim_text",
+                    content=evt.get("text", ""),
+                ))
+                return
+
+            if evt.get("type") == "ttsr_intervention":
+                event_queue.put_nowait(TurnEvent(
+                    type="ttsr_intervention",
+                    content=evt.get("message", ""),
+                    metadata=evt,
                 ))
                 return
 
@@ -283,22 +325,28 @@ class AnaraExecutionRunner:
                     tool_name=t_name,
                     tool_args=t_args,
                     content=evt.get("detail") or "",
+                    call_id=call_id,
                     metadata=evt,
                 ))
-            elif t_status == "done":
+            elif t_status in ("done", "error"):
                 call_id = evt.get("call_id")
-                if not call_id and turn_tool_records:
+                matched_args = evt.get("tool_args") or {}
+                if turn_tool_records:
                     for rec in reversed(turn_tool_records):
                         if rec.get("tool_name") == t_name and rec.get("status") == "running":
-                            call_id = rec.get("call_id")
+                            if not call_id:
+                                call_id = rec.get("call_id")
+                            if not matched_args:
+                                matched_args = rec.get("tool_args", {})
                             rec["status"] = "matched"
                             break
+                is_err = bool(evt.get("is_error", False) or t_status == "error")
                 if call_id:
                     try:
                         session_state_manager.persist_tool_call_result(
                             call_id=call_id,
                             result_summary=t_summary,
-                            is_error=bool(evt.get("is_error", False))
+                            is_error=is_err
                         )
                     except Exception as e_pers_res:
                         logger.debug(f"[ExecutionRunner] Tool persist result notice: {e_pers_res}")
@@ -306,30 +354,49 @@ class AnaraExecutionRunner:
                 turn_tool_records.append({
                     "call_id": call_id,
                     "tool_name": t_name,
+                    "tool_args": matched_args or t_args,
                     "tool_result": t_summary,
-                    "status": "done",
+                    "summary": t_summary,
+                    "detail": evt.get("detail") or "",
+                    "raw_result": evt.get("raw_result") or t_summary,
+                    "status": "error" if is_err else "done",
                     "timestamp": time.time(),
                 })
                 # Active self-correction tracker
                 try:
-                    self.self_correction_tracker.record_tool_call(t_name, t_args, t_summary)
+                    self.self_correction_tracker.record_tool_call(t_name, matched_args or t_args, t_summary)
                 except Exception:
                     pass
 
                 event_queue.put_nowait(TurnEvent(
                     type="tool_result",
                     tool_name=t_name,
-                    tool_args=t_args,
+                    tool_args=matched_args or t_args,
                     tool_result=t_summary,
                     content=t_summary,
+                    call_id=call_id,
+                    is_error=is_err,
                     metadata=evt,
                 ))
 
         from providers.think_scrubber import StreamingThinkScrubber
+        from core.stream_rules import TimeTravelingStreamRulesEngine
         stream_scrubber = StreamingThinkScrubber()
+        stream_rules_engine = TimeTravelingStreamRulesEngine()
 
         def _token_cb(token: str):
             if token:
+                # Time-Traveling Stream Rules Evaluation (Oh My Pi TTSR Parity)
+                ttsr_violation = stream_rules_engine.feed(token)
+                if ttsr_violation:
+                    logger.warning(f"[Runner] TTSR rule '{ttsr_violation.rule_name}' triggered mid-stream. Hard-aborting socket...")
+                    event_queue.put_nowait(TurnEvent(
+                        type="ttsr_intervention",
+                        content=ttsr_violation.message,
+                        metadata={"rule": ttsr_violation.rule_name, "matched": ttsr_violation.matched_text}
+                    ))
+                    raise ttsr_violation
+
                 scrubbed = stream_scrubber.feed(token)
                 if stream_scrubber.last_hidden:
                     event_queue.put_nowait(TurnEvent(
@@ -342,6 +409,10 @@ class AnaraExecutionRunner:
                         type="chunk",
                         content=scrubbed,
                     ))
+
+        # Auto-Thinking Dynamic Effort Resolution (Anara Parity with Oh My Pi)
+        from core.auto_thinking import resolve_auto_thinking_effort
+        effective_effort = resolve_auto_thinking_effort(clean_text, requested_effort=reasoning_effort)
 
         # Run model execution task in background to allow event queue streaming
         intercept_mutating = (agent_mode == "plan" or approval_mode == "plan")
@@ -357,7 +428,7 @@ class AnaraExecutionRunner:
                 token_cb=_token_cb,
                 intercept_mutating_tools=intercept_mutating,
                 platform=self.platform,
-                reasoning_effort=reasoning_effort,
+                reasoning_effort=effective_effort,
             )
         )
         self._current_task = model_task
@@ -381,14 +452,26 @@ class AnaraExecutionRunner:
             # Check model task result
             try:
                 model_res = await model_task
+                trailing_scrubbed = stream_scrubber.flush()
+                if trailing_scrubbed:
+                    yield TurnEvent(type="chunk", content=trailing_scrubbed)
             except asyncio.CancelledError:
                 yield TurnEvent(type="error", content="Task stopped by user.", is_error=True)
                 return
             except Exception as e:
                 logger.error(f"[ExecutionRunner] Model error: {e}", exc_info=True)
+                try:
+                    from core.empty_response_guard import is_reasoning_timeout, format_thinking_timeout_guidance
+                    if is_reasoning_timeout(selected_model, e):
+                        err_content = format_thinking_timeout_guidance(selected_model, e)
+                    else:
+                        err_content = f"Error processing request: {e}"
+                except Exception:
+                    err_content = f"Error processing request: {e}"
+
                 yield TurnEvent(
                     type="error",
-                    content=f"Error processing request: {e}",
+                    content=err_content,
                     is_error=True,
                 )
                 return
@@ -498,9 +581,21 @@ class AnaraExecutionRunner:
                 logger.debug(f"[ExecutionRunner] Stop-gate notice: {e_conv}")
 
         # 9. Record Final AI Response with Execution Audit (Anara Persist Parity)
+        persisted_records = []
+        for r in turn_tool_records:
+            if r.get("status") == "done":
+                persisted_records.append({
+                    "tool_name": r.get("tool_name", ""),
+                    "summary": str(r.get("summary") or r.get("tool_result") or "Done")[:250],
+                    "tool_args": r.get("tool_args") or {},
+                    "detail": r.get("detail") or "",
+                    "raw_result": r.get("raw_result") or r.get("tool_result") or "",
+                })
+
         turn_visual_data = {
             "tools_used": tools_used,
-            "tool_records_count": len(turn_tool_records),
+            "tool_records_count": len(persisted_records),
+            "tool_records": persisted_records,
             "mode": agent_mode,
             "duration": duration,
         }
@@ -549,6 +644,28 @@ class AnaraExecutionRunner:
                 tools_used=tools_used,
                 summary_callback=_web_receipt_cb,
             ))
+        except Exception:
+            pass
+
+        # Hermes-Parity: Trajectory Recording & Idle Background Review
+        try:
+            from core.trajectory import TrajectoryRecorder
+            from core.background_review import background_review_worker
+            TrajectoryRecorder.save_trajectory(
+                session_id=str(effective_sid),
+                messages=[
+                    {"role": "user", "content": clean_text},
+                    {"role": "assistant", "content": final_reply},
+                ],
+                model=selected_model,
+                completed=True,
+                metrics={"duration": duration, "tools_used": tools_used},
+            )
+            background_review_worker.schedule_idle_review(
+                session_id=str(effective_sid),
+                user_prompt=clean_text,
+                assistant_response=final_reply,
+            )
         except Exception:
             pass
 

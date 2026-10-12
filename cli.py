@@ -100,10 +100,9 @@ async def run_cli_interactive(initial_mode: str = "conversational", single_promp
     except Exception:
         pass
 
-    # Initial session
+    # Initial session (Anara Standard: no hardcoded title, auto-titles on opening turn)
     new_sess = memory_engine.create_session(
         speaker_name=user_name,
-        title="Anara CLI Session",
         session_type="code" if session_mode == "explicit_plan_build" else "chat",
         channel="cli",
         session_mode=session_mode
@@ -719,7 +718,7 @@ def manage_cli_skills(
     act = (action or "list").strip().lower()
 
     if act == "sync":
-        print(f"\n{CYAN}Synchronizing bundled in-tree skills to active user runtime (Hermes Parity)...{RESET}")
+        print(f"\n{CYAN}Synchronizing bundled in-tree skills to active user runtime (Anara Standard)...{RESET}")
         res = sync_bundled_skills()
         print(f"  • Source Directory : {DIM}{get_bundled_skills_dir()}{RESET}")
         print(f"  • Active Runtime   : {CYAN}{get_anara_skills_dir()}{RESET}")
@@ -832,11 +831,11 @@ def main():
     gw_p.add_argument("action", choices=["status", "tunnel", "stop-tunnel", "set-password"], default="status", nargs="?")
     gw_p.add_argument("param", nargs="?", help="Additional parameter (e.g. new password)")
 
-    # computer-use subcommand (Hermes Parity)
+    # computer-use subcommand (Anara Standard)
     cu_p = subparsers.add_parser("computer-use", help="Manage Cua Desktop Driver for computer_use tool")
     cu_p.add_argument("action", choices=["status", "install"], default="status", nargs="?")
 
-    # skills subcommand (Hermes Parity & 100k Skills Hub)
+    # skills subcommand (Anara Standard & 100k Skills Hub)
     sk_p = subparsers.add_parser("skills", help="Manage, search, install, and toggle agent skills (100k+ Hub)")
     sk_p.add_argument("action", choices=["list", "sync", "search", "install", "enable", "disable", "uninstall", "remove", "sources"], default="list", nargs="?")
     sk_p.add_argument("target", nargs="?", help="Skill identifier, slug, or search query")

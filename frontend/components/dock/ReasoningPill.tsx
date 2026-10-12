@@ -25,7 +25,7 @@ export interface ReasoningPillProps {
 export default function ReasoningPill({
   modelId,
   model,
-  reasoningEffort = "medium",
+  reasoningEffort = "auto",
   onSelectReasoningEffort,
   disabled = false,
   modelName = "Model",
@@ -51,17 +51,18 @@ export default function ReasoningPill({
 
   const shouldRender = !disabled && availableLevels.length > 0;
 
-  // Safe fallback clamping: prefer current, then medium, then low, then first available
+  // Safe fallback clamping: prefer current, then auto, then medium, then low, then first available
   const currentLevel: ReasoningEffortLevel = useMemo(() => {
     if (availableLevels.includes(reasoningEffort as ReasoningEffortLevel)) {
       return reasoningEffort as ReasoningEffortLevel;
     }
+    if (availableLevels.includes("auto")) return "auto";
     if (availableLevels.includes("medium")) return "medium";
     if (availableLevels.includes("low")) return "low";
     return availableLevels[0] || "off";
   }, [availableLevels, reasoningEffort]);
 
-  const currentConfig = REASONING_EFFORT_CONFIG[currentLevel] || REASONING_EFFORT_CONFIG.medium;
+  const currentConfig = REASONING_EFFORT_CONFIG[currentLevel] || REASONING_EFFORT_CONFIG.auto;
   const isOff = currentLevel === "off";
 
   // Auto-clamp and sync when model capabilities do not support the previously active effort
@@ -153,6 +154,7 @@ export default function ReasoningPill({
         type="button"
         aria-haspopup="dialog"
         aria-expanded={isOpen}
+        suppressHydrationWarning
         onClick={(e) => {
           e.stopPropagation();
           e.nativeEvent?.stopImmediatePropagation?.();
@@ -169,7 +171,10 @@ export default function ReasoningPill({
             : "bg-white/[0.04] hover:bg-white/[0.07] border-white/[0.08] hover:border-white/[0.15] text-zinc-300 hover:text-white"
         }`}
       >
-        <span className="font-semibold tracking-tight">
+        <svg className="w-3 h-3 text-cyan-400/80 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+        </svg>
+        <span suppressHydrationWarning className="font-semibold tracking-tight">
           {isOff ? "Off" : currentConfig.shortLabel}
         </span>
         <svg

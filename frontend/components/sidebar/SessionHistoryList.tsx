@@ -24,15 +24,18 @@ interface SessionHistoryListProps {
   activeSessionId: number | null;
   search: string;
   setSearch: (s: string) => void;
-  onSelectSession: (id: number) => void;
+  onSelectSession: (id: number, title?: string | null) => void;
   onNewSession: () => void;
   onOpenBrain?: () => void;
   onOpenMessaging?: () => void;
+  onOpenConnections?: () => void;
   onOpenScheduled?: () => void;
   onOpenProviders?: () => void;
   onOpenArtifacts?: () => void;
   onOpenCode?: () => void;
   sessionType?: "chat" | "code";
+  activeWorkspaceView?: "chat" | "capabilities" | "messaging" | "connections" | "scheduled" | "providers";
+  isArtifactsOpen?: boolean;
   onPatchSession: (id: number, body: Record<string, unknown>) => Promise<void>;
   onDeleteSession: (s: ChatSession) => Promise<void> | void;
   onForkSession?: (s: ChatSession) => Promise<void>;
@@ -49,6 +52,7 @@ interface SessionHistoryListProps {
 export default function SessionHistoryList({
   sessions, loading, activeSessionId, search, setSearch,
   onSelectSession, onNewSession, onOpenBrain, onOpenMessaging, onOpenScheduled, onOpenProviders, onOpenArtifacts, onOpenCode: _onOpenCode, sessionType,
+  activeWorkspaceView = "chat", isArtifactsOpen = false,
   onPatchSession, onDeleteSession, onForkSession,
   onDropPin, onDropUnpin,
   draggedSession, setDraggedSession, dragOverTarget, setDragOverTarget,
@@ -235,7 +239,7 @@ export default function SessionHistoryList({
 
   /* ── Session row renderer (extracted to reduce nesting) ──────────── */
   const renderSessionRow = (s: ChatSession, isPinnedCategory: boolean) => {
-    const isActive = activeSessionId === s.id;
+    const isActive = activeWorkspaceView === "chat" && activeSessionId === s.id;
     const isBeingDragged = draggedSession?.id === s.id;
     const isHoveredTarget = hoveredDropSessionId === s.id && Boolean(draggedSession && draggedSession.id !== s.id);
     const display = resolveSessionDisplay(s);
@@ -268,7 +272,7 @@ export default function SessionHistoryList({
             setHoveredDropSessionId(null);
           }
         }}
-        className={`group/item relative rounded-xl transition-all ${
+        className={`group/item relative rounded-xl ${
           isBeingDragged ? "opacity-30 scale-[0.98] border border-dashed border-white/25" : ""
         }`}
       >
@@ -322,16 +326,16 @@ export default function SessionHistoryList({
               setDragOverTarget(null);
               setHoveredDropSessionId(null);
             }}
-            onClick={() => onSelectSession(s.id)}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectSession(s.id); } }}
+            onClick={() => onSelectSession(s.id, display.title)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectSession(s.id, display.title); } }}
             title={`${display.title}${display.subtitle ? ` — ${display.subtitle}` : ""} (${smartTime} • ${s.message_count} msgs)`}
-            className={`w-full flex items-center gap-2 text-left py-1.5 px-2.5 rounded-lg transition-all outline-none cursor-grab active:cursor-grabbing select-none ${
+            className={`w-full flex items-center gap-2 text-left py-1.5 px-2.5 rounded-lg transition-colors duration-150 outline-none cursor-grab active:cursor-grabbing select-none ${
               isHoveredTarget && draggedSession
                 ? draggedSession.is_pinned === 1
-                  ? "bg-rose-950/30 border border-rose-500/40 text-white shadow-sm"
-                  : "bg-cyan-950/30 border border-cyan-400/40 text-white shadow-sm"
+                  ? "bg-rose-950/30 text-white shadow-sm"
+                  : "bg-cyan-950/30 text-white shadow-sm"
                 : isActive
-                ? "bg-cyan-500/10 text-white shadow-sm font-medium border-l-[3px] border-cyan-400 rounded-l-none pl-2"
+                ? "bg-cyan-500/10 text-white shadow-sm font-medium"
                 : "bg-transparent hover:bg-white/[0.04] text-slate-300 hover:text-white"
             }`}
           >
@@ -578,50 +582,73 @@ export default function SessionHistoryList({
           </div>
         </button>
 
-        <div className="grid grid-cols-2 gap-1.5 text-[11px] text-slate-400 font-sans">
+        <div className="grid grid-cols-2 gap-1.5 text-xs font-sans mt-0.5">
+          {/* 1. Capabilities */}
           <button
             type="button"
             onClick={onOpenBrain}
-            className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-white/10 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
-            title="Capabilities (Skills, Tools, Connectors, Plugins, Providers)"
+            className={`w-full flex items-center gap-2 py-1.5 px-2.5 rounded-lg transition-all cursor-pointer select-none text-left ${
+              activeWorkspaceView === "capabilities"
+                ? "bg-cyan-500/10 text-white shadow-sm font-medium border border-transparent"
+                : "bg-white/[0.03] hover:bg-white/[0.06] text-slate-300 hover:text-white border border-white/[0.06] hover:border-white/10"
+            }`}
+            title="Capabilities (Skills, Tools, Connectors, Plugins)"
           >
-            <svg className="w-3.5 h-3.5 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className={`w-3.5 h-3.5 shrink-0 ${activeWorkspaceView === "capabilities" ? "text-cyan-400" : "text-indigo-400"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
-            <span className="truncate font-medium">Capabilities</span>
+            <span className="truncate">Capabilities</span>
           </button>
+
+          {/* 2. Connections */}
           <button
             type="button"
             onClick={onOpenMessaging}
-            className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-white/10 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
-            title="Messaging Channels (Telegram, WhatsApp, Webhooks)"
+            className={`w-full flex items-center gap-2 py-1.5 px-2.5 rounded-lg transition-all cursor-pointer select-none text-left ${
+              activeWorkspaceView === "messaging" || (activeWorkspaceView as string) === "connections"
+                ? "bg-cyan-500/10 text-white shadow-sm font-medium border border-transparent"
+                : "bg-white/[0.03] hover:bg-white/[0.06] text-slate-300 hover:text-white border border-white/[0.06] hover:border-white/10"
+            }`}
+            title="Connections (Telegram, WhatsApp, Discord, Slack, Integrations)"
           >
-            <svg className="w-3.5 h-3.5 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            <svg className={`w-3.5 h-3.5 shrink-0 ${activeWorkspaceView === "messaging" || (activeWorkspaceView as string) === "connections" ? "text-cyan-400" : "text-emerald-400"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
             </svg>
-            <span className="truncate font-medium">Messaging</span>
+            <span className="truncate">Connections</span>
           </button>
+
+          {/* 3. Scheduled */}
           <button
             type="button"
             onClick={onOpenScheduled}
-            className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-white/10 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
+            className={`w-full flex items-center gap-2 py-1.5 px-2.5 rounded-lg transition-all cursor-pointer select-none text-left ${
+              activeWorkspaceView === "scheduled"
+                ? "bg-cyan-500/10 text-white shadow-sm font-medium border border-transparent"
+                : "bg-white/[0.03] hover:bg-white/[0.06] text-slate-300 hover:text-white border border-white/[0.06] hover:border-white/10"
+            }`}
             title="Scheduled Jobs & Autonomous Tasks"
           >
-            <svg className="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className={`w-3.5 h-3.5 shrink-0 ${activeWorkspaceView === "scheduled" ? "text-cyan-400" : "text-amber-400"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span className="truncate font-medium">Scheduled</span>
+            <span className="truncate">Scheduled</span>
           </button>
+
+          {/* 4. Providers */}
           <button
             type="button"
             onClick={onOpenProviders}
-            className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-white/10 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
-            title="Providers & Models (Custom Providers, API Keys)"
+            className={`w-full flex items-center gap-2 py-1.5 px-2.5 rounded-lg transition-all cursor-pointer select-none text-left ${
+              activeWorkspaceView === "providers"
+                ? "bg-cyan-500/10 text-white shadow-sm font-medium border border-transparent"
+                : "bg-white/[0.03] hover:bg-white/[0.06] text-slate-300 hover:text-white border border-white/[0.06] hover:border-white/10"
+            }`}
+            title="Providers & Models (API Keys, Custom Routes)"
           >
-            <svg className="w-3.5 h-3.5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className={`w-3.5 h-3.5 shrink-0 ${activeWorkspaceView === "providers" ? "text-cyan-400" : "text-cyan-400"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
-            <span className="truncate font-medium">Providers</span>
+            <span className="truncate">Providers</span>
           </button>
         </div>
       </div>

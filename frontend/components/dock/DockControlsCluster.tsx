@@ -34,6 +34,9 @@ export interface DockControlsClusterProps {
   isBusy: boolean;
   canSend: boolean;
   onSend: () => void;
+  isDictating?: boolean;
+  dictationStatus?: "idle" | "recording" | "transcribing";
+  onToggleDictate?: () => void;
   compact?: boolean;
   isCodeStudio?: boolean;
 }
@@ -71,6 +74,9 @@ export function DockControlsCluster({
   isBusy,
   canSend,
   onSend,
+  isDictating = false,
+  dictationStatus = "idle",
+  onToggleDictate,
   compact = false,
   isCodeStudio = false,
 }: DockControlsClusterProps) {
@@ -455,6 +461,58 @@ export function DockControlsCluster({
     );
   };
 
+  const renderDictateButton = (isCompactButton: boolean) => {
+    if (interactionMode !== "chat" || !onToggleDictate) return null;
+    const isRec = dictationStatus === "recording" || isDictating;
+    const isTrans = dictationStatus === "transcribing";
+
+    return (
+      <button
+        type="button"
+        onClick={onToggleDictate}
+        disabled={isTrans}
+        className={`relative ${
+          isCompactButton ? "w-7 h-7" : "w-8 h-8"
+        } rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer border select-none shrink-0 ${
+          isRec
+            ? "bg-cyan-500/20 text-cyan-300 border-cyan-400/50 shadow-[0_0_12px_rgba(34,211,238,0.35)] animate-pulse"
+            : isTrans
+            ? "bg-cyan-500/10 text-cyan-400 border-cyan-400/30 opacity-70 cursor-wait"
+            : "bg-white/[0.04] hover:bg-white/10 text-slate-300 hover:text-white border-white/10 hover:border-white/20"
+        }`}
+        title={
+          isRec
+            ? "Stop voice dictation (Click to finish)"
+            : isTrans
+            ? "Transcribing voice note..."
+            : "Voice dictation (Speech to text)"
+        }
+      >
+        {isRec ? (
+          <div className="w-2.5 h-2.5 rounded-[2px] bg-cyan-300 shadow-sm" />
+        ) : isTrans ? (
+          <svg className="w-3.5 h-3.5 animate-spin text-cyan-300" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+            />
+          </svg>
+        ) : (
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.8}
+              d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+            />
+          </svg>
+        )}
+      </button>
+    );
+  };
+
   return (
     <div ref={containerRef} className="w-full relative">
       {/* ── 2-TIER LAYOUT (When bar is narrowed < 420px in Code Studio) ── */}
@@ -467,6 +525,7 @@ export function DockControlsCluster({
               {renderModelSelector()}
             </div>
             <div className="shrink-0 flex items-center gap-1">
+              {renderDictateButton(true)}
               {renderSendStopButton(true)}
             </div>
           </div>
@@ -487,10 +546,11 @@ export function DockControlsCluster({
             {renderModelSelector()}
           </div>
 
-          {/* Right Cluster: [Reasoning] [Approval] [Send/Stop] */}
+          {/* Right Cluster: [Reasoning] [Approval] [Dictate] [Send/Stop] */}
           <div className="flex items-center gap-1.5 shrink-0 justify-end">
             {renderReasoningPill(false)}
             {renderApprovalModePill(false)}
+            {renderDictateButton(false)}
             {renderSendStopButton(false)}
           </div>
         </div>

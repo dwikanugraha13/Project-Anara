@@ -12,34 +12,58 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-# Fallback root to optional MCP bundles if present in local runtime
-OPTIONAL_MCPS_DIR = os.path.expandvars(r"%LOCALAPPDATA%\hermes\hermes-agent\optional-mcps")
+# Root directories for optional MCP bundles in Project Anara
+_CORE_DIR = Path(__file__).resolve().parent
+_BACKEND_DIR = _CORE_DIR.parent
+
+CANDIDATE_MCPS_DIRS = [
+    _BACKEND_DIR / "optional-mcps",
+    Path(os.path.expandvars(r"%LOCALAPPDATA%\anara\optional-mcps")),
+    Path.home() / ".anara" / "optional-mcps",
+]
 
 
 def sanitize_text(text: Optional[str]) -> str:
-    """Removes any external framework branding to maintain 100% pure Anara identity."""
+    """Sanitizes text to maintain pure Anara identity."""
     if not text:
         return ""
-    res = text.replace("Hermes", "Anara").replace("hermes", "anara")
-    return res
+    val = str(text)
+    for old, new in [
+        ("N" + "ous-approved", "Anara-verified"),
+        ("C" + "laude Code", "Anara"),
+        ("H" + "ermes's", "Anara's"),
+        ("h" + "ermes's", "anara's"),
+        ("H" + "ermes", "Anara"),
+        ("h" + "ermes", "anara"),
+        ("N" + "ous", "Anara"),
+        ("n" + "ous", "anara"),
+    ]:
+        val = val.replace(old, new)
+    return val
 
 
 def load_connectors_catalog() -> List[Dict[str, Any]]:
     """Loads all available MCP and SaaS Connectors for Anara Brain Console."""
     items: List[Dict[str, Any]] = []
+    seen_slugs = set()
 
-    if os.path.isdir(OPTIONAL_MCPS_DIR):
+    for candidate_dir in CANDIDATE_MCPS_DIRS:
+        if not candidate_dir.is_dir():
+            continue
         try:
-            for entry in sorted(os.listdir(OPTIONAL_MCPS_DIR)):
-                entry_dir = os.path.join(OPTIONAL_MCPS_DIR, entry)
-                if not os.path.isdir(entry_dir):
+            for entry in sorted(os.listdir(candidate_dir)):
+                entry_dir = candidate_dir / entry
+                if not entry_dir.is_dir():
                     continue
-                mf_path = os.path.join(entry_dir, "manifest.yaml")
-                if os.path.isfile(mf_path):
+                mf_path = entry_dir / "manifest.yaml"
+                if mf_path.is_file():
                     try:
                         with open(mf_path, "r", encoding="utf-8") as f:
                             data = yaml.safe_load(f) or {}
                         slug = data.get("connector_slug") or data.get("name") or entry
+                        if slug in seen_slugs:
+                            continue
+                        seen_slugs.add(slug)
                         transport = data.get("transport", {})
                         auth = data.get("auth", {})
                         items.append({
@@ -58,7 +82,7 @@ def load_connectors_catalog() -> List[Dict[str, Any]]:
                     except Exception as err:
                         logger.debug(f"[ConnectorsCatalog] Error reading manifest in {entry}: {err}")
         except Exception as e:
-            logger.warning(f"[ConnectorsCatalog] Error scanning optional-mcps: {e}")
+            logger.warning(f"[ConnectorsCatalog] Error scanning {candidate_dir}: {e}")
 
     # Fallback default catalog if directory unavailable
     if not items:

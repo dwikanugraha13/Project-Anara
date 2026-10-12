@@ -81,10 +81,40 @@ export interface AgentActionData {
   durationMs?: number;
   durationText?: string;
   command?: string;
+  query?: string;
+  toolArgs?: Record<string, any>;
+  status?: string;
   subagentData?: SubagentTaskData;
 }
 
-export type SubagentStatus = "running" | "completed" | "failed" | "timed_out" | "dispatched";
+export type SubagentStatus =
+  | "running"
+  | "completed"
+  | "failed"
+  | "error"
+  | "stopped"
+  | "interrupted"
+  | "timed_out"
+  | "dispatched"
+  | "queued";
+
+export type DelegateRowStatus = SubagentStatus;
+
+export interface DelegateRow {
+  id: string;
+  goal: string;
+  status: DelegateRowStatus;
+  activity: string[];
+  durationSeconds?: number;
+  model?: string;
+  sessionId?: string;
+  keyFindings?: string[];
+  referencedFiles?: string[];
+  findings?: string;
+  error?: string;
+  depth?: number;
+  startedAt?: number;
+}
 
 export interface SubagentProgressItem {
   id: string;
@@ -96,6 +126,7 @@ export interface SubagentProgressItem {
   depth?: number;
   startedAt?: number;
   durationSec?: number;
+  durationSeconds?: number;
   currentTool?: string;
   activity: string[];
   summary?: string;
@@ -104,6 +135,7 @@ export interface SubagentProgressItem {
   referencedFiles?: string[];
   error?: string;
   childSessionId?: string;
+  sessionId?: string;
 }
 
 export interface SubagentTaskData {

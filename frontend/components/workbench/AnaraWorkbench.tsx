@@ -33,6 +33,7 @@ const ReviewGitPane = dynamic(() => import("../sidebar/ReviewGitPane"), {
 const AnaraBrain = lazy(() => import("../brain/AnaraBrain"));
 const AnaraMediaPlayer = lazy(() => import("../dock/AnaraMediaPlayer"));
 import CapabilitiesWorkspaceView from "../capabilities/CapabilitiesWorkspaceView";
+import ConnectionsWorkspaceView from "../connections/ConnectionsWorkspaceView";
 import MessagingWorkspaceView from "../messaging/MessagingWorkspaceView";
 import ScheduledJobsWorkspaceView from "../scheduled/ScheduledJobsWorkspaceView";
 import ProvidersWorkspaceView from "../providers/ProvidersWorkspaceView";
@@ -137,12 +138,16 @@ export interface AnaraWorkbenchProps {
   mediaControl?: { action: "stop" | "pause" | "resume" | "next" | "prev"; nonce: number } | null;
   onCloseMedia?: () => void;
   activeSessionId?: number | null;
+  activeSessionTitle?: string;
+  openSessionTabs?: Array<{ id: number; title: string }>;
+  onSelectSessionTab?: (id: number) => void;
+  onCloseSessionTab?: (id: number) => void;
   sessionRefreshKey?: number;
-  onSelectSession?: (id: number) => void;
+  onSelectSession?: (id: number, title?: string | null) => void;
   onNewSession?: () => void;
   onApprovePlan?: (plan: PlanData) => void;
   onRejectPlan?: (plan?: any) => void;
-  onApproveAction?: (planId: string, scope: "once" | "session") => void;
+  onApproveAction?: (planId: string, scope: "once" | "session" | "always") => void;
   onRejectAction?: (planId: string) => void;
   onSidebarToggle?: (isOpen: boolean) => void;
   sidebarWidth?: number;
@@ -157,7 +162,7 @@ export interface AnaraWorkbenchProps {
 
 const BACKEND_URL = (
   process.env.NEXT_PUBLIC_BACKEND_URL ||
-  (typeof window !== "undefined" ? getBackendUrl() : "http://localhost:8000")
+  (typeof window !== "undefined" ? getBackendUrl() : "http://127.0.0.1:8000")
 ).replace(/\/+$/, "");
 
 export default function AnaraWorkbench({
@@ -169,7 +174,7 @@ export default function AnaraWorkbench({
   isMuted,
   userIntensity,
   aiIntensity,
-  interactionMode = "voice",
+  interactionMode = "chat",
   activeSpeaker,
   speakerRoster = [],
   onSetInteractionMode,
@@ -186,6 +191,10 @@ export default function AnaraWorkbench({
   mediaControl = null,
   onCloseMedia,
   activeSessionId = null,
+  activeSessionTitle,
+  openSessionTabs,
+  onSelectSessionTab,
+  onCloseSessionTab,
   sessionRefreshKey = 0,
   onSelectSession,
   onNewSession,
@@ -203,7 +212,7 @@ export default function AnaraWorkbench({
   latestTokenUsage,
 }: AnaraWorkbenchProps) {
   const [inputMessage, setInputMessage] = useState("");
-  const [activeWorkspaceView, setActiveWorkspaceView] = useState<"chat" | "capabilities" | "messaging" | "scheduled" | "providers">("chat");
+  const [activeWorkspaceView, setActiveWorkspaceView] = useState<"chat" | "capabilities" | "messaging" | "connections" | "scheduled" | "providers">("chat");
   const [isBrainDrawerOpen, setIsBrainDrawerOpen] = useState(false);
   const [isArtifactsModalOpen, setIsArtifactsModalOpen] = useState(false);
   const [agentMode, setAgentMode] = useState<"plan" | "build">("build");
@@ -273,9 +282,113 @@ export default function AnaraWorkbench({
 
   const contextPaneRef = useRef<HTMLDivElement>(null);
   const [isContextPaneOpen, setIsContextPaneOpen] = useState(false);
-  const [contextTab, setContextTab] = useState<"editor" | "review" | "terminal">("editor");
+  const [contextTab, setContextTab] = useState<"preview" | "editor" | "review" | "terminal">("editor");
+  const [previewUrl, setPreviewUrl] = useState<string>("");
+  const [previewFilePath, setPreviewFilePath] = useState<string>("");
+  const [previewTitle, setPreviewTitle] = useState<string>("");
   const [gitStatus, setGitStatus] = useState<any>(null);
   const [workspaceName, setWorkspaceName] = useState<string>("");
+  const [sessionTitle, setSessionTitle] = useState<string>(() => {
+    if (activeSessionTitle) return activeSessionTitle;
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("anara_active_session_title") || "New Session";
+    }
+    return "New Session";
+  });
+
+  // 1. Sync session title from activeSessionTitle prop
+  useEffect(() => {
+    if (activeSessionTitle) {
+      setSessionTitle(activeSessionTitle);
+      try {
+        localStorage.setItem("anara_active_session_title", activeSessionTitle);
+      } catch {}
+    }
+  }, [activeSessionTitle]);
+
+  // 2. Fetch session details when activeSessionId changes to guarantee badge is never stuck
+  useEffect(() => {
+    if (!activeSessionId) {
+      setSessionTitle("New Session");
+      return;
+    }
+    fetch(`${BACKEND_URL}/api/chat/sessions/${activeSessionId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.session?.title) {
+          setSessionTitle(data.session.title);
+          try {
+            localStorage.setItem("anara_active_session_title", data.session.title);
+          } catch {}
+        }
+      })
+      .catch(() => {});
+  }, [activeSessionId]);
+
+  // 3. Real-time session title sync from event bus (Anara Standard)
+  useEffect(() => {
+    const handleBrainSync = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      if (!d) return;
+      if (d.event === "session_switched") {
+        if (d.title) {
+          setSessionTitle(d.title);
+          try {
+            localStorage.setItem("anara_active_session_title", d.title);
+          } catch {}
+        } else if (d.sessionId) {
+          fetch(`${BACKEND_URL}/api/chat/sessions/${d.sessionId}`)
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => {
+              if (data?.session?.title) {
+                setSessionTitle(data.session.title);
+                try {
+                  localStorage.setItem("anara_active_session_title", data.session.title);
+                } catch {}
+              }
+            })
+            .catch(() => {});
+        }
+      } else if (d.event === "session_updated" && d.title) {
+        if (!activeSessionId || d.id === activeSessionId || d.sessionId === activeSessionId) {
+          setSessionTitle(d.title);
+          try {
+            localStorage.setItem("anara_active_session_title", d.title);
+          } catch {}
+        }
+      } else if (d.event === "session_created" && d.title) {
+        setSessionTitle(d.title);
+        try {
+          localStorage.setItem("anara_active_session_title", d.title);
+        } catch {}
+      }
+    };
+    window.addEventListener("anara-brain-sync", handleBrainSync);
+    return () => window.removeEventListener("anara-brain-sync", handleBrainSync);
+  }, [activeSessionId]);
+
+  // Listen for global preview requests (Anara Desktop Parity)
+  useEffect(() => {
+    const handleOpenPreviewEvent = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      if (!d) return;
+      if (d.url) {
+        setPreviewUrl(d.url);
+        setPreviewTitle(d.title || d.fileName || "Web Preview");
+        setIsContextPaneOpen(true);
+        setContextTab("preview");
+      } else if (d.filePath || d.path) {
+        const p = d.filePath || d.path;
+        setPreviewFilePath(p);
+        setPreviewTitle(d.title || d.fileName || p.split("/").pop() || "Preview");
+        setPreviewUrl("");
+        setIsContextPaneOpen(true);
+        setContextTab("preview");
+      }
+    };
+    window.addEventListener("anara-open-preview", handleOpenPreviewEvent);
+    return () => window.removeEventListener("anara-open-preview", handleOpenPreviewEvent);
+  }, []);
 
   const fetchGitStatus = useCallback(async () => {
     try {
@@ -449,7 +562,14 @@ export default function AnaraWorkbench({
         };
         setActiveIdeFile(fileObj);
         setIsContextPaneOpen(true);
-        setContextTab("editor");
+        if (data.ext === "html" || data.filename?.endsWith(".html")) {
+          setPreviewFilePath(data.path);
+          setPreviewTitle(data.filename);
+          setPreviewUrl("");
+          setContextTab("preview");
+        } else {
+          setContextTab("editor");
+        }
         setIdeTabs((prev) => {
           const exists = prev.some((t) => t.filePath === data.path);
           if (exists) {
@@ -578,10 +698,16 @@ export default function AnaraWorkbench({
   }, [handleResetIDE, onNewSession]);
 
   const handleSelectSession = useCallback(
-    (id: number) => {
+    (id: number, title?: string | null) => {
       setActiveWorkspaceView("chat");
       handleResetIDE();
-      onSelectSession?.(id);
+      if (title) {
+        setSessionTitle(title);
+        try {
+          localStorage.setItem("anara_active_session_title", title);
+        } catch {}
+      }
+      onSelectSession?.(id, title);
     },
     [handleResetIDE, onSelectSession]
   );
@@ -717,8 +843,13 @@ export default function AnaraWorkbench({
             connectionStatus={connectionStatus}
             onSelectSession={handleSelectSession}
             onNewSession={handleNewSession}
-            onOpenBrain={() => setIsBrainDrawerOpen(true)}
+            onOpenBrain={() => setActiveWorkspaceView((prev) => prev === "capabilities" ? "chat" : "capabilities")}
+            onOpenMessaging={() => setActiveWorkspaceView((prev) => prev === "connections" || prev === "messaging" ? "chat" : "connections")}
+            onOpenScheduled={() => setActiveWorkspaceView((prev) => prev === "scheduled" ? "chat" : "scheduled")}
+            onOpenProviders={() => setActiveWorkspaceView((prev) => prev === "providers" ? "chat" : "providers")}
             onOpenArtifacts={() => setIsArtifactsModalOpen(true)}
+            activeWorkspaceView={activeWorkspaceView}
+            isArtifactsOpen={isArtifactsModalOpen}
             onOpenFileIDE={handleOpenFileIDE}
             onOpenFolder={handleFolderUpload}
             refreshKey={sessionRefreshKey}
@@ -767,11 +898,13 @@ export default function AnaraWorkbench({
               connectionStatus={connectionStatus}
               onSelectSession={handleSelectSession}
               onNewSession={handleNewSession}
-              onOpenBrain={() => setActiveWorkspaceView("capabilities")}
-              onOpenMessaging={() => setActiveWorkspaceView("messaging")}
-              onOpenScheduled={() => setActiveWorkspaceView("scheduled")}
-              onOpenProviders={() => setActiveWorkspaceView("providers")}
+              onOpenBrain={() => setActiveWorkspaceView((prev) => prev === "capabilities" ? "chat" : "capabilities")}
+              onOpenMessaging={() => setActiveWorkspaceView((prev) => prev === "connections" || prev === "messaging" ? "chat" : "connections")}
+              onOpenScheduled={() => setActiveWorkspaceView((prev) => prev === "scheduled" ? "chat" : "scheduled")}
+              onOpenProviders={() => setActiveWorkspaceView((prev) => prev === "providers" ? "chat" : "providers")}
               onOpenArtifacts={() => setIsArtifactsModalOpen(true)}
+              activeWorkspaceView={activeWorkspaceView}
+              isArtifactsOpen={isArtifactsModalOpen}
               onOpenFileIDE={handleOpenFileIDE}
               onOpenFolder={handleFolderUpload}
               refreshKey={sessionRefreshKey}
@@ -804,8 +937,8 @@ export default function AnaraWorkbench({
                 onClose={() => setActiveWorkspaceView("chat")}
                 onRefreshAll={() => fetchModels(true)}
               />
-            ) : activeWorkspaceView === "messaging" ? (
-              <MessagingWorkspaceView onClose={() => setActiveWorkspaceView("chat")} />
+            ) : activeWorkspaceView === "messaging" || activeWorkspaceView === "connections" ? (
+              <ConnectionsWorkspaceView onClose={() => setActiveWorkspaceView("chat")} />
             ) : activeWorkspaceView === "scheduled" ? (
               <ScheduledJobsWorkspaceView onClose={() => setActiveWorkspaceView("chat")} />
             ) : (
@@ -819,6 +952,10 @@ export default function AnaraWorkbench({
                 <WorkbenchChatColumn
               isContextPaneOpen={isContextPaneOpen}
               setIsContextPaneOpen={setIsContextPaneOpen}
+              openSessionTabs={openSessionTabs}
+              onSelectSessionTab={onSelectSessionTab || handleSelectSession}
+              onCloseSessionTab={onCloseSessionTab}
+              sessionTitle={sessionTitle}
               activeIdeFile={activeIdeFile}
               transcript={transcript}
               activeSessionId={activeSessionId}
@@ -867,6 +1004,17 @@ export default function AnaraWorkbench({
               activeUnansweredQuestion={activeUnansweredQuestion}
               reasoningEffort={reasoningEffort}
               onSelectReasoningEffort={onSelectReasoningEffort}
+              previewTitle={previewTitle}
+              onClosePreview={() => {
+                setPreviewTitle("");
+                setPreviewUrl("");
+                setPreviewFilePath("");
+                if (contextTab === "preview") setIsContextPaneOpen(false);
+              }}
+              onCloseEditor={() => {
+                setActiveIdeFile((prev: any) => ({ ...prev, isOpen: false }));
+                if (contextTab === "editor") setIsContextPaneOpen(false);
+              }}
             />
 
             {/* RESIZABLE SASH SPLITTER (Anara Desktop Standard) */}
@@ -888,6 +1036,9 @@ export default function AnaraWorkbench({
               contextPaneWidth={contextPaneWidth}
               contextTab={contextTab}
               setContextTab={setContextTab}
+              previewUrl={previewUrl}
+              previewFilePath={previewFilePath}
+              previewFileName={previewTitle}
               activeIdeFile={activeIdeFile}
               setActiveIdeFile={setActiveIdeFile}
               gitStatus={gitStatus}

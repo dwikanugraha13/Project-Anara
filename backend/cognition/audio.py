@@ -350,12 +350,17 @@ def is_stt_hallucination(text: str) -> bool:
     return False
 
 
-async def transcribe_audio_file(audio_path: str) -> Optional[str]:
+async def transcribe_audio_bytes(
+    audio_bytes: bytes,
+    mime: str = "audio/webm",
+    clean_fmt: str = "webm",
+    filename: str = "recording.webm",
+) -> Optional[str]:
     """
-    Dynamic Tiered Audio Transcription Engine (Anara Standard):
+    Dynamic Tiered Audio Transcription Engine on in-memory audio bytes (Anara Standard):
     Tier 1: Directly probes user's active provider (e.g. 9router with input_audio, OpenAI multimodal, etc.).
     Tier 2: Discovers secondary configured audio providers in SQLite (Google AI Studio gemini-3.6-flash, etc.).
-    Tier 3: Graceful fallback without hardcoding or unhandled exceptions.
+    Tier 3: Graceful fallback without hardcoding or unhandled exceptions (Whisper Groq/OpenAI).
     """
     import os
     import base64
@@ -364,27 +369,24 @@ async def transcribe_audio_file(audio_path: str) -> Optional[str]:
     import httpx
     _log = logging.getLogger(__name__)
 
-    if not audio_path or not os.path.isfile(audio_path):
+    if not audio_bytes:
         return None
 
-    norm_path = os.path.abspath(audio_path)
-    ext = os.path.splitext(norm_path)[1].lower()
-    clean_fmt = ext.lstrip(".") or "ogg"
+    # Normalize audio to 16kHz mono WAV for 100% universal compatibility across all STT tiers
+    wav_bytes = audio_bytes
+    clean_fmt = "wav"
+    mime = "audio/wav"
+    try:
+        import io
+        from pydub import AudioSegment
+        seg = AudioSegment.from_file(io.BytesIO(audio_bytes))
+        out_buf = io.BytesIO()
+        seg.set_frame_rate(16000).set_channels(1).export(out_buf, format="wav")
+        wav_bytes = out_buf.getvalue()
+    except Exception as norm_err:
+        _log.debug(f"[AudioSTT] Audio normalization fallback notice: {norm_err}")
 
-    mime_map = {
-        ".ogg": "audio/ogg",
-        ".mp3": "audio/mpeg",
-        ".wav": "audio/wav",
-        ".m4a": "audio/mp4",
-        ".webm": "audio/webm",
-    }
-    mime = mime_map.get(ext, "audio/ogg")
-
-    def _read_bytes():
-        with open(norm_path, "rb") as f:
-            return f.read()
-
-    audio_bytes = await asyncio.to_thread(_read_bytes)
+    audio_b64 = base64.b64encode(wav_bytes).decode("utf-8")
 
     # ── TIER 1: User's Active Provider Probe (Dynamic & Zero-Hardcode) ──
     try:
@@ -399,7 +401,6 @@ async def transcribe_audio_file(audio_path: str) -> Optional[str]:
                 target_model = active_m.replace(f"{prefix}/", "")
                 base_url = cp.get("base_url", "").rstrip("/")
                 api_key = cp.get("api_key", "")
-                audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
 
                 headers = {"Content-Type": "application/json"}
                 if api_key:
@@ -413,7 +414,7 @@ async def transcribe_audio_file(audio_path: str) -> Optional[str]:
                         "role": "user",
                         "content": [
                             {"type": "text", "text": stt_prompt},
-                            {"type": "input_audio", "input_audio": {"data": audio_b64, "format": clean_fmt}}
+                            {"type": "input_audio", "input_audio": {"data": audio_b64, "format": "wav"}}
                         ]
                     }],
                     "max_tokens": 120,
@@ -426,24 +427,21 @@ async def transcribe_audio_file(audio_path: str) -> Optional[str]:
                     if resp.status_code == 200:
                         raw_body = resp.text.strip()
                         extracted = ""
-                        if raw_body.startswith("data:"):
+                        try:
+                            j = resp.json()
+                            extracted = j.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                        except Exception:
                             chunks = []
                             for line in raw_body.splitlines():
                                 if line.startswith("data:") and "[DONE]" not in line:
                                     try:
-                                        j = json.loads(line[5:].strip())
-                                        d = j.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                        chunk_j = json.loads(line[5:].strip())
+                                        d = chunk_j.get("choices", [{}])[0].get("delta", {}).get("content", "")
                                         if d:
                                             chunks.append(d)
                                     except Exception:
                                         pass
                             extracted = "".join(chunks).strip()
-                        else:
-                            try:
-                                j = resp.json()
-                                extracted = j.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                            except Exception:
-                                pass
 
                         if extracted and not is_stt_hallucination(extracted):
                             _log.info(f"[AudioSTT] Successfully transcribed via active provider '{prefix}' ({target_model}): '{extracted}'")
@@ -451,21 +449,16 @@ async def transcribe_audio_file(audio_path: str) -> Optional[str]:
     except Exception as e_t1:
         _log.debug(f"[AudioSTT] Tier 1 active provider probe notice: {e_t1}")
 
-    # ── TIER 2: Secondary Configured Providers (Google GenAI Gemini 3.6 Flash Fallback) ──
+    # ── TIER 2: Secondary Configured Providers (Google GenAI Gemini Flash Fallback) ──
     try:
         from core import key_manager
         from google.genai import types
 
         async def _transcribe_call(client: Any) -> str:
-            audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime)
+            audio_part = types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav")
             from core.prompt_loader import load_prompt
-            from core.capabilities import get_fast_auxiliary_model
             prompt = load_prompt("voice/stt_tier_transcription").strip()
-            aux_m = get_fast_auxiliary_model()
-            candidates = [aux_m] if "gemini" in str(aux_m).lower() else []
-            for fallback_m in ("gemini-2.5-flash", "gemini-2.0-flash"):
-                if fallback_m not in candidates:
-                    candidates.append(fallback_m)
+            candidates = ["gemini-3.8-flash", "gemini-2.5-flash"]
             for m_candidate in candidates:
                 try:
                     response = await client.aio.models.generate_content(
@@ -507,7 +500,7 @@ async def transcribe_audio_file(audio_path: str) -> Optional[str]:
 
         if target_ep and target_key:
             headers = {"Authorization": f"Bearer {target_key}"}
-            files = {"file": (os.path.basename(norm_path), audio_bytes, mime)}
+            files = {"file": (filename, audio_bytes, mime)}
             data = {"model": target_model}
             async with httpx.AsyncClient(timeout=30.0) as client:
                 res = await client.post(target_ep, headers=headers, files=files, data=data)
@@ -520,6 +513,41 @@ async def transcribe_audio_file(audio_path: str) -> Optional[str]:
         _log.debug(f"[AudioSTT] Tier 3 Whisper fallback notice: {e_t3}")
 
     return None
+
+
+async def transcribe_audio_file(audio_path: str) -> Optional[str]:
+    """
+    Dynamic Tiered Audio Transcription Engine (Anara Standard):
+    Reads file bytes and delegates to transcribe_audio_bytes.
+    """
+    import os
+    if not audio_path or not os.path.isfile(audio_path):
+        return None
+
+    norm_path = os.path.abspath(audio_path)
+    ext = os.path.splitext(norm_path)[1].lower()
+    clean_fmt = ext.lstrip(".") or "ogg"
+
+    mime_map = {
+        ".ogg": "audio/ogg",
+        ".mp3": "audio/mpeg",
+        ".wav": "audio/wav",
+        ".m4a": "audio/mp4",
+        ".webm": "audio/webm",
+    }
+    mime = mime_map.get(ext, "audio/ogg")
+
+    def _read_bytes():
+        with open(norm_path, "rb") as f:
+            return f.read()
+
+    audio_bytes = await asyncio.to_thread(_read_bytes)
+    return await transcribe_audio_bytes(
+        audio_bytes=audio_bytes,
+        mime=mime,
+        clean_fmt=clean_fmt,
+        filename=os.path.basename(norm_path),
+    )
 
 
 def filter_tts_speech_text(text: str) -> str:

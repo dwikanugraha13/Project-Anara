@@ -53,8 +53,8 @@ export default function HomePageClient({
   const [speakerRoster, setSpeakerRoster] = useState<string[]>([]);
   const [mediaSession, setMediaSession] = useState<MediaPlayPayload | null>(null);
   const [mediaControl, setMediaControl] = useState<{ action: MediaControlAction; nonce: number } | null>(null);
-  const [interactionMode, setInteractionMode] = useState<"voice" | "chat">("voice");
-  const interactionModeRef = useRef<"voice" | "chat">("voice");
+  const [interactionMode, setInteractionMode] = useState<"voice" | "chat">("chat");
+  const interactionModeRef = useRef<"voice" | "chat">("chat");
 
   useEffect(() => {
     interactionModeRef.current = interactionMode;
@@ -69,6 +69,8 @@ export default function HomePageClient({
   }, []);
 
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
+  const [activeSessionTitle, setActiveSessionTitle] = useState<string>("");
+  const [openSessionTabs, setOpenSessionTabs] = useState<Array<{ id: number; title: string }>>([]);
   const activeSessionIdRef = useRef<number | null>(null);
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
@@ -97,10 +99,31 @@ export default function HomePageClient({
         }
       }
 
+      const savedTitle = localStorage.getItem("anara_active_session_title");
+      if (savedTitle) {
+        setActiveSessionTitle(savedTitle);
+      }
+
+      const savedTabs = localStorage.getItem("anara_open_session_tabs");
+      if (savedTabs) {
+        try {
+          const parsed = JSON.parse(savedTabs);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setOpenSessionTabs(parsed);
+          }
+        } catch {}
+      }
+
       const savedMode = localStorage.getItem("anara_interaction_mode");
-      const activeMode = savedMode === "voice" || savedMode === "chat" ? savedMode : "voice";
+      const activeMode = savedMode === "voice" || savedMode === "chat" ? savedMode : "chat";
       setInteractionMode(activeMode);
       interactionModeRef.current = activeMode;
+
+      const activeModel = localStorage.getItem("anara_chat_model") || "";
+      const savedEffort = getSavedReasoningEffortForModel(activeModel);
+      if (savedEffort) {
+        setReasoningEffort(savedEffort);
+      }
 
       // Release the transition freeze once hydration and initial layout settle
       setTimeout(() => {
@@ -121,20 +144,30 @@ export default function HomePageClient({
 
 
   const [audioIntensity, setAudioIntensity] = useState(0);
+
+  // Synchronize open session tabs with localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("anara_open_session_tabs", JSON.stringify(openSessionTabs));
+      } catch {}
+    }
+  }, [openSessionTabs]);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [activeThinkingText, setActiveThinkingText] = useState<string | null>(null);
   const pendingTokenUsageRef = useRef<TokenUsagePayload | null>(null);
   const [liveToolProgress, setLiveToolProgress] = useState<ToolProgressPayload | null>(null);
-  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffortLevel>("medium");
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffortLevel>("auto");
   const intensityIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Streaming queue: coalesces deltas and flushes to React state at ~30fps
   const streamingFlush = useCallback((accumulatedText: string) => {
     setTranscript((prev) => {
-      // Find the last output item in the current turn to update in-place
+      // Find the last output item in the current turn to update in-place (do not jump over tools)
       let targetIdx = -1;
       for (let i = prev.length - 1; i >= 0; i--) {
         if (prev[i].speaker === "input") break;
+        if (prev[i].visualType === "agent_action") break;
         if (prev[i].speaker === "output" && (!prev[i].visualType || prev[i].visualType === "none")) {
           targetIdx = i;
           break;
@@ -335,24 +368,38 @@ export default function HomePageClient({
 
         // 2. Incoming has visual projection (tool execution card, plan card, artifact)
         if (visualType && visualType !== "none") {
-          // If updating a running agent action with complete state of the same tool, update in place
+          // If updating a running agent action or reconciling completion of the same tool, update in place
           if (
             visualType === "agent_action" &&
             last &&
             last.visualType === "agent_action" &&
-            last.agentActionData?.eventType === "agent_action_start" &&
-            newEntry.agentActionData?.eventType === "agent_action_complete" &&
             last.agentActionData?.toolName === newEntry.agentActionData?.toolName
           ) {
+            const mergedActionData = {
+              ...last.agentActionData,
+              ...newEntry.agentActionData,
+              filePath: newEntry.agentActionData?.filePath || last.agentActionData?.filePath,
+              filename: newEntry.agentActionData?.filename || last.agentActionData?.filename,
+              command: newEntry.agentActionData?.command || last.agentActionData?.command,
+              rawResult: newEntry.agentActionData?.rawResult || last.agentActionData?.rawResult,
+              content: newEntry.agentActionData?.content || last.agentActionData?.content,
+              summary: (newEntry.agentActionData?.summary && newEntry.agentActionData.summary !== "Done")
+                ? newEntry.agentActionData.summary
+                : last.agentActionData?.summary || newEntry.agentActionData?.summary || "Done",
+              detail: newEntry.agentActionData?.detail || last.agentActionData?.detail,
+              actionTitle: newEntry.agentActionData?.actionTitle || last.agentActionData?.actionTitle,
+              eventType: newEntry.agentActionData?.eventType || last.agentActionData?.eventType,
+            };
             return [
               ...prev.slice(0, lastIdx),
               {
                 ...last,
                 ...newEntry,
+                agentActionData: mergedActionData,
                 agentMode: payloadAgentMode || last.agentMode,
                 modelId: payloadModelId || last.modelId,
-                durationText: computedDuration,
-                toolsUsed: resolvedToolsUsed,
+                durationText: computedDuration || last.durationText,
+                toolsUsed: resolvedToolsUsed || last.toolsUsed,
                 startTime: last.startTime,
               },
             ];
@@ -376,10 +423,15 @@ export default function HomePageClient({
         }
 
         // 3. Incoming is narrative AI output (no visual card).
-        // Find if there is an in-flight output bubble in the current turn (bounded by the latest user prompt)
+        // Find if there is an in-flight output bubble in the current turn (bounded by the latest user prompt).
+        // If an agent action occurred in this turn, do not jump over tools (Hermes chronological order).
         let targetOutputIdx = -1;
         for (let i = prev.length - 1; i >= 0; i--) {
           if (prev[i].speaker === "input") break;
+          if (prev[i].visualType === "agent_action") {
+            // Tools were executed in this turn; subsequent narrative must be appended AFTER tools
+            break;
+          }
           if (prev[i].speaker === "output" && (!prev[i].visualType || prev[i].visualType === "none")) {
             targetOutputIdx = i;
             break;
@@ -570,9 +622,35 @@ export default function HomePageClient({
 
   const handleSessionSwitched = useCallback((payload: SessionSwitchedPayload) => {
     setActiveSessionId(payload.sessionId);
+    const resolvedTitle = payload.title || "New Session";
+    if (payload.title) {
+      setActiveSessionTitle(payload.title);
+    }
     if (typeof window !== "undefined") {
       localStorage.setItem("anara_active_session_id", String(payload.sessionId));
+      if (payload.title) {
+        localStorage.setItem("anara_active_session_title", payload.title);
+      }
     }
+
+    setOpenSessionTabs((prev) => {
+      if (prev.length === 0) {
+        return [{ id: payload.sessionId, title: resolvedTitle }];
+      }
+      const existing = prev.find((t) => t.id === payload.sessionId);
+      if (existing) {
+        if (payload.title && existing.title !== payload.title) {
+          return prev.map((t) => (t.id === payload.sessionId ? { ...t, title: payload.title! } : t));
+        }
+        return prev;
+      }
+      // In-place replacement: do NOT spawn new tabs on session switch
+      const currentSid = activeSessionIdRef.current;
+      if (currentSid && prev.some((t) => t.id === currentSid)) {
+        return prev.map((t) => (t.id === currentSid ? { id: payload.sessionId, title: resolvedTitle } : t));
+      }
+      return [{ id: payload.sessionId, title: resolvedTitle }];
+    });
     const baseRestored = restoreTranscriptFromMessages(payload.messages);
     const inFlightSnapshot = getInFlightSnapshot(payload.sessionId);
     const restored = mergeInFlightWithTranscript(baseRestored, inFlightSnapshot);
@@ -749,7 +827,22 @@ export default function HomePageClient({
           last.visualType === "agent_action" &&
           last.agentActionData?.toolName === payload.toolName
         ) {
-          return [...prev.slice(0, lastIdx), newEntry];
+          const mergedActionData = {
+            ...last.agentActionData,
+            ...payload,
+            filePath: payload.filePath || last.agentActionData?.filePath,
+            filename: payload.filename || last.agentActionData?.filename,
+            command: payload.command || last.agentActionData?.command,
+            rawResult: payload.rawResult || last.agentActionData?.rawResult,
+            content: payload.content || last.agentActionData?.content,
+            summary: (payload.summary && payload.summary !== "Done")
+              ? payload.summary
+              : last.agentActionData?.summary || payload.summary || "Done",
+            detail: payload.detail || last.agentActionData?.detail,
+            actionTitle: payload.actionTitle || last.agentActionData?.actionTitle,
+            eventType: payload.eventType || last.agentActionData?.eventType,
+          };
+          return [...prev.slice(0, lastIdx), { ...last, agentActionData: mergedActionData }];
         }
         if (last && last.speaker === "output" && !last.text && (!last.visualType || last.visualType === "none")) {
           return [...prev.slice(0, lastIdx), newEntry];
@@ -758,7 +851,8 @@ export default function HomePageClient({
       });
     },
     onAgentThinking: (text) => {
-      setActiveThinkingText(text && text.trim().length > 0 ? text : null);
+      if (!text) return;
+      setActiveThinkingText((prev) => (prev ? prev + text : text));
     },
     onSubagentEvent: (msg) => {
       console.log(`[App] Subagent Event: ${msg.type}`, msg);
@@ -906,26 +1000,154 @@ export default function HomePageClient({
   }, [wsStatus, sendJSON]);
 
   const handleSelectSession = useCallback(
-    (id: number) => {
-      // Eager-clear stale state BEFORE switching session (Anara Parity)
-      setTranscript([]);
+    (id: number, title?: string | null) => {
       setActiveSessionId(id);
+      if (title) {
+        setActiveSessionTitle(title);
+      }
       if (typeof window !== "undefined") {
         localStorage.setItem("anara_active_session_id", String(id));
+        if (title) {
+          localStorage.setItem("anara_active_session_title", title);
+        }
       }
+
+      setOpenSessionTabs((prev) => {
+        if (prev.length === 0) {
+          return [{ id, title: title || "New Session" }];
+        }
+        const found = prev.find((t) => t.id === id);
+        if (found) {
+          if (title && found.title !== title) {
+            return prev.map((t) => (t.id === id ? { ...t, title } : t));
+          }
+          return prev;
+        }
+        // In-place replacement: selecting from sidebar history replaces active tab, never stacks extra tabs
+        const currentSid = activeSessionIdRef.current;
+        if (currentSid && prev.some((t) => t.id === currentSid)) {
+          return prev.map((t) => (t.id === currentSid ? { id, title: title || "New Session" } : t));
+        }
+        return [{ id, title: title || "New Session" }];
+      });
+
       sendJSON({ type: "switch_session", sessionId: id });
     },
     [sendJSON]
   );
 
-  const handleNewSession = useCallback(() => {
-    // Session Pattern: clear state only — session is created lazily on first message send
-    // This prevents accumulation of empty "New Chat" sessions
-    setActiveSessionId(null);
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("anara_active_session_id");
+  const handleNewSession = useCallback(async () => {
+    try {
+      // 1. Workspace context inheritance (Anara Standard):
+      // If current active session belongs to an external workspace project, inherit its root path.
+      // If current session is from Home (no external workspace), inherit null (stays in Home).
+      let inheritedWorkspacePath: string | null = null;
+      const currentSid = activeSessionIdRef.current;
+      if (currentSid) {
+        try {
+          const checkRes = await fetch(`${getBackendUrl()}/api/chat/sessions/${currentSid}`);
+          if (checkRes.ok) {
+            const checkData = await checkRes.json();
+            const wsInfo = checkData?.session?.workspace_info;
+            if (wsInfo?.is_external && wsInfo?.root_path) {
+              inheritedWorkspacePath = wsInfo.root_path;
+            }
+          }
+        } catch (e) {
+          console.warn("[handleNewSession] Could not inspect current session workspace:", e);
+        }
+      }
+
+      // 2. Immediately mint a new session in SQLite (Anara Standard)
+      const res = await fetch(`${getBackendUrl()}/api/chat/sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "New Session",
+          session_type: "chat",
+          workspace_path: inheritedWorkspacePath,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const created = data.session;
+        if (created && created.id) {
+          setActiveSessionId(created.id);
+          setActiveSessionTitle("New Session");
+          setOpenSessionTabs((prev) => {
+            const next = [...prev.filter((t) => t.id !== created.id), { id: created.id, title: "New Session" }];
+            return next;
+          });
+          if (typeof window !== "undefined") {
+            localStorage.setItem("anara_active_session_id", String(created.id));
+            localStorage.setItem("anara_active_session_title", "New Session");
+            window.dispatchEvent(
+              new CustomEvent("anara-brain-sync", {
+                detail: {
+                  event: "session_created",
+                  id: created.id,
+                  sessionId: created.id,
+                  title: "New Session",
+                },
+              })
+            );
+          }
+          setTranscript([]);
+          sendJSON({ type: "switch_session", sessionId: created.id });
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("[handleNewSession] Failed to mint new session:", err);
     }
+
+    // Fallback if network fails
+    setActiveSessionId(null);
+    setActiveSessionTitle("New Session");
     setTranscript([]);
+  }, [sendJSON]);
+
+  const handleCloseSessionTab = useCallback(
+    (id: number) => {
+      setOpenSessionTabs((prev) => {
+        const remaining = prev.filter((t) => t.id !== id);
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem("anara_open_session_tabs", JSON.stringify(remaining));
+          } catch {}
+        }
+        if (remaining.length === 0) {
+          handleNewSession();
+          return [];
+        }
+        if (activeSessionIdRef.current === id) {
+          const nextActive = remaining[remaining.length - 1];
+          handleSelectSession(nextActive.id, nextActive.title);
+        }
+        return remaining;
+      });
+    },
+    [handleNewSession, handleSelectSession]
+  );
+
+  // Synchronize tab titles and deletions from event bus (Anara Standard)
+  useEffect(() => {
+    const handleBrainSync = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      if (!d) return;
+      if (d.event === "session_updated" && d.title && (d.id || d.sessionId)) {
+        const sid = Number(d.id || d.sessionId);
+        setOpenSessionTabs((prev) =>
+          prev.map((t) => (t.id === sid ? { ...t, title: d.title } : t))
+        );
+      } else if (d.event === "session_deleted" && (d.id || d.sessionId)) {
+        const sid = Number(d.id || d.sessionId);
+        setOpenSessionTabs((prev) => prev.filter((t) => t.id !== sid));
+      }
+    };
+    window.addEventListener("anara-brain-sync", handleBrainSync);
+    return () => window.removeEventListener("anara-brain-sync", handleBrainSync);
   }, []);
 
   // Wire sendInterrupt & sendText to refs so callbacks can call them without stale closures
@@ -1079,6 +1301,7 @@ export default function HomePageClient({
       }
 
       const nowMs = Date.now();
+      setActiveThinkingText(null);
       setTranscript((prev) => {
         const cleaned = prev.filter(
           (t, idx, arr) => t.text || Boolean(t.visualType && t.visualType !== "none") || idx === arr.length - 1
@@ -1099,6 +1322,24 @@ export default function HomePageClient({
         status: "thinking",
         streamingText: "",
       });
+
+      let editorContext: { filePath: string; fileName?: string; fileExt?: string } | undefined = undefined;
+      if (typeof window !== "undefined") {
+        try {
+          const stored = localStorage.getItem("anara_ide_active_file");
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed && (parsed.isOpen ?? true) && parsed.filePath) {
+              editorContext = {
+                filePath: parsed.filePath,
+                fileName: parsed.fileName,
+                fileExt: parsed.fileExt,
+              };
+            }
+          }
+        } catch {}
+      }
+
       sendJSON({
         type: "text_input",
         text: trimmed,
@@ -1110,6 +1351,7 @@ export default function HomePageClient({
         sessionId: activeSessionId,
         session_id: activeSessionId,
         session_type: "chat",
+        editor_context: editorContext,
       });
       setAssistantStatus("thinking");
     },
@@ -1193,9 +1435,13 @@ export default function HomePageClient({
   );
 
   const handleApproveAction = useCallback(
-    (planId: string, scope: "once" | "session") => {
+    (planId: string, scope: "once" | "session" | "always") => {
       // Send approval through WebSocket as natural language (classify_approval_intent recognizes it)
-      handleSendText("Yes, approve and execute.", "build");
+      if (scope === "always") {
+        handleSendText("Yes, always allow and execute.", "build");
+      } else {
+        handleSendText("Yes, approve and execute.", "build");
+      }
       // Update transcript to mark the approval card as decided
       setTranscript((prev) =>
         prev.map((item) => {
@@ -1396,6 +1642,10 @@ export default function HomePageClient({
           mediaControl={mediaControl}
           onCloseMedia={closeMedia}
           activeSessionId={activeSessionId}
+          activeSessionTitle={activeSessionTitle}
+          openSessionTabs={openSessionTabs}
+          onSelectSessionTab={handleSelectSession}
+          onCloseSessionTab={handleCloseSessionTab}
           sessionRefreshKey={sessionRefreshKey}
           onSelectSession={handleSelectSession}
           onNewSession={handleNewSession}

@@ -135,10 +135,10 @@ export function TerminalTranscript({
           )}
           {stderr && (
             <div className="relative">
-              <div className="text-[9.5px] uppercase tracking-wider text-amber-400/80 mb-0.5 font-bold">stderr</div>
+              <div className="text-[9.5px] uppercase tracking-wider text-slate-400 mb-0.5 font-bold">stderr</div>
               <div
                 ref={stderrScrollRef}
-                className="p-2.5 rounded border border-amber-500/20 bg-amber-950/20 text-amber-200 text-[10.5px] leading-relaxed max-h-[260px] overflow-x-auto overflow-y-auto overscroll-x-contain overscroll-y-auto custom-scrollbar whitespace-pre font-mono shadow-[0_4px_16px_rgba(0,0,0,0.4)]"
+                className="p-2.5 rounded border border-white/[0.06] bg-black/50 text-slate-300 text-[10.5px] leading-relaxed max-h-[260px] overflow-x-auto overflow-y-auto overscroll-x-contain overscroll-y-auto custom-scrollbar whitespace-pre font-mono shadow-[0_4px_16px_rgba(0,0,0,0.4)]"
               >
                 {parseAnsiToTokens(clampForDisplay(stderr)).map((span, sIdx) => (
                   <span key={sIdx} className={span.className || undefined}>

@@ -58,6 +58,21 @@ def redact_sensitive_text(text: str) -> str:
     return text
 
 
+def redact_tool_data(data: Any) -> Any:
+    """Recursively redacts sensitive tokens/credentials across arbitrary tool outputs."""
+    if isinstance(data, str):
+        return redact_sensitive_text(data)
+    elif isinstance(data, dict):
+        return {k: redact_tool_data(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [redact_tool_data(item) for item in data]
+    elif isinstance(data, tuple):
+        return tuple(redact_tool_data(item) for item in data)
+    elif isinstance(data, set):
+        return {redact_tool_data(item) for item in data}
+    return data
+
+
 def strip_ansi(text: str) -> str:
     """Removes terminal escape color sequences from file sinks."""
     return _ANSI_ESCAPE_RE.sub("", text)

@@ -6,7 +6,7 @@ import re
 import subprocess
 import tempfile
 import time
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Union
 
 from .events import _emit_agent_event
 
@@ -510,80 +510,54 @@ async def _tool_delegate_subagent(
     mission_prompt: Optional[str] = None,
     goal: Optional[str] = None,
     context: Optional[str] = None,
-    tasks: Optional[List[Dict[str, Any]]] = None,
+    tasks: Optional[Union[List[Dict[str, Any]], str]] = None,
+    action: Optional[str] = None,
+    subagent_id: Optional[str] = None,
+    message: Optional[str] = None,
+    output_schema: Optional[Dict[str, Any]] = None,
+    images: Optional[List[str]] = None,
+    role: Optional[str] = None,
+    model: Optional[str] = None,
+    provider: Optional[str] = None,
     background: bool = False,
     **kwargs: Any,
 ) -> Dict[str, Any]:
     """
-    Spawns specialized autonomous subagent worker(s) in background or parallel batch (Anara Standard).
-    By default runs synchronously (background=False) to deliver real model findings to the orchestrator.
+    Spawns specialized autonomous subagent worker(s) in background or parallel batch, or controls live ones (Anara Standard).
+    Canonical schema support: tasks array with goal, context, images, output_schema;
+    action parameter for 'spawn'|'list'|'steer'|'stop'.
     """
     from core import subagent_manager
 
-    # 1. Batch tasks mode
-    if tasks and isinstance(tasks, list):
-        if not background:
-            results = await subagent_manager.spawn_batch_and_join(tasks, shared_context=context or mission_prompt or "")
-            return {
-                "status": "success",
-                "batch_size": len(results),
-                "results": [r.to_dict() for r in results],
-            }
-        else:
-            spawned_tasks = []
-            for t_item in tasks:
-                g_text = t_item.get("goal") or t_item.get("title") or "Subagent Mission"
-                c_text = t_item.get("context") or context or mission_prompt or ""
-                t_obj = await subagent_manager.spawn_subagent_task(title=g_text, mission_prompt=c_text)
-                spawned_tasks.append(t_obj)
-
-            return {
-                "status": "success",
-                "mode": "batch_background",
-                "batch_size": len(spawned_tasks),
-                "task_ids": [t.task_id for t in spawned_tasks],
-            }
-
-    # 2. Single task mode
-    effective_goal = (goal or title or "Background Task").strip()
-    effective_context = (context or mission_prompt or "").strip()
-
-    if not effective_goal and not effective_context:
-        return {"status": "error", "message": "Task goal or title cannot be empty."}
-
-    task = await subagent_manager.spawn_subagent_task(
-        title=effective_goal,
-        mission_prompt=effective_context,
-        depth=kwargs.get("depth", 1),
+    res = await subagent_manager.handle_delegate_call(
+        title=title,
+        mission_prompt=mission_prompt,
+        goal=goal,
+        context=context,
+        tasks=tasks,
+        action=action,
+        subagent_id=subagent_id,
+        message=message,
+        output_schema=output_schema,
+        images=images,
+        role=role,
+        model=model,
+        provider=provider,
+        background=background,
+        **kwargs,
     )
 
-    if not background:
-        if task._async_task:
-            await task._async_task
-        findings_text = task.result.executive_summary if task.result else ""
-        return {
-            "status": "success",
-            "task_id": task.task_id,
-            "goal": task.goal,
-            "findings": findings_text,
-            "key_findings": task.result.key_findings if task.result else [],
-            "referenced_files": task.result.referenced_files if task.result else [],
-            "execution_time_sec": task.result.execution_time_sec if task.result else 0.0,
-        }
+    if background and res.get("status") == "success" and "task_id" in res:
+        effective_goal = (goal or title or "Background Task").strip()
+        _emit_agent_event("agent_action_complete", {
+            "tool_name": "delegate_subagent",
+            "action_title": f"Subagent #{res['task_id']} Active",
+            "detail": f"Goal: {effective_goal[:60]}",
+            "summary": "Task delegated to background worker.",
+            "icon": "subagent"
+        })
 
-    _emit_agent_event("agent_action_complete", {
-        "tool_name": "delegate_subagent",
-        "action_title": f"Sub-Agent #{task.task_id} Active",
-        "detail": f"Goal: {effective_goal[:60]}",
-        "summary": "Task delegated to background worker.",
-        "icon": "subagent"
-    })
-
-    return {
-        "status": "success",
-        "task_id": task.task_id,
-        "goal": task.goal,
-    }
+    return res
 
 
 async def _tool_trigger_avatar_animation(animation_name: str, emotion: Optional[str] = None) -> Dict[str, Any]:
@@ -777,6 +751,42 @@ async def _tool_skill_view(name: str, file_path: Optional[str] = None) -> Dict[s
         "description": skill["description"],
         "instructions": skill["body"],
         "file_path": skill["file_path"],
+    }
+
+
+async def _tool_search(query: str, limit: int = 5) -> Dict[str, Any]:
+    """
+    Searches additional tools from the extended dynamic catalog.
+    Progressive Tool Disclosure Engine for Project Anara.
+    """
+    from .registry import registry
+    matches = registry.search_tools(query, limit=int(limit or 5))
+    return {
+        "status": "success",
+        "query": query,
+        "count": len(matches),
+        "tools": matches,
+        "guidance": "Use 'tool_describe' with the tool name to view full parameters schema before invoking."
+    }
+
+
+async def _tool_describe(names: Any) -> Dict[str, Any]:
+    """
+    Loads full JSON parameter schemas for tools returned by tool_search.
+    Progressive Tool Disclosure Engine for Project Anara.
+    """
+    from .registry import registry
+    if isinstance(names, str):
+        target_names = [names]
+    elif isinstance(names, list):
+        target_names = [str(x) for x in names]
+    else:
+        target_names = []
+    schemas = registry.describe_tools(target_names)
+    return {
+        "status": "success",
+        "count": len(schemas),
+        "schemas": schemas
     }
 
 

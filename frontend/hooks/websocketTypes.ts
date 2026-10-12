@@ -128,6 +128,17 @@ export interface AgentActionPayload {
   summary?: string;
   rawResult?: string;
   icon?: string;
+  filePath?: string;
+  filename?: string;
+  command?: string;
+  content?: string;
+  exitCode?: number;
+  durationMs?: number;
+  durationText?: string;
+  sizeKb?: number;
+  checkpointId?: string;
+  added?: number;
+  deleted?: number;
 }
 
 export interface ProactivePayload {
@@ -167,6 +178,8 @@ export interface TranscriptPayload {
   tokenUsage?: TokenUsagePayload;
   toolsUsed?: string[];
   isStreaming?: boolean;
+  isInterim?: boolean;
+  isFinal?: boolean;
   sessionId?: number;
 }
 
@@ -185,7 +198,7 @@ export interface HudVisualPayload {
 }
 
 export interface WebSocketMessage {
-  type: "audio_chunk" | "transcript" | "transcript_partial" | "token_usage" | "tool_progress" | "plan_pending" | "need_approval" | "interrupted" | "turn_complete" | "error" | "emotion_update" | "acoustic_emotion" | "brain_sync" | "speaker_identified" | "hud_timer" | "hud_visual" | "media_play" | "media_control" | "proactive_message" | "session_switched" | "session_id_sync" | "agent_action" | "agent_action_start" | "agent_action_complete" | "agent_thinking" | "interactive_question" | "workspace_file_uploaded" | "workspace_folder_imported" | "workspace_file_created" | "subagent_task_started" | "subagent_progress" | "subagent_task_completed" | "subagent_task_failed";
+  type: "audio_chunk" | "transcript" | "transcript_partial" | "token_usage" | "tool_progress" | "plan_pending" | "need_approval" | "interrupted" | "turn_complete" | "error" | "emotion_update" | "acoustic_emotion" | "brain_sync" | "speaker_identified" | "hud_timer" | "hud_visual" | "media_play" | "media_control" | "proactive_message" | "session_switched" | "session_id_sync" | "session_title_updated" | "agent_action" | "agent_action_start" | "agent_action_complete" | "agent_thinking" | "interactive_question" | "workspace_file_uploaded" | "workspace_folder_imported" | "workspace_file_created" | "subagent_task_started" | "subagent_progress" | "subagent_task_completed" | "subagent_task_failed" | "message.start" | "message.delta" | "reasoning.delta" | "message.interim" | "tool.start" | "tool.complete" | "message.complete" | "diff.update" | "diff.stream";
   data?: any;
   event?: string;
   name?: string | null;
@@ -230,6 +243,9 @@ export interface WebSocketMessage {
   action_title?: string;
   detail?: string;
   summary?: string;
+  result?: any;
+  args?: any;
+  tool_args?: any;
   rawResult?: string;
   raw_result?: string;
   file_path?: string;
@@ -239,6 +255,7 @@ export interface WebSocketMessage {
   checkpoint_id?: string;
   added?: number;
   deleted?: number;
+  diff?: string;
   exit_code?: number;
   duration_ms?: number;
   command?: string;

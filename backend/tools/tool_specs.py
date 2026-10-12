@@ -46,6 +46,8 @@ from .system_tools import (
     _tool_learn_and_save_skill,
     _tool_skill_view,
     _tool_interactive_question,
+    _tool_search,
+    _tool_describe,
 )
 from .browser_tools import (
     _tool_browser_navigate,
@@ -302,16 +304,17 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     },
     {
         "name": "edit_file",
-        "description": "Performs exact string replacements in workspace files.",
+        "description": "Performs exact string replacements or line-anchored hashline edits in workspace files.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
                 "file_path": {"type": "STRING", "description": "Relative file path to edit."},
-                "old_string": {"type": "STRING", "description": "Exact text to replace."},
-                "new_string": {"type": "STRING", "description": "New replacement text."},
+                "old_string": {"type": "STRING", "description": "Exact text to replace, or hashline patch string."},
+                "new_string": {"type": "STRING", "description": "New replacement text (omit if using hashline syntax in old_string or patch)."},
+                "patch": {"type": "STRING", "description": "Optional hashline patch payload containing [path#TAG] with PUT/CUT/SWAP operations."},
                 "replace_all": {"type": "BOOLEAN", "description": "Replace all occurrences if true."}
             },
-            "required": ["file_path", "old_string", "new_string"]
+            "required": ["file_path"]
         },
         "handler": _tool_edit_file,
         "risk": "mutating",
@@ -361,7 +364,8 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
             "type": "OBJECT",
             "properties": {
                 "file_path": {"type": "STRING", "description": "Relative path and file name to write."},
-                "content": {"type": "STRING", "description": "Complete file content to write."}
+                "content": {"type": "STRING", "description": "Complete file content to write."},
+                "overwrite": {"type": "BOOLEAN", "description": "Optional flag. Set to true to explicitly overwrite an existing file that hasn't been read first in the current session."}
             },
             "required": ["file_path", "content"]
         },
@@ -798,24 +802,72 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
         "category": "intelligence",
         "icon": "book-open",
     },
+    {
+        "name": "tool_search",
+        "description": "Progressive Tool Disclosure: Searches additional tools from the extended dynamic catalog matching capability or service keywords.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "query": {"type": "STRING", "description": "Keywords describing the capability or service (e.g. 'zip archive', 'calendar', 'browser')."},
+                "limit": {"type": "INTEGER", "description": "Maximum matching tools to return (default 5)."}
+            },
+            "required": ["query"]
+        },
+        "handler": _tool_search,
+        "risk": "read_only",
+        "toolset": "system_core",
+        "category": "exploration",
+        "icon": "search",
+    },
+    {
+        "name": "tool_describe",
+        "description": "Progressive Tool Disclosure: Loads full JSON parameter schemas for tool names discovered via tool_search.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "names": {
+                    "type": "ARRAY",
+                    "items": {"type": "STRING"},
+                    "description": "Exact tool names to describe."
+                }
+            },
+            "required": ["names"]
+        },
+        "handler": _tool_describe,
+        "risk": "read_only",
+        "toolset": "system_core",
+        "category": "exploration",
+        "icon": "code",
+    },
 
     # ── Delegation ──
     {
         "name": "delegate_subagent",
-        "description": "Delegates investigation or autonomous research tasks to a background worker subagent (supports single mission or parallel batch tasks).",
+        "description": "Delegates investigation or autonomous research tasks to a background worker subagent (supports single mission or parallel batch tasks). Supports live control via action='list'|'steer'|'stop'.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "title": {"type": "STRING", "description": "Short background mission title."},
-                "mission_prompt": {"type": "STRING", "description": "Complete task instructions."},
-                "goal": {"type": "STRING", "description": "Specific task goal the subagent must achieve."},
-                "context": {"type": "STRING", "description": "Technical background or relevant files for this task."},
                 "tasks": {
                     "type": "ARRAY",
                     "items": {"type": "OBJECT"},
-                    "description": "Batch task list [{'goal': '...', 'context': '...'}] for parallel execution."
+                    "description": "Batch task list [{'goal': '...', 'context': '...', 'output_schema': {...}, 'images': [...]}] for parallel execution."
                 },
-                "background": {"type": "BOOLEAN", "description": "Run in background (default true)."}
+                "action": {
+                    "type": "STRING",
+                    "description": "Control action: 'spawn' (default), 'list' (active subagents), 'steer' (course-correct via message), or 'stop' (interrupt via subagent_id).",
+                    "enum": ["spawn", "list", "steer", "stop"]
+                },
+                "subagent_id": {"type": "STRING", "description": "Target subagent ID for action='steer' or action='stop'."},
+                "message": {"type": "STRING", "description": "Course-correction directive text for action='steer'."},
+                "goal": {"type": "STRING", "description": "Specific task goal the subagent must achieve (single task mode)."},
+                "context": {"type": "STRING", "description": "Technical background or relevant files for this task."},
+                "output_schema": {"type": "OBJECT", "description": "Optional JSON Schema that the child's final answer must validate against."},
+                "images": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Optional local file paths or URLs for vision input (max 8)."},
+                "title": {"type": "STRING", "description": "Short background mission title."},
+                "mission_prompt": {"type": "STRING", "description": "Complete task instructions."},
+                "model": {"type": "STRING", "description": "Pin subagent to this model instead of inheriting parent model (e.g. 'ag/gemini-3.8-flash-high', 'claude-3-5-sonnet')."},
+                "provider": {"type": "STRING", "description": "Optional provider override for the pinned model."},
+                "background": {"type": "BOOLEAN", "description": "Run in background (default false)."}
             }
         },
         "handler": _tool_delegate_subagent,
@@ -1214,13 +1266,14 @@ ALL_TOOL_SPECS: List[Dict[str, Any]] = [
     # ── Code Execution ──
     {
         "name": "execute_code",
-        "description": "Evaluates Python or Node.js code snippets in an isolated sandboxed REPL.",
+        "description": "Evaluates Python or Node.js code snippets in an isolated sandboxed REPL. For multi-step batch operations, Python scripts can import tools directly: 'from anara_tools import read_file, write_file, edit_file, search_files, terminal, web_search' to collapse complex pipelines into zero-context-cost runs.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
                 "code": {"type": "STRING", "description": "Source code to execute."},
-                "language": {"type": "STRING", "description": "Programming language: 'python' or 'javascript'."},
-                "timeout": {"type": "INTEGER", "description": "Execution timeout in seconds."}
+                "language": {"type": "STRING", "description": "Programming language: 'python' (default) or 'javascript'."},
+                "timeout": {"type": "INTEGER", "description": "Execution timeout in seconds."},
+                "reset": {"type": "BOOLEAN", "description": "Discard the kernel's persistent state and start fresh before running this code (default false)."}
             },
             "required": ["code"]
         },

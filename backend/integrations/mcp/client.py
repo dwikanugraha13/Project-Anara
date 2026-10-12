@@ -80,7 +80,7 @@ class McpToolSpec:
     def __init__(self, name: str, description: str, input_schema: Dict[str, Any], server_name: str):
         self.server_name = server_name
         self.raw_name = name
-        # Hermes canonical tool name pattern: mcp_{server_name}_{tool_name}
+        # Anara canonical tool name pattern: mcp_{server_name}_{tool_name}
         clean_srv = re.sub(r"[^a-zA-Z0-9_]", "_", server_name.lower()).strip("_")
         clean_name = re.sub(r"[^a-zA-Z0-9_]", "_", name.lower()).strip("_")
         self.canonical_name = f"mcp_{clean_srv}_{clean_name}"
@@ -108,6 +108,7 @@ class McpSession:
         url: Optional[str] = None,
         env: Optional[Dict[str, str]] = None,
         headers: Optional[Dict[str, str]] = None,
+        cwd: Optional[str] = None,
         timeout: float = 120.0,
         connect_timeout: float = 30.0,
     ):
@@ -117,6 +118,7 @@ class McpSession:
         self.url = url
         self.env = env or {}
         self.headers = headers or {}
+        self.cwd = cwd
         self.timeout = float(timeout)
         self.connect_timeout = float(connect_timeout)
 
@@ -173,13 +175,19 @@ class McpSession:
         if sys.platform == "win32":
             creationflags = 0x08000000  # CREATE_NO_WINDOW
 
+        exec_kwargs = {
+            "stdin": asyncio.subprocess.PIPE,
+            "stdout": asyncio.subprocess.PIPE,
+            "stderr": asyncio.subprocess.PIPE,
+            "env": safe_env,
+            "creationflags": creationflags,
+        }
+        if self.cwd and os.path.isdir(self.cwd):
+            exec_kwargs["cwd"] = self.cwd
+
         self._process = await asyncio.create_subprocess_exec(
             *full_args,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=safe_env,
-            creationflags=creationflags,
+            **exec_kwargs,
         )
 
         self._read_task = asyncio.create_task(self._stdio_read_loop())

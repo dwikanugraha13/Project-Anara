@@ -4,7 +4,7 @@ import { getBackendUrl } from "@/lib/apiClient";
 
 export const BACKEND_URL = (
   process.env.NEXT_PUBLIC_BACKEND_URL ||
-  (typeof window !== "undefined" ? getBackendUrl() : "http://localhost:8000")
+  (typeof window !== "undefined" ? getBackendUrl() : "http://127.0.0.1:8000")
 ).replace(/\/+$/, "");
 
 export interface Memory {
@@ -118,6 +118,14 @@ export interface AgentSkillV2 {
   enabled?: boolean;
   usage_count?: number;
   learned_from_experience: boolean;
+  is_learned?: boolean;
+  provenance?: string;
+  version?: string;
+  author?: string;
+  license?: string;
+  platforms?: string[] | null;
+  tags?: string[];
+  setup?: any;
   created_at?: string;
   body?: string;
   file_path?: string;

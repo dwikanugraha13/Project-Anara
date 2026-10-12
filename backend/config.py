@@ -55,7 +55,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "_config_version": CURRENT_CONFIG_VERSION,
     "model": {
         "default": os.getenv("DEFAULT_AI_MODEL", "ag/gemini-3.8-flash-high"),
-        "fallback": os.getenv("FALLBACK_AI_MODEL", "gemini-3.5-flash-lite"),
+        "fallback": os.getenv("FALLBACK_AI_MODEL", ""),
         "live_voice": os.getenv("DEFAULT_VOICE_MODEL", "gemini-3.1-flash-live-preview"),
         "auxiliary": os.getenv("AUXILIARY_AI_MODEL", ""),
         "vision": os.getenv("VISION_AI_MODEL", ""),
@@ -65,7 +65,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
                 "name": "9Router Proxy",
                 "prefix": "9router",
                 "base_url": os.getenv("NINEROUTER_BASE_URL", "http://localhost:20128/v1"),
-                "api_key": os.getenv("NINEROUTER_API_KEY", "sk-d31a608914dfd556-1pi93o-fefbf4f3"),
+                "api_key": os.getenv("NINEROUTER_API_KEY", ""),
                 "default_model": "ag/gemini-3.8-flash-high",
                 "is_active": True,
             }

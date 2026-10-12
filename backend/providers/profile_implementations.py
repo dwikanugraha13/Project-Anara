@@ -990,9 +990,15 @@ class AnthropicProviderProfile(BaseProviderProfile):
                         "Content-Type": "application/json"
                     }
                     anthropic_max = max_tokens if (max_tokens is not None and max_tokens > 0) else (64000 if bool(re.search(r'3[-.]7|claude-[4-9]', target_model)) else 8192)
+                    try:
+                        from core.prompt_caching import apply_rolling_prompt_cache
+                        cached_messages = apply_rolling_prompt_cache(history, max_message_markers=2)
+                    except Exception:
+                        cached_messages = history
+
                     payload: Dict[str, Any] = {
                         "model": target_model,
-                        "messages": history,
+                        "messages": cached_messages,
                         "max_tokens": anthropic_max,
                         "temperature": temperature,
                     }
@@ -1255,12 +1261,53 @@ class OpenAICompatibleProviderProfile(BaseProviderProfile):
                     logger.debug(f"[OpenAINativeTurn] reasoning_effort error: {e_re}")
 
             custom_timeout = float(cfg_get("agent.generation.custom_timeout", 120.0))
+            payload["stream"] = True
             async with httpx.AsyncClient(timeout=custom_timeout) as client:
-                resp = await client.post(endpoint_url, headers=headers, json=payload)
-                if resp.status_code == 200:
-                    return _parse_openai_compatible_native_payload(resp.text, token_cb=token_cb)
-                else:
-                    raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+                try:
+                    async with client.stream("POST", endpoint_url, headers=headers, json=payload) as resp:
+                        if resp.status_code != 200:
+                            err_body = await resp.aread()
+                            raise RuntimeError(f"HTTP {resp.status_code}: {err_body.decode('utf-8', errors='replace')[:200]}")
+
+                        collected_lines: List[str] = []
+                        async for line in resp.aiter_lines():
+                            if not line:
+                                continue
+                            collected_lines.append(line)
+                            if line.startswith("data:"):
+                                d_str = line[5:].strip()
+                                if d_str == "[DONE]":
+                                    break
+                                try:
+                                    chunk = json.loads(d_str)
+                                    choices = chunk.get("choices") or []
+                                    if choices:
+                                        delta = choices[0].get("delta") or choices[0].get("message") or {}
+                                        r_txt = delta.get("reasoning_content") or delta.get("thought") or ""
+                                        c_txt = delta.get("content") or ""
+                                        if r_txt and token_cb:
+                                            res = token_cb(f"<thought>{r_txt}</thought>")
+                                            if asyncio.iscoroutine(res):
+                                                await res
+                                        if c_txt and token_cb:
+                                            res = token_cb(c_txt)
+                                            if asyncio.iscoroutine(res):
+                                                await res
+                                except BaseException as e_chunk:
+                                    from core.stream_rules import StreamRuleViolation
+                                    if isinstance(e_chunk, (StreamRuleViolation, asyncio.CancelledError)):
+                                        raise
+                                    pass
+
+                        full_stream_text = "\n".join(collected_lines)
+                        return _parse_openai_compatible_native_payload(full_stream_text, token_cb=None)
+                except httpx.RequestError as e_req:
+                    # Non-streaming fallback if streaming is rejected
+                    payload["stream"] = False
+                    resp_fallback = await client.post(endpoint_url, headers=headers, json=payload)
+                    if resp_fallback.status_code == 200:
+                        return _parse_openai_compatible_native_payload(resp_fallback.text, token_cb=token_cb)
+                    raise RuntimeError(f"HTTP {resp_fallback.status_code}: {resp_fallback.text[:200]}")
 
         def _record_openai_results(history: List[Any], turn_result: Any, executed_results: List[Tuple[Any, str, bool]]) -> None:
             history.append(turn_result.raw_response)

@@ -34,8 +34,10 @@ async def stream_universal_chat_model(
     # 1. Polymorphic Profile Streaming
     try:
         from .profile_registry import resolve_provider_profile
+        from core.repetition_guard import is_repetition_dominated, REPETITION_LOOP_INTERRUPTED
         profile = resolve_provider_profile(model_id)
         has_yielded = False
+        accumulated_chunks: List[str] = []
         async for chunk in profile.stream_chat(
             model_id=model_id,
             user_prompt=user_prompt,
@@ -48,10 +50,23 @@ async def stream_universal_chat_model(
                 cleaned = scrubber.feed(chunk)
                 if cleaned:
                     has_yielded = True
+                    accumulated_chunks.append(cleaned)
+                    # Streaming Degenerate Repetition Guard (Hermes / Anara Parity)
+                    full_so_far = "".join(accumulated_chunks)
+                    if len(full_so_far) >= 400 and is_repetition_dominated(full_so_far):
+                        logger.warning(f"[Stream] Degenerate repetition loop caught for '{model_id}'. Intercepting stream.")
+                        yield f"\n\n{REPETITION_LOOP_INTERRUPTED}"
+                        return
                     yield cleaned
         tail = scrubber.flush()
         if tail:
             has_yielded = True
+            accumulated_chunks.append(tail)
+            full_so_far = "".join(accumulated_chunks)
+            if len(full_so_far) >= 400 and is_repetition_dominated(full_so_far):
+                logger.warning(f"[Stream] Degenerate repetition loop caught for '{model_id}' at tail. Intercepting.")
+                yield f"\n\n{REPETITION_LOOP_INTERRUPTED}"
+                return
             yield tail
         if has_yielded:
             return
@@ -174,7 +189,13 @@ async def call_universal_chat_model(
         )
     except Exception as e_prim:
         from core.error_classifier import classify_api_error
+        from .accounts import mark_provider_key_cooldown
         classified = classify_api_error(e_prim, attempt=1, provider=model_id)
+
+        # Hermes-Parity Credential Pool Cooldown Arming
+        prov_prefix = model_id.split("/")[0] if "/" in model_id else model_id
+        if classified.reason.value in ("rate_limit", "overloaded", "server_error"):
+            mark_provider_key_cooldown(prov_prefix, cooldown_seconds=max(30.0, classified.backoff_seconds))
 
         # Smart Retry Ladder: If error is transient (e.g. 429 rate limit or 503 overload), perform quick jittered backoff retry
         if classified.retryable and not classified.should_fallback and classified.backoff_seconds <= 6.0:

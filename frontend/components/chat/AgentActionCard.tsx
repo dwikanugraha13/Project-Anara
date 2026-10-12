@@ -8,7 +8,7 @@ import { TerminalTranscript } from "./TerminalTranscript";
 import { ReadFileView } from "./ReadFileView";
 import { GrepResultView } from "./GrepResultView";
 import { GlobResultView } from "./GlobResultView";
-import { SubagentCard } from "./SubagentCard";
+import { SubagentCard, delegateRowsFromCall } from "./SubagentCard";
 import { DisclosureCaret } from "./DisclosureCaret";
 
 // ── DIFF & CODE MODIFICATION CARD (Anara Desktop Standard) ──────────────
@@ -17,6 +17,145 @@ export interface DiffLineItem {
   text: string;
   oldLine?: number;
   newLine?: number;
+}
+
+interface CodeToken {
+  type: "kw" | "str" | "num" | "fn" | "type" | "com" | "op" | "plain";
+  text: string;
+}
+
+function detectCodeLang(filePath: string): string {
+  const ext = (filePath.split(".").pop() || "").toLowerCase();
+  if (["ts", "tsx"].includes(ext)) return "typescript";
+  if (["js", "jsx"].includes(ext)) return "javascript";
+  if (["py"].includes(ext)) return "python";
+  if (["sh", "bash"].includes(ext)) return "bash";
+  if (["json"].includes(ext)) return "json";
+  if (["yaml", "yml"].includes(ext)) return "yaml";
+  if (["sql"].includes(ext)) return "sql";
+  if (["html"].includes(ext)) return "html";
+  if (["css"].includes(ext)) return "css";
+  return ext;
+}
+
+function tokenizeCodeLine(line: string, lang: string): CodeToken[] {
+  if (!line) return [];
+  const tokens: CodeToken[] = [];
+  let rem = line;
+
+  const patterns: [RegExp, CodeToken["type"]][] = [];
+  if (["python", "py"].includes(lang)) {
+    patterns.push(
+      [/^#.*/, "com"],
+      [/^(f?["']{3}[\s\S]*?["']{3}|f?["'][^"\n]*["'])/, "str"],
+      [/^\b(def|class|return|if|elif|else|while|for|in|import|from|as|try|except|finally|with|lambda|yield|async|await|pass|raise|break|continue|assert|is|not|and|or)\b/, "kw"],
+      [/^\b(True|False|None)\b/, "num"],
+      [/^\b(int|str|float|bool|list|dict|set|tuple|self|cls)\b/, "type"],
+      [/^([a-zA-Z_]\w*)(?=\s*\()/, "fn"],
+      [/^\b\d+(\.\d+)?\b/, "num"],
+      [/^(=>|->|==|!=|<=|>=|[+\-*/%=<>!&|^~])/, "op"]
+    );
+  } else if (["ts", "tsx", "js", "jsx", "javascript", "typescript"].includes(lang)) {
+    patterns.push(
+      [/^\/\/.*/, "com"],
+      [/^(`(?:\\.|[^`])*`|"(?:\\.|[^"\n])*"|'(?:\\.|[^'\n])*')/, "str"],
+      [/^\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|import|export|default|from|as|class|extends|new|this|typeof|instanceof|void|delete|try|catch|finally|throw|async|await|yield|interface|type)\b/, "kw"],
+      [/^\b(true|false|null|undefined|NaN)\b/, "num"],
+      [/^\b(string|number|boolean|any|void|never|unknown|Promise|Array|Record|React|FC)\b/, "type"],
+      [/^([a-zA-Z_$][\w$]*)(?=\s*\()/, "fn"],
+      [/^\b\d+(\.\d+)?\b/, "num"],
+      [/^(=>|===|!==|==|!=|<=|>=|[+\-*/%=<>!&|^~?])/, "op"]
+    );
+  } else if (["json"].includes(lang)) {
+    patterns.push(
+      [/^"(\\.|[^"\n])*"(?=\s*:)/, "kw"],
+      [/^"(\\.|[^"\n])*"/, "str"],
+      [/^\b(true|false|null)\b/, "num"],
+      [/^-?\b\d+(\.\d+)?\b/, "num"],
+      [/^[:,\{\}\[\]]/, "op"]
+    );
+  } else if (["bash", "sh"].includes(lang)) {
+    patterns.push(
+      [/^#.*/, "com"],
+      [/^(".*?"|'.*?')/, "str"],
+      [/^\b(cd|ls|mkdir|rm|cp|mv|cat|grep|git|npm|pnpm|yarn|node|python|echo|export)\b/, "fn"],
+      [/^\b(if|then|else|elif|fi|for|while|do|done|in)\b/, "kw"],
+      [/^(\$[a-zA-Z_]\w*|\$\{[^}]+\})/, "type"]
+    );
+  }
+
+  while (rem.length > 0) {
+    let matched = false;
+    for (const [re, type] of patterns) {
+      const m = rem.match(re);
+      if (m && m[0].length > 0) {
+        tokens.push({ type, text: m[0] });
+        rem = rem.slice(m[0].length);
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      const nonWordMatch = rem.match(/^[^\w\s"']+/);
+      const wsMatch = rem.match(/^\s+/);
+      const wordMatch = rem.match(/^\w+/);
+      const chunk = wsMatch?.[0] || nonWordMatch?.[0] || wordMatch?.[0] || rem[0];
+      tokens.push({ type: "plain", text: chunk });
+      rem = rem.slice(chunk.length);
+    }
+  }
+  return tokens;
+}
+
+function renderHighlightedCodeLine(lineText: string, lang: string, isDel = false) {
+  if (!lineText) return " ";
+  const tokens = tokenizeCodeLine(lineText, lang);
+  if (!tokens.length) return lineText;
+
+  return tokens.map((tok, i) => {
+    let colorClass = "text-slate-200";
+    if (isDel) {
+      colorClass =
+        tok.type === "kw"
+          ? "text-rose-300 font-medium"
+          : tok.type === "str"
+          ? "text-amber-200/80"
+          : tok.type === "fn"
+          ? "text-rose-200"
+          : "text-rose-200/90";
+    } else {
+      switch (tok.type) {
+        case "kw":
+          colorClass = "text-purple-400 font-medium";
+          break;
+        case "fn":
+          colorClass = "text-sky-300 font-medium";
+          break;
+        case "str":
+          colorClass = "text-emerald-300";
+          break;
+        case "num":
+          colorClass = "text-amber-400";
+          break;
+        case "type":
+          colorClass = "text-teal-300 font-medium";
+          break;
+        case "com":
+          colorClass = "text-slate-500 italic";
+          break;
+        case "op":
+          colorClass = "text-sky-300/80";
+          break;
+        default:
+          colorClass = "text-slate-200";
+      }
+    }
+    return (
+      <span key={i} className={colorClass}>
+        {tok.text}
+      </span>
+    );
+  });
 }
 
 export function AgentActionCard({
@@ -176,6 +315,7 @@ export function AgentActionCard({
     const isNewCreate = !parsedDiff.isRealDiff && (action.deleted === undefined || action.deleted === 0);
     const addCount = action.added !== undefined ? action.added : (parsedDiff.isRealDiff ? parsedDiff.added : contentLines || 1);
     const delCount = action.deleted !== undefined ? action.deleted : (parsedDiff.isRealDiff ? parsedDiff.deleted : 0);
+    const fileLang = detectCodeLang(action.filePath || filename);
 
     return (
       <div className="my-1 font-mono text-xs select-none">
@@ -296,7 +436,7 @@ export function AgentActionCard({
                             {line.type === "add" || line.type === "ctx" ? line.newLine || "" : ""}
                           </td>
                           <td className="pl-2.5 pr-3 py-0.5 whitespace-pre font-mono leading-relaxed text-[11px] min-h-[1.25rem]">
-                            {line.text || " "}
+                            {renderHighlightedCodeLine(line.text || " ", fileLang, line.type === "del")}
                           </td>
                         </tr>
                       );
@@ -312,7 +452,7 @@ export function AgentActionCard({
                           {lIdx + 1}
                         </td>
                         <td className="pl-3 pr-3 py-0.5 whitespace-pre font-mono leading-relaxed text-[11px] text-slate-200 min-h-[1.25rem]">
-                          {lineText || " "}
+                          {renderHighlightedCodeLine(lineText || " ", fileLang, false)}
                         </td>
                       </tr>
                     ))}
@@ -429,16 +569,33 @@ export function AgentActionCard({
 
   // ── Render Subagent Delegation Card ──
   if (action.subagentData || tool.includes("delegate") || tool.includes("subagent")) {
-    const rawData = action.subagentData || {
+    if (action.subagentData) {
+      return <SubagentCard data={action.subagentData} onOpenFile={onOpenFile} />;
+    }
+
+    const parsedRows = delegateRowsFromCall(action.toolArgs, action.rawResult, action.checkpointId);
+    if (parsedRows.length > 0) {
+      return (
+        <SubagentCard
+          rows={parsedRows}
+          args={action.toolArgs}
+          result={action.rawResult}
+          toolCallId={action.checkpointId}
+          onOpenFile={onOpenFile}
+        />
+      );
+    }
+
+    const rawData = {
       delegationId: action.checkpointId || `del_${Date.now()}`,
       goal: action.detail || action.actionTitle || "Delegated Mission",
-      status: isStart ? "running" : "completed",
+      status: (isStart ? "running" : "completed") as any,
       tasks: [
         {
           id: "task_1",
           taskId: "1",
           goal: action.detail || action.actionTitle || "Delegated Mission",
-          status: isStart ? "running" : "completed",
+          status: (isStart ? "running" : "completed") as any,
           activity: action.summary ? [action.summary] : ["Executing delegated mission in background..."],
           durationSec: action.durationMs ? action.durationMs / 1000 : undefined,
           findings: action.rawResult,

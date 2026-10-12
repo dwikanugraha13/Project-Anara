@@ -196,11 +196,11 @@ def get_or_create_channel_session(req: ChannelRequest) -> int:
                     pass
                 return s["id"]
 
-    # 3. If none found, create a new isolated session bound to canonical_key
+    # 3. If none found, create a new isolated session bound to canonical_key (Anara Standard: no hardcoded channel title)
     new_sess = memory_engine.create_session(
         session_key=canonical_key,
         speaker_name=speaker,
-        title=clean_title,
+        title=None,
         session_type="chat",
         channel=req.channel,
         session_mode="conversational"
@@ -235,6 +235,33 @@ async def process_channel_request(
     })
     current_task = asyncio.current_task()
     is_stop_req = req.text.strip().lower().startswith(("/stop", "/cancel", "/abort"))
+
+    # Pi Parity Dual Queue: If agent loop is currently active, route in-flight message to steering or follow-up
+    if not is_stop_req and session_state_manager.is_session_busy(req.channel, req.channel_id):
+        from core.session_manager import classify_in_flight_message
+        mode = classify_in_flight_message(req.text)
+        session_id = get_or_create_channel_session(req)
+        if mode == "steering":
+            session_state_manager.push_steering_message(req.channel, req.channel_id, req.text)
+            return ChannelResponse(
+                text="⚙️ *[Arahan Intervensi Diterima]* Koreksi telah dimasukkan ke siklus agen dan akan diterapkan pada langkah berikutnya.",
+                session_id=session_id or 0,
+                mode="steering",
+                plan_pending=False,
+                tools_used=[],
+                status="steering"
+            )
+        else:
+            session_state_manager.push_follow_up(req.channel, req.channel_id, req.text)
+            return ChannelResponse(
+                text="⏳ *[Tugas Dimasukkan ke Antrean]* Agen sedang menyelesaikan tugas aktif. Permintaan Anda akan otomatis diproses setelah tugas ini tuntas.",
+                session_id=session_id or 0,
+                mode="queued",
+                plan_pending=False,
+                tools_used=[],
+                status="queued"
+            )
+
     if current_task and not is_stop_req:
         session_state_manager.register_active_task(req.channel, req.channel_id, current_task)
 
@@ -249,6 +276,21 @@ async def process_channel_request(
         if current_task and not is_stop_req:
             session_state_manager.unregister_active_task(req.channel, req.channel_id, current_task)
         _ACTIVE_CHANNEL_CONTEXT.reset(token_ctx)
+
+        # Pi Parity Dual Queue: Check and auto-dispatch pending follow-up task
+        if not is_stop_req and session_state_manager.has_follow_up(req.channel, req.channel_id):
+            next_follow = session_state_manager.pop_follow_up(req.channel, req.channel_id)
+            if next_follow:
+                logger.info(f"[ChannelGateway] Auto-dispatching queued follow-up for {req.channel}:{req.channel_id}")
+                follow_req = ChannelRequest(
+                    channel=req.channel,
+                    channel_id=req.channel_id,
+                    user_id=req.user_id,
+                    sender_name=req.sender_name,
+                    text=next_follow,
+                    attachments=[]
+                )
+                asyncio.create_task(process_channel_request(follow_req, progress_callback, token_callback))
 
 
 async def _enrich_message_with_vision(user_text: str, attachments: List[Dict[str, Any]]) -> str:
@@ -419,7 +461,14 @@ async def _process_channel_request_core(
             status="onboarding"
         )
 
-    # 5. Check for Plan Approval (Semantic Intent Classifier + Session State Machine - Subsystem 3)
+    # 5. Auto-titling Turn Prologue (Anara Standard: auto-titles session dynamically from user prompt)
+    try:
+        from core.title_generator import maybe_auto_title
+        maybe_auto_title(session_id, clean_text)
+    except Exception as e:
+        logger.debug(f"[ChannelGateway] Turn prologue auto-title notice: {e}")
+
+    # 6. Check for Plan Approval (Semantic Intent Classifier + Session State Machine - Subsystem 3)
     session_plan_key = f"{req.channel}_{req.channel_id}"
     intent_state = await session_state_manager.async_evaluate_intent(clean_text, req.channel, req.channel_id)
     active_pending = intent_state["pending"]
@@ -982,6 +1031,19 @@ async def _process_channel_request_core(
         unregister_session_run(session_id)
     except Exception:
         pass
+
+    from core.empty_response_guard import is_silence_narration
+    if is_silence_narration(final_reply):
+        logger.info(f"[ChannelGateway] Suppressed silence narration output: {final_reply!r}")
+        return ChannelResponse(
+            text="",
+            session_id=session_id,
+            mode="conversational",
+            plan_pending=False,
+            tools_used=tools_used,
+            attachments=turn_artifacts,
+            status="silent"
+        )
 
     return ChannelResponse(
         text=final_reply,

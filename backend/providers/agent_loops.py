@@ -70,6 +70,15 @@ async def _execute_native_agent_loop(
     from core.convergence import ConvergenceDetector
     from .native_turn import NativeToolCall, NativeTurnResult
 
+    streamed_chars = [0]
+    orig_token_cb = token_cb
+    if orig_token_cb:
+        def _counting_token_cb(chunk: str):
+            if chunk:
+                streamed_chars[0] += len(chunk)
+                return orig_token_cb(chunk)
+        token_cb = _counting_token_cb
+
     loop_breaker = AnaraLoopBreaker(max_identical=4)
     self_correction_tracker = SelfCorrectionTracker(
         max_retries=5,
@@ -80,14 +89,22 @@ async def _execute_native_agent_loop(
     token_tracker = TokenBudgetTracker(model_id=model_id)
     convergence_detector = ConvergenceDetector(read_only=read_only)
 
+    from providers.turn_pipeline import LoopPhaseState, TurnPhasePipeline
     history = list(initial_history)
     last_text = ""
     circuit_breaker_tripped = False
     budget_exhausted = False
 
     for step in range(max_steps):
-        # Token Budget Management (Anara Standard: Gap 1 in Native Loop)
-        token_tracker.record_step(step, history)
+        # Anara Standard Turn Preflight Gate & In-Flight Steering (turn_pipeline)
+        loop_state = LoopPhaseState(
+            step=step,
+            max_steps=max_steps,
+            read_only=read_only,
+            model_id=model_id,
+            history=history,
+        )
+        TurnPhasePipeline.run_preflight_and_steering(loop_state, token_tracker)
 
         # Mid-Turn In-Loop Context Compaction at 80% pressure (Anara Standard: conversation_compression.py)
         if step > 1 and token_tracker.usage_ratio(history) >= 0.80 and not getattr(token_tracker, "_compacted_in_loop", False):
@@ -162,12 +179,7 @@ async def _execute_native_agent_loop(
                 except TypeError:
                     final_turn = await native_turn_caller(history)
                 if final_turn and final_turn.clean_text:
-                    final_text = _clean_model_chat_text(final_turn.clean_text) or final_turn.clean_text
-                    if token_cb and final_text:
-                        r = token_cb(final_text)
-                        if asyncio.iscoroutine(r):
-                            await r
-                    return final_text
+                    return _clean_model_chat_text(final_turn.clean_text) or final_turn.clean_text
             except Exception:
                 pass
             return _clean_model_chat_text(last_text) or last_text or _format_empty_model_notice(user_prompt)
@@ -188,8 +200,46 @@ async def _execute_native_agent_loop(
 
         # Call provider for single turn
         try:
+            from core.image_eviction import evict_historical_images
+            if isinstance(history, list) and history and isinstance(history[0], dict):
+                history, _ = evict_historical_images(history)
+        except Exception:
+            pass
+
+        # Transcript Repair & Sanitization Gate (Anara Standard: transcript_repair.py)
+        try:
+            from core.transcript_repair import repair_transcript_sequence
+            if isinstance(history, list) and history and isinstance(history[0], dict):
+                history = repair_transcript_sequence(history)
+        except Exception as e_repair:
+            logger.debug(f"[NativeAgentLoop] Transcript repair notice: {e_repair}")
+
+        try:
             turn = await native_turn_caller(history)
         except Exception as e_call:
+            from core.stream_rules import StreamRuleViolation
+            if isinstance(e_call, StreamRuleViolation):
+                logger.warning(f"[NativeAgentLoop] TTSR hard-aborted stream: {e_call.rule_name}. Course-correcting...")
+                if progress_cb:
+                    try:
+                        res_cb = progress_cb({
+                            "type": "ttsr_intervention",
+                            "rule": e_call.rule_name,
+                            "message": e_call.message,
+                            "matched_text": e_call.matched_text,
+                        })
+                        if asyncio.iscoroutine(res_cb):
+                            await res_cb
+                    except Exception:
+                        pass
+                intervention_prompt = f"[STREAM RULE INTERVENTION]: {e_call.message}"
+                if history and not isinstance(history[0], dict):
+                    from google.genai import types as genai_types
+                    history.append(genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=intervention_prompt)]))
+                else:
+                    history.append({"role": "user", "content": intervention_prompt})
+                continue
+
             from core.token_budget import parse_context_limit_from_error, save_context_length
             err_msg = str(e_call)
             parsed_limit = parse_context_limit_from_error(err_msg)
@@ -251,19 +301,56 @@ async def _execute_native_agent_loop(
 
             final_text = _clean_model_chat_text(last_text) or last_text
             if not final_text:
+                # Anara Standard: Thinking-Only Response Auto-Nudge (empty_response_guard.py)
+                raw_check = getattr(turn, "raw_text", "") or ""
+                if step < max_steps - 1 and (
+                    "<think>" in raw_check.lower()
+                    or "<thought>" in raw_check.lower()
+                    or "<reasoning>" in raw_check.lower()
+                    or getattr(turn, "thought", "")
+                ):
+                    logger.info("[NativeAgentLoop] Model emitted thinking scratchpad with zero visible prose. Engaging Anara Standard auto-nudge...")
+                    thinking_nudge = (
+                        "[System Notice]: You completed your internal reasoning thoughts but provided no visible final response text. "
+                        "Please synthesize and output your final response to the user now based on your reasoning above."
+                    )
+                    if history and not isinstance(history[0], dict):
+                        from google.genai import types as genai_types
+                        history.append(genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=thinking_nudge)]))
+                    else:
+                        history.append({"role": "user", "content": thinking_nudge})
+                    continue
                 final_text = _format_empty_model_notice(user_prompt)
-            if token_cb and final_text:
-                res = token_cb(final_text)
-                if asyncio.iscoroutine(res):
-                    await res
             return final_text
 
+        # Emit interim commentary if the model spoke before invoking tools
+        if turn.clean_text and progress_cb:
+            try:
+                res_cb = progress_cb({
+                    "type": "interim_text",
+                    "text": _clean_model_chat_text(turn.clean_text) or turn.clean_text,
+                })
+                if asyncio.iscoroutine(res_cb):
+                    await res_cb
+            except Exception:
+                pass
+
         # Turn emitted native tool calls
+        # Anara Standard: Parallel Tool ID Uniquification & Mixed Batch Validation
+        from core.transcript_repair import uniquify_tool_call_ids, validate_and_filter_tool_batch
+        uniquify_tool_call_ids(turn.tool_calls)
+
+        from tools import get_tools_catalog
+        all_catalog = get_tools_catalog()
+        valid_tool_names = set(t["name"] for t in all_catalog if t.get("name"))
+
+        executable_calls, invalid_batch_errors = validate_and_filter_tool_batch(turn.tool_calls, valid_tool_names)
+
         parsed_calls = []
         is_intercepted = False
         interception_result = None
 
-        for call in turn.tool_calls:
+        for call in executable_calls:
             t_name = call.name
             t_args = call.arguments or {}
 
@@ -315,7 +402,9 @@ async def _execute_native_agent_loop(
                     _danger_desc = safety_result.get("description", "")
 
             # Approval gate by canonical mode: auto, plan, off
-            if approval_mode == "auto" and t_risk in ("mutating", "ask"):
+            if intercept_mutating_tools and t_risk in ("mutating", "ask"):
+                should_intercept = True
+            elif approval_mode == "auto" and t_risk in ("mutating", "ask"):
                 if t_name in ("execute_cli_command", "terminal", "run_terminal_command"):
                     try:
                         from core.approval_smart import smart_approve
@@ -370,6 +459,19 @@ async def _execute_native_agent_loop(
         if is_intercepted:
             return interception_result
 
+        # Append synthetic error observations for invalid/hallucinated tools in parallel batch
+        for err_dict in invalid_batch_errors:
+            err_name = err_dict.get("name", "unknown_tool")
+            err_cid = err_dict.get("tool_call_id", "")
+            err_call_obj = next((c for c in turn.tool_calls if getattr(c, "id", "") == err_cid or getattr(c, "name", "") == err_name), None)
+            parsed_calls.append({
+                "call": err_call_obj or NativeToolCall(call_id=err_cid, name=err_name, arguments={}),
+                "name": err_name,
+                "args": {},
+                "risk": "read_only",
+                "stall_error": err_dict["content"],
+            })
+
         if not parsed_calls:
             continue
 
@@ -377,20 +479,28 @@ async def _execute_native_agent_loop(
         results_by_index: Dict[int, Any] = {}
         call_idx = 0
         while call_idx < len(parsed_calls):
-            if parsed_calls[call_idx]["risk"] == "read_only":
-                end_idx = call_idx
-                while end_idx < len(parsed_calls) and parsed_calls[end_idx]["risk"] == "read_only":
-                    end_idx += 1
-                ro_batch = parsed_calls[call_idx:end_idx]
-
+            ro_batch, next_idx, is_ro_batch = TurnPhasePipeline.partition_tool_batch(parsed_calls, call_idx)
+            if is_ro_batch:
                 if progress_cb:
                     for item in ro_batch:
                         try:
+                            t_args = item.get("args") or {}
+                            detail_str = str(
+                                t_args.get("query")
+                                or t_args.get("file_path")
+                                or t_args.get("command")
+                                or t_args.get("url")
+                                or t_args.get("pattern")
+                                or t_args.get("path")
+                                or t_args.get("title")
+                                or ""
+                            )
                             res_cb = progress_cb({
                                 "tool_name": item["name"],
                                 "status": "running",
                                 "parallel": len(ro_batch) > 1,
-                                "detail": str(item["args"].get("file_path") or item["args"].get("command") or item["args"].get("pattern") or "")
+                                "detail": detail_str,
+                                "tool_args": t_args,
                             })
                             if asyncio.iscoroutine(res_cb):
                                 await res_cb
@@ -402,31 +512,85 @@ async def _execute_native_agent_loop(
                     if item.get("stall_error")
                     else dispatch_tool_call(item["name"], item["args"], read_only=read_only)
                     for item in ro_batch
-                ])
+                ], return_exceptions=True)
 
-                for offset_i, tool_res in enumerate(batch_results):
+                for offset_i, raw_res in enumerate(batch_results):
+                    if isinstance(raw_res, BaseException):
+                        tool_res = {"status": "error", "error": str(raw_res), "output": f"Unhandled tool execution error: {raw_res}"}
+                    else:
+                        tool_res = raw_res
                     results_by_index[call_idx + offset_i] = tool_res
                     item = ro_batch[offset_i]
                     if progress_cb:
                         try:
+                            t_args = item.get("args") or {}
+                            detail_str = str(
+                                t_args.get("query")
+                                or t_args.get("file_path")
+                                or t_args.get("command")
+                                or t_args.get("url")
+                                or t_args.get("pattern")
+                                or t_args.get("path")
+                                or t_args.get("title")
+                                or ""
+                            )
+                            summary_str = ""
+                            raw_str = ""
+                            if isinstance(tool_res, dict):
+                                summary_str = str(
+                                    tool_res.get("summary")
+                                    or tool_res.get("message")
+                                    or tool_res.get("search_results")
+                                    or tool_res.get("output")
+                                    or tool_res.get("result")
+                                    or tool_res.get("content")
+                                    or ""
+                                )
+                                raw_str = str(
+                                    tool_res.get("raw_result")
+                                    or tool_res.get("search_results")
+                                    or tool_res.get("output")
+                                    or tool_res.get("result")
+                                    or tool_res.get("content")
+                                    or summary_str
+                                )
+                            else:
+                                summary_str = str(tool_res)
+                                raw_str = str(tool_res)
+
                             res_cb = progress_cb({
                                 "tool_name": item["name"],
                                 "status": "done",
-                                "summary": (tool_res.get("message") or tool_res.get("summary") or "")[:160] if isinstance(tool_res, dict) else str(tool_res)[:160]
+                                "summary": summary_str[:160] if summary_str else "Done",
+                                "detail": detail_str,
+                                "raw_result": raw_str,
+                                "tool_args": t_args,
                             })
                             if asyncio.iscoroutine(res_cb):
                                 await res_cb
                         except Exception:
                             pass
-                call_idx = end_idx
+                call_idx = next_idx
             else:
                 item = parsed_calls[call_idx]
+                t_args = item.get("args") or {}
+                detail_str = str(
+                    t_args.get("query")
+                    or t_args.get("file_path")
+                    or t_args.get("command")
+                    or t_args.get("url")
+                    or t_args.get("pattern")
+                    or t_args.get("path")
+                    or t_args.get("title")
+                    or ""
+                )
                 if progress_cb:
                     try:
                         res_cb = progress_cb({
                             "tool_name": item["name"],
                             "status": "running",
-                            "detail": str(item["args"].get("file_path") or item["args"].get("command") or item["args"].get("title") or "")
+                            "detail": detail_str,
+                            "tool_args": t_args,
                         })
                         if asyncio.iscoroutine(res_cb):
                             await res_cb
@@ -442,10 +606,37 @@ async def _execute_native_agent_loop(
 
                 if progress_cb:
                     try:
+                        summary_str = ""
+                        raw_str = ""
+                        if isinstance(mut_res, dict):
+                            summary_str = str(
+                                mut_res.get("summary")
+                                or mut_res.get("message")
+                                or mut_res.get("search_results")
+                                or mut_res.get("output")
+                                or mut_res.get("result")
+                                or mut_res.get("content")
+                                or ""
+                            )
+                            raw_str = str(
+                                mut_res.get("raw_result")
+                                or mut_res.get("search_results")
+                                or mut_res.get("output")
+                                or mut_res.get("result")
+                                or mut_res.get("content")
+                                or summary_str
+                            )
+                        else:
+                            summary_str = str(mut_res)
+                            raw_str = str(mut_res)
+
                         res_cb = progress_cb({
                             "tool_name": item["name"],
                             "status": "done",
-                            "summary": (mut_res.get("message") or mut_res.get("summary") or "")[:160] if isinstance(mut_res, dict) else str(mut_res)[:160]
+                            "summary": summary_str[:160] if summary_str else "Done",
+                            "detail": detail_str,
+                            "raw_result": raw_str,
+                            "tool_args": t_args,
                         })
                         if asyncio.iscoroutine(res_cb):
                             await res_cb
@@ -474,12 +665,24 @@ async def _execute_native_agent_loop(
             res_str = json.dumps(tool_res, ensure_ascii=False) if not isinstance(tool_res, str) else tool_res
 
             is_tolerant = self_correction_tracker.is_failure_tolerant(tool_name)
-            raw_err = isinstance(tool_res, dict) and (
-                tool_res.get("status") in ("error", "failed")
-                or tool_res.get("return_code", 0) != 0
-                or tool_res.get("is_error") is True
-            )
+            has_lint_err = bool(isinstance(tool_res, dict) and tool_res.get("lint_warning"))
+            raw_err = (
+                isinstance(tool_res, dict) and (
+                    tool_res.get("status") in ("error", "failed")
+                    or tool_res.get("return_code", 0) != 0
+                    or tool_res.get("is_error") is True
+                )
+            ) or has_lint_err
             is_err = raw_err and not is_tolerant
+
+            if has_lint_err and isinstance(tool_res, dict):
+                lint_msg = tool_res.get("lint_warning")
+                fname = tool_res.get("filename") or tool_name
+                repair_prompt = (
+                    f"\n\n[COMPILER SELF-REPAIR GUARD]: File '{fname}' contains a syntax regression: {lint_msg}.\n"
+                    f"You MUST immediately repair this syntax error in your next action using edit_file (Hashline PUT/SWAP). Do not close your response or leave broken syntax."
+                )
+                res_str += repair_prompt
 
             # Ground-Truth Test Verification (Dynamic Language-Agnostic)
             if tool_name == "execute_cli_command":
@@ -514,6 +717,7 @@ async def _execute_native_agent_loop(
                 executed_results_for_history.append((call_obj, compacted_err_str, True))
             else:
                 compacted_res_str = compact_tool_output(res_str, max_lines=60, max_chars=4000, source_label=f"caller_{tool_name}")
+                compacted_res_str = loop_breaker.check_or_stub_duplicate(tool_name, item["args"], compacted_res_str)
                 executed_results_for_history.append((call_obj, compacted_res_str, False))
 
         # Circuit breaker check
@@ -536,6 +740,7 @@ async def _execute_native_agent_loop(
             has_mutating = any(item.get("risk") in ("mutating", "ask") for item in parsed_calls)
             if has_mutating:
                 self_correction_tracker.reset()
+                loop_breaker.notify_mutation()
 
         # Convergence Tracking (Anara Enterprise Architecture: Gap 3)
         executed_items_for_convergence = []
@@ -560,6 +765,15 @@ async def _execute_native_agent_loop(
         # Append assistant turn and tool results to native history
         record_results_fn(history, turn, executed_results_for_history)
 
+        # In-Process Compiler Repair Gate: If any tool in the turn introduced a syntax regression, do not converge!
+        has_active_syntax_error = any(
+            isinstance(results_by_index.get(i), dict) and results_by_index[i].get("lint_warning")
+            for i in range(len(parsed_calls))
+        )
+        if has_active_syntax_error:
+            logger.info("[NativeAgentLoop] Active syntax regression detected: withholding convergence to force immediate self-repair.")
+            conv_status.is_converged = False
+
         if conv_status.is_converged:
             # Active Build Turn Protection: If the turn allows mutations (not read_only)
             # and no mutations have been performed yet, do not strip tools unless near step limit!
@@ -579,12 +793,7 @@ async def _execute_native_agent_loop(
                     except TypeError:
                         final_turn = await native_turn_caller(closing_history)
                     if final_turn and final_turn.clean_text:
-                        final_text = _clean_model_chat_text(final_turn.clean_text) or final_turn.clean_text
-                        if token_cb and final_text:
-                            r = token_cb(final_text)
-                            if asyncio.iscoroutine(r):
-                                await r
-                        return final_text
+                        return _clean_model_chat_text(final_turn.clean_text) or final_turn.clean_text
                 except Exception as e_close:
                     logger.warning(f"[NativeAgentLoop] Closing pass error: {e_close}")
 
@@ -598,11 +807,7 @@ async def _execute_native_agent_loop(
                     from .caller import call_universal_chat_model
                     aux_model = get_fast_auxiliary_model() or model_id
                     highlights = "\n".join([f"- {item.get('tool_name', 'action')}: {str(item.get('summary', ''))[:140]}" for item in executed_items_for_convergence[-10:]])
-                    synthesis_prompt = (
-                        f"User asked: \"{user_prompt}\"\n\n"
-                        f"The agent executed the following workspace actions and checks:\n{highlights}\n\n"
-                        "Provide a direct, helpful, and natural response to the user in their active language (Indonesian gaul santai, lu-gue), summarizing what was checked and the final conclusion."
-                    )
+                    synthesis_prompt = TurnPhasePipeline.build_synthesis_prompt(user_prompt, highlights)
                     fallback_res = await call_universal_chat_model(
                         model_id=aux_model,
                         user_prompt=synthesis_prompt,
@@ -727,8 +932,41 @@ async def _execute_json_agent_loop(
     empty_turn_retries = 0
     max_steps = 25
     for step in range(max_steps):
-        # Token-aware context compaction (replaces old 24-message char-based heuristic)
-        token_tracker.compact_messages_if_needed(messages)
+        # Anara Standard Turn Preflight Gate (turn_preflight_gate.py)
+        token_tracker.run_preflight_gate(messages, tool_schemas=catalog)
+
+        # Pi Parity: In-Flight Dual-Queue Steering Directive Injection
+        try:
+            from core.session_manager import session_state_manager
+            from core.channel_adapter import _ACTIVE_CHANNEL_CONTEXT
+            _act_ctx = _ACTIVE_CHANNEL_CONTEXT.get() or {}
+            _ch = _act_ctx.get("channel")
+            _cid = _act_ctx.get("channel_id")
+            if _ch and _cid:
+                _steering = session_state_manager.pop_steering_message(str(_ch), str(_cid))
+                if _steering:
+                    logger.info(f"[AgentLoop] In-flight steering directive injected at step {step}: {_steering[:60]}")
+                    messages.append({
+                        "role": "user",
+                        "content": f"[USER IN-FLIGHT STEERING DIRECTIVE]: {_steering}\nPlease adapt your plan and next actions accordingly."
+                    })
+        except Exception as e_steer:
+            logger.debug(f"[AgentLoop] Steering check pass: {e_steer}")
+
+        # Subagent in-flight steering check
+        try:
+            from core.subagent import get_current_subagent_task
+            cur_task = get_current_subagent_task()
+            if cur_task and hasattr(cur_task, "pop_steering_message"):
+                _sub_steer = cur_task.pop_steering_message()
+                if _sub_steer:
+                    logger.info(f"[AgentLoop] Subagent steering directive injected at step {step}: {_sub_steer[:60]}")
+                    messages.append({
+                        "role": "user",
+                        "content": f"[IN-FLIGHT STEERING DIRECTIVE]: {_sub_steer}\nPlease adapt your plan and next actions accordingly."
+                    })
+        except Exception as e_sub_steer:
+            logger.debug(f"[AgentLoop] Subagent steering check pass: {e_sub_steer}")
 
         # Budget-critical stop: if >90% of context consumed, force final response
         if step > 0 and token_tracker.is_budget_critical(messages):
@@ -850,11 +1088,44 @@ async def _execute_json_agent_loop(
                 pass
 
         try:
+            from core.image_eviction import evict_historical_images
+            messages, _ = evict_historical_images(messages)
+        except Exception:
+            pass
+
+        # Transcript Repair & Sanitization Gate (Anara Standard: transcript_repair.py)
+        try:
+            from core.transcript_repair import repair_transcript_sequence
+            if isinstance(messages, list) and messages and isinstance(messages[0], dict):
+                messages = repair_transcript_sequence(messages)
+        except Exception as e_repair:
+            logger.debug(f"[AgentLoop] Transcript repair notice: {e_repair}")
+
+        try:
             try:
                 raw_out = await provider_caller(messages, on_chunk=_chunk_dispatcher)
             except TypeError:
                 raw_out = await provider_caller(messages)
         except Exception as e_call:
+            from core.stream_rules import StreamRuleViolation
+            if isinstance(e_call, StreamRuleViolation):
+                logger.warning(f"[AgentLoop] TTSR hard-aborted stream: {e_call.rule_name}. Course-correcting...")
+                if progress_cb:
+                    try:
+                        res_cb = progress_cb({
+                            "type": "ttsr_intervention",
+                            "rule": e_call.rule_name,
+                            "message": e_call.message,
+                            "matched_text": e_call.matched_text,
+                        })
+                        if asyncio.iscoroutine(res_cb):
+                            await res_cb
+                    except Exception:
+                        pass
+                intervention_prompt = f"[STREAM RULE INTERVENTION]: {e_call.message}"
+                messages.append({"role": "user", "content": intervention_prompt})
+                continue
+
             from core.token_budget import parse_context_limit_from_error, save_context_length
             err_msg = str(e_call)
             parsed_limit = parse_context_limit_from_error(err_msg)
@@ -903,11 +1174,20 @@ async def _execute_json_agent_loop(
         calls, lead_text, is_malformed = _extract_and_parse_tool_calls(raw_out)
 
         if is_malformed:
-            logger.warning(f"[AgentLoop] Malformed tool call syntax detected from model. Triggering autonomous self-correction loop...")
+            is_truncated = ("<tool_call>" in raw_out and "</tool_call>" not in raw_out) or (
+                raw_out.count("{") > raw_out.count("}") and ('"action"' in raw_out or '"tool"' in raw_out)
+            )
+            nudge_msg = (
+                "[TOOL TRUNCATION RECOVERY]: Your previous tool call was cut off by token limits before completion. "
+                "Please output the complete, unbroken tool call JSON again."
+                if is_truncated
+                else load_prompt("agent_loop/malformed_json")
+            )
+            logger.warning(f"[AgentLoop] Malformed or truncated tool call syntax detected (truncated={is_truncated}). Triggering recovery...")
             messages.append({"role": "assistant", "content": raw_out})
             messages.append({
                 "role": "user",
-                "content": load_prompt("agent_loop/malformed_json")
+                "content": nudge_msg
             })
             continue
 
@@ -970,6 +1250,19 @@ async def _execute_json_agent_loop(
                 if recent_obs:
                     obs_detail = "\n".join(f"• {obs}" for obs in reversed(recent_obs))
                     final_text = f"Tugas selesai dijalankan. Observasi:\n{obs_detail}"
+                elif step < max_steps - 1 and raw_out and (
+                    "<think>" in raw_out.lower()
+                    or "<thought>" in raw_out.lower()
+                    or "<reasoning>" in raw_out.lower()
+                ):
+                    # Anara Standard: Thinking-Only Response Auto-Nudge (empty_response_guard.py)
+                    logger.info("[AgentLoop] Model emitted thinking blocks with zero visible prose. Engaging Anara Standard auto-nudge...")
+                    thinking_nudge = (
+                        "[System Notice]: You completed your internal reasoning thoughts but provided no visible final response text. "
+                        "Please synthesize and output your final response to the user now based on your reasoning above."
+                    )
+                    messages.append({"role": "user", "content": thinking_nudge})
+                    continue
                 else:
                     final_text = _format_empty_model_notice(user_prompt)
             if token_cb and not accumulated_narrative and final_text:
@@ -977,6 +1270,18 @@ async def _execute_json_agent_loop(
                 if asyncio.iscoroutine(res):
                     await res
             return final_text
+
+        # Emit interim commentary if the model spoke before invoking tools
+        if lead_text and progress_cb:
+            try:
+                res_cb = progress_cb({
+                    "type": "interim_text",
+                    "text": _clean_model_chat_text(lead_text) or lead_text,
+                })
+                if asyncio.iscoroutine(res_cb):
+                    await res_cb
+            except Exception:
+                pass
 
         # Validate tools, check stalls, and handle Plan interception
         parsed_calls = []
@@ -1035,7 +1340,9 @@ async def _execute_json_agent_loop(
                     _danger_desc = safety_result.get("description", "")
 
             # Approval gate by canonical mode: auto, plan, off
-            if approval_mode == "auto" and t_risk in ("mutating", "ask"):
+            if intercept_mutating_tools and t_risk in ("mutating", "ask"):
+                should_intercept = True
+            elif approval_mode == "auto" and t_risk in ("mutating", "ask"):
                 if t_name in ("execute_cli_command", "terminal", "run_terminal_command"):
                     try:
                         from core.approval_smart import smart_approve
@@ -1106,11 +1413,23 @@ async def _execute_json_agent_loop(
                 if progress_cb:
                     for item in ro_batch:
                         try:
+                            t_args = item.get("args") or {}
+                            detail_str = str(
+                                t_args.get("query")
+                                or t_args.get("file_path")
+                                or t_args.get("command")
+                                or t_args.get("url")
+                                or t_args.get("pattern")
+                                or t_args.get("path")
+                                or t_args.get("title")
+                                or ""
+                            )
                             res_cb = progress_cb({
                                 "tool_name": item["name"],
                                 "status": "running",
                                 "parallel": len(ro_batch) > 1,
-                                "detail": str(item["args"].get("file_path") or item["args"].get("command") or item["args"].get("pattern") or "")
+                                "detail": detail_str,
+                                "tool_args": t_args,
                             })
                             if asyncio.iscoroutine(res_cb):
                                 await res_cb
@@ -1125,17 +1444,59 @@ async def _execute_json_agent_loop(
                         batch_tasks.append(_synth_stall())
                     else:
                         batch_tasks.append(dispatch_tool_call(item["name"], item["args"], read_only=read_only))
-                batch_results = await asyncio.gather(*batch_tasks)
+                batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
 
-                for offset_i, tool_res in enumerate(batch_results):
+                for offset_i, raw_res in enumerate(batch_results):
+                    if isinstance(raw_res, BaseException):
+                        tool_res = {"status": "error", "error": str(raw_res), "output": f"Unhandled tool execution error: {raw_res}"}
+                    else:
+                        tool_res = raw_res
                     results_by_index[call_idx + offset_i] = tool_res
                     item = ro_batch[offset_i]
                     if progress_cb:
                         try:
+                            t_args = item.get("args") or {}
+                            detail_str = str(
+                                t_args.get("query")
+                                or t_args.get("file_path")
+                                or t_args.get("command")
+                                or t_args.get("url")
+                                or t_args.get("pattern")
+                                or t_args.get("path")
+                                or t_args.get("title")
+                                or ""
+                            )
+                            summary_str = ""
+                            raw_str = ""
+                            if isinstance(tool_res, dict):
+                                summary_str = str(
+                                    tool_res.get("summary")
+                                    or tool_res.get("message")
+                                    or tool_res.get("search_results")
+                                    or tool_res.get("output")
+                                    or tool_res.get("result")
+                                    or tool_res.get("content")
+                                    or ""
+                                )
+                                raw_str = str(
+                                    tool_res.get("raw_result")
+                                    or tool_res.get("search_results")
+                                    or tool_res.get("output")
+                                    or tool_res.get("result")
+                                    or tool_res.get("content")
+                                    or summary_str
+                                )
+                            else:
+                                summary_str = str(tool_res)
+                                raw_str = str(tool_res)
+
                             res_cb = progress_cb({
                                 "tool_name": item["name"],
                                 "status": "done",
-                                "summary": (tool_res.get("message") or tool_res.get("summary") or "")[:160] if isinstance(tool_res, dict) else str(tool_res)[:160]
+                                "summary": summary_str[:160] if summary_str else "Done",
+                                "detail": detail_str,
+                                "raw_result": raw_str,
+                                "tool_args": t_args,
                             })
                             if asyncio.iscoroutine(res_cb):
                                 await res_cb
@@ -1144,12 +1505,24 @@ async def _execute_json_agent_loop(
                 call_idx = end_idx
             else:
                 item = parsed_calls[call_idx]
+                t_args = item.get("args") or {}
+                detail_str = str(
+                    t_args.get("query")
+                    or t_args.get("file_path")
+                    or t_args.get("command")
+                    or t_args.get("url")
+                    or t_args.get("pattern")
+                    or t_args.get("path")
+                    or t_args.get("title")
+                    or ""
+                )
                 if progress_cb:
                     try:
                         res_cb = progress_cb({
                             "tool_name": item["name"],
                             "status": "running",
-                            "detail": str(item["args"].get("file_path") or item["args"].get("command") or item["args"].get("title") or "")
+                            "detail": detail_str,
+                            "tool_args": t_args,
                         })
                         if asyncio.iscoroutine(res_cb):
                             await res_cb
@@ -1167,10 +1540,37 @@ async def _execute_json_agent_loop(
 
                 if progress_cb:
                     try:
+                        summary_str = ""
+                        raw_str = ""
+                        if isinstance(mut_res, dict):
+                            summary_str = str(
+                                mut_res.get("summary")
+                                or mut_res.get("message")
+                                or mut_res.get("search_results")
+                                or mut_res.get("output")
+                                or mut_res.get("result")
+                                or mut_res.get("content")
+                                or ""
+                            )
+                            raw_str = str(
+                                mut_res.get("raw_result")
+                                or mut_res.get("search_results")
+                                or mut_res.get("output")
+                                or mut_res.get("result")
+                                or mut_res.get("content")
+                                or summary_str
+                            )
+                        else:
+                            summary_str = str(mut_res)
+                            raw_str = str(mut_res)
+
                         res_cb = progress_cb({
                             "tool_name": item["name"],
                             "status": "done",
-                            "summary": (mut_res.get("message") or mut_res.get("summary") or "")[:160] if isinstance(mut_res, dict) else str(mut_res)[:160]
+                            "summary": summary_str[:160] if summary_str else "Done",
+                            "detail": detail_str,
+                            "raw_result": raw_str,
+                            "tool_args": t_args,
                         })
                         if asyncio.iscoroutine(res_cb):
                             await res_cb
@@ -1204,15 +1604,26 @@ async def _execute_json_agent_loop(
             res_str = json.dumps(tool_res, ensure_ascii=False) if not isinstance(tool_res, str) else tool_res
 
             is_tolerant = self_correction_tracker.is_failure_tolerant(tool_name)
-            raw_err = isinstance(tool_res, dict) and (
-                tool_res.get("status") in ("error", "failed")
-                or tool_res.get("return_code", 0) != 0
-                or tool_res.get("is_error") is True
-            )
+            has_lint_err = bool(isinstance(tool_res, dict) and tool_res.get("lint_warning"))
+            raw_err = (
+                isinstance(tool_res, dict) and (
+                    tool_res.get("status") in ("error", "failed")
+                    or tool_res.get("return_code", 0) != 0
+                    or tool_res.get("is_error") is True
+                )
+            ) or has_lint_err
 
             # Anara Standard: Exploratory tools (read_file, grep, glob, list_dir) returning "not found" or 0 matches
             # are observations, not system execution failures.
             is_err = raw_err and not is_tolerant
+
+            if has_lint_err and isinstance(tool_res, dict):
+                lint_msg = tool_res.get("lint_warning")
+                fname = tool_res.get("filename") or tool_name
+                recovery_hints.append(
+                    f"\n[COMPILER SELF-REPAIR GUARD]: File '{fname}' contains a syntax regression: {lint_msg}.\n"
+                    f"You MUST immediately repair this syntax error in your next action using edit_file (Hashline PUT/SWAP). Do not close your response or leave broken syntax."
+                )
 
             # Ground-Truth Test Verification (Dynamic Language-Agnostic)
             if tool_name == "execute_cli_command":
@@ -1257,6 +1668,7 @@ async def _execute_json_agent_loop(
                 tool_result_blocks.append(f"[TOOL ERROR for {tool_name}]:\n{compacted_err_str}")
             else:
                 compacted_res_str = compact_tool_output(res_str, max_lines=60, max_chars=4000, source_label=f"caller_{tool_name}")
+                compacted_res_str = loop_breaker.check_or_stub_duplicate(tool_name, item["args"], compacted_res_str)
                 prefix = "[TOOL OBSERVATION" if is_tolerant and raw_err else "[TOOL RESULT"
                 tool_result_blocks.append(f"{prefix} for {tool_name}]:\n{compacted_res_str}")
 
@@ -1282,6 +1694,7 @@ async def _execute_json_agent_loop(
             has_mutating = any(item.get("risk") in ("mutating", "ask") for item in parsed_calls)
             if has_mutating:
                 self_correction_tracker.reset()
+                loop_breaker.notify_mutation()
 
         # Convergence Tracking (Anara Enterprise Architecture: Gap 3)
         executed_items_for_convergence = []
@@ -1296,6 +1709,15 @@ async def _execute_json_agent_loop(
                 "summary": str(tool_res)[:200]
             })
         conv_status = convergence_detector.record_turn_actions(step, executed_items_for_convergence)
+
+        # In-Process Compiler Repair Gate: If any tool introduced a syntax regression, do not converge!
+        has_active_syntax_error = any(
+            isinstance(results_by_index.get(i), dict) and results_by_index[i].get("lint_warning")
+            for i in range(len(parsed_calls))
+        )
+        if has_active_syntax_error:
+            logger.info("[AgentLoop] Active syntax regression detected: withholding convergence to force immediate self-repair.")
+            conv_status.is_converged = False
 
         if turn_had_error:
             guidance = "\n\n".join(recovery_hints)

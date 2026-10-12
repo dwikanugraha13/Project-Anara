@@ -133,8 +133,14 @@ export const SEARCH_TOOLS = new Set([
   "grep",
   "glob_find_files",
   "glob",
-  "web_search",
   "search",
+]);
+export const WEB_SEARCH_TOOLS = new Set([
+  "web_search",
+  "web_search_images",
+  "fetch_webpage",
+  "arxiv_search",
+  "search_web",
 ]);
 export const READ_TOOLS = new Set([
   "read_file",

@@ -66,9 +66,16 @@ export default async function RootLayout({
     >
       <head>
         <meta name="google" content="notranslate" />
-        <Script
+      </head>
+      <body
+        className="antialiased text-slate-100 notranslate font-sans"
+        translate="no"
+        suppressHydrationWarning
+        style={{ backgroundColor: "#030712", margin: 0, padding: 0 }}
+      >
+        <script
           id="anara-layout-init"
-          strategy="beforeInteractive"
+          suppressHydrationWarning
           dangerouslySetInnerHTML={{
             __html: `
               (function() {
@@ -90,13 +97,6 @@ export default async function RootLayout({
             `,
           }}
         />
-      </head>
-      <body
-        className="antialiased text-slate-100 notranslate font-sans"
-        translate="no"
-        suppressHydrationWarning
-        style={{ backgroundColor: "#030712", margin: 0, padding: 0 }}
-      >
         <GatewayAuthModal />
         {children}
       </body>

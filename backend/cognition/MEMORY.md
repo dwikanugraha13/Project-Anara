@@ -10,3 +10,4 @@
   - Message dispatch covers: audio chunks, transcript streaming, emotion, HUD visuals, media, session sync, tool progress, interactive questions.
   - Session management: Dual-identity SQLite id and canonical session_key with optimistic CRUD and brain-sync event bus.
   - Composer: Scoped draft stashing, automatic blob URL lifecycle revocation, and status stack coordination.
+- [2026-10-08] Project 'Buku-Tamu-LPMP' workspace path: C:\Users\Bravo\Documents\Magang LPMP\Buku-Tamu-LPMP

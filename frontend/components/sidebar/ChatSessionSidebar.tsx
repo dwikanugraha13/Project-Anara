@@ -67,6 +67,8 @@ export default function ChatSessionSidebar({
   onOpenScheduled,
   onOpenProviders,
   onOpenArtifacts,
+  activeWorkspaceView = "chat",
+  isArtifactsOpen = false,
   onOpenFileIDE,
   onOpenFolder,
   refreshKey = 0,
@@ -321,9 +323,7 @@ export default function ChatSessionSidebar({
       const res = await fetch(`${BACKEND_URL}/api/chat/sessions`);
       if (res.ok) {
         const all: ChatSession[] = await res.json();
-        // Session Pattern: hide sessions with 0 messages (created lazily but never used)
-        const active = all.filter((s) => s.message_count > 0);
-        setSessions(active);
+        setSessions(all || []);
       }
     } catch (err) {
       console.warn("[Sessions] load failed:", err);
@@ -351,6 +351,7 @@ export default function ChatSessionSidebar({
       if (
         event === "session_created" ||
         event === "session_updated" ||
+        event === "session_title_updated" ||
         event === "session_deleted" ||
         event === "session_workspace_updated" ||
         event === "conversation_logged" ||
@@ -603,10 +604,10 @@ export default function ChatSessionSidebar({
           search={search}
           setSearch={setSearch}
           sessionType={sessionType}
-          onSelectSession={(id) => {
+          onSelectSession={(id, title) => {
             // Eager-clear stale workspace before switching (Anara Parity)
             setWorkspaceTree(null);
-            onSelectSession(id);
+            onSelectSession(id, title);
             if (sessionType === "code") {
               setActiveSidebarTab("editor");
             }
@@ -623,6 +624,8 @@ export default function ChatSessionSidebar({
           onOpenScheduled={onOpenScheduled}
           onOpenProviders={onOpenProviders}
           onOpenArtifacts={onOpenArtifacts}
+          activeWorkspaceView={activeWorkspaceView}
+          isArtifactsOpen={isArtifactsOpen}
           onOpenCode={() => {
             setActiveSidebarTab("editor");
           }}

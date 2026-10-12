@@ -453,6 +453,40 @@ async def _handle_cmd_clear(ctx: UniversalCommandContext) -> UniversalCommandRes
 
 
 @command_hub.register(
+    name="undo",
+    aliases=["rewind"],
+    description="Rewind conversation by N user turns and restore the last prompt",
+    usage="/undo [N]"
+)
+async def _handle_cmd_undo(ctx: UniversalCommandContext) -> UniversalCommandResponse:
+    from memory import memory_engine
+    turns_to_undo = 1
+    raw_args = (ctx.args or "").strip()
+    if raw_args.isdigit():
+        turns_to_undo = max(1, int(raw_args))
+
+    sid = ctx.session_id or getattr(ctx, "session_key", None)
+    if not sid:
+        sid = memory_engine.get_last_active_session_id()
+
+    if not sid:
+        return UniversalCommandResponse(text="⚠️ <b>Nothing to undo</b>: No active session found.")
+
+    res = memory_engine.rewind_turns(sid, n=turns_to_undo)
+    if not res:
+        return UniversalCommandResponse(text="⚠️ <b>Nothing to undo</b>: No prior user turns to rewind.")
+
+    count = res["rewound_count"]
+    last_text = res["last_user_text"]
+    text = (
+        f"⏪ <b>Rewound {count} turn{'s' if count > 1 else ''}!</b>\n\n"
+        f"<b>Last prompt restored:</b>\n"
+        f"<code>{html.escape(last_text[:300])}</code>"
+    )
+    return UniversalCommandResponse(text=text)
+
+
+@command_hub.register(
     name="stop",
     aliases=["cancel", "abort"],
     description="Halt active agent tasks, browser automations, or running plans",
@@ -857,6 +891,105 @@ async def _handle_cmd_resume(ctx: UniversalCommandContext) -> UniversalCommandRe
         "<i>Context successfully loaded. You can continue the conversation directly!</i>"
     )
     return UniversalCommandResponse(text=text)
+
+
+@command_hub.register(
+    name="btw",
+    aliases=["side", "aside"],
+    description="Ask a quick side question about the ongoing conversation without mutating chat history or context cost",
+    usage="/btw <question>"
+)
+async def _handle_cmd_btw(ctx: UniversalCommandContext) -> UniversalCommandResponse:
+    question = ctx.args.strip()
+    if not question:
+        return UniversalCommandResponse(
+            text="💡 <b>Usage:</b> <code>/btw &lt;question&gt;</code>\nAsk a side question about the current conversation without polluting history or context."
+        )
+
+    from memory import memory_engine
+    from providers.caller import call_model_standard
+    from core.config import cfg_get
+
+    # Retrieve recent messages snapshot for context
+    history = memory_engine.get_session_messages(ctx.session_id, limit=8) if ctx.session_id else []
+    transcript_snippets = []
+    for h in history:
+        u = (h.get("user_text") or "").strip()
+        a = (h.get("ai_text") or "").strip()
+        if u:
+            transcript_snippets.append(f"User: {u[:300]}")
+        if a:
+            transcript_snippets.append(f"Anara: {a[:500]}")
+
+    transcript = "\n".join(transcript_snippets) if transcript_snippets else "(No prior conversation)"
+
+    prompt = (
+        f"You are Project Anara answering a quick SIDE question from the user with /btw.\n"
+        f"The main task continues separately in the background.\n"
+        f"Rules:\n"
+        f"- Answer ONLY the side question concisely.\n"
+        f"- Use this conversation transcript for context:\n\n{transcript}\n\n"
+        f"User Question: {question}\n\n"
+        f"Direct Concise Answer:"
+    )
+
+    try:
+        model_name = cfg_get("agent.model") or "gemini-2.5-flash"
+        reply = await call_model_standard(
+            model=model_name,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            max_tokens=500,
+        )
+        return UniversalCommandResponse(
+            text=f"💬 <b>[Side Question]</b> <i>{html.escape(question)}</i>\n\n{html.escape(reply)}"
+        )
+    except Exception as e:
+        return UniversalCommandResponse(
+            text=f"💬 <b>[Side Question]</b> <i>{html.escape(question)}</i>\n\n(Note: {html.escape(str(e))})"
+        )
+
+
+@command_hub.register(
+    name="pin",
+    aliases=["pins", "pinit"],
+    description="Pin important rules, project architecture, or directives to survive context compaction",
+    usage="/pin [label] <content> or /pin list"
+)
+async def _handle_cmd_pin(ctx: UniversalCommandContext) -> UniversalCommandResponse:
+    arg = ctx.args.strip()
+    from core.context_pin import context_pin_manager
+    sid = str(ctx.session_id or "default")
+
+    if not arg or arg.lower() in ("list", "ls", "all"):
+        pins = context_pin_manager.list_pins(sid)
+        if not pins:
+            return UniversalCommandResponse(
+                text="📌 <b>No pinned items in this session.</b>\n\n"
+                     "Pin rules or instructions using:\n"
+                     "<code>/pin &lt;label&gt; &lt;content&gt;</code>"
+            )
+        lines = [f"📌 <b>Pinned Directives for Session #{sid}:</b>\n"]
+        for p in pins:
+            lines.append(f"• <b>{html.escape(p['label'])}</b>: {html.escape(p['content'][:150])}")
+        return UniversalCommandResponse(text="\n".join(lines))
+
+    # Parse label and content
+    parts = arg.split(maxsplit=1)
+    if len(parts) == 1:
+        label = "directive"
+        content = parts[0]
+    else:
+        label = parts[0].strip(":#")
+        content = parts[1]
+
+    context_pin_manager.pin(session_id=sid, label=label, content=content)
+    return UniversalCommandResponse(
+        text=f"📌 <b>Directive Pinned!</b>\n"
+             f"• <b>Label:</b> <code>{html.escape(label)}</code>\n"
+             f"• <b>Content:</b> <i>{html.escape(content)}</i>\n\n"
+             f"<i>This item is now immune to lossy compaction and will remain intact across all turns.</i>"
+    )
 
 
 

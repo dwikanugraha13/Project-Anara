@@ -18,7 +18,7 @@ class ChatSessionsMixin:
         clean_name = speaker_name.strip().title() if speaker_name else None
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            where = "WHERE message_count = 0 AND is_pinned = 0 AND workspace_info_json IS NULL AND (title = 'New Chat' OR title = 'New Project' OR title IS NULL)"
+            where = "WHERE message_count = 0 AND is_pinned = 0 AND workspace_info_json IS NULL AND (title = 'New Chat' OR title = 'New Project' OR title = 'New Session' OR title IS NULL)"
             params = []
             if exclude_session_id is not None:
                 where += " AND id != ?"
@@ -46,7 +46,7 @@ class ChatSessionsMixin:
         from core.session_ids import new_session_key
         canonical_key = session_key or new_session_key()
         clean_name = speaker_name.strip().title() if speaker_name else None
-        initial_title = (title or "").strip() or ("New Project" if session_type == "code" else "New Chat")
+        initial_title = (title or "").strip() or ("New Project" if session_type == "code" else "New Session")
         clean_type = "code" if str(session_type).lower() == "code" else "chat"
         clean_channel = (channel or "web").strip().lower()
         if not session_mode:
@@ -64,11 +64,14 @@ class ChatSessionsMixin:
             workspace_info = {"name": folder_name, "root_path": clean_wp, "is_external": True}
             workspace_info_json = json.dumps(workspace_info)
 
+        placeholder_titles = {"new chat", "new project", "new session", "untitled session", "untitled"}
+        initial_title_source = "user" if (title and title.strip() and title.strip().lower() not in placeholder_titles) else "derived"
+
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO chat_sessions (session_key, title, speaker_name, session_type, channel, session_mode, workspace_info_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (canonical_key, initial_title, clean_name, clean_type, clean_channel, clean_mode, workspace_info_json)
+                "INSERT INTO chat_sessions (session_key, title, title_source, speaker_name, session_type, channel, session_mode, workspace_info_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (canonical_key, initial_title, initial_title_source, clean_name, clean_type, clean_channel, clean_mode, workspace_info_json)
             )
             sid = cursor.lastrowid or 0
             conn.commit()
@@ -76,8 +79,8 @@ class ChatSessionsMixin:
         self.clean_empty_sessions(clean_name, exclude_session_id=sid)
 
         logger.info(f"[ChatSessions] Created {clean_type} session #{sid} ({canonical_key}) ('{initial_title}') [channel={clean_channel}, mode={clean_mode}] for {clean_name or 'Guest'}")
-        self._emit_mutation("session_created", {"id": sid, "session_key": canonical_key, "title": initial_title, "speaker_name": clean_name, "session_type": clean_type, "channel": clean_channel, "session_mode": clean_mode, "workspace_info": workspace_info})
-        return {"id": sid, "session_key": canonical_key, "title": initial_title, "speaker_name": clean_name, "session_type": clean_type, "channel": clean_channel, "session_mode": clean_mode, "message_count": 0, "workspace_info": workspace_info}
+        self._emit_mutation("session_created", {"id": sid, "session_key": canonical_key, "title": initial_title, "title_source": initial_title_source, "speaker_name": clean_name, "session_type": clean_type, "channel": clean_channel, "session_mode": clean_mode, "workspace_info": workspace_info})
+        return {"id": sid, "session_key": canonical_key, "title": initial_title, "title_source": initial_title_source, "speaker_name": clean_name, "session_type": clean_type, "channel": clean_channel, "session_mode": clean_mode, "message_count": 0, "workspace_info": workspace_info}
 
     def get_sessions(self, speaker_name: Optional[str] = None,
                      session_type: Optional[str] = None,
@@ -87,7 +90,7 @@ class ChatSessionsMixin:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             query = """
-                SELECT s.id, s.session_key, s.title, s.speaker_name,
+                SELECT s.id, s.session_key, s.title, s.title_source, s.speaker_name,
                        (SELECT COUNT(*) FROM conversations WHERE conversations.session_id = s.id) AS message_count,
                        (CASE 
                            WHEN (SELECT SUM(total_tokens) FROM token_usage_logs WHERE session_id = s.id) > 0 
@@ -205,13 +208,139 @@ class ChatSessionsMixin:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE chat_sessions SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                "UPDATE chat_sessions SET title = ?, title_source = 'user', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                 (clean, sid)
             )
             conn.commit()
             ok = cursor.rowcount > 0
         if ok:
-            self._emit_mutation("session_updated", {"id": sid, "title": clean})
+            self._emit_mutation("session_updated", {"id": sid, "title": clean, "title_source": "user"})
+        return ok
+
+    def set_session_title(self, session_id: Any, title: str) -> bool:
+        """Alias for rename_session: sets title on user's behalf with 'user' provenance authority."""
+        return self.rename_session(session_id, title)
+
+    def get_session_title_source(self, session_id: Any) -> Optional[str]:
+        """Gets title provenance authority (derived, llm, user) for a session."""
+        sess = self.get_session(session_id)
+        return sess.get("title_source") if sess else None
+
+    def set_session_title_source(self, session_id: Any, source: str) -> bool:
+        """Sets title provenance authority explicitly."""
+        sid = self._resolve_session_id(session_id) or session_id
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE chat_sessions SET title_source = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (source, sid)
+            )
+            conn.commit()
+            ok = cursor.rowcount > 0
+        if ok:
+            self._emit_mutation("session_updated", {"id": sid, "title_source": source})
+        return ok
+
+    def get_session_by_title(self, title: str, exclude_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        """Look up a session by exact title."""
+        clean = (title or "").strip()
+        if not clean:
+            return None
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            if exclude_id is not None:
+                cursor.execute("SELECT * FROM chat_sessions WHERE title = ? AND id != ? LIMIT 1", (clean, exclude_id))
+            else:
+                cursor.execute("SELECT * FROM chat_sessions WHERE title = ? LIMIT 1", (clean,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def next_title_in_lineage(self, base_title: str) -> str:
+        """Computes next lineage title for collisions (e.g. 'Project Review' -> 'Project Review #2')."""
+        match = re.match(r"^(.*?)\s+#(\d+)$", base_title.strip())
+        base = match.group(1).strip() if match else base_title.strip()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            escaped_base = base.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            cursor.execute(
+                "SELECT title FROM chat_sessions WHERE title = ? OR title LIKE ? ESCAPE '\\'",
+                (base, f"{escaped_base} #%")
+            )
+            rows = cursor.fetchall()
+        if not rows:
+            return base
+        numbers = []
+        for r in rows:
+            t = (r["title"] or "").strip()
+            m = re.match(r"^(.*?)\s+#(\d+)$", t)
+            if m and m.group(1).strip().lower() == base.lower():
+                try:
+                    numbers.append(int(m.group(2)))
+                except ValueError:
+                    pass
+        if not numbers:
+            return f"{base} #2"
+        return f"{base} #{max([1, *numbers]) + 1}"
+
+    def set_auto_title(self, session_id: Any, title: str, source: str = "llm") -> bool:
+        """
+        Sets automatic session title honoring provenance rank: derived < llm < user.
+        A user-titled session is never overwritten.
+        A llm-titled session cannot be overwritten by derived.
+        Derived titles are upgraded to llm once substantive topic arrives.
+        Lineage (#2, #3) is automatically handled if title collides.
+        """
+        clean = (title or "").strip()[:120]
+        if not clean:
+            return False
+        sid = self._resolve_session_id(session_id) or session_id
+        current = self.get_session(sid)
+        if not current:
+            return False
+
+        curr_title = (current.get("title") or "").strip()
+        curr_source = current.get("title_source")
+
+        # Check if current title is a placeholder
+        is_placeholder = (
+            not curr_title
+            or curr_title.lower() in ("new chat", "new session", "new project", "session", "chat")
+            or curr_title.lower().startswith(("session #", "chat #", "telegram chat (", "web chat (", "discord chat ("))
+        )
+
+        TITLE_SOURCE_RANK = {"derived": 1, "llm": 2, "user": 3}
+        current_rank = 0
+        if not is_placeholder:
+            if curr_source in TITLE_SOURCE_RANK:
+                current_rank = TITLE_SOURCE_RANK[curr_source]
+            else:
+                current_rank = TITLE_SOURCE_RANK["user"]  # Pre-existing custom titles are protected
+
+        new_rank = TITLE_SOURCE_RANK.get(source, 1)
+
+        # Precedence check: lower authority cannot overwrite equal or higher authority
+        if not is_placeholder and current_rank >= new_rank:
+            logger.debug(f"[ChatSessions] Refused auto-title '{clean}' ({source}) for #{sid}: already held by rank {current_rank} ({curr_source})")
+            return False
+
+        # Collision & lineage deduplication
+        final_title = clean
+        colliding = self.get_session_by_title(clean, exclude_id=sid)
+        if colliding:
+            final_title = self.next_title_in_lineage(clean)
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE chat_sessions SET title = ?, title_source = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (final_title, source, sid)
+            )
+            conn.commit()
+            ok = cursor.rowcount > 0
+
+        if ok:
+            logger.info(f"[ChatSessions] Updated session #{sid} title to '{final_title}' (source={source})")
+            self._emit_mutation("session_updated", {"id": sid, "title": final_title, "title_source": source})
         return ok
 
     def fork_session(self, session_id: Any, title_prefix: str = "Branch: ") -> Optional[Dict[str, Any]]:
@@ -283,6 +412,8 @@ class ChatSessionsMixin:
             if clean:
                 sets.append("title = ?")
                 params.append(clean)
+                sets.append("title_source = ?")
+                params.append("user")
         if is_pinned is not None:
             sets.append("is_pinned = ?")
             params.append(1 if is_pinned else 0)
@@ -368,6 +499,47 @@ class ChatSessionsMixin:
             conn.commit()
         self._emit_mutation("session_updated", {"id": sid, "message_count": 0})
         return removed
+
+    def rewind_turns(self, session_id: Any, n: int = 1) -> Optional[Dict[str, Any]]:
+        """
+        Hermes Parity (hermes_state_rewind.py):
+        Rewinds the active session transcript by N user turns.
+        Deletes the newest N conversation turn rows from SQLite and returns the last user prompt.
+        """
+        sid = self._resolve_session_id(session_id) or session_id
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, user_text, ai_text FROM conversations WHERE session_id = ? ORDER BY id DESC LIMIT ?",
+                (sid, max(1, int(n)))
+            )
+            rows = cursor.fetchall()
+            if not rows:
+                return None
+
+            ids_to_delete = [r["id"] for r in rows]
+            last_user_text = rows[0]["user_text"] if rows else ""
+
+            placeholders = ",".join("?" for _ in ids_to_delete)
+            cursor.execute(f"DELETE FROM conversations WHERE id IN ({placeholders})", ids_to_delete)
+
+            cursor.execute("SELECT COUNT(*) AS cnt FROM conversations WHERE session_id = ?", (sid,))
+            cnt_row = cursor.fetchone()
+            new_cnt = cnt_row["cnt"] if cnt_row else 0
+            cursor.execute(
+                "UPDATE chat_sessions SET message_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (new_cnt, sid)
+            )
+            conn.commit()
+
+        self._emit_mutation("session_updated", {"id": sid, "message_count": new_cnt, "rewound": len(ids_to_delete)})
+        return {
+            "session_id": sid,
+            "rewound_count": len(ids_to_delete),
+            "last_user_text": last_user_text,
+            "remaining_message_count": new_cnt,
+            "deleted_turn_ids": ids_to_delete
+        }
 
     def delete_sessions_bulk(self, archived_only: bool = False,
                              keep_pinned: bool = True) -> Dict[str, int]:
@@ -542,82 +714,11 @@ class ChatSessionsMixin:
         return self.set_session_pending_plan(session_id, None)
 
     async def auto_title_session_async(self, client: Any, session_id: int) -> Optional[str]:
-        """Names a thread dynamically from its first turns."""
-        sess = self.get_session(session_id)
-        if not sess:
-            return None
-        current_title = (sess.get("title") or "").strip()
-        is_placeholder = (
-            not current_title
-            or current_title.lower() in ["new chat", "new session", "new project", "session", "chat"]
-            or current_title.lower().startswith(("session #", "chat #", "telegram chat (", "web chat (", "discord chat ("))
-            or current_title.lower().endswith("]")
-        )
-        if not is_placeholder:
-            return None
-
-        msgs = self.get_session_messages(session_id, limit=4)
-        if not msgs:
-            return None
-
-        convo = "\n".join(
-            f"User: {(m.get('user_text') or '')[:160]}\nAnara: {(m.get('ai_text') or '')[:160]}"
-            for m in msgs[:3]
-        )
-        fallback = (msgs[0].get("user_text") or "New Session").strip()
-        fallback = (fallback[:36] + "...") if len(fallback) > 36 else fallback
-
-        prompt = (
-            "Generate a SHORT title (2-5 words) summarizing this conversation.\n"
-            "Rules: match the language used by the user, no quotes, no trailing dot, capture the core topic directly.\n\n"
-            f"CONVERSATION:\n{convo}\n\nTITLE:"
-        )
-
-        title = ""
-        try:
-            from core.capabilities import get_fast_auxiliary_model
-            aux_mdl = get_fast_auxiliary_model()
-            if client and getattr(client, "aio", None):
-                from google.genai import types as _types
-                cfg = _types.GenerateContentConfig(max_output_tokens=30, temperature=0.3)
-                for mdl in (aux_mdl, "gemini-2.5-flash"):
-                    try:
-                        res = await asyncio.wait_for(
-                            client.aio.models.generate_content(model=mdl, contents=prompt, config=cfg),
-                            timeout=6.0,
-                        )
-                        if res and res.text:
-                            title = res.text.strip().strip('"\'').rstrip(".")
-                            title = re.sub(r"^(?:title|topic|subject)\s*[:=]\s*", "", title, flags=re.IGNORECASE).strip()
-                            if title:
-                                break
-                    except Exception:
-                        continue
-
-            if not title:
-                from providers import call_universal_chat_model
-                res_str = await asyncio.wait_for(
-                    call_universal_chat_model(
-                        model_id=aux_mdl,
-                        user_prompt=prompt,
-                        system_instruction="You are a concise conversation title generator. Return 2-5 words only.",
-                        max_tokens=30,
-                        temperature=0.3,
-                        read_only=True
-                    ),
-                    timeout=5.0
-                )
-                if res_str:
-                    clean_res = str(res_str).strip().strip('"\'').rstrip(".")
-                    title = re.sub(r"^(?:title|topic|subject)\s*[:=]\s*", "", clean_res, flags=re.IGNORECASE).strip()
-        except Exception as e:
-            logger.debug(f"[ChatSessions] Auto-title model error: {e}")
-
-        final = (title or fallback)[:80]
-        if self.rename_session(session_id, final):
-            logger.info(f"[ChatSessions] Auto-titled session #{session_id}: {final!r}")
-            return final
-        return None
+        """Names a thread dynamically from its opening turns (Anara Standard)."""
+        from core.title_generator import auto_title_session_async as _core_auto_title
+        msgs = self.get_session_messages(session_id, limit=2)
+        user_text = msgs[0].get("user_text", "") if msgs else ""
+        return await _core_auto_title(session_id, user_text)
 
     def log_conversation(
         self,
@@ -847,70 +948,19 @@ class ChatSessionsMixin:
 async def maybe_auto_title_session(session_id: int, user_text: str = "", ai_text: str = "") -> Optional[str]:
     """
     Public asynchronous entry point for auto-titling sessions (Anara Standard).
-    Generates a concise 2-5 word title using fast auxiliary LLM if title is still default/placeholder.
+    Delegates to core.title_generator.auto_title_session_async.
     """
     if not session_id:
         return None
     try:
-        from memory import memory_engine
-        sess = await asyncio.to_thread(memory_engine.get_session, session_id)
-        if not sess:
-            return None
-        current_title = (sess.get("title") or "").strip()
-        is_placeholder = (
-            not current_title
-            or current_title.lower() in ["new chat", "new session", "new project", "session", "chat"]
-            or current_title.lower().startswith(("session #", "chat #", "telegram chat (", "web chat (", "discord chat ("))
-            or current_title.lower().endswith("]")
-        )
-        if not is_placeholder:
-            return None
-
-        # Build short dialogue context
-        u = (user_text or "").strip()[:200]
-        a = (ai_text or "").strip()[:200]
+        from core.title_generator import auto_title_session_async
+        u = (user_text or "").strip()
         if not u:
-            msgs = await asyncio.to_thread(memory_engine.get_session_messages, session_id, 3)
+            from memory import memory_engine
+            msgs = await asyncio.to_thread(memory_engine.get_session_messages, session_id, 2)
             if msgs:
-                u = (msgs[0].get("user_text") or "").strip()[:200]
-                a = (msgs[0].get("ai_text") or "").strip()[:200]
-
-        if not u:
-            return None
-
-        prompt = (
-            "Generate a SHORT title (2-5 words) summarizing this conversation.\n"
-            "Rules: match the language used by the user, no quotes, no trailing dot, capture the core topic directly.\n\n"
-            f"User: {u}\nAnara: {a}\n\nTITLE:"
-        )
-
-        title = ""
-        try:
-            from core.capabilities import get_fast_auxiliary_model
-            from providers.caller import call_universal_chat_model
-            aux_model = get_fast_auxiliary_model()
-            res = await asyncio.wait_for(
-                call_universal_chat_model(
-                    model_id=aux_model,
-                    user_prompt=prompt,
-                    max_tokens=25,
-                    temperature=0.3,
-                    read_only=True
-                ),
-                timeout=5.0
-            )
-            if res and isinstance(res, str):
-                title = res.strip().strip('"\'').rstrip(".")
-                title = re.sub(r"^(?:title|topic|subject)\s*[:=]\s*", "", title, flags=re.IGNORECASE).strip()
-        except Exception as e:
-            logger.debug(f"[ChatSessions] maybe_auto_title_session LLM error: {e}")
-
-        fallback = u[:36] + ("..." if len(u) > 36 else "")
-        final_title = (title or fallback)[:80]
-        renamed = await asyncio.to_thread(memory_engine.rename_session, session_id, final_title)
-        if renamed:
-            logger.info(f"[ChatSessions] Successfully auto-titled session #{session_id}: {final_title!r}")
-            return final_title
+                u = (msgs[0].get("user_text") or "").strip()
+        return await auto_title_session_async(session_id, u)
     except Exception as ex:
         logger.debug(f"[ChatSessions] maybe_auto_title_session error: {ex}")
     return None
